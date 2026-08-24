@@ -53,7 +53,10 @@ jobs:
 
       - name: Run backend tests
         working-directory: namastepos_backend
-        run: npm test
+        # timeout + --forceExit: a leaked handle after a failure must never
+        # hang the job for hours (2026-08-24 — a run sat 54 min before cancel).
+        timeout-minutes: 10
+        run: npx jest --runInBand --forceExit
 
   dashboard:
     runs-on: ubuntu-latest

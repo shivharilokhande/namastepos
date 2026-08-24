@@ -80,13 +80,22 @@ describe('POST /v1/wa-webhooks/:businessId — SIGNATURE (AUDIT-S004)', () => {
 
   it('accepts the request in dev when no token is configured (with warning)', async () => {
     const saved = process.env.TWILIO_AUTH_TOKEN;
+    // The route reads env.TWILIO_AUTH_TOKEN (frozen at module load), not
+    // process.env — clear both, restore both (2026-08-24: route now keys
+    // off the configured token in ANY environment, per hardcode audit).
+    const savedEnv = env.TWILIO_AUTH_TOKEN;
     delete process.env.TWILIO_AUTH_TOKEN;
-    const res = await request(app)
-      .post(`/v1/wa-webhooks/${owner.id}`)
-      .type('form')
-      .send({ From: 'whatsapp:+919999999999', Body: 'test' });
-    expect(res.status).toBe(200);
-    process.env.TWILIO_AUTH_TOKEN = saved;
+    env.TWILIO_AUTH_TOKEN = '';
+    try {
+      const res = await request(app)
+        .post(`/v1/wa-webhooks/${owner.id}`)
+        .type('form')
+        .send({ From: 'whatsapp:+919999999999', Body: 'test' });
+      expect(res.status).toBe(200);
+    } finally {
+      process.env.TWILIO_AUTH_TOKEN = saved;
+      env.TWILIO_AUTH_TOKEN = savedEnv;
+    }
   });
 
   it('REJECTS a missing signature when token is configured + isProd()=true', withProd(async () => {
