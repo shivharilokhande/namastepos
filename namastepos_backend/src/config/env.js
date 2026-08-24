@@ -41,6 +41,8 @@ const env = {
   // sockets — keep this ≤ Postgres `max_connections` (default 100).
   // Prod recommendation: DB_POOL_MAX=50 in .env with PG max_connections
   // bumped to 200 for headroom.
+  // TLS to Postgres (required by Neon/Supabase/managed providers).
+  DATABASE_SSL: process.env.DATABASE_SSL === '1',
   DB_POOL_MIN: parseInt(required('DB_POOL_MIN', '5'), 10),
   DB_POOL_MAX: parseInt(required('DB_POOL_MAX', '30'), 10),
 

@@ -6,6 +6,9 @@ const logger = require('./logger');
 
 const pool = new Pool({
   connectionString: env.DATABASE_URL,
+  // Managed Postgres providers (Neon, Supabase, RDS…) require TLS.
+  // Set DATABASE_SSL=1 in the environment to enable it (2026-08-24).
+  ssl: env.DATABASE_SSL ? { rejectUnauthorized: false } : undefined,
   min: env.DB_POOL_MIN,
   max: env.DB_POOL_MAX,
   idleTimeoutMillis: 30000,
