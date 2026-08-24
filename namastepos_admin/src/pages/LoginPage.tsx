@@ -56,10 +56,6 @@ export function LoginPage() {
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? 'Signing in…' : 'Sign in'}
             </Button>
-            <p className="text-xs text-center text-muted-foreground">
-              Default credentials come from <code>SUPER_ADMIN_EMAIL</code> and{' '}
-              <code>SUPER_ADMIN_PASSWORD</code> in your backend <code>.env</code>.
-            </p>
           </form>
         </CardContent>
       </Card>
