@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: namastepos
+          POSTGRES_PASSWORD: namastepos
+          POSTGRES_DB: namastepos_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U namastepos"
+          --health-interval 5s --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgresql://namastepos:namastepos@localhost:5432/namastepos_test
+      JWT_SECRET: ci-secret-do-not-deploy
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '18', cache: 'npm', cache-dependency-path: namastepos_backend/package-lock.json }
+
+      - name: Install backend
+        working-directory: namastepos_backend
+        run: npm ci
+
+      - name: Migration test (forward + re-run)
+        working-directory: namastepos_backend
+        run: |
+          export PGPASSWORD=namastepos
+          export MIGRATION_TEST_DB=namastepos_migrationtest
+          createdb -h localhost -U namastepos "$MIGRATION_TEST_DB"
+          for f in db/migrations/*.sql; do
+            psql -h localhost -U namastepos "$MIGRATION_TEST_DB" -f "$f"
+          done
+          # Re-run idempotent
+          for f in db/migrations/*.sql; do
+            psql -h localhost -U namastepos "$MIGRATION_TEST_DB" -f "$f"
+          done
+
+      - name: Lint backend
+        working-directory: namastepos_backend
+        run: npm run lint || true # warning-only for now
+
+      - name: Run backend tests
+        working-directory: namastepos_backend
+        run: npm test
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '18', cache: 'npm', cache-dependency-path: namastepos_dashboard/package-lock.json }
+      - name: Install dashboard
+        working-directory: namastepos_dashboard
+        run: npm ci
+      - name: Type-check dashboard
+        working-directory: namastepos_dashboard
+        run: npx tsc --noEmit -p .
+      - name: Build dashboard
+        working-directory: namastepos_dashboard
+        run: npm run build

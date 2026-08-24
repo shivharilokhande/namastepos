@@ -1,0 +1,16 @@
+{
+  "env": { "node": true, "es2022": true, "jest": true },
+  "extends": ["airbnb-base", "plugin:jest/recommended"],
+  "plugins": ["jest"],
+  "parserOptions": { "ecmaVersion": 2022, "sourceType": "script" },
+  "rules": {
+    "no-console": "warn",
+    "no-underscore-dangle": "off",
+    "no-await-in-loop": "off",
+    "no-restricted-syntax": "off",
+    "consistent-return": "off",
+    "max-len": ["warn", { "code": 120, "ignoreStrings": true, "ignoreUrls": true }],
+    "object-curly-newline": "off",
+    "import/no-extraneous-dependencies": ["error", { "devDependencies": ["**/tests/**", "scripts/**"] }]
+  }
+}

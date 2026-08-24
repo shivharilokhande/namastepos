@@ -1,0 +1,45 @@
+# NamastePOS lint policy (revised 2026-08-23).
+#
+# Everything that can catch a real bug stays ON (unused code, bad casts,
+# context-across-async-gaps, type mismatches — several of these caught
+# genuine crashes on 23 Aug). Purely stylistic preferences are relaxed so
+# `flutter analyze` output stays actionable: every remaining item should
+# be worth fixing, not formatting noise.
+
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Kept from the original config (value > noise):
+    - sort_child_properties_last
+    - use_key_in_widget_constructors
+    # Removed (style-only, generated hundreds of info items):
+    #   prefer_const_constructors, prefer_const_declarations,
+    #   prefer_const_literals_to_create_immutables, sort_constructors_first
+    # `dart fix --apply` can auto-apply the const ones later if wanted.
+
+analyzer:
+  exclude:
+    - "build/**"
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
+  errors:
+    invalid_annotation_target: ignore
+    # Style-only relaxations (2026-08-23) — no behavioral impact:
+    prefer_const_constructors: ignore
+    prefer_const_declarations: ignore
+    prefer_const_literals_to_create_immutables: ignore
+    curly_braces_in_flow_control_structures: ignore
+    prefer_interpolation_to_compose_strings: ignore
+    unnecessary_string_interpolations: ignore
+    unnecessary_brace_in_string_interps: ignore
+    constant_identifier_names: ignore
+    no_leading_underscores_for_local_identifiers: ignore
+    library_private_types_in_public_api: ignore
+    prefer_final_fields: ignore
+    # Deprecations from newer Flutter SDKs (Radio groupValue, form-field
+    # `value:`, geolocator settings). The APIs still work on the pinned
+    # SDK; revisit as a batch on the next Flutter upgrade instead of
+    # drip-fixing. withOpacity/activeColor/Share were already migrated.
+    deprecated_member_use: ignore
+    experimental_member_use: ignore

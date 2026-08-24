@@ -1,0 +1,42 @@
+# ── Secrets — NEVER commit ──────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*/.env
+*/.env.local
+namastepos_flutter/android/key.properties
+*.jks
+*.keystore
+tests/.auth/
+
+# ── Dependencies ────────────────────────────────────────────────────
+node_modules/
+.pub-cache/
+
+# ── Build output ────────────────────────────────────────────────────
+dist/
+build/
+out/
+.dart_tool/
+*.g.dart
+namastepos_flutter/android/.gradle/
+namastepos_flutter/ios/Pods/
+namastepos_flutter/ios/.symlinks/
+namastepos_flutter/macos/Pods/
+
+# ── Runtime data ────────────────────────────────────────────────────
+namastepos_backend/uploads/
+namastepos_backend/logs/
+*.log
+test-results/
+coverage/
+
+# ── IDE / OS ────────────────────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
+*.iml
+
+# ── Misc ────────────────────────────────────────────────────────────
+testsprite_tests/tmp/
+nohup.out

@@ -1,0 +1,967 @@
+// NamastePOS - Confirm order, choose source/table/payment, save & print
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+
+import '../../constants/colors.dart';
+import '../../models/customer.dart';
+import '../../models/order.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/orders_provider.dart';
+import '../../providers/settings_provider.dart';
+import '../../providers/subscription_provider.dart';
+import '../../services/api_service.dart';
+import '../../services/printer_service.dart';
+// PaperSize is now re-exported from our local stub, no longer from esc_pos_utils.
+import '../../services/whatsapp_service.dart';
+import '../../utils/error_humanizer.dart';
+import '../../utils/formatters.dart';
+import '../../widgets/membership_offer_dialog.dart';
+import '../../widgets/primary_button.dart';
+import '../captain/captain_screen.dart' show pendingCaptainSession;
+
+class ConfirmOrderScreen extends StatefulWidget {
+  const ConfirmOrderScreen({super.key});
+
+  @override
+  State<ConfirmOrderScreen> createState() => _ConfirmOrderScreenState();
+}
+
+class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
+  OrderSource _source = OrderSource.dineIn;
+  PaymentMethod _payment = PaymentMethod.cash;
+  final _table = TextEditingController(text: '1');
+  final _phone = TextEditingController();
+  final _discount = TextEditingController(text: '0');
+  bool _saving = false;
+  // FF-322 mobile split-tender. When non-null the order is submitted
+  // as a multi-leg payment. Each entry is {method, amountInr}. Sum
+  // must equal the total; validated in the bottom-sheet before we
+  // let the cashier out.
+  List<Map<String, dynamic>>? _splits;
+
+  // Loyalty state (only used if loyalty addon active)
+  Customer? _customer;
+  LoyaltySettingsLite? _loyaltySettings;
+  int _pointsToRedeem = 0;
+  bool _looking = false;
+
+  // Membership context (2026-08-23): active bundle → server auto-applies
+  // covered items as a discount at billing. Expired/absent → offer shown
+  // at Pay & Place time (founder: the popup belongs where money changes
+  // hands, not at phone entry).
+  Map<String, dynamic>? _membership;
+  Map<String, dynamic>? _expiredMembership;
+  bool _membershipOfferShown = false; // once per order
+  double _membershipFeeInr = 0; // bought/renewed during THIS billing
+
+  // Captain-flow binding — when captain → Add items is used, this carries
+  // the session id + table label so we can pre-fill and tag the new KOT.
+  String? _tableSessionId;
+  String? _boundTableId;
+
+  // Surge pricing (2026-08-23): active rule fetched on open. multiplier
+  // > 1 scales every line price; banner shows the cashier why.
+  double _surgeMultiplier = 1.0;
+  String? _surgeName;
+
+  @override
+  void initState() {
+    super.initState();
+    final pending = pendingCaptainSession;
+    if (pending != null) {
+      _tableSessionId = pending['sessionId'] as String?;
+      _boundTableId = pending['tableId'] as String?;
+      _table.text = (pending['tableLabel'] as String?) ?? _table.text;
+      _source = OrderSource.dineIn;
+    }
+    _loadSurge();
+  }
+
+  Future<void> _loadSurge() async {
+    try {
+      final biz = context.read<AuthProvider>().business;
+      if (biz == null) return;
+      final r = await ApiService.instance.dio
+          .get('/businesses/${biz.id}/surge/current');
+      final s = (r.data['surge'] as Map?)?.cast<String, dynamic>();
+      if (s == null || !mounted) return;
+      final mult = double.tryParse(s['multiplier'].toString()) ?? 1.0;
+      if (mult > 1.0) {
+        setState(() {
+          _surgeMultiplier = mult;
+          _surgeName = s['name'] as String?;
+        });
+      }
+    } catch (_) { /* no surge — normal pricing */ }
+  }
+
+  @override
+  void dispose() {
+    _table.dispose();
+    _phone.dispose();
+    _discount.dispose();
+    // Don't clear pendingCaptainSession here — captain_screen clears it
+    // when its post-push .then() callback fires, so we don't double-clear
+    // and break a sibling confirm screen mid-flow.
+    super.dispose();
+  }
+
+  Future<void> _lookupCustomer() async {
+    final phone = _phone.text.trim();
+    if (phone.length < 10) return;
+    final hasLoyalty = context.read<SubscriptionProvider>().hasAddon('loyalty');
+    if (!hasLoyalty) return;
+
+    setState(() => _looking = true);
+    final biz = context.read<AuthProvider>().business!;
+    try {
+      final data = await ApiService.instance.lookupCustomer(biz.id, phone);
+      if (!mounted) return; // P2 fix: user may back out mid-lookup
+      if (data == null) {
+        setState(() {
+          _customer = null;
+          _loyaltySettings = null;
+          _looking = false;
+        });
+        return;
+      }
+      final cu = data['customer'];
+      final st = data['loyaltySettings'];
+      final mem = (data['membership'] as Map?)?.cast<String, dynamic>();
+      final expired =
+          (data['expiredMembership'] as Map?)?.cast<String, dynamic>();
+      setState(() {
+        _customer = cu != null ? Customer.fromMap(cu as Map<String, dynamic>) : null;
+        _loyaltySettings = st != null
+            ? LoyaltySettingsLite.fromMap(st as Map<String, dynamic>)
+            : null;
+        _membership = mem;
+        _expiredMembership = expired; // offer fires at Pay & Place
+        _pointsToRedeem = 0;
+        _looking = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _looking = false);
+    }
+  }
+
+  /// Membership offer at Pay & Place (2026-08-23, founder): when the
+  /// customer has no active membership (never had one, or it expired),
+  /// show the buy/renew popup RIGHT when the cashier taps Pay & Place.
+  /// A purchase adds the plan fee to this billing (shown in the collect
+  /// total) and the bundle discounts THIS order. "Not now" → normal
+  /// billing. KOT-only saves skip this — the settle flow offers instead.
+  Future<void> _maybeOfferMembership() async {
+    if (_membershipOfferShown) return;
+    if (_customer == null || _membership != null) return;
+    _membershipOfferShown = true;
+    final fee = await showMembershipOfferDialog(
+      context,
+      customerId: _customer!.id,
+      customerLabel: _customer!.name ?? _customer!.phone,
+      expired: _expiredMembership,
+    );
+    if (fee != null && mounted) {
+      setState(() => _membershipFeeInr = fee);
+      await _lookupCustomer(); // bundle is active now — refresh banner
+    }
+  }
+
+  /// `kotOnly = true` → send to kitchen without taking payment (postpaid).
+  /// Common for dine-in: send food prep, settle later when guests are done.
+  Future<void> _submit({bool kotOnly = false}) async {
+    // Membership upsell fires exactly when payment happens (not on KOT
+    // saves — those get the offer at settle).
+    if (!kotOnly) {
+      await _maybeOfferMembership();
+      if (!mounted) return;
+    }
+    // P0 fix (2026-08-22): the whole flow (createOrderFromCart +
+    // print + WhatsApp) had no try/finally — any thrown error left
+    // `_saving = true` forever, so the Confirm button was permanently
+    // greyed until the app was restarted. This wraps everything in a
+    // try/catch/finally: the button always re-enables, and the owner
+    // sees a humanised error snackbar instead of frozen UI.
+    setState(() => _saving = true);
+    final orders = context.read<OrdersProvider>();
+    final auth = context.read<AuthProvider>();
+    final settings = context.read<SettingsProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+
+    Order? order;
+    bool printed = false;
+    String? _printError; // P1 fix: surface printer failures to the owner
+    try {
+      final discount = double.tryParse(_discount.text.trim()) ?? 0;
+      final biz = auth.business!;
+      order = await orders.createOrderFromCart(
+        businessId: biz.id,
+        source: _source,
+        tableNo: _source == OrderSource.dineIn ? _table.text.trim() : null,
+        customerPhone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
+        paymentMethod: kotOnly ? PaymentMethod.unpaid : _payment,
+        discount: discount,
+        pointsToRedeem: _pointsToRedeem,
+        priceMultiplier: _surgeMultiplier, // surge (×1 when inactive)
+        // Captain "Add items" flow — bind the new KOT to the exact open
+        // session instead of relying on the table-label lookup.
+        tableSessionId: _tableSessionId,
+        tableId: _boundTableId,
+        // FF-322: pass the split-tender legs if the cashier used the
+        // "Split payment" bottom-sheet. Ignored on KOT-only saves.
+        splits: (!kotOnly && _splits != null && _splits!.isNotEmpty)
+            ? _splits : null,
+      );
+
+      // Print (best-effort — never fails the order).
+      // P1 fix (2026-08-22): errors were swallowed with just a debugPrint,
+      // owners had no idea why the KOT never came out. We now capture the
+      // failure into `_printError` so the confirmation dialog can show it,
+      // AND we snackbar right away if the widget is still mounted.
+      if (settings.printerEnabled && PrinterService.instance.hasSelectedPrinter) {
+        PrinterService.instance.paperSize =
+            settings.paperWidthMm == 80 ? PaperSize.mm80 : PaperSize.mm58;
+        try {
+          printed = await PrinterService.instance.printToken(order, biz);
+          if (printed) await orders.markPrinted(order.id);
+          else _printError = 'Printer returned no acknowledgement';
+        } catch (e) {
+          _printError = humanizeError(e);
+          debugPrint('[POS] print failed: $e');
+          if (mounted) {
+            messenger.showSnackBar(SnackBar(
+              content: Text('Printer error: $_printError'),
+              backgroundColor: AppColors.warning,
+            ));
+          }
+        }
+      }
+
+      // WhatsApp auto-notify — best-effort, plan-gated.
+      // Fix (2026-08-22, founder): NEVER for dine-in — the waiter serves
+      // at the table; yanking the cashier into WhatsApp mid-service broke
+      // the POS flow. Takeaway/delivery keep the confirmation message.
+      final hasAutoWhatsApp = auth.has('auto_whatsapp_order');
+      if (_source != OrderSource.dineIn &&
+          order.customerPhone != null && order.customerPhone!.isNotEmpty &&
+          settings.autoWhatsAppOnReady && hasAutoWhatsApp) {
+        try {
+          await WhatsAppService.instance.notifyOrderConfirmed(order, biz);
+        } catch (e) {
+          debugPrint('[POS] whatsapp notify failed: $e');
+        }
+      }
+    } catch (e) {
+      // Order-create failure — surface a humanised error and let the
+      // owner retry. Do NOT show the "Order placed" dialog.
+      if (mounted) {
+        messenger.showSnackBar(SnackBar(
+          content: Text('Could not place order: ${humanizeError(e)}'),
+          backgroundColor: AppColors.error,
+        ));
+        setState(() => _saving = false);
+      }
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _saving = false);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Order placed'),
+        content: Text(
+          'Token #${order!.orderNo} • ${AppFmt.money(order.total, decimals: true)}\n'
+          // Membership bought during this billing → collect one combined
+          // amount (order total already reflects any bundle discount).
+          '${_membershipFeeInr > 0
+              ? "+ Membership ${AppFmt.money(_membershipFeeInr)} — "
+                "COLLECT ${AppFmt.money(order.total + _membershipFeeInr, decimals: true)} TOTAL\n"
+              : ""}'
+          '${printed
+              ? "Token printed successfully."
+              : (settings.printerEnabled
+                  ? (_printError != null
+                      ? "Printer error: $_printError"
+                      : "Printer not connected — saved without printing.")
+                  : "")}',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              // popUntil first → unwinds the dialog + confirm screen +
+              // (if pushed from Captain) the NewOrderScreen, landing the
+              // user back on the bottom-nav shell with their previous
+              // tab still active. Previously only popped twice which
+              // left them stuck on NewOrderScreen with no clear way out.
+              Navigator.popUntil(context, (r) => r.isFirst);
+            },
+            child: const Text('Done'),
+          ),
+          if (!printed && settings.printerEnabled)
+            TextButton(
+              onPressed: () async {
+                final biz2 = auth.business!;
+                try {
+                  final ok = await PrinterService.instance.printToken(order!, biz2);
+                  if (ok) {
+                    await orders.markPrinted(order.id);
+                  } else if (mounted) {
+                    messenger.showSnackBar(const SnackBar(
+                      content: Text('Printer did not acknowledge — check paper & power'),
+                      backgroundColor: AppColors.warning,
+                    ));
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    messenger.showSnackBar(SnackBar(
+                      content: Text('Printer error: ${humanizeError(e)}'),
+                      backgroundColor: AppColors.error,
+                    ));
+                  }
+                }
+                if (!mounted) return;
+                Navigator.popUntil(context, (r) => r.isFirst);
+              },
+              child: const Text('Retry print'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final orders = context.watch<OrdersProvider>();
+    final subtotal = orders.cartSubtotal * _surgeMultiplier;
+    final discount = double.tryParse(_discount.text.trim()) ?? 0;
+    final loyaltyDiscount = _loyaltySettings != null
+        ? (_pointsToRedeem * _loyaltySettings!.redemptionValuePaise) / 100
+        : 0.0;
+    final total = (subtotal - discount - loyaltyDiscount).clamp(0, double.infinity);
+
+    return Scaffold(
+      // Bug fix (2026-08-20): make the back-arrow explicit + always pop
+      // to home instead of relying on the auto-added leading. If a
+      // "place order" flow got interrupted (customer cancelled at
+      // counter, network hiccup, dialog dismissed early) the user
+      // would previously find themselves on this screen with an
+      // arrow that seemed to do nothing. Now it always exits POS.
+      appBar: AppBar(
+        title: const Text('Confirm order'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: 'Back',
+          onPressed: () {
+            final nav = Navigator.of(context);
+            if (nav.canPop()) nav.pop();
+            else nav.popUntil((r) => r.isFirst);
+          },
+        ),
+      ),
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                children: [
+                  // Cart items
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: AppColors.divider),
+                    ),
+                    child: Column(
+                      children: orders.cart.map((ci) => Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text('${ci.item.name} x ${ci.qty}',
+                                  style: const TextStyle(fontWeight: FontWeight.w600)),
+                            ),
+                            Text(AppFmt.money(ci.lineTotal, decimals: true)),
+                          ],
+                        ),
+                      )).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Source
+                  const Text('Order source', style: _labelStyle),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    height: 38,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      children: OrderSource.values.map((s) {
+                        final selected = s == _source;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text(_sourceLabel(s)),
+                            selected: selected,
+                            onSelected: (_) => setState(() => _source = s),
+                            selectedColor: AppColors.primary,
+                            labelStyle: TextStyle(
+                              color: selected ? Colors.white : AppColors.textPrimary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Table
+                  if (_source == OrderSource.dineIn) ...[
+                    const Text('Table number', style: _labelStyle),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _table,
+                      keyboardType: TextInputType.number,
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                      decoration: const InputDecoration(hintText: 'e.g. 3'),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  // Customer phone
+                  const Text('Customer phone (optional — for WhatsApp & loyalty)', style: _labelStyle),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _phone,
+                    keyboardType: TextInputType.phone,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)],
+                    decoration: InputDecoration(
+                      hintText: '9876543210',
+                      suffixIcon: _looking
+                          ? const SizedBox(width: 18, height: 18,
+                              child: Padding(padding: EdgeInsets.all(12),
+                                child: CircularProgressIndicator(strokeWidth: 2)))
+                          : null,
+                    ),
+                    onChanged: (v) {
+                      if (v.length == 10) _lookupCustomer();
+                      else if (_customer != null) {
+                        setState(() { _customer = null; _pointsToRedeem = 0; });
+                      }
+                    },
+                  ),
+                  if (_customer != null && _membership != null)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(top: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        _membership!['remaining'] is List &&
+                                (_membership!['remaining'] as List).isNotEmpty
+                            ? '✓ ${_membership!['name'] ?? 'Membership'} member — '
+                                'bundle items are auto-discounted on the bill.'
+                            : '✓ ${_membership!['name'] ?? 'Membership'} member '
+                                '(no item bundle left on this plan).',
+                        style: const TextStyle(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12),
+                      ),
+                    ),
+                  if (_customer != null && _loyaltySettings != null && _loyaltySettings!.isActive)
+                    _LoyaltyCard(
+                      customer: _customer!,
+                      settings: _loyaltySettings!,
+                      billInr: context.read<OrdersProvider>().cartSubtotal,
+                      pointsToRedeem: _pointsToRedeem,
+                      // Changing redemption also invalidates a saved split
+                      onChange: (v) => setState(() { _pointsToRedeem = v; _splits = null; }),
+                    ),
+                  const SizedBox(height: 16),
+
+                  // Payment
+                  const Text('Payment method', style: _labelStyle),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: PaymentMethod.values.where((p) => p != PaymentMethod.unpaid).map((p) {
+                      final selected = p == _payment;
+                      return ChoiceChip(
+                        label: Text(p.name.toUpperCase()),
+                        selected: selected,
+                        onSelected: (_) => setState(() {
+                          _payment = p;
+                          _splits = null; // single-tender clears any prior split
+                        }),
+                        selectedColor: AppColors.primary,
+                        labelStyle: TextStyle(
+                          color: selected ? Colors.white : AppColors.textPrimary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 8),
+                  // FF-322 mobile split-tender entry point. Compact
+                  // button + status chip so the cashier knows a split
+                  // is active. Sum-vs-total is validated inside the
+                  // bottom-sheet before Save.
+                  Row(
+                    children: [
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.call_split, size: 16),
+                        label: Text(_splits == null
+                            ? 'Split payment'
+                            : 'Split (${_splits!.length} legs)'),
+                        onPressed: () async {
+                          // P1 fix (2026-08-22): validate against the REAL
+                          // payable total (incl. loyalty redemption), not
+                          // subtotal-minus-discount — legs were forced to
+                          // overshoot when points were redeemed.
+                          final subtotalNow =
+                              context.read<OrdersProvider>().cartSubtotal *
+                                  _surgeMultiplier;
+                          final discountNow = double.tryParse(_discount.text.trim()) ?? 0;
+                          final loyaltyNow = _loyaltySettings != null
+                              ? (_pointsToRedeem * _loyaltySettings!.redemptionValuePaise) / 100
+                              : 0.0;
+                          final result = await showModalBottomSheet<List<Map<String, dynamic>>?>(
+                            context: context,
+                            isScrollControlled: true,
+                            builder: (_) => _SplitTenderSheet(
+                              total: (subtotalNow - discountNow - loyaltyNow)
+                                  .clamp(0, double.infinity)
+                                  .toDouble(),
+                            ),
+                          );
+                          if (result != null) setState(() => _splits = result);
+                        },
+                      ),
+                      if (_splits != null) ...[
+                        const SizedBox(width: 8),
+                        TextButton(
+                          onPressed: () => setState(() => _splits = null),
+                          child: const Text('Clear split'),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Discount
+                  const Text('Discount (₹)', style: _labelStyle),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _discount,
+                    keyboardType: TextInputType.number,
+                    // P1 fix (2026-08-22): changing the discount after a
+                    // split was saved left legs that no longer summed to
+                    // the total — clear the stale split.
+                    onChanged: (_) => setState(() => _splits = null),
+                    decoration: const InputDecoration(hintText: '0'),
+                  ),
+                ],
+              ),
+            ),
+
+            // Totals + CTA
+            Container(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                border: Border(top: BorderSide(color: AppColors.divider)),
+              ),
+              child: Column(
+                children: [
+                  if (_surgeMultiplier > 1.0)
+                    Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '⚡ Surge pricing ×${_surgeMultiplier.toStringAsFixed(2)}'
+                        '${_surgeName != null ? " ($_surgeName)" : ""} — '
+                        'prices adjusted',
+                        style: const TextStyle(
+                            color: AppColors.warning,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12),
+                      ),
+                    ),
+                  Row(
+                    children: [
+                      const Text('Subtotal', style: TextStyle(color: AppColors.textSecondary)),
+                      const Spacer(),
+                      Text(AppFmt.money(subtotal, decimals: true)),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Text('Discount', style: TextStyle(color: AppColors.textSecondary)),
+                      const Spacer(),
+                      Text('-${AppFmt.money(discount, decimals: true)}'),
+                    ],
+                  ),
+                  if (loyaltyDiscount > 0) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text('Loyalty ($_pointsToRedeem pts)', style: const TextStyle(color: AppColors.primary)),
+                        const Spacer(),
+                        Text('-${AppFmt.money(loyaltyDiscount, decimals: true)}',
+                            style: const TextStyle(color: AppColors.primary)),
+                      ],
+                    ),
+                  ],
+                  const Divider(height: 18),
+                  Row(
+                    children: [
+                      const Text('Total',
+                          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                      const Spacer(),
+                      Text(
+                        AppFmt.money(total, decimals: true),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 20,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // Dine-in flow: "Save KOT" sends food prep to the kitchen
+                  // WITHOUT settling payment yet — settle later from the
+                  // table running-bill view. Takeaway/delivery default to
+                  // "Pay & place" which collects payment immediately.
+                  if (_source == OrderSource.dineIn) ...[
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.restaurant_menu_rounded),
+                      label: _saving
+                          ? const Text('Saving…')
+                          : const Text('Save KOT (settle later)',
+                              style: TextStyle(fontWeight: FontWeight.w800)),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        side: const BorderSide(color: AppColors.primary, width: 1.5),
+                        foregroundColor: AppColors.primary,
+                      ),
+                      onPressed: _saving ? null : () => _submit(kotOnly: true),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  PrimaryButton(
+                    label: _source == OrderSource.dineIn
+                        ? 'Pay & Place'
+                        : 'Place Order & Print Token',
+                    loading: _saving,
+                    onPressed: () => _submit(),
+                    icon: Icons.print_rounded,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _sourceLabel(OrderSource s) {
+    switch (s) {
+      case OrderSource.dineIn: return 'Dine-in';
+      case OrderSource.takeaway: return 'Takeaway';
+      case OrderSource.zomato: return 'Zomato';
+      case OrderSource.swiggy: return 'Swiggy';
+      case OrderSource.other: return 'Other';
+    }
+  }
+}
+
+const TextStyle _labelStyle = TextStyle(
+  fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary,
+);
+
+class _LoyaltyCard extends StatelessWidget {
+  final Customer customer;
+  final LoyaltySettingsLite settings;
+  final double billInr;
+  final int pointsToRedeem;
+  final ValueChanged<int> onChange;
+
+  const _LoyaltyCard({
+    required this.customer,
+    required this.settings,
+    required this.billInr,
+    required this.pointsToRedeem,
+    required this.onChange,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final maxRedeem = settings.maxRedeemable(customer.pointsBalance, billInr);
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.card_giftcard_rounded, size: 18, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(customer.name?.isNotEmpty == true ? customer.name! : customer.phone,
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                    Text(
+                      '${customer.tier.toUpperCase()} · ${customer.pointsBalance} points · ${customer.visitCount} visits',
+                      style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (maxRedeem > 0) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: Slider(
+                    value: pointsToRedeem.toDouble().clamp(0, maxRedeem.toDouble()),
+                    min: 0, max: maxRedeem.toDouble(),
+                    divisions: maxRedeem,
+                    activeColor: AppColors.primary,
+                    label: '$pointsToRedeem',
+                    onChanged: (v) => onChange(v.round()),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary, borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '-${AppFmt.moneyPaise(pointsToRedeem * settings.redemptionValuePaise)}',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+            Text(
+              'Max ${maxRedeem} pts (${AppFmt.moneyPaise(maxRedeem * settings.redemptionValuePaise)})',
+              style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+            ),
+          ] else
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'Need ${settings.minRedemptionPoints} pts to redeem',
+                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── FF-322 mobile split-tender bottom-sheet ─────────────────────────────
+//
+// Compact two-to-four leg entry. Total is fixed by the bill; each row
+// is (method, amountInr). Balance is shown live. Save is disabled
+// until |sum - total| ≤ ₹1 (tolerance for float rounding). Backend
+// records every leg into `payments` and marks `is_split_tender=true`.
+
+class _SplitTenderSheet extends StatefulWidget {
+  final double total;
+  const _SplitTenderSheet({required this.total});
+  @override
+  State<_SplitTenderSheet> createState() => _SplitTenderSheetState();
+}
+
+class _SplitTenderSheetState extends State<_SplitTenderSheet> {
+  final List<_SplitLeg> _legs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // Sensible defaults: two legs, cash + upi, half-and-half.
+    final half = (widget.total / 2).toStringAsFixed(2);
+    _legs.add(_SplitLeg(method: 'cash', ctl: TextEditingController(text: half)));
+    _legs.add(_SplitLeg(method: 'upi',  ctl: TextEditingController(text: half)));
+  }
+
+  @override
+  void dispose() {
+    for (final l in _legs) l.ctl.dispose();
+    super.dispose();
+  }
+
+  double get _sum => _legs.fold<double>(0, (s, l) =>
+      s + (double.tryParse(l.ctl.text.trim()) ?? 0));
+  double get _balance => widget.total - _sum;
+  bool get _valid => _balance.abs() < 1.0 && _legs.length >= 2;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottomInset),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.call_split, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  const Text('Split payment',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                  const Spacer(),
+                  Text('Total ${AppFmt.money(widget.total)}',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              for (var i = 0; i < _legs.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: DropdownButtonFormField<String>(
+                          value: _legs[i].method,
+                          decoration: const InputDecoration(labelText: 'Method'),
+                          items: const [
+                            DropdownMenuItem(value: 'cash',   child: Text('Cash')),
+                            DropdownMenuItem(value: 'upi',    child: Text('UPI')),
+                            DropdownMenuItem(value: 'card',   child: Text('Card')),
+                            DropdownMenuItem(value: 'online', child: Text('Online')),
+                          ],
+                          onChanged: (v) =>
+                              setState(() => _legs[i].method = v ?? 'cash'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 4,
+                        child: TextField(
+                          controller: _legs[i].ctl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: const InputDecoration(labelText: 'Amount (₹)'),
+                          onChanged: (_) => setState(() {}),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.remove_circle_outline,
+                            color: AppColors.error),
+                        onPressed: _legs.length <= 2 ? null : () {
+                          setState(() {
+                            _legs[i].ctl.dispose();
+                            _legs.removeAt(i);
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              if (_legs.length < 4)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => setState(() =>
+                        _legs.add(_SplitLeg(method: 'cash', ctl: TextEditingController(text: '0')))),
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add leg'),
+                  ),
+                ),
+              const Divider(),
+              Row(
+                children: [
+                  const Text('Balance',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  const Spacer(),
+                  Text(
+                    AppFmt.money(_balance),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: _valid ? AppColors.success : AppColors.error,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, null),
+                      child: const Text('Cancel'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: !_valid ? null : () {
+                        final legs = _legs
+                            .where((l) => (double.tryParse(l.ctl.text.trim()) ?? 0) > 0)
+                            .map((l) => {
+                                  'method': l.method,
+                                  'amountInr': double.parse(l.ctl.text.trim()),
+                                })
+                            .toList();
+                        // P2 fix (2026-08-22): fewer than 2 non-zero legs
+                        // isn't a split — return null so the POS treats it
+                        // as a normal single-tender payment.
+                        Navigator.pop(context, legs.length >= 2 ? legs : null);
+                      },
+                      child: const Text('Save split'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SplitLeg {
+  String method;
+  final TextEditingController ctl;
+  _SplitLeg({required this.method, required this.ctl});
+}

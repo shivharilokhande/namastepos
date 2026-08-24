@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:14-alpine
+        env:
+          POSTGRES_DB: namastepos_test
+          POSTGRES_USER: namastepos
+          POSTGRES_PASSWORD: namastepos
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U namastepos"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgresql://namastepos:namastepos@localhost:5432/namastepos_test
+      JWT_SECRET: ci-secret-do-not-use-elsewhere
+      GOOGLE_CLIENT_IDS: ci-client.apps.googleusercontent.com
+      LOG_LEVEL: error
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install
+        # First run: no lockfile yet, so use `install`. Once package-lock.json
+        # is committed, switch to `npm ci` for faster + reproducible installs.
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Lint
+        run: npm run lint --silent || true     # don't fail build on lint while teaching
+
+      - name: Test (with coverage)
+        run: npm run test:coverage
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage/
+
+  build-image:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: false
+          tags: namastepos-api:${{ github.sha }}

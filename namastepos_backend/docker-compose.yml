@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:14-alpine
+    container_name: namastepos-postgres
+    environment:
+      POSTGRES_DB: namastepos
+      POSTGRES_USER: namastepos
+      # Set in .env next to this file (docker compose reads it automatically).
+      # `:?` makes compose refuse to start with the var unset instead of
+      # shipping a publicly-known password.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports:
+      - "5432:5432"
+    volumes:
+      - namastepos-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U namastepos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: namastepos-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: namastepos-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://namastepos:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/namastepos
+      # No fallback: a compose up without a real secret must fail, not
+      # sign every token with "change-me-in-prod".
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS}
+      # app.js rejects "*" under NODE_ENV=production — must be an explicit list.
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS (comma-separated origins) in .env}
+      LOG_LEVEL: info
+    ports:
+      - "4000:4000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  namastepos-pgdata:

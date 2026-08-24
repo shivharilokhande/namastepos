@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleDisplayName</key>
+	<string>NamastePOS</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>namastepos</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(FLUTTER_BUILD_NAME)</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>whatsapp</string>
+		<string>https</string>
+		<string>http</string>
+	</array>
+	<!-- Google Sign-In (Push 10).
+	     Two keys are needed when google_sign_in is initialised without a
+	     programmatic clientId:
+	       1. GIDClientID — the iOS OAuth client; the native SDK reads this
+	          on startup. Missing → app crashes when the SDK initialises.
+	       2. CFBundleURLTypes with the reversed client ID — the URL the
+	          picker hands back to after the user picks an account. -->
+	<key>GIDClientID</key>
+	<string>971798684721-750jfvtf56ace7hmjp67k8enoa7slh5q.apps.googleusercontent.com</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.971798684721-750jfvtf56ace7hmjp67k8enoa7slh5q</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<!-- App Transport Security (ATS) exceptions for local development.
+	     Without this, iOS silently blocks plain-HTTP calls to localhost
+	     and the LAN, so any non-HTTPS backend (like the dev server on
+	     http://localhost:4000) fails and the app falls into its
+	     "Demo Stall" offline-fallback path inside auth_service.dart.
+	     This block is App Store-safe: only localhost, 127.0.0.1, and
+	     the Android-emulator alias 10.0.2.2 are exempted, not the
+	     whole internet (NSAllowsArbitraryLoads remains false). -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+				<key>NSIncludesSubdomains</key>
+				<true/>
+			</dict>
+			<key>127.0.0.1</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>10.0.2.2</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>NamastePOS uses Bluetooth to connect to your thermal printer so tokens can be printed automatically.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>NamastePOS uses Bluetooth to connect to thermal printers and other POS hardware.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>NamastePOS uses the camera to capture receipts attached to expenses.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>NamastePOS can connect to thermal printers on your local network.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Location is required to discover Bluetooth printers nearby.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>NamastePOS can save receipts to your photo library.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>NamastePOS can save reports and receipts to your photo library.</string>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneClassName</key>
+					<string>UIWindowScene</string>
+					<key>UISceneConfigurationName</key>
+					<string>flutter</string>
+					<key>UISceneDelegateClassName</key>
+					<string>FlutterSceneDelegate</string>
+					<key>UISceneStoryboardFile</key>
+					<string>Main</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIMainStoryboardFile</key>
+	<string>Main</string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<false/>
+</dict>
+</plist>

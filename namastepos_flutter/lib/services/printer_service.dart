@@ -1,0 +1,485 @@
+// NamastePOS — Thermal printer service.
+//
+// Direct Bluetooth ESC/POS printing from the mobile app.
+//
+//   1. The user pairs their thermal printer via the OS Bluetooth Settings
+//      (one-time, done outside the app).
+//   2. Settings → Thermal printer in our app lists *already-paired*
+//      devices via `PrintBluetoothThermal.pairedBluetooths`.
+//   3. The user taps to connect, and the chosen MAC address is persisted.
+//   4. From then on, every "Print" button in the app calls
+//      `printBill(...)` / `printKot(...)` — we generate ESC/POS bytes
+//      with esc_pos_utils_plus and send them via the BT plugin.
+//
+// Why "paired" rather than "scan"?
+//   - Classic Bluetooth pairing is an OS-mediated flow with a PIN
+//     prompt; doing it inside the app would mean shipping our own
+//     pairing UX and re-asking on every reinstall. Reading the OS
+//     paired list is a much better UX for thermal printers, which the
+//     restaurant pairs once and never touches again.
+//   - On iOS, scanning classic-BT devices is not permitted to apps at
+//     all, only MFi-certified ones via the External Accessory framework.
+//
+// Persistence: selected printer is stored under SharedPreferences key
+// `ff_printer_address`. On launch we restore it and lazily reconnect.
+
+import 'dart:async';
+import 'dart:io' show Platform;
+import 'dart:typed_data';
+
+import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
+import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+// Re-export PaperSize so screens can write `PaperSize.mm80` without
+// having to add `esc_pos_utils_plus` to their own imports.
+export 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart' show PaperSize;
+
+import '../models/business.dart';
+import '../models/order.dart';
+import '../utils/formatters.dart';
+
+/// Legacy alias kept for callers that referenced `PrinterPaperSize`.
+typedef PrinterPaperSize = PaperSize;
+
+/// Local descriptor wrapping the plugin's BluetoothInfo so screens don't
+/// have to depend on the package directly.
+class PrinterDevice {
+  final String name;
+  final String address;
+  const PrinterDevice({required this.name, required this.address});
+
+  factory PrinterDevice.fromBluetoothInfo(BluetoothInfo i) =>
+      PrinterDevice(name: i.name, address: i.macAdress);
+}
+
+class PrinterService {
+  PrinterService._();
+  static final PrinterService instance = PrinterService._();
+
+  static const _kAddressKey = 'ff_printer_address';
+  static const _kNameKey    = 'ff_printer_name';
+  static const _kPaperKey   = 'ff_printer_paper';
+
+  PrinterDevice? _selected;
+  PaperSize _paperSize = PaperSize.mm80;
+
+  PrinterDevice? get selected => _selected;
+  bool get hasSelectedPrinter => _selected != null;
+  PaperSize get paperSize => _paperSize;
+  /// Legacy sync setter — kept for callers that already wrote
+  /// `PrinterService.instance.paperSize = …`. Persists in background.
+  set paperSize(PaperSize size) {
+    _paperSize = size;
+    // fire-and-forget — caller doesn't want to await
+    unawaited(setPaperSize(size));
+  }
+
+  /// Restore the user's saved printer + paper size on app launch. Safe to
+  /// call repeatedly — second call is a no-op.
+  Future<void> restore() async {
+    if (_selected != null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final addr  = prefs.getString(_kAddressKey);
+    final name  = prefs.getString(_kNameKey);
+    final paper = prefs.getString(_kPaperKey);
+    if (addr != null && name != null) {
+      _selected = PrinterDevice(name: name, address: addr);
+    }
+    if (paper == 'mm58') _paperSize = PaperSize.mm58;
+  }
+
+  Future<void> setPaperSize(PaperSize size) async {
+    _paperSize = size;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kPaperKey, size == PaperSize.mm58 ? 'mm58' : 'mm80');
+  }
+
+  /// Has the user enabled Bluetooth on their device?
+  Future<bool> isBluetoothOn() async {
+    try {
+      return await PrintBluetoothThermal.bluetoothEnabled;
+    } catch (_) {
+      return true; // assume on so iOS callers aren't blocked
+    }
+  }
+
+  /// Devices the user has already paired in OS Bluetooth Settings.
+  Future<List<PrinterDevice>> pairedDevices() async {
+    try {
+      final list = await PrintBluetoothThermal.pairedBluetooths;
+      return list.map(PrinterDevice.fromBluetoothInfo).toList();
+    } catch (_) {
+      return const <PrinterDevice>[];
+    }
+  }
+
+  /// Connect to a printer. Persists the choice so we restore it on next
+  /// launch. Returns true on success.
+  Future<bool> connect(PrinterDevice device) async {
+    final ok = await PrintBluetoothThermal.connect(macPrinterAddress: device.address);
+    if (!ok) return false;
+    _selected = device;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kAddressKey, device.address);
+    await prefs.setString(_kNameKey,    device.name);
+    return true;
+  }
+
+  Future<void> disconnect() async {
+    try { await PrintBluetoothThermal.disconnect; } catch (_) {}
+    _selected = null;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_kAddressKey);
+    await prefs.remove(_kNameKey);
+  }
+
+  /// True if we have an active BT socket to the selected printer.
+  Future<bool> get isConnected async {
+    try {
+      return await PrintBluetoothThermal.connectionStatus;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  // ── Receipt rendering ──────────────────────────────────────────────
+
+  Future<Uint8List> _buildReceipt({
+    required Business business,
+    required Order order,
+    String? title,
+    bool duplicate = false,
+  }) async {
+    final profile   = await CapabilityProfile.load();
+    final generator = Generator(_paperSize, profile);
+    final bytes     = <int>[];
+
+    // Header
+    bytes.addAll(generator.text(
+      business.name,
+      styles: const PosStyles(
+        align: PosAlign.center, bold: true,
+        height: PosTextSize.size2, width: PosTextSize.size2,
+      ),
+    ));
+    if (business.address != null && business.address!.isNotEmpty) {
+      bytes.addAll(generator.text(business.address!,
+          styles: const PosStyles(align: PosAlign.center)));
+    }
+    if (business.gstin != null && business.gstin!.isNotEmpty) {
+      bytes.addAll(generator.text('GSTIN: ${business.gstin}',
+          styles: const PosStyles(align: PosAlign.center)));
+    }
+    bytes.addAll(generator.hr());
+
+    bytes.addAll(generator.text(
+      title ?? 'Receipt',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    ));
+    if (duplicate) {
+      bytes.addAll(generator.text('** DUPLICATE **',
+          styles: const PosStyles(align: PosAlign.center)));
+    }
+    bytes.addAll(generator.text('Order #${order.orderNo}'));
+    final ts = order.createdAt.toLocal();
+    bytes.addAll(generator.text(
+      '${ts.year}-${ts.month.toString().padLeft(2,'0')}-${ts.day.toString().padLeft(2,'0')} '
+      '${ts.hour.toString().padLeft(2,'0')}:${ts.minute.toString().padLeft(2,'0')}',
+    ));
+    bytes.addAll(generator.hr());
+
+    for (final item in order.items) {
+      bytes.addAll(generator.row([
+        PosColumn(text: '${item.qty}× ${item.name}', width: 8),
+        PosColumn(
+          text: AppFmt.moneyPlain(item.lineTotal),
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]));
+    }
+    bytes.addAll(generator.hr());
+
+    final subtotal = order.subtotal;
+    final tax      = order.tax;
+    final total    = order.total;
+    bytes.addAll(generator.row([
+      PosColumn(text: 'Subtotal', width: 8),
+      PosColumn(
+        text: AppFmt.moneyPlain(subtotal),
+        width: 4,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]));
+    if (tax > 0) {
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Tax', width: 8),
+        PosColumn(
+          text: AppFmt.moneyPlain(tax),
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]));
+    }
+    bytes.addAll(generator.row([
+      PosColumn(text: 'TOTAL', width: 8, styles: const PosStyles(bold: true)),
+      PosColumn(
+        text: AppFmt.moneyPlain(total),
+        width: 4,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
+    ]));
+    bytes.addAll(generator.hr());
+
+    bytes.addAll(generator.text(
+      'Thank you, visit again!',
+      styles: const PosStyles(align: PosAlign.center),
+    ));
+    bytes.addAll(generator.feed(2));
+    bytes.addAll(generator.cut());
+
+    return Uint8List.fromList(bytes);
+  }
+
+  Future<bool> printBill({required Order order, required Business business}) async {
+    if (!await _ensureConnected()) return false;
+    final bytes = await _buildReceipt(
+      business: business, order: order, title: 'TAX INVOICE',
+    );
+    return PrintBluetoothThermal.writeBytes(bytes.toList());
+  }
+
+  Future<bool> printKot({required Order order, required Business business}) async {
+    if (!await _ensureConnected()) return false;
+    final bytes = await _buildReceipt(
+      business: business, order: order, title: 'KITCHEN ORDER',
+    );
+    return PrintBluetoothThermal.writeBytes(bytes.toList());
+  }
+
+  /// Print ONE consolidated bill for an entire table session. This is
+  /// what the customer gets at settlement — not the per-KOT receipts.
+  ///
+  /// Pass the session map returned by GET /v1/businesses/:bid/ops/sessions/:id
+  /// (we read fields off it directly to avoid a new dedicated model).
+  Future<bool> printSessionBill({
+    required Map<String, dynamic> session,
+    required Business business,
+  }) async {
+    if (!await _ensureConnected()) return false;
+    final profile   = await CapabilityProfile.load();
+    final generator = Generator(_paperSize, profile);
+    final bytes     = <int>[];
+
+    // Header
+    bytes.addAll(generator.text(
+      business.name,
+      styles: const PosStyles(
+        align: PosAlign.center, bold: true,
+        height: PosTextSize.size2, width: PosTextSize.size2,
+      ),
+    ));
+    if (business.address != null && business.address!.isNotEmpty) {
+      bytes.addAll(generator.text(business.address!,
+          styles: const PosStyles(align: PosAlign.center)));
+    }
+    if (business.gstin != null && business.gstin!.isNotEmpty) {
+      bytes.addAll(generator.text('GSTIN: ${business.gstin}',
+          styles: const PosStyles(align: PosAlign.center)));
+    }
+    bytes.addAll(generator.hr());
+
+    // Bill ID — last 8 chars of the session id is short + collision-safe
+    // enough for a single table-night. KOT numbers stay internal to the
+    // kitchen; the customer only sees this one.
+    final sessId = (session['id'] ?? '').toString();
+    final billNo = sessId.length >= 8
+        ? sessId.substring(sessId.length - 8).toUpperCase()
+        : sessId.toUpperCase();
+    bytes.addAll(generator.text(
+      'TAX INVOICE',
+      styles: const PosStyles(align: PosAlign.center, bold: true),
+    ));
+    bytes.addAll(generator.text(
+      'Bill #$billNo',
+      styles: const PosStyles(align: PosAlign.center),
+    ));
+    final tableLabel = session['tableLabel']?.toString();
+    if (tableLabel != null && tableLabel.isNotEmpty) {
+      bytes.addAll(generator.text('Table $tableLabel',
+          styles: const PosStyles(align: PosAlign.center)));
+    }
+    final guests = session['guestCount'];
+    if (guests != null) {
+      bytes.addAll(generator.text('Guests: $guests',
+          styles: const PosStyles(align: PosAlign.center)));
+    }
+    final closedAt = session['closedAt'] ?? session['openedAt'];
+    if (closedAt != null) {
+      final dt = DateTime.tryParse(closedAt.toString())?.toLocal();
+      if (dt != null) {
+        bytes.addAll(generator.text(
+          '${dt.year}-${dt.month.toString().padLeft(2,'0')}-${dt.day.toString().padLeft(2,'0')} '
+          '${dt.hour.toString().padLeft(2,'0')}:${dt.minute.toString().padLeft(2,'0')}',
+          styles: const PosStyles(align: PosAlign.center),
+        ));
+      }
+    }
+    final cust = (session['customerName'] ?? '').toString();
+    final phone = (session['customerPhone'] ?? '').toString();
+    if (cust.isNotEmpty || phone.isNotEmpty) {
+      bytes.addAll(generator.text(
+        [cust, phone].where((s) => s.isNotEmpty).join(' · '),
+        styles: const PosStyles(align: PosAlign.center),
+      ));
+    }
+    bytes.addAll(generator.hr());
+
+    // Items — flattened across every KOT. Group identical (name, price)
+    // lines so "2× Chai from KOT 1 + 1× Chai from KOT 2" prints as
+    // "3× Chai", which is what customers expect to see on a final bill.
+    final rawItems = (session['items'] as List?) ?? const [];
+    final grouped = <String, Map<String, dynamic>>{};
+    for (final it in rawItems) {
+      if (it is! Map) continue;
+      final name = (it['name'] ?? '').toString();
+      final price = (it['price'] as num?)?.toDouble() ?? 0;
+      final qty = (it['qty'] as num?)?.toDouble() ?? 0;
+      final key = '$name|$price';
+      final existing = grouped[key];
+      if (existing == null) {
+        grouped[key] = {
+          'name': name, 'price': price, 'qty': qty,
+          'lineTotal': price * qty,
+        };
+      } else {
+        existing['qty'] = (existing['qty'] as double) + qty;
+        existing['lineTotal'] = (existing['lineTotal'] as double) + price * qty;
+      }
+    }
+    for (final g in grouped.values) {
+      final qty = g['qty'] as double;
+      final qtyText = qty == qty.toInt() ? qty.toInt().toString() : qty.toString();
+      bytes.addAll(generator.row([
+        PosColumn(text: '$qtyText× ${g['name']}', width: 8),
+        PosColumn(
+          text: AppFmt.moneyPlain(g['lineTotal'] as double),
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]));
+    }
+    bytes.addAll(generator.hr());
+
+    // Totals from the backend (already summed across non-cancelled orders)
+    double subtotal = (session['subtotalInr'] as num?)?.toDouble() ?? 0;
+    double tax      = (session['taxInr']      as num?)?.toDouble() ?? 0;
+    double discount = (session['discountInr'] as num?)?.toDouble() ?? 0;
+    double total    = (session['totalInr']    as num?)?.toDouble() ?? 0;
+    bytes.addAll(generator.row([
+      PosColumn(text: 'Subtotal', width: 8),
+      PosColumn(
+        text: AppFmt.moneyPlain(subtotal),
+        width: 4,
+        styles: const PosStyles(align: PosAlign.right),
+      ),
+    ]));
+    if (discount > 0) {
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Discount', width: 8),
+        PosColumn(
+          text: '-${AppFmt.moneyPlain(discount)}',
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]));
+    }
+    if (tax > 0) {
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Tax', width: 8),
+        PosColumn(
+          text: AppFmt.moneyPlain(tax),
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]));
+    }
+    bytes.addAll(generator.row([
+      PosColumn(text: 'TOTAL', width: 8, styles: const PosStyles(bold: true)),
+      PosColumn(
+        text: AppFmt.moneyPlain(total),
+        width: 4,
+        styles: const PosStyles(align: PosAlign.right, bold: true),
+      ),
+    ]));
+    bytes.addAll(generator.hr());
+
+    bytes.addAll(generator.text(
+      'Thank you, visit again!',
+      styles: const PosStyles(align: PosAlign.center),
+    ));
+    bytes.addAll(generator.feed(2));
+    bytes.addAll(generator.cut());
+
+    return PrintBluetoothThermal.writeBytes(bytes);
+  }
+
+  /// Tiny test page — banner + timestamp + paper size.
+  Future<bool> printTest(Business? business) async {
+    if (!await _ensureConnected()) return false;
+    final profile   = await CapabilityProfile.load();
+    final generator = Generator(_paperSize, profile);
+    final bytes     = <int>[];
+    bytes.addAll(generator.text(
+      business?.name ?? 'NamastePOS',
+      styles: const PosStyles(
+        align: PosAlign.center, bold: true,
+        height: PosTextSize.size2, width: PosTextSize.size2,
+      ),
+    ));
+    bytes.addAll(generator.text('Printer test',
+        styles: const PosStyles(align: PosAlign.center)));
+    bytes.addAll(generator.hr());
+    final ts = DateTime.now();
+    bytes.addAll(generator.text(
+      '${ts.year}-${ts.month.toString().padLeft(2,'0')}-${ts.day.toString().padLeft(2,'0')} '
+      '${ts.hour.toString().padLeft(2,'0')}:${ts.minute.toString().padLeft(2,'0')}',
+      styles: const PosStyles(align: PosAlign.center),
+    ));
+    bytes.addAll(generator.text(
+      'Paper: ${_paperSize == PaperSize.mm58 ? '58mm' : '80mm'}',
+      styles: const PosStyles(align: PosAlign.center),
+    ));
+    bytes.addAll(generator.feed(2));
+    bytes.addAll(generator.cut());
+    return PrintBluetoothThermal.writeBytes(bytes);
+  }
+
+  /// Legacy alias kept for backward compatibility with screens that
+  /// already imported `printToken(order, business)`.
+  Future<bool> printToken(Order order, Business business) =>
+      printBill(order: order, business: business);
+
+  Future<bool> _ensureConnected() async {
+    // Lazy-restore the saved printer the first time a print is attempted.
+    // Means callers don't have to remember to call restore() in main.dart.
+    if (_selected == null) await restore();
+    if (_selected == null) return false;
+    if (await isConnected) return true;
+    return PrintBluetoothThermal.connect(macPrinterAddress: _selected!.address);
+  }
+
+  /// Hint surfaced on the setup screen. iOS is restricted; we explain
+  /// rather than silently failing.
+  String get platformNote {
+    if (Platform.isIOS) {
+      return 'iOS only lists MFi-certified Bluetooth printers. If your '
+             "printer doesn't appear here even after pairing it in "
+             'Settings → Bluetooth, it\'s not MFi-certified. Use an '
+             'Android device for non-MFi printers.';
+    }
+    return "Pair your printer in your phone's Bluetooth Settings first, "
+           'then return here and tap Refresh.';
+  }
+}

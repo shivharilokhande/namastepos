@@ -1,0 +1,102 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file('local.properties')
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withReader('UTF-8') { reader -> localProperties.load(reader) }
+}
+
+def flutterVersionCode = localProperties.getProperty('flutter.versionCode') ?: '1'
+def flutterVersionName = localProperties.getProperty('flutter.versionName') ?: '1.0.0'
+
+// Release signing (hardcode-audit fix 2026-08-24). Create android/key.properties:
+//   storeFile=/absolute/path/to/upload-keystore.jks
+//   storePassword=...
+//   keyAlias=upload
+//   keyPassword=...
+// key.properties and *.jks are gitignored. A release build WITHOUT it now
+// fails loudly instead of silently signing with the shared debug key.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('key.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withReader('UTF-8') { reader -> keystoreProperties.load(reader) }
+}
+
+android {
+    namespace "in.namastepos.app"
+    // compileSdk bumped to 36 because androidx.core 1.18 / androidx.activity
+    // 1.12 / androidx.browser 1.9 (transitive deps of newer plugins) require it.
+    compileSdk 37
+    // ndkVersion pinned because the `jni` plugin pulls NDK 28.2.13676358.
+    ndkVersion '28.2.13676358'
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        // Required by flutter_local_notifications — back-ports newer java.time
+        // APIs to API levels below 26.
+        coreLibraryDesugaringEnabled true
+    }
+    kotlinOptions { jvmTarget = '17' }
+
+    defaultConfig {
+        applicationId "in.namastepos.app"
+        minSdkVersion flutter.minSdkVersion                              // BLE requires 23+
+        targetSdkVersion 37
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
+        multiDexEnabled true
+    }
+
+    signingConfigs {
+        if (keystorePropertiesFile.exists()) {
+            release {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            } else {
+                // Fail closed: never ship a debug-signed release artifact.
+                gradle.taskGraph.whenReady { graph ->
+                    if (graph.allTasks.any { it.name.toLowerCase().contains('release') }) {
+                        throw new GradleException(
+                            'Release build requires android/key.properties (see comment at top of build.gradle). ' +
+                            'Refusing to sign a release with the debug keystore.')
+                    }
+                }
+            }
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    packagingOptions {
+        resources.excludes += [
+            '/META-INF/{AL2.0,LGPL2.1}',
+            'META-INF/LICENSE*',
+        ]
+    }
+}
+
+flutter {
+    source '../..'
+}
+
+dependencies {
+    implementation "androidx.multidex:multidex:2.0.1"
+    // Back-port of java.time / nio APIs required by
+    // flutter_local_notifications when the device runs an SDK below 26.
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
+}

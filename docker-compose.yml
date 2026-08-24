@@ -1,0 +1,106 @@
+# NamastePOS SaaS — full stack
+#
+# Brings up the backend API, Postgres, Redis, and both web panels.
+# The Flutter mobile app is *not* in this compose (it builds via Android/iOS
+# toolchains separately — see HOW_TO_RUN.md).
+#
+# Usage from the repo root:
+#   docker-compose up -d
+#
+# Override the Google + Razorpay client IDs via environment or an `.env`
+# file alongside this compose file.
+
+services:
+  postgres:
+    image: postgres:14-alpine
+    container_name: ff-postgres
+    environment:
+      POSTGRES_DB: namastepos
+      POSTGRES_USER: namastepos
+      # Required — set in .env next to this compose file.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    ports: ["5432:5432"]
+    volumes: [ff-pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U namastepos"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: ff-redis
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: ./namastepos_backend
+      dockerfile: Dockerfile
+    container_name: ff-api
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis:    { condition: service_healthy }
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://namastepos:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/namastepos
+      # No fallback: compose up without a real secret must fail closed.
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      GOOGLE_CLIENT_IDS: ${GOOGLE_CLIENT_IDS}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET}
+      # No default email — a predictable super-admin identity was half the
+      # credential pair. Both must be set for bootstrap to run.
+      SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
+      # app.js rejects "*" under NODE_ENV=production — explicit list required.
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS (comma-separated origins) in .env}
+      LOG_LEVEL: info
+    ports: ["4000:4000"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:4000/health || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+
+  # Web admin panel — Vite dev server is fine for local; for prod run `npm run build`
+  # and serve the static `dist/` from an nginx / Vercel / Netlify host.
+  admin:
+    image: node:20-alpine
+    container_name: ff-admin
+    working_dir: /app
+    volumes:
+      - ./namastepos_admin:/app
+      - ff-admin-node:/app/node_modules
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0 --port 5173"
+    environment:
+      VITE_API_URL: http://api:4000
+    ports: ["5173:5173"]
+    depends_on: [api]
+
+  dashboard:
+    image: node:20-alpine
+    container_name: ff-dashboard
+    working_dir: /app
+    volumes:
+      - ./namastepos_dashboard:/app
+      - ff-dashboard-node:/app/node_modules
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0 --port 5174"
+    environment:
+      VITE_API_URL: http://api:4000
+      VITE_GOOGLE_CLIENT_ID: ${GOOGLE_WEB_CLIENT_ID}
+    ports: ["5174:5174"]
+    depends_on: [api]
+
+volumes:
+  ff-pgdata:
+  ff-admin-node:
+  ff-dashboard-node:

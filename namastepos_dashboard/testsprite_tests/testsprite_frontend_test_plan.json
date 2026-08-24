@@ -1,0 +1,1259 @@
+[
+  {
+    "id": "TC001",
+    "title": "Staff creates an order and marks it collected",
+    "description": "This verifies a POS order can be created and moved through the operational lifecycle until collection completes the sale.",
+    "category": "Orders + POS",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open orders"
+      },
+      {
+        "type": "action",
+        "description": "Start a new POS order"
+      },
+      {
+        "type": "action",
+        "description": "Add an available menu item to the order"
+      },
+      {
+        "type": "action",
+        "description": "Set a valid quantity for the item"
+      },
+      {
+        "type": "action",
+        "description": "Submit the new order"
+      },
+      {
+        "type": "action",
+        "description": "Update the order status to ready"
+      },
+      {
+        "type": "action",
+        "description": "Update the order status to collected"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the order appears in the live order list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a tax invoice is linked to the collected order"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "Owner signs in and sees business context",
+    "description": "This verifies an owner can sign in with email and password and land with their business profile and plan features available.",
+    "category": "Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the owner dashboard content is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the business profile and plan features are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Place a guest order from the public menu",
+    "description": "This verifies a guest can submit an order from the public menu and receive confirmation.",
+    "category": "QR codes",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the guest menu entry route for a valid table QR token"
+      },
+      {
+        "type": "action",
+        "description": "Select one or more available menu items"
+      },
+      {
+        "type": "action",
+        "description": "Submit the guest order"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an order confirmation is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the submitted order is acknowledged"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Owner resumes session after refresh",
+    "description": "This verifies an authenticated owner session is restored and the current account context remains available after revisiting the app.",
+    "category": "Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the owner remains signed in"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the current business context is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "Open the public guest menu from a table QR",
+    "description": "This verifies a guest can open the public menu from a valid table QR without signing in.",
+    "category": "QR codes",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the guest menu entry route for a valid table QR token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the public guest menu is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify menu items are visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "Owner sees invoice details for a collected order",
+    "description": "This verifies a collected POS order exposes its generated GST tax invoice in the order workflow.",
+    "category": "Orders + POS",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open orders"
+      },
+      {
+        "type": "action",
+        "description": "Open a collected order"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify tax invoice details are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify invoice print preview access is available"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Owner creates a menu item and sees it in the list",
+    "description": "This verifies an owner can add a new active menu item with pricing and tax details and then see it appear in menu management.",
+    "category": "Menu management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open menu management"
+      },
+      {
+        "type": "action",
+        "description": "Start creating a new menu item"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the item name with a unique test name"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the price field with a valid amount"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the GST field with a valid tax percentage"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the HSN code field with a valid code"
+      },
+      {
+        "type": "action",
+        "description": "Save the menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new menu item is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the item is available for ordering"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "Owner views the active menu list",
+    "description": "This verifies an authenticated owner can open menu management and see the current active items grouped for editing.",
+    "category": "Menu management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open menu management"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify active menu items are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify menu categories are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "View a tax invoice and its print preview",
+    "description": "This verifies that an authenticated owner can open a tax invoice from the invoices area and view the invoice details and printable preview.",
+    "category": "Tax invoices (GST Rule 46)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to the invoices page"
+      },
+      {
+        "type": "action",
+        "description": "Open a tax invoice record"
+      },
+      {
+        "type": "action",
+        "description": "Open the print preview for the invoice"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the invoice details are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a printable invoice preview is displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC010",
+    "title": "Owner views the live order list",
+    "description": "This verifies an authenticated owner can open the orders page and see the current live orders list.",
+    "category": "Orders + POS",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open orders"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify live orders are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify order statuses are displayed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC011",
+    "title": "Create a staff member with a PIN",
+    "description": "This verifies an owner can add a new staff member with role, contact details, and PIN.",
+    "category": "Staff (PIN-based)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Open the staff management page"
+      },
+      {
+        "type": "action",
+        "description": "Add a new staff member"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the staff name field with Test Cashier"
+      },
+      {
+        "type": "action",
+        "description": "Select a staff role"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the phone field with a valid phone number"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the PIN field with a valid 4-digit PIN"
+      },
+      {
+        "type": "action",
+        "description": "Submit the staff form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new staff member appears in the staff list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the staff member is active"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC012",
+    "title": "Owner updates an existing menu item",
+    "description": "This verifies an owner can edit a menu item and see the saved changes reflected in menu management.",
+    "category": "Menu management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open menu management"
+      },
+      {
+        "type": "action",
+        "description": "Select an existing menu item to edit"
+      },
+      {
+        "type": "action",
+        "description": "Update the price to a new valid amount"
+      },
+      {
+        "type": "action",
+        "description": "Update the stock to a valid quantity"
+      },
+      {
+        "type": "action",
+        "description": "Save the menu item"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated menu item is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the saved changes are reflected"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC013",
+    "title": "View table QR code for printing",
+    "description": "This verifies an owner can open a table QR code and see a persistent QR ready for printing.",
+    "category": "QR codes",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Open the QR codes page"
+      },
+      {
+        "type": "action",
+        "description": "Select a table to manage"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a QR code for the selected table is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify table QR details are visible"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC014",
+    "title": "Review P&L statement for a date range",
+    "description": "This verifies that an authenticated owner can open the P&L report for a valid date range and see the resulting financial summary.",
+    "category": "Reports - P&L statement",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to the reports page"
+      },
+      {
+        "type": "action",
+        "description": "Select the P&L statement report"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid start date into the date range field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid end date into the date range field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the P&L summary is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the report data is displayed for the selected date range"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC015",
+    "title": "Rotate a table QR code",
+    "description": "This verifies an owner can rotate a table QR and the updated code is shown for reuse.",
+    "category": "QR codes",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Open the QR codes page"
+      },
+      {
+        "type": "action",
+        "description": "Select a table to manage"
+      },
+      {
+        "type": "action",
+        "description": "Rotate the table QR code"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an updated QR code is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the previous QR is no longer shown"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC016",
+    "title": "Update an existing staff member",
+    "description": "This verifies an owner can edit a staff member's profile or permissions and see the updated record saved.",
+    "category": "Staff (PIN-based)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Open the staff management page"
+      },
+      {
+        "type": "action",
+        "description": "Select an existing staff member"
+      },
+      {
+        "type": "action",
+        "description": "Update the staff member's role or permissions"
+      },
+      {
+        "type": "action",
+        "description": "Save the staff changes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated staff record is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the staff member remains active or changes to the selected state"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC017",
+    "title": "View the income register",
+    "description": "This verifies that an authenticated owner can open the income register and see transaction-level income entries.",
+    "category": "Reports - Income / Expense / Invoice registers",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to the reports page"
+      },
+      {
+        "type": "action",
+        "description": "Select the income register report"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the income register is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify transaction entries or an empty state are visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC018",
+    "title": "View the invoice register",
+    "description": "This verifies that an authenticated owner can open the invoice register and review issued tax invoices.",
+    "category": "Reports - Income / Expense / Invoice registers",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to the reports page"
+      },
+      {
+        "type": "action",
+        "description": "Select the invoice register report"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the invoice register is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify tax invoice entries or an empty state are visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC019",
+    "title": "View billing plans and current subscription",
+    "description": "This verifies an owner can load available plans and see the business's current subscription details.",
+    "category": "Billing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Open the billing page"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify plan options are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the current subscription is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC020",
+    "title": "Export the P&L statement in multiple formats",
+    "description": "This verifies that an authenticated owner can export the P&L statement as PDF, spreadsheet, and CSV from the reports page.",
+    "category": "Reports - P&L statement",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to the reports page"
+      },
+      {
+        "type": "action",
+        "description": "Select the P&L statement report"
+      },
+      {
+        "type": "action",
+        "description": "Click the export as PDF control"
+      },
+      {
+        "type": "action",
+        "description": "Click the export as spreadsheet control"
+      },
+      {
+        "type": "action",
+        "description": "Click the export as CSV control"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify report export controls are available"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the exported report options are initiated from the page"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC021",
+    "title": "Start a paid plan checkout",
+    "description": "This verifies an owner can begin switching to a paid plan and reach the checkout handoff screen.",
+    "category": "Billing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Open the billing page"
+      },
+      {
+        "type": "action",
+        "description": "Choose a paid plan"
+      },
+      {
+        "type": "action",
+        "description": "Continue to checkout"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the checkout handoff is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the selected plan is pending purchase"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC022",
+    "title": "Owner sees validation when required menu fields are missing",
+    "description": "This verifies menu creation is blocked until the required item details are provided.",
+    "category": "Menu management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open menu management"
+      },
+      {
+        "type": "action",
+        "description": "Start creating a new menu item"
+      },
+      {
+        "type": "action",
+        "description": "Save the menu item without filling required fields"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify menu validation errors are visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the menu item is not created"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC023",
+    "title": "View the expense register with a date range that has no records",
+    "description": "This verifies that an authenticated owner can open the expense register and see a valid empty state when no expenses exist for the selected period.",
+    "category": "Reports - Income / Expense / Invoice registers",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to the reports page"
+      },
+      {
+        "type": "action",
+        "description": "Select the expense register report"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid start date into the date range field"
+      },
+      {
+        "type": "action",
+        "description": "Fill a valid end date into the date range field"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the expense register is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an empty state or zeroed summary is visible"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC024",
+    "title": "Cancel a tax invoice with a required reason",
+    "description": "This verifies that an authenticated owner can cancel an issued tax invoice only after providing a cancellation reason.",
+    "category": "Tax invoices (GST Rule 46)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to the invoices page"
+      },
+      {
+        "type": "action",
+        "description": "Open a tax invoice record"
+      },
+      {
+        "type": "action",
+        "description": "Start the invoice cancellation flow"
+      },
+      {
+        "type": "action",
+        "description": "Fill a cancellation reason into the reason field"
+      },
+      {
+        "type": "action",
+        "description": "Submit the cancellation form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the invoice is marked as cancelled"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the cancellation reason is recorded in the UI"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC025",
+    "title": "View subscription invoice history",
+    "description": "This verifies an owner can open the billing invoice history and see past SaaS invoices.",
+    "category": "Billing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the form"
+      },
+      {
+        "type": "action",
+        "description": "Open the billing page"
+      },
+      {
+        "type": "action",
+        "description": "Open the invoice history section"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify subscription invoices are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an invoice history list is visible"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC026",
+    "title": "Owner sees a sign-in failure for invalid credentials",
+    "description": "This verifies invalid credentials are rejected and the sign-in form stays available for another attempt.",
+    "category": "Authentication",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with invalid@example.com"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with an invalid password"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a sign-in error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the sign-in form remains available"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC027",
+    "title": "Reject access with an invalid guest QR token",
+    "description": "This verifies an invalid or expired guest QR token prevents access to the public menu.",
+    "category": "QR codes",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to the guest menu entry route for an invalid table QR token"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an access denied state is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the public menu is not displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC028",
+    "title": "Owner is blocked from creating an order with invalid menu items",
+    "description": "This verifies the POS order form rejects invalid item references and does not create an order.",
+    "category": "Orders + POS",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the sign-in form"
+      },
+      {
+        "type": "action",
+        "description": "Click the link to open orders"
+      },
+      {
+        "type": "action",
+        "description": "Start a new POS order"
+      },
+      {
+        "type": "action",
+        "description": "Add an invalid menu item reference"
+      },
+      {
+        "type": "action",
+        "description": "Submit the new order"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an order validation error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the order is not created"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC029",
+    "title": "Block invoice cancellation without a reason",
+    "description": "This verifies that an authenticated owner cannot submit a tax invoice cancellation without the required reason.",
+    "category": "Tax invoices (GST Rule 46)",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /login"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the email field with {{LOGIN_USER}}"
+      },
+      {
+        "type": "action",
+        "description": "Fill in the password field with {{LOGIN_PASSWORD}}"
+      },
+      {
+        "type": "action",
+        "description": "Submit the login form"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to the invoices page"
+      },
+      {
+        "type": "action",
+        "description": "Open a tax invoice record"
+      },
+      {
+        "type": "action",
+        "description": "Start the invoice cancellation flow"
+      },
+      {
+        "type": "action",
+        "description": "Submit the cancellation form without entering a reason"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a cancellation validation error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the invoice remains active"
+      }
+    ],
+    "priority": "Low"
+  }
+]

@@ -1,0 +1,15 @@
+{
+  "name": "namastepos-print-agent",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local daemon that polls NamastePOS for print jobs and pushes ESC/POS bytes to a thermal printer over network (LAN/Wi-Fi) or Bluetooth.",
+  "main": "src/agent.js",
+  "scripts": {
+    "start": "node src/agent.js",
+    "dev": "node --watch src/agent.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5"
+  }
+}

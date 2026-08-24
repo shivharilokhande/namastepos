@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NamastePOS — POS, billing and growth for Indian restaurants</title>
+  <meta name="description" content="The simplest POS for Indian cafés, restaurants and street vendors. GST-ready, QR ordering, WhatsApp invoicing, runs on any phone." />
+  <meta name="theme-color" content="#FF6B35" />
+
+  <!-- Open Graph / Twitter -->
+  <meta property="og:title" content="NamastePOS — POS, billing and growth for Indian restaurants" />
+  <meta property="og:description" content="Made for ₹5,000-a-day stalls and 50-table multi-outlet chains alike." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://namastepos.in" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <!-- Tailwind via CDN — perfectly fine for a single static page -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              DEFAULT: '#FF6B35',
+              dark:    '#E85525',
+              light:   '#FF8B5A',
+            },
+            teal:    '#2EC4B6',
+            saffron: '#FFB627',
+            ink:     '#111827',
+          },
+          fontFamily: { sans: ['Inter','system-ui','-apple-system','Segoe UI','Roboto','sans-serif'] },
+        },
+      },
+    };
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <style>
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .gradient-text {
+      background: linear-gradient(135deg, #FF6B35 0%, #FFB627 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .gradient-bg {
+      background: radial-gradient(at 20% 0%, rgba(255,107,53,0.10) 0%, transparent 50%),
+                  radial-gradient(at 80% 0%, rgba(46,196,182,0.08) 0%, transparent 50%),
+                  #FFFFFF;
+    }
+  </style>
+</head>
+<body class="text-ink antialiased">
+
+<!-- DASHBOARD/APP URLs.
+     P0 fix (2026-08-22): these were hardcoded to localhost, so every
+     CTA on the deployed page was dead. Now derived at runtime from the
+     page's own hostname using the app./api. subdomain convention —
+     works on any apex domain with zero edits. Local dev still gets the
+     dev ports. Override any value by editing the `overrides` object. -->
+<script>
+  (function () {
+    var host = window.location.hostname;
+    var isLocal = host === 'localhost' || host === '127.0.0.1' || host === '';
+    // strip a leading www. to find the apex domain
+    var apex = host.replace(/^www\./, '');
+    var appBase = isLocal ? 'http://localhost:5174' : 'https://app.' + apex;
+    var apiBase = isLocal ? 'http://localhost:4000/v1' : 'https://api.' + apex + '/v1';
+    var overrides = {
+      // e.g. app: 'https://dashboard.example.in'
+    };
+    window.NAMASTEPOS_URLS = Object.assign({
+      app:       appBase,
+      register:  appBase + '/register',
+      login:     appBase + '/login',
+      // 2026-08-24: legal pages are now static files on THIS site so they
+      // work before the app dashboard is deployed (and are the URLs
+      // registered on the Google OAuth consent screen).
+      privacy:   '/privacy.html',
+      terms:     '/terms.html',
+      grievance: '/privacy.html#grievance',
+      // Public endpoint that returns { plans: [...] }. The pricing
+      // section fetches this on load so the landing-page numbers
+      // always match what super-admin has configured. Falls back to
+      // a hardcoded copy below if the API is unreachable.
+      api:       apiBase,
+    }, overrides);
+  })();
+</script>
+
+<!-- ───── NAV ───── -->
+<header class="sticky top-0 z-40 backdrop-blur bg-white/80 border-b border-gray-200">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+    <a href="/" class="flex items-center gap-2">
+      <div class="h-9 w-9 grid place-items-center rounded-xl bg-brand text-white">
+        <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18l-2 9H5l-2-9z"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+      </div>
+      <span class="font-black text-xl">NamastePOS</span>
+    </a>
+    <nav class="hidden md:flex items-center gap-7 text-sm font-semibold text-gray-600">
+      <a href="#features" class="hover:text-ink">Features</a>
+      <a href="#pricing" class="hover:text-ink">Pricing</a>
+      <a href="#why" class="hover:text-ink">Why us</a>
+      <a href="#faq" class="hover:text-ink">FAQ</a>
+    </nav>
+    <div class="flex items-center gap-2">
+      <a id="cta-login" href="#" class="hidden sm:inline-block text-sm font-semibold text-gray-700 hover:text-ink px-3 py-1.5">Log in</a>
+      <a id="cta-signup" href="#" class="text-sm font-bold bg-brand hover:bg-brand-dark text-white px-4 py-2 rounded-lg transition">Start free</a>
+    </div>
+  </div>
+</header>
+
+<!-- ───── HERO ───── -->
+<section class="gradient-bg">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 pt-12 sm:pt-20 pb-12 sm:pb-24 text-center">
+    <div class="inline-flex items-center gap-2 bg-brand/10 text-brand-dark px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-5">
+      <span class="h-2 w-2 rounded-full bg-brand animate-pulse"></span>
+      Built in India · DPDP-ready · Hosted in Mumbai
+    </div>
+    <h1 class="text-4xl sm:text-6xl font-black tracking-tight leading-tight">
+      The POS that doesn't <br class="hidden sm:block"/>
+      <span class="gradient-text">slow you down</span>
+    </h1>
+    <p class="mt-6 text-lg sm:text-xl text-gray-600 max-w-2xl mx-auto">
+      Take orders, send GST invoices, run KOTs to the kitchen, accept QR payments, and grow with WhatsApp marketing — all from a single ₹0 starter plan.
+    </p>
+    <div class="mt-9 flex flex-col sm:flex-row gap-3 justify-center">
+      <a id="cta-hero" href="#download" class="inline-block bg-brand hover:bg-brand-dark text-white font-bold px-7 py-3.5 rounded-xl shadow-lg shadow-brand/20 transition">
+        Download the app
+      </a>
+      <a href="#features" class="inline-block bg-white border border-gray-300 hover:border-gray-400 text-ink font-semibold px-7 py-3.5 rounded-xl transition">
+        See features
+      </a>
+    </div>
+    <p class="mt-4 text-xs text-gray-500">Free Starter plan · 14-day Pro trial · No credit card</p>
+
+    <!-- Beta APK download block — swap to Play Store link once approved -->
+    <div id="download" class="mt-14 max-w-2xl mx-auto text-left">
+      <div class="bg-white border-2 border-brand/20 rounded-2xl p-6 sm:p-7 shadow-lg">
+        <div class="flex items-start gap-4">
+          <div class="hidden sm:flex h-12 w-12 rounded-xl bg-brand/10 items-center justify-center text-brand text-2xl font-black shrink-0">↓</div>
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="inline-block bg-brand text-white text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded">Android beta</span>
+              <span class="text-xs text-gray-500">Play Store listing coming in 2 days</span>
+            </div>
+            <h3 class="text-lg font-black text-ink">Get NamastePOS on your phone</h3>
+            <p class="text-sm text-gray-600 mt-1">
+              Direct APK for early customers. Works on Android 8.0+.
+              Google Sign-In, GST invoices, KOT printing, QR ordering — all in one 22 MB app.
+            </p>
+            <div class="mt-4 flex flex-wrap gap-3">
+              <a href="/downloads/namastepos-latest.apk"
+                 download
+                 class="inline-flex items-center gap-2 bg-ink hover:bg-black text-white font-bold px-5 py-3 rounded-xl transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.5 12.5V19a1.5 1.5 0 0 1-1.5 1.5H8A1.5 1.5 0 0 1 6.5 19v-6.5H4l8-9 8 9h-2.5ZM3 22h18v-1.5H3V22Z"/></svg>
+                Download APK v1.0.0-beta
+              </a>
+              <button
+                onclick="window.open('https://wa.me/?text='+encodeURIComponent('Try NamastePOS — the POS built for Indian restaurants: '+window.location.origin+'/#download'),'_blank')"
+                class="inline-flex items-center gap-2 bg-white border-2 border-gray-200 hover:border-brand text-ink font-semibold px-5 py-3 rounded-xl transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20 12c0 4.418-4.03 8-9 8a9.7 9.7 0 0 1-3.42-.62L4 20l.7-3.16A7.6 7.6 0 0 1 3 12c0-4.418 4.03-8 9-8s8 3.582 8 8Z"/></svg>
+                Share on WhatsApp
+              </button>
+            </div>
+            <details class="mt-4 text-xs text-gray-600">
+              <summary class="cursor-pointer font-semibold text-gray-700 hover:text-brand">
+                How to install (30 seconds)
+              </summary>
+              <ol class="mt-2 space-y-1 list-decimal list-inside">
+                <li>Tap <em>Download APK</em> above.</li>
+                <li>When your browser asks, tap <em>Download anyway</em>.</li>
+                <li>Open the downloaded file. If Android asks to allow installs from your browser, allow it once and tap <em>Install</em>.</li>
+                <li>Open NamastePOS, sign in with Google, and start taking orders.</li>
+              </ol>
+              <p class="mt-2 text-gray-500">
+                Beta apps aren't from the Play Store, so Android may show a security prompt — that's normal for direct APKs. The Play Store version drops in a couple of days.
+              </p>
+            </details>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Phone + dashboard mockup -->
+    <div class="mt-12 sm:mt-16 max-w-4xl mx-auto">
+      <div class="relative">
+        <div class="bg-gradient-to-br from-brand/20 via-saffron/10 to-teal/20 rounded-3xl p-4 sm:p-8 shadow-2xl">
+          <div class="bg-white rounded-2xl border border-gray-200 shadow-xl overflow-hidden">
+            <!-- Browser chrome -->
+            <div class="bg-gray-100 px-4 py-2.5 flex items-center gap-2 border-b">
+              <div class="flex gap-1.5">
+                <span class="h-3 w-3 rounded-full bg-red-400"></span>
+                <span class="h-3 w-3 rounded-full bg-yellow-400"></span>
+                <span class="h-3 w-3 rounded-full bg-green-400"></span>
+              </div>
+              <div class="flex-1 text-center text-xs text-gray-500 font-mono">app.namastepos.in/orders</div>
+            </div>
+            <!-- Dashboard preview -->
+            <div class="p-6 sm:p-8 grid sm:grid-cols-3 gap-4 text-left">
+              <div class="sm:col-span-2 space-y-3">
+                <div class="text-sm font-bold text-gray-700">Today · ₹14,820</div>
+                <div class="grid grid-cols-3 gap-2">
+                  <div class="bg-brand/10 rounded-lg p-3"><div class="text-2xl font-black text-brand">42</div><div class="text-[10px] text-gray-600 uppercase tracking-wide">Orders</div></div>
+                  <div class="bg-teal/10 rounded-lg p-3"><div class="text-2xl font-black text-teal">28</div><div class="text-[10px] text-gray-600 uppercase tracking-wide">Covered</div></div>
+                  <div class="bg-saffron/10 rounded-lg p-3"><div class="text-2xl font-black" style="color:#D97706">14</div><div class="text-[10px] text-gray-600 uppercase tracking-wide">Pending</div></div>
+                </div>
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between bg-gray-50 rounded p-2">
+                    <div><div class="text-sm font-semibold">Table 4 · Paneer Tikka</div><div class="text-xs text-gray-500">2 mins ago</div></div>
+                    <div class="text-xs font-bold text-brand">₹250</div>
+                  </div>
+                  <div class="flex items-center justify-between bg-gray-50 rounded p-2">
+                    <div><div class="text-sm font-semibold">QR · Masala Chai ×3</div><div class="text-xs text-gray-500">5 mins ago</div></div>
+                    <div class="text-xs font-bold text-brand">₹90</div>
+                  </div>
+                  <div class="flex items-center justify-between bg-gray-50 rounded p-2">
+                    <div><div class="text-sm font-semibold">Table 1 · Butter Naan ×2</div><div class="text-xs text-gray-500">8 mins ago</div></div>
+                    <div class="text-xs font-bold text-brand">₹80</div>
+                  </div>
+                </div>
+              </div>
+              <div class="space-y-2">
+                <div class="bg-brand text-white rounded-lg p-3 text-center">
+                  <div class="text-[10px] uppercase tracking-wider opacity-90">New order</div>
+                  <div class="text-lg font-black mt-1">+ Add</div>
+                </div>
+                <div class="bg-gray-100 rounded-lg p-3 text-center">
+                  <div class="text-[10px] uppercase tracking-wider text-gray-600">Kitchen</div>
+                  <div class="text-lg font-black mt-1 text-ink">5 tickets</div>
+                </div>
+                <div class="bg-gray-100 rounded-lg p-3 text-center">
+                  <div class="text-[10px] uppercase tracking-wider text-gray-600">Tables</div>
+                  <div class="text-lg font-black mt-1 text-ink">4 free</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───── TRUST BAR ───── -->
+<section class="border-y border-gray-200 bg-gray-50">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-wrap items-center justify-center sm:justify-between gap-x-8 gap-y-3 text-sm text-gray-600">
+    <div class="flex items-center gap-2">
+      <span class="h-2 w-2 rounded-full bg-green-500"></span>
+      <span><strong class="text-ink">GST-ready</strong> invoices</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="h-2 w-2 rounded-full bg-green-500"></span>
+      <span><strong class="text-ink">Razorpay</strong> payments</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="h-2 w-2 rounded-full bg-green-500"></span>
+      <span><strong class="text-ink">WhatsApp</strong> invoicing</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="h-2 w-2 rounded-full bg-green-500"></span>
+      <span><strong class="text-ink">DPDP Act</strong> compliant</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="h-2 w-2 rounded-full bg-green-500"></span>
+      <span>Data in <strong class="text-ink">Mumbai</strong></span>
+    </div>
+  </div>
+</section>
+
+<!-- ───── FEATURES ───── -->
+<section id="features" class="py-20 sm:py-28">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6">
+    <div class="text-center max-w-2xl mx-auto">
+      <h2 class="text-3xl sm:text-5xl font-black tracking-tight">
+        Everything a restaurant needs.
+        <span class="gradient-text">Nothing it doesn't.</span>
+      </h2>
+      <p class="mt-4 text-lg text-gray-600">
+        We've stripped out the bloat that makes other POS apps slow on a ₹6,000 Android phone.
+      </p>
+    </div>
+    <div class="mt-16 grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition">
+        <div class="h-12 w-12 grid place-items-center rounded-xl bg-brand/10 text-brand mb-4">
+          <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </div>
+        <h3 class="font-bold text-lg">Lightning-fast POS</h3>
+        <p class="mt-2 text-sm text-gray-600">Take an order in 3 taps. Works offline. Syncs as soon as you reconnect.</p>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition">
+        <div class="h-12 w-12 grid place-items-center rounded-xl bg-teal/10 text-teal mb-4">
+          <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        </div>
+        <h3 class="font-bold text-lg">GST invoices that pass audit</h3>
+        <p class="mt-2 text-sm text-gray-600">HSN codes, B2B/B2C split, GSTR-1 and GSTR-3B exports. Your CA will thank you.</p>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition">
+        <div class="h-12 w-12 grid place-items-center rounded-xl bg-saffron/15 text-saffron mb-4" style="color:#D97706">
+          <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8h12l-1 12H7L6 8z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/></svg>
+        </div>
+        <h3 class="font-bold text-lg">Kitchen display (KDS)</h3>
+        <p class="mt-2 text-sm text-gray-600">Orders fly from the counter to the kitchen screen. Mark ready in one tap. No more lost chits.</p>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition">
+        <div class="h-12 w-12 grid place-items-center rounded-xl bg-brand/10 text-brand mb-4">
+          <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        </div>
+        <h3 class="font-bold text-lg">QR menu &amp; ordering</h3>
+        <p class="mt-2 text-sm text-gray-600">Print a QR per table. Customers scan, browse the live menu, order and pay — no staff in the loop.</p>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition">
+        <div class="h-12 w-12 grid place-items-center rounded-xl bg-teal/10 text-teal mb-4">
+          <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+        </div>
+        <h3 class="font-bold text-lg">WhatsApp invoicing</h3>
+        <p class="mt-2 text-sm text-gray-600">Auto-send invoice + payment link on order ready. Status updates flow back through Twilio.</p>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition">
+        <div class="h-12 w-12 grid place-items-center rounded-xl bg-saffron/15 text-saffron mb-4" style="color:#D97706">
+          <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        </div>
+        <h3 class="font-bold text-lg">Reports that actually help</h3>
+        <p class="mt-2 text-sm text-gray-600">P&amp;L, expense register, income register, food-cost. Export to PDF, XLSX or CSV in two clicks.</p>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition">
+        <div class="h-12 w-12 grid place-items-center rounded-xl bg-brand/10 text-brand mb-4">
+          <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </div>
+        <h3 class="font-bold text-lg">Staff with PINs &amp; roles</h3>
+        <p class="mt-2 text-sm text-gray-600">Cashier, captain, manager — give each role only what they need. PIN login, no shared passwords.</p>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition">
+        <div class="h-12 w-12 grid place-items-center rounded-xl bg-teal/10 text-teal mb-4">
+          <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        </div>
+        <h3 class="font-bold text-lg">Loyalty &amp; CRM</h3>
+        <p class="mt-2 text-sm text-gray-600">Phone-based customers, loyalty points, birthday rewards, repeat-order tracking.</p>
+      </div>
+
+      <div class="bg-white border border-gray-200 rounded-2xl p-6 hover:shadow-lg transition">
+        <div class="h-12 w-12 grid place-items-center rounded-xl bg-saffron/15 text-saffron mb-4" style="color:#D97706">
+          <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        </div>
+        <h3 class="font-bold text-lg">Privacy by design</h3>
+        <p class="mt-2 text-sm text-gray-600">DPDP Act 2023 compliant from day one. Consent log, data export, account deletion — all self-service.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───── WHY US ───── -->
+<section id="why" class="py-20 sm:py-28 bg-gradient-to-br from-gray-50 to-white">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6">
+    <div class="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+      <div>
+        <div class="text-sm font-bold uppercase tracking-wider text-brand">Why NamastePOS</div>
+        <h2 class="mt-3 text-3xl sm:text-5xl font-black tracking-tight">Built for India.<br/>Priced for everyone.</h2>
+        <p class="mt-4 text-lg text-gray-600">
+          We're not trying to be Square. We're trying to be the POS that the chai stall on the corner and the 50-table chain both actually want to use.
+        </p>
+        <ul class="mt-7 space-y-4">
+          <li class="flex items-start gap-3">
+            <div class="mt-0.5 h-6 w-6 grid place-items-center rounded-full bg-green-100 text-green-600 shrink-0">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div><strong>₹0 to start.</strong> No card. The Starter plan covers a single-outlet café with 1 register and unlimited orders.</div>
+          </li>
+          <li class="flex items-start gap-3">
+            <div class="mt-0.5 h-6 w-6 grid place-items-center rounded-full bg-green-100 text-green-600 shrink-0">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div><strong>Works on cheap phones.</strong> Lightweight Flutter app, no 4 GB RAM requirement.</div>
+          </li>
+          <li class="flex items-start gap-3">
+            <div class="mt-0.5 h-6 w-6 grid place-items-center rounded-full bg-green-100 text-green-600 shrink-0">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div><strong>Your data, in India.</strong> Hosted in Mumbai. RBI + DPDP localisation ready.</div>
+          </li>
+          <li class="flex items-start gap-3">
+            <div class="mt-0.5 h-6 w-6 grid place-items-center rounded-full bg-green-100 text-green-600 shrink-0">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div><strong>Razorpay-native.</strong> Subscription billing, UPI, cards, wallets — all built in.</div>
+          </li>
+          <li class="flex items-start gap-3">
+            <div class="mt-0.5 h-6 w-6 grid place-items-center rounded-full bg-green-100 text-green-600 shrink-0">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div><strong>One tap to delete your data.</strong> DPDP rights aren't a footnote here — they're a screen.</div>
+          </li>
+        </ul>
+      </div>
+      <div class="relative">
+        <div class="absolute -inset-4 bg-gradient-to-br from-brand/20 via-saffron/20 to-teal/20 rounded-3xl blur-xl"></div>
+        <div class="relative bg-white border border-gray-200 rounded-3xl p-8 shadow-xl">
+          <div class="text-sm font-bold uppercase tracking-wider text-gray-500">Example: a busy Pune cafe</div>
+          <div class="mt-3 text-5xl sm:text-6xl font-black">₹4,82,160</div>
+          <div class="text-sm text-gray-600">collected this month</div>
+          <div class="mt-6 grid grid-cols-2 gap-4">
+            <div class="bg-brand/10 rounded-lg p-4">
+              <div class="text-3xl font-black text-brand">1,247</div>
+              <div class="text-xs text-gray-600 uppercase tracking-wide mt-1">Orders</div>
+            </div>
+            <div class="bg-teal/10 rounded-lg p-4">
+              <div class="text-3xl font-black text-teal">386</div>
+              <div class="text-xs text-gray-600 uppercase tracking-wide mt-1">Repeat customers</div>
+            </div>
+          </div>
+          <div class="mt-4 text-xs text-gray-500 italic">Illustrative figures — not a real customer.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ───── PRICING ───── -->
+<section id="pricing" class="py-20 sm:py-28">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6">
+    <div class="text-center max-w-2xl mx-auto">
+      <h2 class="text-3xl sm:text-5xl font-black tracking-tight">Simple pricing.<br/>No surprises.</h2>
+      <p class="mt-4 text-lg text-gray-600">Start free. Upgrade only when you outgrow it.</p>
+    </div>
+    <div id="pricing-grid" class="mt-14 grid md:grid-cols-3 gap-6">
+      <!-- Pricing tiles render here from /v1/plans on load. If the API
+           is unreachable we leave the fallback markup below visible. -->
+    </div>
+
+    <!-- Fallback / SEO-visible copy. Hidden once dynamic tiles render. -->
+    <noscript>
+      <div class="mt-14 grid md:grid-cols-3 gap-6 text-center">
+        <div class="bg-white border border-gray-200 rounded-2xl p-7">
+          <div class="font-bold text-lg">Starter — free</div>
+          <p class="text-sm text-gray-600 mt-1">Unlimited orders, GST invoices, single outlet.</p>
+        </div>
+        <div class="bg-ink text-white rounded-2xl p-7">
+          <div class="font-bold text-lg">Pro</div>
+          <p class="text-sm text-gray-300 mt-1">KDS, QR menu, WhatsApp invoicing, advanced reports.</p>
+        </div>
+        <div class="bg-white border border-gray-200 rounded-2xl p-7">
+          <div class="font-bold text-lg">Enterprise — Custom</div>
+          <p class="text-sm text-gray-600 mt-1">Multi-outlet, aggregators, dedicated support.</p>
+        </div>
+      </div>
+    </noscript>
+    <p class="mt-6 text-center text-sm text-gray-500">Prices in INR. GST extra. Plus payment gateway fees passed through Razorpay.</p>
+  </div>
+</section>
+
+<!-- ───── FAQ ───── -->
+<section id="faq" class="py-20 sm:py-28 bg-gray-50">
+  <div class="max-w-3xl mx-auto px-4 sm:px-6">
+    <h2 class="text-3xl sm:text-5xl font-black tracking-tight text-center">Common questions</h2>
+    <div class="mt-12 space-y-3">
+
+      <details class="group bg-white border border-gray-200 rounded-xl">
+        <summary class="cursor-pointer flex items-center justify-between p-5 font-bold">
+          Do I need expensive hardware?
+          <svg viewBox="0 0 24 24" class="h-5 w-5 text-gray-400 transition group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sm text-gray-600">
+          No. Any Android phone or tablet with a working internet connection. A Bluetooth or Wi-Fi thermal printer is optional; we have a free print agent for desktop printers too.
+        </div>
+      </details>
+
+      <details class="group bg-white border border-gray-200 rounded-xl">
+        <summary class="cursor-pointer flex items-center justify-between p-5 font-bold">
+          What happens to my data if I cancel?
+          <svg viewBox="0 0 24 24" class="h-5 w-5 text-gray-400 transition group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sm text-gray-600">
+          You can export everything as JSON, CSV or PDF from Settings → Privacy &amp; data. Then click "Delete my account" — we anonymise your direct identifiers immediately and retain only what GST law forces us to (tax invoices for 8 years).
+        </div>
+      </details>
+
+      <details class="group bg-white border border-gray-200 rounded-xl">
+        <summary class="cursor-pointer flex items-center justify-between p-5 font-bold">
+          Is my data shared with other restaurants?
+          <svg viewBox="0 0 24 24" class="h-5 w-5 text-gray-400 transition group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sm text-gray-600">
+          Never. Every business is fully isolated — separate user accounts, separate menus, separate orders, separate customer database. Cross-tenant access is enforced at the database query level, not as a UI filter.
+        </div>
+      </details>
+
+      <details class="group bg-white border border-gray-200 rounded-xl">
+        <summary class="cursor-pointer flex items-center justify-between p-5 font-bold">
+          How do I get paid?
+          <svg viewBox="0 0 24 24" class="h-5 w-5 text-gray-400 transition group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sm text-gray-600">
+          Customers pay you directly through Razorpay (UPI, cards, wallets, netbanking). Funds land in your bank in T+1. We don't touch the money.
+        </div>
+      </details>
+
+      <details class="group bg-white border border-gray-200 rounded-xl">
+        <summary class="cursor-pointer flex items-center justify-between p-5 font-bold">
+          Do you support multiple outlets?
+          <svg viewBox="0 0 24 24" class="h-5 w-5 text-gray-400 transition group-open:rotate-180" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </summary>
+        <div class="px-5 pb-5 text-sm text-gray-600">
+          Yes — on the Enterprise plan. Each outlet is its own business with its own staff and menu, but you can roll up reports across all of them in one consolidated view.
+        </div>
+      </details>
+
+    </div>
+  </div>
+</section>
+
+<!-- ───── BIG CTA ───── -->
+<section class="py-20 sm:py-28 bg-ink text-white">
+  <div class="max-w-3xl mx-auto px-4 sm:px-6 text-center">
+    <h2 class="text-3xl sm:text-5xl font-black tracking-tight">
+      Ready to ditch the
+      <span class="gradient-text">register notebook?</span>
+    </h2>
+    <p class="mt-4 text-lg text-gray-300">It takes 60 seconds to sign up. No credit card.</p>
+    <a id="cta-bottom" href="#" class="mt-9 inline-block bg-brand hover:bg-brand-dark text-white font-bold px-8 py-4 rounded-xl text-lg shadow-lg shadow-brand/20 transition">
+      Start free today
+    </a>
+  </div>
+</section>
+
+<!-- ───── FOOTER ───── -->
+<footer class="border-t border-gray-200 bg-white">
+  <div class="max-w-6xl mx-auto px-4 sm:px-6 py-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-8">
+    <div>
+      <div class="flex items-center gap-2 mb-3">
+        <div class="h-9 w-9 grid place-items-center rounded-xl bg-brand text-white">
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11h18l-2 9H5l-2-9z"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+        </div>
+        <span class="font-black text-xl">NamastePOS</span>
+      </div>
+      <p class="text-sm text-gray-600">The POS that doesn't slow you down.</p>
+    </div>
+    <div>
+      <div class="font-bold text-sm uppercase tracking-wider text-gray-500 mb-3">Product</div>
+      <ul class="space-y-2 text-sm">
+        <li><a href="#features" class="text-gray-700 hover:text-brand">Features</a></li>
+        <li><a href="#pricing" class="text-gray-700 hover:text-brand">Pricing</a></li>
+        <li><a href="#faq" class="text-gray-700 hover:text-brand">FAQ</a></li>
+      </ul>
+    </div>
+    <div>
+      <div class="font-bold text-sm uppercase tracking-wider text-gray-500 mb-3">Company</div>
+      <ul class="space-y-2 text-sm">
+        <li><a href="mailto:hello@namastepos.in" class="text-gray-700 hover:text-brand">Contact</a></li>
+        <li><a href="mailto:support@namastepos.in" class="text-gray-700 hover:text-brand">Support</a></li>
+        <li><a id="footer-app" href="#" class="text-gray-700 hover:text-brand">Sign in</a></li>
+      </ul>
+    </div>
+    <div>
+      <div class="font-bold text-sm uppercase tracking-wider text-gray-500 mb-3">Legal</div>
+      <ul class="space-y-2 text-sm">
+        <li><a id="footer-privacy" href="#" class="text-gray-700 hover:text-brand">Privacy Policy</a></li>
+        <li><a id="footer-terms" href="#" class="text-gray-700 hover:text-brand">Terms of Service</a></li>
+        <li><a id="footer-grievance" href="#" class="text-gray-700 hover:text-brand">Grievance Officer</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-gray-200">
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 py-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+      <div>© <span id="year"></span> NamastePOS. Made in India.</div>
+      <div class="flex items-center gap-4">
+        <span>Hosted in Mumbai</span>
+        <span>·</span>
+        <span>DPDP Act 2023 compliant</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Wire all CTAs to the live app URLs declared at the top of <body>.
+  // Done in one place so swapping the domains is a single edit.
+  document.getElementById('year').textContent = new Date().getFullYear();
+  const u = window.NAMASTEPOS_URLS;
+  const set = (id, href) => { const el = document.getElementById(id); if (el) el.href = href; };
+  set('cta-login',    u.login);
+  set('cta-signup',   u.register);
+  set('cta-hero',     u.register);
+  set('cta-bottom',   u.register);
+  set('footer-app',   u.login);
+  set('footer-privacy',   u.privacy);
+  set('footer-terms',     u.terms);
+  set('footer-grievance', u.grievance);
+
+  // ── Pricing — fetch live plans from /v1/plans ─────────────────────
+  //
+  // The backend's public plans endpoint returns:
+  //   { plans: [{ tier, tierKind, name, priceInr, billingPeriod,
+  //               limits, features, ... }] }
+  //
+  // We render one tile per plan and append a "Contact sales" tile at
+  // the end so the Enterprise option is always present even if the
+  // super-admin hasn't created an Enterprise SKU.
+  const PLAN_COPY = {
+    // Per-plan marketing one-liners. Keyed by `tier` first, falls back
+    // to `tierKind`. Edit here when launching new plans.
+    free:        { tagline: 'For ₹5k-a-day stalls finding their feet.' },
+    basic:       { tagline: 'For growing cafés &amp; restaurants.' },
+    pro:         { tagline: 'For growing cafés &amp; restaurants.' },
+    starter:     { tagline: 'For ₹5k-a-day stalls finding their feet.' },
+    enterprise:  { tagline: 'Multi-outlet chains, franchises.' },
+  };
+
+  // Default bullet list per tier_kind — used when the plan has no
+  // explicit `features.bullets`. Keeps the page honest with the
+  // app's actual gating model.
+  const TIER_BULLETS = {
+    // Hardcode-audit fix (2026-08-24): numeric limits (staff counts,
+    // outlet counts, turnover thresholds) removed — they drifted from the
+    // backend plan catalog. Configure real bullets per plan in the admin
+    // panel (features.bullets); these are qualitative fallbacks only.
+    starter: [
+      'Unlimited orders',
+      'GST invoices',
+      'Basic reports',
+      'Email support',
+    ],
+    pro: [
+      'Everything in Starter',
+      'KDS, KOT, Captain mode',
+      'QR menu &amp; ordering',
+      'WhatsApp invoicing',
+      'Advanced reports &amp; exports',
+    ],
+    enterprise: [
+      'Everything in Pro',
+      'Multi-outlet rollup',
+      'Aggregator integrations',
+      'GST e-invoice (IRN)',
+      'Dedicated support',
+    ],
+  };
+
+  // Hardcoded fallback — shown if the API is unreachable or returns
+  // nothing usable. Lets the page work as a pure static deploy.
+  // Hardcode-audit fix (2026-08-24): the fallback no longer carries a real
+  // price — it had already drifted from the live catalog. Null price ⇒
+  // the tile shows a "see live pricing" CTA instead of a stale number.
+  const PLAN_FALLBACK = [
+    { tier: 'free',  tierKind: 'starter', name: 'Starter',  priceInr: 0 },
+    { tier: 'pro',   tierKind: 'pro',     name: 'Pro',      priceInr: null },
+  ];
+
+  // Pick the "popular" tile — Pro tier_kind wins, else the middle one.
+  function pickPopular(plans) {
+    const proIdx = plans.findIndex((p) => p.tierKind === 'pro');
+    if (proIdx >= 0) return proIdx;
+    return Math.min(1, plans.length - 1);
+  }
+
+  function inr(n) {
+    if (n === null || n === undefined) return '—';
+    if (n === 0) return '₹0';
+    return '₹' + Number(n).toLocaleString('en-IN');
+  }
+
+  function bullets(plan) {
+    const explicit = plan.features && plan.features.bullets;
+    if (Array.isArray(explicit) && explicit.length) return explicit;
+    return TIER_BULLETS[plan.tierKind] || TIER_BULLETS[plan.tier] || [];
+  }
+
+  // Review fix (2026-08-23): plan name/tagline/bullets come from the API and
+  // were interpolated into innerHTML unescaped (stored-XSS risk if admin-set
+  // plan copy ever contains markup). Escape all dynamic text first.
+  function esc(v) {
+    return String(v ?? '').replace(/[&<>"']/g, (c) => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    }[c]));
+  }
+
+  function tileHtml(plan, isPopular) {
+    const tagline = esc((PLAN_COPY[plan.tier] || PLAN_COPY[plan.tierKind] || {}).tagline || '');
+    const bs = bullets(plan).map((b) => `<li class="flex gap-2">✓ ${esc(b)}</li>`).join('');
+    const ctaLabel = plan.priceInr === 0 ? 'Start free' : 'Start 14-day trial';
+    if (isPopular) {
+      return `
+        <div class="bg-ink text-white border-2 border-brand rounded-2xl p-7 shadow-2xl shadow-brand/20 relative">
+          <div class="absolute -top-3 left-1/2 -translate-x-1/2 bg-brand text-white text-xs font-black uppercase tracking-wider px-3 py-1 rounded-full">Most popular</div>
+          <div class="font-bold text-lg">${esc(plan.name)}</div>
+          <div class="mt-2 flex items-baseline gap-1">
+            <span class="text-4xl font-black">${inr(plan.priceInr)}</span>
+            <span class="text-gray-400 text-sm">/${esc(plan.billingPeriod || 'month')}</span>
+          </div>
+          <p class="text-sm text-gray-300 mt-1">${tagline}</p>
+          <ul class="mt-6 space-y-2 text-sm">${bs}</ul>
+          <a href="${u.register}" class="mt-7 block text-center bg-brand hover:bg-brand-dark text-white font-bold py-3 rounded-xl transition">${ctaLabel}</a>
+        </div>`;
+    }
+    return `
+      <div class="bg-white border border-gray-200 rounded-2xl p-7">
+        <div class="font-bold text-lg">${esc(plan.name)}</div>
+        <div class="mt-2 flex items-baseline gap-1">
+          <span class="text-4xl font-black">${inr(plan.priceInr)}</span>
+          <span class="text-gray-500 text-sm">/${esc(plan.billingPeriod || 'month')}</span>
+        </div>
+        <p class="text-sm text-gray-600 mt-1">${tagline}</p>
+        <ul class="mt-6 space-y-2 text-sm">${bs}</ul>
+        <a href="${u.register}" class="mt-7 block text-center bg-gray-100 hover:bg-gray-200 text-ink font-bold py-3 rounded-xl transition">${ctaLabel}</a>
+      </div>`;
+  }
+
+  function enterpriseTile() {
+    const bs = TIER_BULLETS.enterprise.map((b) => `<li class="flex gap-2">✓ ${b}</li>`).join('');
+    return `
+      <div class="bg-white border border-gray-200 rounded-2xl p-7">
+        <div class="font-bold text-lg">Enterprise</div>
+        <div class="mt-2 flex items-baseline gap-1">
+          <span class="text-4xl font-black">Custom</span>
+        </div>
+        <p class="text-sm text-gray-600 mt-1">Multi-outlet chains, franchises.</p>
+        <ul class="mt-6 space-y-2 text-sm">${bs}</ul>
+        <a href="mailto:hello@namastepos.in?subject=Enterprise%20enquiry" class="mt-7 block text-center bg-gray-100 hover:bg-gray-200 text-ink font-bold py-3 rounded-xl transition">Contact sales</a>
+      </div>`;
+  }
+
+  function renderPlans(plans) {
+    if (!plans || !plans.length) plans = PLAN_FALLBACK;
+    // Exclude an Enterprise plan if super-admin added one — we render
+    // a custom "Contact sales" tile instead since the priced
+    // Enterprise plan rarely makes sense as a self-serve checkout.
+    const visible = plans.filter((p) =>
+      (p.tier || '').toLowerCase() !== 'enterprise'
+      && (p.tierKind || '').toLowerCase() !== 'enterprise');
+    const popularIdx = pickPopular(visible);
+    const html = visible.map((p, i) => tileHtml(p, i === popularIdx)).join('')
+                 + enterpriseTile();
+    const grid = document.getElementById('pricing-grid');
+    if (grid) grid.innerHTML = html;
+  }
+
+  // Fetch + render. If the network is down we show the fallback.
+  fetch(u.api + '/plans', { headers: { Accept: 'application/json' } })
+    .then((r) => r.ok ? r.json() : Promise.reject(new Error('plans http ' + r.status)))
+    .then((data) => renderPlans(data.plans))
+    .catch(() => renderPlans(PLAN_FALLBACK));
+</script>
+
+</body>
+</html>

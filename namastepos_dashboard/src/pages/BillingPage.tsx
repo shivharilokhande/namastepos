@@ -1,0 +1,642 @@
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { Check, Download, FileText } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { ffApi } from '@/api/namastepos';
+import { apiError, getBusinessCache } from '@/api/client';
+import { formatINR, formatDate } from '@/lib/utils';
+
+declare global {
+  interface Window { Razorpay: any; }
+}
+
+// FF-402g — printable HTML receipt used as a fallback when the invoice
+// row has no `pdfUrl` yet (real Razorpay invoices always eventually
+// get one; this covers the gap + our test rows). Opens a new tab
+// filled with a self-contained HTML page the user can print or
+// "Save as PDF" via their browser's print dialog.
+function openInvoicePreview(inv: any, sub: any, biz: any) {
+  const w = window.open('', '_blank');
+  if (!w) return;
+  const line = (label: string, value: string) =>
+    `<tr><td style="padding:4px 12px 4px 0;color:#666">${label}</td><td style="padding:4px 0;font-weight:600">${value}</td></tr>`;
+  const cadence = (() => {
+    if (!inv.periodStart || !inv.periodEnd) return null;
+    const days = (new Date(inv.periodEnd).getTime() - new Date(inv.periodStart).getTime()) / 86400000;
+    return days > 200 ? 'Yearly' : 'Monthly';
+  })();
+  const fmtDate = (d: string) => d ? new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—';
+  // Hardcode-audit (2026-08-24): route through the shared helper so the
+  // receipt honours the business currency/locale instead of a literal ₹.
+  // Same input semantics as before: `inv.amount` is in rupees.
+  const fmtInr  = (n: number) => formatINR(Number(n), { decimals: true });
+  const html = `<!doctype html>
+<html><head><meta charset="utf-8"><title>Invoice ${inv.number || inv.id}</title>
+<style>
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;margin:40px;color:#111}
+  h1{font-size:28px;margin:0 0 4px 0}
+  .muted{color:#666;font-size:13px}
+  .top{display:flex;justify-content:space-between;border-bottom:2px solid #FF6B35;padding-bottom:16px;margin-bottom:24px}
+  .brand{font-weight:800;font-size:20px;color:#FF6B35}
+  table.rows{width:100%;border-collapse:collapse;font-size:14px}
+  table.summary{margin-top:32px;border-top:1px solid #eee;padding-top:16px;width:100%}
+  .amount{font-size:28px;font-weight:800;color:#111}
+  .status{display:inline-block;padding:2px 10px;border-radius:99px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px}
+  .status.paid{background:#d1fae5;color:#065f46}
+  .status.open{background:#fef3c7;color:#92400e}
+  .status.failed{background:#fee2e2;color:#991b1b}
+  .actions{margin-top:32px;padding-top:16px;border-top:1px solid #eee}
+  .btn{display:inline-block;padding:8px 16px;background:#FF6B35;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;font-size:13px}
+  @media print { .actions{display:none} body{margin:20px} }
+</style></head>
+<body>
+  <div class="top">
+    <div>
+      <div class="brand">NamastePOS</div>
+      <div class="muted">Subscription invoice</div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-weight:700">${inv.number || `INV-${(inv.id || '').slice(0,8).toUpperCase()}`}</div>
+      <div class="muted">${fmtDate(inv.createdAt || inv.paidAt)}</div>
+      <span class="status ${inv.status || 'open'}">${inv.status || 'open'}</span>
+    </div>
+  </div>
+
+  <div style="display:flex;gap:48px;margin-bottom:32px">
+    <div>
+      <div class="muted" style="text-transform:uppercase;font-size:11px;letter-spacing:0.5px;margin-bottom:6px">Billed to</div>
+      <div style="font-weight:700">${biz.name || '—'}</div>
+      ${biz.gstin ? `<div class="muted">GSTIN: ${biz.gstin}</div>` : ''}
+      ${biz.address ? `<div class="muted">${biz.address}</div>` : ''}
+      ${biz.email ? `<div class="muted">${biz.email}</div>` : ''}
+    </div>
+    <div>
+      <div class="muted" style="text-transform:uppercase;font-size:11px;letter-spacing:0.5px;margin-bottom:6px">Plan</div>
+      <div style="font-weight:700">${sub?.plan?.name || '—'}${cadence ? ` · ${cadence}` : ''}</div>
+      ${inv.periodStart && inv.periodEnd ? `<div class="muted">Period: ${fmtDate(inv.periodStart)} → ${fmtDate(inv.periodEnd)}</div>` : ''}
+      ${inv.paidAt ? `<div class="muted">Paid: ${fmtDate(inv.paidAt)}</div>` : ''}
+    </div>
+  </div>
+
+  <table class="rows">
+    <thead>
+      <tr style="border-bottom:1px solid #eee;text-align:left">
+        <th style="padding:8px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#666">Description</th>
+        <th style="padding:8px 0;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#666;text-align:right">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid #f3f4f6">
+        <td style="padding:12px 0">
+          ${sub?.plan?.name || 'NamastePOS'} subscription${cadence ? ` (${cadence.toLowerCase()})` : ''}
+          ${inv.periodStart && inv.periodEnd ? `<div class="muted" style="margin-top:2px">${fmtDate(inv.periodStart)} → ${fmtDate(inv.periodEnd)}</div>` : ''}
+        </td>
+        <td style="padding:12px 0;text-align:right;font-weight:600">${fmtInr(inv.amount)}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <table class="summary">
+    <tr><td style="text-align:right;padding:4px 8px 4px 0;color:#666">Subtotal</td><td style="text-align:right;width:120px;font-weight:600">${fmtInr(inv.amount)}</td></tr>
+    <tr><td style="text-align:right;padding:12px 8px 4px 0;font-weight:700">Total</td><td style="text-align:right;font-weight:800" class="amount">${fmtInr(inv.amount)}</td></tr>
+  </table>
+
+  <div class="actions">
+    <a href="javascript:window.print()" class="btn">Print / Save as PDF</a>
+    <span class="muted" style="margin-left:12px">Use your browser's print dialog to save this as a PDF.</span>
+  </div>
+</body></html>`;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+}
+
+// Push 14f — readable labels for the raw feature keys stored in
+// plan_features. Anything missing falls back to a humanised key, so
+// adding a brand-new feature still shows up in the compare card (just
+// with its raw name) until we drop a label here.
+const FEATURE_LABELS: Record<string, string> = {
+  pos: 'POS / new order',
+  orders: 'Orders list',
+  token_generation: 'Token generation',
+  tables_single_floor: '1 floor of tables',
+  tables_multi_floor: 'Multi-floor + drag layout',
+  menu_basic: 'Basic menu',
+  menu_variants_modifiers: 'Variants + modifier groups',
+  reports_basic: 'Daily + monthly reports',
+  expenses: 'Expenses tracking',
+  invoice_basic: 'GST invoices',
+  b2b_invoice: 'B2B / GST invoices',
+  staff_lite: 'Staff (PIN logins)',
+  staff_unlimited: 'Unlimited staff accounts',
+  customers_basic: 'Customer directory',
+  customers_crm: 'CRM with notes',
+  loyalty: 'Loyalty points',
+  memberships: 'Memberships',
+  reviews: 'Customer reviews',
+  reservations: 'Reservations',
+  wastage: 'Wastage tracking',
+  daily_closing: 'Daily closing',
+  kds: 'KDS (kitchen display)',
+  captain_mode: 'Captain mode',
+  driver_mode: 'Driver / delivery',
+  aggregators: 'Aggregator integrations (Zomato/Swiggy)',
+  qr_ordering: 'QR ordering',
+  whatsapp_marketing: 'WhatsApp marketing',
+  recipe_costing: 'Recipe costing',
+  voice_pos: 'Voice POS',
+  bill_split: 'Bill split',
+  surge_pricing: 'Surge pricing',
+  marketplace_addons: 'Marketplace add-ons',
+  multi_outlet: 'Multi-outlet management',
+  accounting_pnl_bs: 'P&L · Balance Sheet · TB',
+  einvoice_gst: 'GST e-invoice (IRN)',
+  recurring_invoices: 'Recurring invoices',
+  bank_reconcile: 'Bank reconciliation',
+  heat_map: 'Heat map',
+  forecast: 'Forecasting',
+  dead_stock: 'Dead-stock analytics',
+  bulk_import: 'Bulk import',
+  api_access: 'API access',
+  white_label: 'White-label',
+  tds_tcs: 'TDS / TCS',
+  multi_currency_fx: 'Multi-currency / FX',
+};
+
+const TIER_COLORS: Record<string, string> = {
+  starter: '#10B981',
+  pro: '#FF6B35',
+  enterprise: '#7C3AED',
+};
+
+const TIER_TAGLINES: Record<string, string> = {
+  starter: 'Cart / Street vendor',
+  pro: 'Cafe / Small restaurant',
+  enterprise: 'Hotel / Chain / Multi-outlet',
+};
+
+function loadRazorpayScript(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (window.Razorpay) return resolve();
+    const s = document.createElement('script');
+    s.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error('Failed to load Razorpay'));
+    document.body.appendChild(s);
+  });
+}
+
+export function BillingPage() {
+  const qc = useQueryClient();
+  // FF-313 — Yearly billing toggle. Persists in localStorage so the
+  // last choice sticks between visits. When "yearly" the price grid
+  // shows the yearly price, and change() passes billingPeriod so the
+  // backend picks the yearly Razorpay plan.
+  // FF-402b / B12+B25 — Default the toggle to the user's ACTUAL sub
+  // cadence on first load. Only after the user manually clicks
+  // Monthly/Yearly do we start persisting their override to
+  // localStorage — until then, we track "has the user touched this
+  // yet?" via a ref so an owner on Yearly doesn't land on Monthly.
+  const LS_KEY = 'ff_billing_period_user';
+  const userOverride = useRef<boolean>(!!localStorage.getItem(LS_KEY));
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>(
+    (localStorage.getItem(LS_KEY) as any) || 'yearly'
+  );
+  // Only persist when the user actually clicked the toggle — never
+  // during a passive sync from `sub`.
+  const setBillingPeriodByUser = (v: 'monthly' | 'yearly') => {
+    userOverride.current = true;
+    localStorage.setItem(LS_KEY, v);
+    setBillingPeriod(v);
+  };
+  const { data: sub } = useQuery({ queryKey: ['sub'], queryFn: ffApi.subscription });
+  // FF-402d — one-shot sync from sub.billingPeriod on load.
+  const syncedFromSub = useRef(false);
+  useEffect(() => {
+    if (syncedFromSub.current) return;
+    if (!sub?.billingPeriod) return;
+    if (!userOverride.current) setBillingPeriod(sub.billingPeriod as any);
+    syncedFromSub.current = true;
+  }, [sub]);
+  // Push 14f — single source of truth for plan cards: backend /plans
+  // returns each plan enriched with featureKeys from plan_features.
+  // refetchInterval keeps the customer view in sync with super-admin
+  // changes within ~60s.
+  const { data: plans = [] } = useQuery({
+    queryKey: ['plans'],
+    queryFn: ffApi.plans,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+  });
+  const { data: invoices = [] } = useQuery({ queryKey: ['invoices'], queryFn: ffApi.invoices });
+  const biz = getBusinessCache() || {};
+
+  const change = useMutation({
+    mutationFn: async (tier: string) => {
+      const res = await ffApi.changePlan(tier, billingPeriod);
+      if (tier === 'free' || !res.subscriptionId) return res;
+      await loadRazorpayScript();
+      return new Promise((resolve, reject) => {
+        const rz = new window.Razorpay({
+          ...res.checkoutOptions,
+          handler: () => resolve(res),
+          modal: { ondismiss: () => reject(new Error('Cancelled')) },
+        });
+        rz.open();
+      });
+    },
+    onSuccess: () => { toast.success('Plan updated'); qc.invalidateQueries({ queryKey: ['sub'] }); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const cancel = useMutation({
+    mutationFn: ffApi.cancelSubscription,
+    onSuccess: () => { toast.success('Will cancel at period end'); qc.invalidateQueries({ queryKey: ['sub'] }); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  // Order plans by price for a natural compare order. Cheapest first.
+  const orderedPlans = [...plans].sort((a: any, b: any) => (a.priceInr || 0) - (b.priceInr || 0));
+  // The cheapest paid plan (≥ ₹1) becomes the visual "Recommended" card —
+  // matches the previous design without hardcoding to 'pro' tier_kind.
+  const recommendedId = orderedPlans.find((p: any) => p.priceInr > 0)?.id;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Billing</h1>
+        <p className="text-muted-foreground">Plan, invoices, payment method.</p>
+      </div>
+
+      {sub && (() => {
+        // Derive the cadence from the ACTUAL current period span rather than
+        // trusting sub.billingPeriod alone — an admin/manual plan set could
+        // leave billing_period='monthly' while pushing the period ~a year out,
+        // which showed a "Monthly" badge next to a "renews next year" date.
+        // Prefer the span so the badge, price and renewal date always agree.
+        const spanDays = (sub.currentPeriodStart && sub.currentPeriodEnd)
+          ? (new Date(sub.currentPeriodEnd).getTime() - new Date(sub.currentPeriodStart).getTime()) / 86400000
+          : null;
+        const effectiveCadence: 'monthly' | 'yearly' =
+          spanDays != null ? (spanDays > 200 ? 'yearly' : 'monthly')
+                           : ((sub.billingPeriod as 'monthly' | 'yearly') || 'monthly');
+        return (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Current plan</CardTitle>
+                {/* Bug fix (2026-08-20): CardDescription renders as
+                    <p>, and Badge renders a <div>. Nesting <div> inside
+                    <p> is invalid HTML and React logs a validateDOM
+                    warning on every render. Swap the wrapper to a
+                    <div> so both children are legal siblings. */}
+                <div className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
+                  <span>{sub.plan?.name} ·</span>
+                  <Badge variant={sub.status === 'active' ? 'success' : 'warning'}>{sub.status}</Badge>
+                  {/* FF-402d — surface the ACTUAL cadence on the current
+                      plan card so an owner on yearly can see it clearly
+                      and doesn't assume they're being charged monthly. */}
+                  {sub.plan?.priceInr > 0 && (
+                    <Badge variant={effectiveCadence === 'yearly' ? 'default' : 'secondary'}>
+                      {effectiveCadence === 'yearly' ? 'Yearly' : 'Monthly'}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              {sub.plan?.priceInr ? (
+                <div className="text-right">
+                  {/* Show the amount that matches the actual cadence. */}
+                  <div className="text-2xl font-bold">
+                    {effectiveCadence === 'yearly' && sub.plan.priceYearlyInr
+                      ? formatINR(sub.plan.priceYearlyInr)
+                      : formatINR(sub.plan.priceInr)}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    per {effectiveCadence === 'yearly' ? 'year' : 'month'}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground space-y-1">
+            {/* FF-402f — a period_end in the past + status=active almost
+                always means a Razorpay charge failed or the plan was
+                manually set without rolling the period forward. Show
+                that as an explicit warning, not a friendly "renews on". */}
+            {(() => {
+              const end = sub.currentPeriodEnd ? new Date(sub.currentPeriodEnd) : null;
+              const isPastDue = end && end.getTime() < Date.now();
+              if (isPastDue && sub.status === 'active') {
+                return (
+                  <div className="text-amber-700 font-medium">
+                    ⚠ Renewal overdue — cycle ended {formatDate(sub.currentPeriodEnd)}.
+                    Reach out to support if you weren't charged for the next period.
+                  </div>
+                );
+              }
+              return (
+                <div>{sub.status === 'trialing' ? 'Trial ends on ' : 'Renews on '}
+                  <strong className="text-foreground">{formatDate(sub.currentPeriodEnd)}</strong>
+                </div>
+              );
+            })()}
+            {sub.cancelAtPeriodEnd && <div className="text-destructive">Will not auto-renew</div>}
+            {sub.status === 'active' && !sub.cancelAtPeriodEnd && (
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => cancel.mutate()}>Cancel at period end</Button>
+            )}
+          </CardContent>
+        </Card>
+        );
+      })()}
+
+      {/* Push 14f — compare cards driven by /plans endpoint. Whatever
+          the super-admin sets in the Plans page is exactly what shows
+          here (within the 60s poll window). */}
+      <div>
+        <div className="flex items-end justify-between mb-3">
+          <h2 className="text-lg font-semibold">Compare plans</h2>
+          {/* FF-321 monthly/yearly toggle. Yearly is priced at 10× monthly
+              (2 months free) — the loss-aversion framing beats percent
+              discounts in Indian SaaS. */}
+          <div className="flex bg-muted rounded-lg p-1 text-sm">
+            <button onClick={() => setBillingPeriodByUser('monthly')}
+              className={`px-3 py-1 rounded-md ${billingPeriod === 'monthly' ? 'bg-background shadow font-semibold' : 'text-muted-foreground'}`}>
+              Monthly
+            </button>
+            <button onClick={() => setBillingPeriodByUser('yearly')}
+              className={`relative px-3 py-1 rounded-md flex items-center gap-1 ${billingPeriod === 'yearly' ? 'bg-background shadow font-semibold' : 'text-muted-foreground'}`}>
+              Yearly
+              <span className="inline-block text-[10px] uppercase tracking-wider bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">
+                2 months free
+              </span>
+              {/* FF-402b — "Recommended" chip on the Yearly button so
+                  it's the visually louder option even when the user
+                  is on Monthly today. */}
+              <span className="absolute -top-2 -right-2 text-[9px] uppercase tracking-wider bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold shadow">
+                Recommended
+              </span>
+            </button>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          {orderedPlans.map((p: any) => {
+            const tierKind = (p.tierKind || 'starter') as keyof typeof TIER_COLORS;
+            const color = TIER_COLORS[tierKind] || '#888';
+            // FF-402d — "Current" means SAME tier AND SAME cadence. If
+            // the tier matches but the cadence differs, we surface a
+            // "Switch to yearly" / "Switch to monthly" CTA instead of
+            // greying the button — that was the blocker the owner hit
+            // when their active plan was yearly and they wanted to
+            // adjust cadence.
+            const isSameTier = sub?.plan?.tier === p.tier;
+            const isCurrent = isSameTier && (sub?.billingPeriod || 'monthly') === billingPeriod;
+            const isCadenceSwitch = isSameTier && !isCurrent;
+            const isRecommended = p.id === recommendedId;
+            const featureKeys: string[] = p.featureKeys || [];
+            // Show top ~8 features per card so the layout stays scannable.
+            // Owners can see the full feature list in the raw limits
+            // card below or in the super-admin matrix card.
+            const visibleFeatures = featureKeys.slice(0, 8);
+            const hidden = featureKeys.length - visibleFeatures.length;
+            return (
+              <Card key={p.id}
+                className={isCurrent ? 'border-2 border-primary'
+                  : isRecommended ? 'border-2 border-amber-500' : ''}>
+                {isRecommended && (
+                  <div className="bg-amber-500 text-white text-center text-[10px] font-black tracking-widest py-1">
+                    RECOMMENDED
+                  </div>
+                )}
+                <CardHeader>
+                  <div className="flex items-baseline justify-between">
+                    <CardTitle style={{ color }}>{p.name}</CardTitle>
+                    <div className="text-right">
+                      {(() => {
+                        // FF-402e — starter/trial plans have NO yearly
+                        // price. When the toggle is on Yearly, show the
+                        // monthly rate + a "Trial only" note instead of
+                        // fabricating a yearly amount.
+                        const yearlyMode = billingPeriod === 'yearly';
+                        const trialOnly = p.priceInr > 0 && p.priceYearlyInr == null;
+                        const showYearly = yearlyMode && !trialOnly && p.priceInr > 0;
+                        return (
+                          <>
+                            <div className="text-2xl font-extrabold">
+                              {p.priceInr === 0
+                                ? formatINR(0)
+                                : showYearly
+                                  // Hardcode-audit fix (2026-08-24): no client-side
+                                  // "×10" pricing rule — backend is the source of truth
+                                  // (showYearly guarantees priceYearlyInr is set).
+                                  ? formatINR(p.priceYearlyInr ?? 0)
+                                  : formatINR(p.priceInr)}
+                              <span className="text-xs font-normal text-muted-foreground">
+                                /{p.priceInr === 0 ? 'forever' : showYearly ? 'yr' : 'mo'}
+                              </span>
+                            </div>
+                            {trialOnly && yearlyMode && (
+                              <div className="text-[11px] text-muted-foreground mt-0.5 italic">
+                                Trial plan · monthly only
+                              </div>
+                            )}
+                            {showYearly && (() => {
+                              const monthlyAnnualised = p.priceInr * 12;
+                              const yearly = p.priceYearlyInr ?? 0;
+                              const save = monthlyAnnualised - yearly;
+                              return save > 0 ? (
+                                <div className="text-[11px] font-semibold text-emerald-700 mt-0.5">
+                                  Save {formatINR(save)}/yr
+                                </div>
+                              ) : null;
+                            })()}
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                  <CardDescription>{TIER_TAGLINES[tierKind] || ''}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="text-sm space-y-1.5">
+                    {featureKeys.length === 0 ? (
+                      <li className="text-xs italic text-muted-foreground">
+                        No features assigned to this tier yet.
+                      </li>
+                    ) : visibleFeatures.map((k) => (
+                      <li key={k} className="flex items-start gap-2">
+                        <Check className="h-4 w-4 mt-0.5 text-emerald-600 flex-shrink-0" />
+                        <span>{FEATURE_LABELS[k] || k.replace(/_/g, ' ')}</span>
+                      </li>
+                    ))}
+                    {hidden > 0 && (
+                      <li className="text-xs text-muted-foreground pl-6">
+                        +{hidden} more
+                      </li>
+                    )}
+                  </ul>
+                  {isCurrent ? (
+                    <Button className="w-full mt-4" disabled>Your current plan</Button>
+                  ) : (
+                    <Button className="w-full mt-4"
+                      style={{ backgroundColor: color, color: 'white' }}
+                      onClick={() => change.mutate(p.tier)}
+                      disabled={change.isPending}>
+                      {p.priceInr === 0
+                        ? `Downgrade to ${p.name}`
+                        : isCadenceSwitch
+                          ? `Switch to ${billingPeriod === 'yearly' ? 'yearly' : 'monthly'}`
+                          : `Switch to ${p.name} · ${billingPeriod === 'yearly' ? 'yearly' : 'monthly'}`}
+                    </Button>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-lg font-semibold mb-3">Plan limits</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {orderedPlans.map((p: any) => {
+            // FF-402d — same "tier + cadence" definition of current as
+            // the compare grid above; keeps the two panels consistent.
+            const sameTier = sub?.plan?.tier === p.tier;
+            const current = sameTier && (sub?.billingPeriod || 'monthly') === billingPeriod;
+            return (
+              <Card key={p.id} className={current ? 'border-primary' : ''}>
+                <CardHeader>
+                  <CardTitle className="text-xl">{p.name}</CardTitle>
+                  <div className="text-2xl font-bold">
+                    {(() => {
+                      // FF-402e — starter/trial plans have no yearly.
+                      // Fall back to monthly + /mo so the unit matches
+                      // the number the user sees.
+                      const hasYearly = billingPeriod === 'yearly' && p.priceYearlyInr != null;
+                      return (
+                        <>
+                          {hasYearly ? formatINR(p.priceYearlyInr) : formatINR(p.priceInr)}
+                          <span className="text-sm font-normal text-muted-foreground">
+                            /{hasYearly ? 'yr' : 'mo'}
+                          </span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-2 text-sm">
+                  {Object.entries(p.limits || {}).map(([k, v]: any) => (
+                    <div key={k} className="flex items-center gap-2">
+                      <Check className="h-4 w-4 text-emerald-600" />
+                      <span>{v === -1 ? 'Unlimited' : v} {k.replace(/_/g, ' ')}</span>
+                    </div>
+                  ))}
+                  <Button
+                    className="w-full mt-3"
+                    variant={current ? 'outline' : 'default'}
+                    disabled={current || change.isPending}
+                    onClick={() => change.mutate(p.tier)}
+                  >
+                    {current
+                      ? 'Current plan'
+                      : sameTier
+                        ? `Switch to ${billingPeriod === 'yearly' ? 'yearly' : 'monthly'}`
+                        : `Switch to ${p.name} · ${billingPeriod === 'yearly' ? 'yearly' : 'monthly'}`}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* FF-402g — Subscription invoices. Every Razorpay charge event
+          ($subscription.charged$ webhook) inserts an invoice row. The
+          cadence chip is inferred from period length so historical
+          rows without an explicit cadence field still render right.
+          PDF opens in a new tab; when the row has no pdfUrl yet
+          (still generating) we grey the button. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Invoices &amp; receipts</CardTitle>
+          <p className="text-xs text-muted-foreground pt-1">
+            Every subscription charge (monthly or yearly) lands here.
+            Download the PDF for your GST records.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          {invoices.length === 0 && (
+            <div className="py-6 text-center text-muted-foreground">
+              <FileText className="w-8 h-8 mx-auto mb-2 opacity-40" />
+              <div>No invoices yet.</div>
+              <div className="text-xs">Your first invoice will appear here after your next Razorpay charge.</div>
+            </div>
+          )}
+          {invoices.map((i: any) => {
+            // Infer cadence from the invoice's own period length. > 200
+            // days = yearly, otherwise monthly. Falls back to "Charge"
+            // if periods are missing (some webhooks omit them).
+            let cadenceLabel: string | null = null;
+            if (i.periodStart && i.periodEnd) {
+              const days = (new Date(i.periodEnd).getTime() - new Date(i.periodStart).getTime()) / 86400000;
+              cadenceLabel = days > 200 ? 'Yearly' : 'Monthly';
+            }
+            return (
+              <div key={i.id} className="flex items-center justify-between py-2.5 border-b last:border-0 text-sm">
+                <div className="flex items-start gap-3 min-w-0">
+                  <FileText className="w-4 h-4 mt-1 text-muted-foreground flex-shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-medium">
+                      {i.number || `INV-${i.id.slice(0, 8).toUpperCase()}`}
+                      {cadenceLabel && (
+                        <span className="ml-2 text-[10px] uppercase tracking-wider bg-muted px-1.5 py-0.5 rounded">
+                          {cadenceLabel}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {i.periodStart && i.periodEnd
+                        ? `${formatDate(i.periodStart)} → ${formatDate(i.periodEnd)}`
+                        : formatDate(i.createdAt)}
+                      {i.paidAt && ` · paid ${formatDate(i.paidAt)}`}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  <Badge variant={i.status === 'paid' ? 'success' : i.status === 'failed' ? 'destructive' : 'warning'}>
+                    {i.status}
+                  </Badge>
+                  <div className="font-medium w-24 text-right">
+                    {formatINR(i.amount, { decimals: true })}
+                  </div>
+                  {/* FF-402g — always give a way to VIEW the invoice.
+                      Real Razorpay invoices provide a hosted PDF URL;
+                      for rows without one (webhook running late, or
+                      test data) we render a printable HTML receipt
+                      from the row itself so the user can print or
+                      "Save as PDF" from their browser. */}
+                  <button
+                    onClick={() => openInvoicePreview(i, sub, biz)}
+                    className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                    <FileText className="w-3.5 h-3.5" /> View
+                  </button>
+                  {i.pdfUrl && (
+                    <a href={i.pdfUrl} target="_blank" rel="noopener noreferrer"
+                       className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                      <Download className="w-3.5 h-3.5" /> PDF
+                    </a>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

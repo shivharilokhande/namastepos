@@ -1,0 +1,128 @@
+name: namastepos
+description: NamastePOS — Micro-food POS for street vendors and small restaurants. PetPooja clone.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # State management
+  provider: ^6.1.1
+
+  # Networking
+  dio: ^5.4.0
+  connectivity_plus: ^7.3.1
+
+  # Local persistence
+  shared_preferences: ^2.2.2
+  sqflite: ^2.3.0
+  path: ^1.8.3
+  path_provider: ^2.1.1
+  flutter_secure_storage: ^11.0.0
+
+  # Authentication
+  google_sign_in: ^7.2.0
+  pin_code_fields: ^9.4.0          # kept for future OTP flow
+  intl_phone_field: ^3.2.0          # kept for future OTP flow
+
+  # Billing — Razorpay native checkout (Push 9). The Flutter plugin opens
+  # the official Razorpay UI on both iOS + Android. UPI/cards/netbanking
+  # all work. Needs RAZORPAY_KEY_ID at runtime, no extra Android setup;
+  # on iOS, add NSPhotoLibraryUsageDescription to Info.plist if you ever
+  # want users to upload a screenshot for failed payments.
+  razorpay_flutter: ^1.3.7
+
+  # UI / UX
+  google_fonts: ^8.2.1
+  flutter_svg: ^2.0.9
+  cached_network_image: ^3.3.0
+  shimmer: ^3.0.0
+  fluttertoast: ^10.0.0
+  flutter_slidable: ^4.0.3
+  flutter_staggered_animations: ^1.1.1
+  pull_to_refresh: ^2.0.0
+  badges: ^3.1.2
+
+  # Charts
+  fl_chart: ^1.2.0
+
+  # Thermal printer — Bluetooth ESC/POS deps removed for now. The
+  # namastepos_print_agent daemon already handles printing via the backend
+  # /print-jobs queue, so the Flutter app doesn't need its own ESC/POS
+  # stack. The old packages (esc_pos_bluetooth / esc_pos_utils /
+  # flutter_bluetooth_serial) all pin image ^3 which fights pdf ^3.10's
+  # image ^4 — too tangled to be worth keeping the in-app BT path.
+
+  # WhatsApp / Sharing / Permissions
+  share_plus: ^13.3.0
+  url_launcher: ^6.2.2
+  permission_handler: ^13.0.1
+  # Voice POS — speech-to-text. DISABLED for now: the maintained version
+  # (^6.6.2) pins js ^0.7 while connectivity_plus 5.x pins js ^0.6, and
+  # upgrading connectivity_plus is a bigger change than the user's
+  # current branch wants. The screen still has a mic button; it just
+  # shows a "voice disabled" snackbar.
+  # speech_to_text: ^6.6.2
+  # GPS for driver heartbeat (Batch J)
+  geolocator: ^14.0.3
+  # Camera / gallery image picker (Batch I)
+  image_picker: ^1.0.7
+
+  # Files / Export
+  pdf: ^3.10.7
+  printing: ^5.11.1
+  excel: ^4.0.2
+  open_filex: ^4.4.0
+
+  # Thermal printer — Bluetooth ESC/POS. We use the *_plus forks so the
+  # `image: ^4.x` requirement from pdf 3.10 isn't broken. Pair printers
+  # via OS Bluetooth Settings; the app discovers already-paired devices.
+  # Android: works with any classic-BT ESC/POS printer (cheap 80mm
+  #   units, Epson, Star, etc.).
+  # iOS: limited to MFi-certified printers (Apple gates classic BT).
+  print_bluetooth_thermal: ^1.1.0
+  esc_pos_utils_plus: ^2.0.4
+
+  # Utilities
+  intl: ^0.20.3
+  uuid: ^4.2.1
+  collection: ^1.18.0
+  equatable: ^2.0.5
+  logger: ^2.0.2+1
+
+  # Notifications
+  # Pinned to 17.2.4 — the plugin was auto-upgraded to 22.x which has an
+  # entirely different (and still moving) initialize/show signature. 17.x
+  # has the stable positional API this service relies on and works with
+  # sentry_flutter + our Android SDK 37 target.
+  flutter_local_notifications: ^17.2.4
+
+  # Crash telemetry (FF-211b). SentryFlutter captures Flutter framework
+  # errors, isolate errors, and manually-reported exceptions, forwards
+  # them to Sentry.io when SENTRY_DSN is set. Zero-config when DSN is
+  # absent — the SDK becomes a no-op. Wired from lib/services/telemetry.dart.
+  sentry_flutter: ^9.9.0
+
+  # Firebase push messaging (FF-330). Uncomment when the Firebase project
+  # is provisioned and android/app/google-services.json is committed.
+  # firebase_core: ^2.24.0
+  # firebase_messaging: ^14.7.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.7
+  mockito: ^5.4.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/

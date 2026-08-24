@@ -1,0 +1,83 @@
+{
+  "name": "namastepos-backend",
+  "version": "1.0.0",
+  "description": "NamastePOS REST API \u2014 multi-tenant POS backend (Node.js + Express + PostgreSQL)",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "migrate": "node scripts/migrate.js",
+    "audit:idor": "node scripts/idor-audit.js",
+    "migrate:rollback": "node -e \"console.error('Rollbacks are not implemented — migrations are forward-only. Restore from a DB backup instead (see BACKUPS.md).'); process.exit(1)\"",
+    "seed": "node -e \"console.error('No generic seed script. Plans are seeded by migrations 031/034/047; demo data: psql -f scripts/seed-shiv-demo.sql; live Razorpay plan IDs: psql -f db/seeds/plans_seed.sql'); process.exit(1)\"",
+    "test": "NODE_ENV=test jest --runInBand --detectOpenHandles",
+    "test:watch": "NODE_ENV=test jest --watch",
+    "test:coverage": "NODE_ENV=test jest --coverage --runInBand",
+    "lint": "eslint src tests --max-warnings 0",
+    "lint:fix": "eslint src tests --fix",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down",
+    "docker:logs": "docker-compose logs -f api",
+    "start:cluster": "pm2 start ecosystem.config.js",
+    "stop:cluster": "pm2 stop namastepos-api",
+    "reload:cluster": "pm2 reload namastepos-api",
+    "logs": "pm2 logs namastepos-api"
+  },
+  "dependencies": {
+    "@sentry/node": "^7.120.0",
+    "nodemailer": "^6.9.14",
+    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
+    "compression": "^1.7.4",
+    "cookie-parser": "^1.4.6",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.2.0",
+    "google-auth-library": "^9.7.0",
+    "helmet": "^7.1.0",
+    "joi": "^17.13.6",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0",
+    "multer": "^1.4.5-lts.1",
+    "pdfkit": "^0.15.0",
+    "pg": "^8.11.5",
+    "uuid": "^9.0.1",
+    "winston": "^3.13.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-airbnb-base": "^15.0.0",
+    "eslint-plugin-import": "^2.29.1",
+    "eslint-plugin-jest": "^27.9.0",
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.0",
+    "supertest": "^6.3.4",
+    "pm2": "^5.4.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/db/"
+    ],
+    "maxWorkers": 1,
+    "globalTeardown": "<rootDir>/tests/globalTeardown.js",
+    "collectCoverageFrom": [
+      "src/**/*.js",
+      "!src/server.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "lines": 60,
+        "statements": 60,
+        "branches": 50,
+        "functions": 60
+      }
+    }
+  }
+}
