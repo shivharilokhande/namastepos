@@ -48,6 +48,10 @@ export interface Coupon {
   type: 'percent' | 'flat' | 'trial_extension';
   value: number;
   appliesToPlan?: string | null;
+  // 2026-08-25: scope fields so the admin can distinguish platform
+  // subscription coupons (the only kind now listed) from tenant food coupons.
+  appliesTo?: 'subscription' | 'food_order' | 'both';
+  businessId?: string | null;
   maxRedemptions?: number | null;
   redemptionCount: number;
   startsAt: string; expiresAt?: string;
@@ -88,8 +92,24 @@ export interface Metrics {
 
 // ── Endpoints ────────────────────────────────────────────────────────────
 export const adminApi = {
+  // Login may return either a token (no 2FA) or a 2FA challenge for enrolled
+  // admins. The caller must handle both shapes.
   login: (email: string, password: string) =>
-    api.post<{ token: string; admin: Admin }>('/admin/auth/login', { email, password }).then((r) => r.data),
+    api.post<{ token?: string; admin?: Admin; requires2fa?: boolean; challengeId?: string }>(
+      '/admin/auth/login', { email, password }).then((r) => r.data),
+  // Complete a 2FA-gated login → returns the real access token.
+  verify2fa: (challengeId: string, code: string) =>
+    api.post<{ token: string; admin: Admin }>('/admin/auth/2fa/verify', { challengeId, code })
+       .then((r) => r.data),
+  // 2FA enrolment (current admin). Start returns the otpauth URI + one-time
+  // recovery codes; confirm activates it; disable requires a current code.
+  enrol2faStart: () =>
+    api.post<{ otpauth: string; secret: string; recoveryCodes: string[] }>('/admin/auth/2fa/enrol')
+       .then((r) => r.data),
+  enrol2faConfirm: (code: string) =>
+    api.post<{ enrolled: boolean }>('/admin/auth/2fa/enrol/confirm', { code }).then((r) => r.data),
+  disable2fa: (code: string) =>
+    api.post<{ disabled: boolean }>('/admin/auth/2fa/disable', { code }).then((r) => r.data),
   me: () => api.get<{ admin: Admin }>('/admin/auth/me').then((r) => r.data.admin),
 
   // Admin team
@@ -162,7 +182,11 @@ export const adminApi = {
   // Refunds
   listRefunds: (params: any = {}) =>
     api.get<{ refunds: Refund[] }>('/admin/refunds', { params }).then((r) => r.data.refunds),
-  initiateRefund: (body: { paymentId: string; amountPaise?: number; reason?: string }) =>
+  initiateRefund: (body: {
+    paymentId: string; amountPaise?: number; reason?: string;
+    // Optional context so the refund also lands on the tenant's CRM timeline.
+    businessId?: string | null; orderId?: string | null;
+  }) =>
     api.post<{ refund: Refund }>('/admin/refunds', body).then((r) => r.data.refund),
 
   // Settings

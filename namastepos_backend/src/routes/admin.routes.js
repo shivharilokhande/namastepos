@@ -20,17 +20,28 @@ const loginLimiter = env.isProd()
 
 // ── Public ──────────────────────────────────────────────────────────────
 router.post('/auth/login',       loginLimiter, ...c.login);
-router.post('/auth/2fa/verify',  loginLimiter, ...c.twoFaVerify);
+// 2FA login-completion is public (no token yet). Audit it so a burst of failed
+// verifies is visible; admin_id resolves once the challenge is validated.
+router.post('/auth/2fa/verify',  loginLimiter,
+            audit.middlewareLog('admin-auth', '2fa-verify', () => ({ type: 'admin' })),
+            ...c.twoFaVerify);
 
 // ── Protected ───────────────────────────────────────────────────────────
 router.use(requireSuperAdmin);
 
 router.get   ('/auth/me', c.me);
 
-// 2FA enrolment (QA-8 P1) — current admin only
-router.post  ('/auth/2fa/enrol',          c.twoFaEnrolStart);
-router.post  ('/auth/2fa/enrol/confirm',  ...c.twoFaEnrolConfirm);
-router.post  ('/auth/2fa/disable',        c.twoFaDisable);
+// 2FA enrolment (QA-8 P1) — current admin only. Audit enrol/confirm/disable
+// (2026-08-25) so security-relevant 2FA changes show on the audit trail.
+router.post  ('/auth/2fa/enrol',
+              audit.middlewareLog('admin-auth', '2fa-enrol-start', (req) => ({ type: 'admin', id: req.user?.id })),
+              c.twoFaEnrolStart);
+router.post  ('/auth/2fa/enrol/confirm',
+              audit.middlewareLog('admin-auth', '2fa-enrol-confirm', (req) => ({ type: 'admin', id: req.user?.id })),
+              ...c.twoFaEnrolConfirm);
+router.post  ('/auth/2fa/disable',
+              audit.middlewareLog('admin-auth', '2fa-disable', (req) => ({ type: 'admin', id: req.user?.id })),
+              ...c.twoFaDisable);
 
 // Headline / DB health
 router.get   ('/metrics',           requirePermission('reports.read'), c.metrics);

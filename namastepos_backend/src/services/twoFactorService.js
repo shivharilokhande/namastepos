@@ -92,6 +92,20 @@ function _verifyTotp(secret, code) {
 
 // ── Enrolment ─────────────────────────────────────────────────────────────
 async function startEnrolment(adminId, adminEmail) {
+  // Security fix (2026-08-25): starting an enrolment used to unconditionally
+  // overwrite totp_secret_enc AND null out totp_enrolled_at. For an admin who
+  // was ALREADY enrolled that instantly stripped their live 2FA (login stopped
+  // requiring a code) before any new secret was confirmed. Guard it: never
+  // clobber an active enrolment. To rotate, the admin must first disable (which
+  // now requires a valid current code) and then enrol afresh. This keeps the
+  // existing enrolment fully intact until a new one is confirmed.
+  const cur = await query(
+    `SELECT totp_enrolled_at FROM admin_users WHERE id = $1`, [adminId]
+  );
+  if (cur.rowCount > 0 && cur.rows[0].totp_enrolled_at) {
+    throw new BadRequest('2FA is already enabled — disable it first to re-enrol');
+  }
+
   const secret = crypto.randomBytes(20);
   const b32 = _base32Encode(secret);
   const enc = _encrypt(b32);
@@ -105,7 +119,9 @@ async function startEnrolment(adminId, adminEmail) {
     recoveryHashes.push(await bcrypt.hash(code, 10));
   }
 
-  // Save provisional — flips to enrolled when the user confirms a TOTP code
+  // Save provisional — flips to enrolled when the user confirms a TOTP code.
+  // totp_enrolled_at stays NULL here (only reached when NOT already enrolled),
+  // so isEnrolled() / login remain unaffected until confirmEnrolment().
   await query(
     `UPDATE admin_users
         SET totp_secret_enc = $1,
@@ -155,6 +171,41 @@ async function startChallenge(adminId) {
   return { challengeId: r.rows[0].challenge_id };
 }
 
+// Attempt cap (2026-08-25): brute-forcing a 6-digit TOTP against a 15-min
+// challenge is otherwise unbounded. Track failures per challenge_id in-process
+// (the admin_2fa_pending table has no attempts column and migrations are out of
+// scope for this change) and burn the challenge after MAX_ATTEMPTS. A single
+// backend process handles admin auth, so an in-memory counter is sufficient;
+// the DB TTL remains the backstop across restarts.
+const MAX_ATTEMPTS = 5;
+const _attempts = new Map(); // challengeId -> failure count
+
+/**
+ * Check a submitted code against an admin's live 2FA credentials.
+ * Tries TOTP first, then one-time recovery codes (burning a used one).
+ * Returns true on success. Shared by verifyChallenge() and disable().
+ */
+async function _checkCode(row, code) {
+  const secret = _base32Decode(_decrypt(row.totp_secret_enc));
+  if (_verifyTotp(secret, code)) return true;
+
+  if (Array.isArray(row.recovery_codes)) {
+    for (let i = 0; i < row.recovery_codes.length; i += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      if (await bcrypt.compare(code, row.recovery_codes[i])) {
+        const remaining = row.recovery_codes.slice();
+        remaining.splice(i, 1);
+        await query(
+          `UPDATE admin_users SET recovery_codes = $1 WHERE id = $2`,
+          [remaining, row.admin_id]
+        );
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 async function verifyChallenge(challengeId, code) {
   const ch = await query(
     `SELECT p.admin_id, a.totp_secret_enc, a.recovery_codes
@@ -166,34 +217,42 @@ async function verifyChallenge(challengeId, code) {
   if (ch.rowCount === 0) throw new Unauthorized('Challenge expired or invalid');
   const row = ch.rows[0];
 
-  // Try TOTP first
-  const secret = _base32Decode(_decrypt(row.totp_secret_enc));
-  let ok = _verifyTotp(secret, code);
-
-  // Then try recovery codes (one-time use)
-  if (!ok && Array.isArray(row.recovery_codes)) {
-    for (let i = 0; i < row.recovery_codes.length; i += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      if (await bcrypt.compare(code, row.recovery_codes[i])) {
-        ok = true;
-        const remaining = row.recovery_codes.slice();
-        remaining.splice(i, 1);
-        await query(
-          `UPDATE admin_users SET recovery_codes = $1 WHERE id = $2`,
-          [remaining, row.admin_id]
-        );
-        break;
-      }
+  const ok = await _checkCode(row, code);
+  if (!ok) {
+    // Attempt-cap: after MAX_ATTEMPTS failures, burn the challenge so the
+    // client must re-authenticate with the password to get a fresh one.
+    const n = (_attempts.get(challengeId) || 0) + 1;
+    if (n >= MAX_ATTEMPTS) {
+      _attempts.delete(challengeId);
+      await query(`DELETE FROM admin_2fa_pending WHERE challenge_id = $1`, [challengeId]);
+      throw new Unauthorized('Too many attempts — restart sign-in');
     }
+    _attempts.set(challengeId, n);
+    throw new Unauthorized('Invalid TOTP code');
   }
-  if (!ok) throw new Unauthorized('Invalid TOTP code');
 
-  // Burn the challenge
+  // Burn the challenge (and its attempt counter)
+  _attempts.delete(challengeId);
   await query(`DELETE FROM admin_2fa_pending WHERE challenge_id = $1`, [challengeId]);
   return { adminId: row.admin_id };
 }
 
-async function disable(adminId) {
+// Security fix (2026-08-25): disabling 2FA used to require nothing beyond the
+// session — a hijacked admin session could silently strip 2FA. Now the caller
+// must present a valid current TOTP (or a recovery code) to turn it off.
+async function disable(adminId, code) {
+  const r = await query(
+    `SELECT id AS admin_id, totp_secret_enc, totp_enrolled_at, recovery_codes
+       FROM admin_users WHERE id = $1`,
+    [adminId]
+  );
+  if (r.rowCount === 0) throw new NotFound('Admin not found');
+  const row = r.rows[0];
+  if (!row.totp_enrolled_at) throw new BadRequest('2FA is not enabled');
+  if (!code) throw new BadRequest('A current 2FA code is required to disable 2FA');
+  const ok = await _checkCode(row, code);
+  if (!ok) throw new Unauthorized('Invalid 2FA code');
+
   await query(
     `UPDATE admin_users
         SET totp_secret_enc = NULL, totp_enrolled_at = NULL, recovery_codes = NULL

@@ -66,10 +66,15 @@ const twoFaEnrolConfirm = [
   }),
 ];
 
-const twoFaDisable = asyncHandler(async (req, res) => {
-  await twoFactor.disable(req.user.id);
-  res.json({ disabled: true });
-});
+// Security fix (2026-08-25): require a valid current TOTP / recovery code in
+// the body to disable 2FA (see twoFactorService.disable).
+const twoFaDisable = [
+  validate({ body: Joi.object({ code: Joi.string().min(6).max(20).required() })}),
+  asyncHandler(async (req, res) => {
+    await twoFactor.disable(req.user.id, req.body.code);
+    res.json({ disabled: true });
+  }),
+];
 
 // ── Admin team CRUD ─────────────────────────────────────────────────────
 const teamList = asyncHandler(async (_req, res) => {
@@ -343,6 +348,12 @@ const refundBody = Joi.object({
   paymentId: Joi.string().uuid().required(),
   amountPaise: Joi.number().integer().min(1),
   reason: Joi.string().max(500).allow('', null),
+  // Fix (2026-08-25): the CRM-timeline logging below reads req.body.businessId
+  // / orderId, but validate() runs with allowUnknown:false so these were
+  // rejected before the handler ever saw them — the timeline branch was dead.
+  // Accept them as optional context so the refund lands on the tenant's feed.
+  businessId: Joi.string().uuid().allow(null),
+  orderId: Joi.string().uuid().allow(null),
 });
 const refundsInitiate = [
   validate({ body: refundBody }),

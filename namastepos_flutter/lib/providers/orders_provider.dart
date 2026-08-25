@@ -6,6 +6,7 @@ import '../models/cart_item.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
 import '../utils/formatters.dart';
+import 'package:uuid/uuid.dart';
 import '../services/api_service.dart';
 import '../services/repositories.dart';
 
@@ -212,7 +213,15 @@ class OrdersProvider extends ChangeNotifier {
     // queue for it would only defer a guaranteed 400. Single-tender and
     // legacy-split orders keep the offline-tolerant repo path below.
     if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
+      // Review fix (2026-08-25, 🔴): this direct-post path had NO clientId,
+      // so a request the server committed but that timed out client-side
+      // (flaky café network, 20s timeout) would be retried → DUPLICATE
+      // order + double wallet debit + double loyalty burn. The backend
+      // dedupes on client_id (same as the legacy OrderRepo path), so we
+      // mint one here to make split-tender orders idempotent on retry.
+      final clientId = const Uuid().v4();
       final resp = await ApiService.instance.createOrder(businessId, {
+        'clientId': clientId,
         // Same body shape OrderRepo posts — backend Joi requires name +
         // price on every item, not just menuItemId.
         'items': items

@@ -8,6 +8,11 @@ function serialize(c) {
     id: c.id, code: c.code, description: c.description,
     type: c.type, value: parseFloat(c.value),
     appliesToPlan: c.applies_to_plan,
+    // 2026-08-25: surface scope so the platform admin can tell coupon kinds
+    // apart. appliesTo ∈ subscription/food_order/both (migration 030);
+    // businessId non-null = per-restaurant coupon (migration 058).
+    appliesTo: c.applies_to,
+    businessId: c.business_id,
     maxRedemptions: c.max_redemptions,
     redemptionCount: c.redemption_count,
     startsAt: c.starts_at, expiresAt: c.expires_at,
@@ -16,7 +21,15 @@ function serialize(c) {
 }
 
 async function list({ status, type, limit = 100 } = {}) {
-  const where = ['1=1']; const values = []; let idx = 1;
+  // Finding-3 fix (2026-08-25): this powers the PLATFORM coupon admin. After
+  // migration 058, restaurants own their own food coupons (business_id set,
+  // applies_to 'food_order'/'both'); those are managed per-tenant in the owner
+  // dashboard and must not leak into the platform list. Restrict to platform
+  // subscription coupons only (business_id IS NULL AND applies_to =
+  // 'subscription'). create()/disable() below only ever touch platform rows,
+  // so admin ban/create keep working.
+  const where = ['business_id IS NULL', "applies_to IN ('subscription')"];
+  const values = []; let idx = 1;
   if (status) { where.push(`status = $${idx++}`); values.push(status); }
   if (type)   { where.push(`type = $${idx++}`);   values.push(type); }
   values.push(limit);

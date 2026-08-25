@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { ffApi } from '@/api/namastepos';
 import { apiError, getBusinessCache } from '@/api/client';
 import { formatINR, formatDate } from '@/lib/utils';
+import { escapeHtml } from '@/lib/receiptPrint';
 
 declare global {
   interface Window { Razorpay: any; }
@@ -34,8 +35,14 @@ function openInvoicePreview(inv: any, sub: any, biz: any) {
   // receipt honours the business currency/locale instead of a literal ₹.
   // Same input semantics as before: `inv.amount` is in rupees.
   const fmtInr  = (n: number) => formatINR(Number(n), { decimals: true });
+  // XSS fix (2026-08-25): business name/address/gstin/email, plan name and
+  // invoice number/status are all owner-editable and were written RAW into
+  // this popup via document.write — a business literally named
+  // "<img onerror=…>" would execute. Every dynamic value below now goes
+  // through escapeHtml (the same helper the receipt/session-bill printers
+  // already use); fmtDate/fmtInr output is formatter-generated so it's safe.
   const html = `<!doctype html>
-<html><head><meta charset="utf-8"><title>Invoice ${inv.number || inv.id}</title>
+<html><head><meta charset="utf-8"><title>Invoice ${escapeHtml(inv.number || inv.id)}</title>
 <style>
   body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;margin:40px;color:#111}
   h1{font-size:28px;margin:0 0 4px 0}
@@ -60,23 +67,23 @@ function openInvoicePreview(inv: any, sub: any, biz: any) {
       <div class="muted">Subscription invoice</div>
     </div>
     <div style="text-align:right">
-      <div style="font-weight:700">${inv.number || `INV-${(inv.id || '').slice(0,8).toUpperCase()}`}</div>
+      <div style="font-weight:700">${escapeHtml(inv.number || `INV-${(inv.id || '').slice(0,8).toUpperCase()}`)}</div>
       <div class="muted">${fmtDate(inv.createdAt || inv.paidAt)}</div>
-      <span class="status ${inv.status || 'open'}">${inv.status || 'open'}</span>
+      <span class="status ${escapeHtml(inv.status || 'open')}">${escapeHtml(inv.status || 'open')}</span>
     </div>
   </div>
 
   <div style="display:flex;gap:48px;margin-bottom:32px">
     <div>
       <div class="muted" style="text-transform:uppercase;font-size:11px;letter-spacing:0.5px;margin-bottom:6px">Billed to</div>
-      <div style="font-weight:700">${biz.name || '—'}</div>
-      ${biz.gstin ? `<div class="muted">GSTIN: ${biz.gstin}</div>` : ''}
-      ${biz.address ? `<div class="muted">${biz.address}</div>` : ''}
-      ${biz.email ? `<div class="muted">${biz.email}</div>` : ''}
+      <div style="font-weight:700">${escapeHtml(biz.name || '—')}</div>
+      ${biz.gstin ? `<div class="muted">GSTIN: ${escapeHtml(biz.gstin)}</div>` : ''}
+      ${biz.address ? `<div class="muted">${escapeHtml(biz.address)}</div>` : ''}
+      ${biz.email ? `<div class="muted">${escapeHtml(biz.email)}</div>` : ''}
     </div>
     <div>
       <div class="muted" style="text-transform:uppercase;font-size:11px;letter-spacing:0.5px;margin-bottom:6px">Plan</div>
-      <div style="font-weight:700">${sub?.plan?.name || '—'}${cadence ? ` · ${cadence}` : ''}</div>
+      <div style="font-weight:700">${escapeHtml(sub?.plan?.name || '—')}${cadence ? ` · ${cadence}` : ''}</div>
       ${inv.periodStart && inv.periodEnd ? `<div class="muted">Period: ${fmtDate(inv.periodStart)} → ${fmtDate(inv.periodEnd)}</div>` : ''}
       ${inv.paidAt ? `<div class="muted">Paid: ${fmtDate(inv.paidAt)}</div>` : ''}
     </div>
@@ -92,7 +99,7 @@ function openInvoicePreview(inv: any, sub: any, biz: any) {
     <tbody>
       <tr style="border-bottom:1px solid #f3f4f6">
         <td style="padding:12px 0">
-          ${sub?.plan?.name || 'NamastePOS'} subscription${cadence ? ` (${cadence.toLowerCase()})` : ''}
+          ${escapeHtml(sub?.plan?.name || 'NamastePOS')} subscription${cadence ? ` (${cadence.toLowerCase()})` : ''}
           ${inv.periodStart && inv.periodEnd ? `<div class="muted" style="margin-top:2px">${fmtDate(inv.periodStart)} → ${fmtDate(inv.periodEnd)}</div>` : ''}
         </td>
         <td style="padding:12px 0;text-align:right;font-weight:600">${fmtInr(inv.amount)}</td>

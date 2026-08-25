@@ -1,1 +1,4 @@
 testsprite_tests/tmp/config.json
+
+dist/
+dist_new/

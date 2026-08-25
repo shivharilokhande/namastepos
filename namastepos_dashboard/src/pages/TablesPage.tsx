@@ -490,6 +490,18 @@ function escHtml(s: unknown): string {
     .replace(/"/g, '&quot;');
 }
 
+// Paise fix (2026-08-25): the printed session bill is titled TAX INVOICE, so
+// its money MUST show 2 decimals — the shared formatINR() defaults to zero
+// decimals (and even with {decimals:true} its minimumFractionDigits is 0), so
+// a ₹49.50 line printed as ₹50 and the columns literally didn't add up on a
+// statutory GST document. This print-only helper mirrors InvoicesPage's inr2;
+// on-screen formatting stays on formatINR and is intentionally left alone.
+const printInr = (n: number | null | undefined) =>
+  new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR',
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  }).format(Number(n ?? 0));
+
 // One merged line on the final bill: identical dishes across every KOT of the
 // session collapsed into a single row (same shape SessionDialog's `grouped`
 // memo produces).
@@ -520,7 +532,7 @@ function printSessionBill(session: any, mergedLines: MergedBillLine[]) {
       (l) => `
       <tr>
         <td>${escHtml(l.qty)}&times; ${escHtml(l.name)}</td>
-        <td class="amt">${escHtml(formatINR(l.lineTotal))}</td>
+        <td class="amt">${escHtml(printInr(l.lineTotal))}</td>
       </tr>`
     )
     .join('');
@@ -573,10 +585,10 @@ function printSessionBill(session: any, mergedLines: MergedBillLine[]) {
   <table>${itemRows}</table>
   <hr />
   <table>
-    <tr><td>Subtotal</td><td class="amt">${escHtml(formatINR(subtotal))}</td></tr>
-    ${discount > 0 ? `<tr><td>Discount</td><td class="amt">-${escHtml(formatINR(discount))}</td></tr>` : ''}
-    ${tax > 0 ? `<tr><td>GST</td><td class="amt">+${escHtml(formatINR(tax))}</td></tr>` : ''}
-    <tr class="tot"><td>TOTAL</td><td class="amt">${escHtml(formatINR(total))}</td></tr>
+    <tr><td>Subtotal</td><td class="amt">${escHtml(printInr(subtotal))}</td></tr>
+    ${discount > 0 ? `<tr><td>Discount</td><td class="amt">-${escHtml(printInr(discount))}</td></tr>` : ''}
+    ${tax > 0 ? `<tr><td>GST</td><td class="amt">+${escHtml(printInr(tax))}</td></tr>` : ''}
+    <tr class="tot"><td>TOTAL</td><td class="amt">${escHtml(printInr(total))}</td></tr>
   </table>
   <hr />
   <div class="c">Thank you, visit again!</div>

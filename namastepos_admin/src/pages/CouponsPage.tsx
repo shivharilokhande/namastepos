@@ -34,7 +34,12 @@ export function CouponsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Coupons & promotions</h1>
-          <p className="text-muted-foreground">{coupons.length} coupons</p>
+          {/* Finding-3 (2026-08-25): this list is platform subscription coupons
+              only. Per-restaurant food coupons are managed in each tenant's
+              own dashboard and no longer appear here. */}
+          <p className="text-muted-foreground">
+            {coupons.length} platform subscription coupons
+          </p>
         </div>
         <Button onClick={() => setCreating(true)}><Plus className="mr-2 h-4 w-4" /> New coupon</Button>
       </div>
