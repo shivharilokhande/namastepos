@@ -21,9 +21,12 @@ import '../kitchen/kds_screen.dart';
 import '../menu/menu_editor_screen.dart';
 import '../menu/modifier_groups_screen.dart';
 import '../staff/staff_screen.dart';
+import '../ops/coupons_screen.dart';
 import '../ops/daily_closing_screen.dart';
 import '../ops/reservations_screen.dart';
 import '../ops/wastage_screen.dart';
+// Mobile Pass 2 (2026-08-25): refund history list (read-only).
+import '../orders/refunds_screen.dart';
 import '../settings/back_office_screens.dart';
 import '../billing/billing_screen.dart';
 import '../marketplace/marketplace_screen.dart';
@@ -35,6 +38,10 @@ import '../../widgets/plan_gate.dart';
 import '../../widgets/trial_banner.dart';
 import '../billing/trial_expired_screen.dart';
 import '../inventory/inventory_screen.dart';
+// Drawer additions (2026-08-25): surface existing screens that were built
+// but never linked in the hamburger menu.
+import '../expenses/expenses_screen.dart';
+import '../settings/printer_setup_screen.dart';
 import '../ops/reviews_screen.dart';
 import '../orders/orders_screen.dart';
 import '../tables/tables_editor_screen.dart';
@@ -513,10 +520,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // P2 fix (2026-08-22): header now uses auth.has() like the
               // tile below — the two sources could disagree (header
               // without tile, or tile without header).
+              // Mobile Pass 2 (2026-08-25): `|| _can('orders')` added so the
+              // Refunds history tile below has a section header to sit under
+              // (cashiers/captains have `orders` but not the report keys).
               if ((_can('tax_invoices')      && (auth.has('tax_invoices'))) ||
                   (_can('pnl_statement')     && (auth.has('pnl_statement'))) ||
                   ((_can('income_register') || _can('expense_register') || _can('invoice_register'))
-                       && (auth.has('registers'))))
+                       && (auth.has('registers'))) ||
+                  _can('orders'))
                 _drawerSection('Reports & invoices'),
               if (_can('tax_invoices') && (auth.has('tax_invoices')))
                 ListTile(
@@ -563,9 +574,37 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       builder: (_) => factory()));
                   },
                 ),
+              // Mobile Pass 2 (2026-08-25): read-only refund HISTORY. Gated on
+              // `orders` — refund history follows order access. Issuing a
+              // refund still lives in order_detail_screen; this only lists.
+              if (_can('orders'))
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.assignment_return_outlined),
+                  title: const Text('Refunds'),
+                  onTap: () {
+                    _closeDrawer();
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const RefundsScreen()));
+                  },
+                ),
 
-              if (_can('wastage') || _can('daily_closing') || _can('inventory'))
+              if (_can('wastage') || _can('daily_closing') || _can('inventory') || _can('expenses'))
                 _drawerSection('Day-to-day'),
+              // Drawer addition (2026-08-25): Expenses screen existed but was
+              // never linked in the hamburger menu. Gated on the `expenses`
+              // staff permission (owner has it).
+              if (_can('expenses'))
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.receipt_outlined),
+                  title: const Text('Expenses'),
+                  onTap: () {
+                    _closeDrawer();
+                    Navigator.push(context, MaterialPageRoute(
+                        builder: (_) => const ExpensesScreen()));
+                  },
+                ),
               // FF-402 restore-orphans: Inventory screen was imported
               // but never navigated. Wire it under a plan/permission
               // gate so it only shows when both the plan grants
@@ -624,6 +663,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   onTap: () => Navigator.push(context, MaterialPageRoute(
                       builder: (_) => const MembershipsScreen())),
                 ),
+              // Mobile Pass 2 (2026-08-25): Food coupons management. No
+              // dedicated 'coupons' permission key exists, so it reuses the
+              // `memberships` staff permission + `loyalty` plan feature —
+              // both are loyalty/marketing tools and travel together.
+              if (_can('memberships'))
+                PlanGate.tile(
+                  featureKey: 'loyalty',
+                  icon: Icons.local_offer,
+                  title: 'Coupons',
+                  showLockedAsUpgrade: true,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const CouponsScreen())),
+                ),
               if (_can('surge'))
                 PlanGate.tile(
                   featureKey: 'surge_pricing',
@@ -665,6 +717,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     _closeDrawer();
                     Navigator.push(context, MaterialPageRoute(
                       builder: (_) => const BillTemplateScreen(),
+                    ));
+                  },
+                ),
+              // Drawer addition (2026-08-25): printer pairing/setup existed
+              // (Bluetooth/network thermal printers) but was never linked.
+              // Owner-only — pairing a printer is a device-setup task.
+              if (role == 'business_owner')
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.print_outlined),
+                  title: const Text('Printers'),
+                  onTap: () {
+                    _closeDrawer();
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const PrinterSetupScreen(),
                     ));
                   },
                 ),

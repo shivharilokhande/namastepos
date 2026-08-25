@@ -636,6 +636,22 @@ class ApiService {
     return (r as Map).cast<String, dynamic>();
   }
 
+  /// Owner-facing refund HISTORY (2026-08-25). Backs the mobile Refunds
+  /// list. Read-only — issuing a refund lives in order_detail_screen via
+  /// [refundOrder]. Tenant-scoped by the route; optional `status` filter
+  /// (pending|processed|failed|cancelled) and `limit` (backend caps 200).
+  Future<List<dynamic>> listRefunds(
+      String businessId, {String? status, int? limit}) async {
+    final params = <String, dynamic>{};
+    if (status != null) params['status'] = status;
+    if (limit != null) params['limit'] = limit;
+    final r = await _wrap(() => _dio.get(
+      '/businesses/$businessId/refunds',
+      queryParameters: params.isEmpty ? null : params,
+    ));
+    return (r as Map)['refunds'] as List? ?? const [];
+  }
+
   /// FF-903-c mobile tip report — per-server tip totals for a date range.
   /// Backend service reads `startDate` / `endDate` (not from/to).
   Future<List<Map<String, dynamic>>> tipReport(
@@ -986,6 +1002,38 @@ class ApiService {
 
   Future<void> deleteMembership(String businessId, String id) async {
     await _wrap(() => _dio.delete('/businesses/$businessId/memberships/$id'));
+  }
+
+  // ── Food coupons (2026-08-25) ────────────────────────────────────────
+  // Owner-managed promo codes for restaurant bills. Mirrors the dashboard
+  // CouponsPage. `includeInactive` surfaces soft-deleted (deactivated) rows
+  // so their redemption history stays visible.
+  Future<List<dynamic>> listFoodCoupons(
+      String businessId, {bool includeInactive = false}) async {
+    final r = await _wrap(() => _dio.get(
+      '/businesses/$businessId/food-coupons',
+      queryParameters: includeInactive ? {'includeInactive': 'true'} : null,
+    ));
+    return (r as Map)['coupons'] as List? ?? const [];
+  }
+
+  Future<Map<String, dynamic>> createFoodCoupon(
+      String businessId, Map<String, dynamic> body) async {
+    final r = await _wrap(
+        () => _dio.post('/businesses/$businessId/food-coupons', data: body));
+    return (r as Map)['coupon'] as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateFoodCoupon(
+      String businessId, String id, Map<String, dynamic> body) async {
+    final r = await _wrap(() =>
+        _dio.put('/businesses/$businessId/food-coupons/$id', data: body));
+    return (r as Map)['coupon'] as Map<String, dynamic>;
+  }
+
+  // DELETE = soft deactivate on the backend, so redemption history survives.
+  Future<void> deleteFoodCoupon(String businessId, String id) async {
+    await _wrap(() => _dio.delete('/businesses/$businessId/food-coupons/$id'));
   }
 
   Future<List<dynamic>> listQrCodes(String businessId) async {
