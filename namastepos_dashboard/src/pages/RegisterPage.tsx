@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
+import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { Utensils, Mail, Lock, User, Store, Eye, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -30,6 +31,58 @@ export function RegisterPage() {
   const [showPwd, setShowPwd] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // DPDP — shared consent recorder used by both signup paths.
+  const recordSignupConsents = async () => {
+    try {
+      await ffApi.recordConsent({
+        consentKey: 'privacy_policy', granted: true,
+        policyVersion: PRIVACY_POLICY_VERSION,
+        context: { flow: 'registration' },
+      });
+      await ffApi.recordConsent({
+        consentKey: 'terms_of_service', granted: true,
+        policyVersion: TERMS_OF_SERVICE_VERSION,
+        context: { flow: 'registration' },
+      });
+      if (marketingEmail) {
+        await ffApi.recordConsent({
+          consentKey: 'marketing_email', granted: true,
+          context: { flow: 'registration' },
+        });
+      }
+      if (marketingWhatsapp) {
+        await ffApi.recordConsent({
+          consentKey: 'marketing_whatsapp', granted: true,
+          context: { flow: 'registration' },
+        });
+      }
+    } catch (_) { /* non-fatal */ }
+  };
+
+  // Google sign-up: the backend finds-or-creates the account from the
+  // Google token, so this is a full registration path. DPDP consent is
+  // still mandatory before the account is created.
+  const onGoogle = async (cred: CredentialResponse) => {
+    if (!agreePolicy) {
+      toast.error('Please accept the Privacy Policy and Terms of Service first');
+      return;
+    }
+    if (!cred.credential) { toast.error('Google did not return a token'); return; }
+    setBusy(true);
+    try {
+      const { token, refreshToken, business } = await ffApi.googleLogin(cred.credential);
+      setSession(token, refreshToken);
+      setBusinessCache(business);
+      await recordSignupConsents();
+      toast.success('Welcome aboard! You\'re on the Starter plan.');
+      navigate('/');
+    } catch (err) {
+      toast.error(apiError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) { toast.error('Email and password required'); return; }
@@ -52,30 +105,7 @@ export function RegisterPage() {
       // the call fails (transient network), the next /me/consents
       // check will reveal the gap so the app can re-prompt. We
       // deliberately don't block the happy path.
-      try {
-        await ffApi.recordConsent({
-          consentKey: 'privacy_policy', granted: true,
-          policyVersion: PRIVACY_POLICY_VERSION,
-          context: { flow: 'registration' },
-        });
-        await ffApi.recordConsent({
-          consentKey: 'terms_of_service', granted: true,
-          policyVersion: TERMS_OF_SERVICE_VERSION,
-          context: { flow: 'registration' },
-        });
-        if (marketingEmail) {
-          await ffApi.recordConsent({
-            consentKey: 'marketing_email', granted: true,
-            context: { flow: 'registration' },
-          });
-        }
-        if (marketingWhatsapp) {
-          await ffApi.recordConsent({
-            consentKey: 'marketing_whatsapp', granted: true,
-            context: { flow: 'registration' },
-          });
-        }
-      } catch (_) { /* non-fatal */ }
+      await recordSignupConsents();
 
       toast.success('Welcome aboard! You\'re on the Starter plan.');
       navigate('/');
@@ -171,6 +201,21 @@ export function RegisterPage() {
               {busy ? 'Creating account…' : 'Create account'}
             </Button>
           </form>
+          <div className="flex items-center gap-3 my-4">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">OR</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+          <div className="flex justify-center">
+            <GoogleLogin
+              onSuccess={onGoogle}
+              onError={() => toast.error('Google sign-up failed')}
+              theme="outline"
+              size="large"
+              text="signup_with"
+              shape="rectangular"
+            />
+          </div>
           <p className="text-sm text-center text-muted-foreground mt-4">
             Already have an account?{' '}
             <Link to="/login" className="text-primary font-semibold hover:underline">

@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
+import '../../widgets/google_logo.dart';
 
 // DPDP — the policy version we record alongside the consent event.
 // Bump this string every time the published policy changes so the
@@ -82,15 +83,38 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    // DPDP — record the consents the user just gave. We always log
-    // privacy + terms (mandatory) and ALSO any marketing opt-ins they
-    // ticked. We never log a marketing opt-in they did NOT tick: the
-    // absence of a row IS the absence of consent.
-    //
-    // Best-effort: if these calls fail (network blip) the user is
-    // still registered, and the next /me/consents check will reveal
-    // the gap so the app can re-prompt. We deliberately swallow the
-    // failure here so it doesn't block the happy path.
+    // DPDP — record the consents the user just gave. Best-effort: if
+    // these calls fail (network blip) the user is still registered, and
+    // the next /me/consents check will reveal the gap so the app can
+    // re-prompt.
+    await _recordConsents();
+
+    // Success path: _RootGate sees auth.status flip and swaps to HomeScreen.
+    // Don't pushAndRemoveUntil here — see the matching comment in
+    // LoginScreen._afterAuth for the GlobalKey duplicate-mount story.
+  }
+
+  // Google sign-up (2026-08-25): the backend finds-or-creates the account
+  // from the Google token, so this is a full registration path. DPDP
+  // consent stays mandatory — the checkbox must be ticked first.
+  Future<void> _googleSignUp() async {
+    if (!_agreePolicy) {
+      _snack('Please accept the Privacy Policy and Terms of Service first');
+      return;
+    }
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.signInWithGoogle();
+    if (!mounted) return;
+    if (!ok) {
+      if (auth.error != null) _snack(auth.error!);
+      return;
+    }
+    await _recordConsents();
+    // _RootGate sees auth.status flip and swaps to HomeScreen.
+  }
+
+  // DPDP — shared by password and Google registration paths.
+  Future<void> _recordConsents() async {
     final api = ApiService.instance;
     try {
       await api.recordConsent(
@@ -124,12 +148,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
         );
       }
     } catch (_) {
-      // Non-fatal — see comment above.
+      // Non-fatal — the next /me/consents check will reveal any gap.
     }
-
-    // Success path: _RootGate sees auth.status flip and swaps to HomeScreen.
-    // Don't pushAndRemoveUntil here — see the matching comment in
-    // LoginScreen._afterAuth for the GlobalKey duplicate-mount story.
   }
 
   void _snack(String msg) =>
@@ -253,6 +273,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       : const Text('Create account',
                           style: TextStyle(
                               fontWeight: FontWeight.w900, fontSize: 16)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(children: [
+                const Expanded(child: Divider()),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text('OR',
+                      style: TextStyle(
+                          color: AppColors.textHint, fontSize: 12)),
+                ),
+                const Expanded(child: Divider()),
+              ]),
+              const SizedBox(height: 16),
+              SizedBox(
+                height: 50,
+                child: OutlinedButton.icon(
+                  icon: const GoogleLogo(size: 20),
+                  label: const Text('Sign up with Google',
+                      style: TextStyle(fontWeight: FontWeight.w700)),
+                  onPressed: auth.loading ? null : _googleSignUp,
                 ),
               ),
               const SizedBox(height: 12),

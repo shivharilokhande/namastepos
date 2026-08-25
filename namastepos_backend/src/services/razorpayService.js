@@ -87,45 +87,63 @@ async function syncPlans() {
   // 10× monthly (2 months free) which is the go-to lever for annual
   // conversion in Indian SaaS. Plans table has `price_yearly_paise`
   // if set; otherwise we derive it from monthly × 10.
-  const r = await query(`SELECT * FROM plans WHERE tier <> 'free'`);
-  for (const p of r.rows) {
-    // Monthly
-    if (!p.razorpay_plan_id) {
+  //
+  // Price-change fix (2026-08-25): Razorpay Plans are IMMUTABLE — their
+  // amount can never be edited. The old sync only created plans when the
+  // id column was NULL, so an admin price change silently kept charging
+  // the OLD amount at checkout while the dashboard displayed the new one.
+  // Sync is now amount-aware: it fetches the linked Razorpay plan,
+  // compares amounts, and creates a REPLACEMENT plan on any mismatch.
+  // Existing subscriptions keep their old plan; only new checkouts use
+  // the replacement.
+  const r = await query(`SELECT * FROM plans WHERE tier <> 'free' AND price_inr_paise > 0`);
+
+  /** Ensure one cadence (monthly|yearly) of one plan row matches Razorpay. */
+  async function ensureCadence(p, { column, period, label, wantPaise }) {
+    const currentId = p[column];
+    if (currentId) {
       try {
-        const created = await rzCall('POST', '/v1/plans', {
-          period: 'monthly', interval: 1,
-          item: { name: `NamastePOS ${p.name}`, amount: p.price_inr_paise,
-                  currency: 'INR', description: `${p.name}, monthly` },
-        });
-        await query(`UPDATE plans SET razorpay_plan_id = $1 WHERE id = $2`, [created.id, p.id]);
-        logger.info(`Synced monthly plan ${p.tier} → ${created.id}`);
+        const remote = await rzCall('GET', `/v1/plans/${currentId}`);
+        if (remote?.item?.amount === wantPaise) return; // in sync — nothing to do
+        logger.info(`Plan ${p.tier} ${period}: Razorpay has ₹${remote?.item?.amount / 100}, `
+          + `DB wants ₹${wantPaise / 100} — creating replacement (plans are immutable)`);
       } catch (err) {
-        logger.warn(`Razorpay monthly sync failed for ${p.tier}: ${err.message}`);
+        logger.warn(`Plan ${p.tier} ${period}: could not fetch ${currentId} `
+          + `(${err.message}) — creating replacement`);
       }
     }
-    // Yearly. `razorpay_plan_id_yearly` column is added lazily —
-    // check via a dedicated column if the migration provides it,
-    // otherwise stash the id in a companion row.
-    if (!p.razorpay_plan_id_yearly) {
+    const created = await rzCall('POST', '/v1/plans', {
+      period, interval: 1,
+      item: { name: label, amount: wantPaise,
+              currency: 'INR', description: `${p.name}, ${period}` },
+    });
+    // Defensive: Razorpay must echo back the amount we asked for. If it
+    // ever doesn't, refuse to link the plan rather than mischarge.
+    if (created?.item?.amount !== wantPaise) {
+      throw new Error(`Razorpay returned amount ${created?.item?.amount}, expected ${wantPaise}`);
+    }
+    await query(`UPDATE plans SET ${column} = $1 WHERE id = $2`, [created.id, p.id]);
+    logger.info(`Synced ${period} plan ${p.tier} → ${created.id} (₹${wantPaise / 100})`);
+  }
+
+  for (const p of r.rows) {
+    try {
+      await ensureCadence(p, {
+        column: 'razorpay_plan_id', period: 'monthly',
+        label: `NamastePOS ${p.name}`, wantPaise: p.price_inr_paise,
+      });
+    } catch (err) {
+      logger.warn(`Razorpay monthly sync failed for ${p.tier}: ${err.message}`);
+    }
+    try {
       const yearlyPaise = p.price_yearly_paise
         || Math.round(p.price_inr_paise * 10);   // default: 10× = 2 months free
-      try {
-        const created = await rzCall('POST', '/v1/plans', {
-          period: 'yearly', interval: 1,
-          item: { name: `NamastePOS ${p.name} (yearly)`, amount: yearlyPaise,
-                  currency: 'INR', description: `${p.name}, yearly` },
-        });
-        await query(
-          `UPDATE plans SET razorpay_plan_id_yearly = $1 WHERE id = $2`,
-          [created.id, p.id]
-        ).catch(() => {
-          // If the column doesn't exist yet, fall through — the value
-          // is still logged. Migration 047 (below) adds the column.
-        });
-        logger.info(`Synced yearly plan ${p.tier} → ${created.id}`);
-      } catch (err) {
-        logger.warn(`Razorpay yearly sync failed for ${p.tier}: ${err.message}`);
-      }
+      await ensureCadence(p, {
+        column: 'razorpay_plan_id_yearly', period: 'yearly',
+        label: `NamastePOS ${p.name} (yearly)`, wantPaise: yearlyPaise,
+      });
+    } catch (err) {
+      logger.warn(`Razorpay yearly sync failed for ${p.tier}: ${err.message}`);
     }
   }
 }

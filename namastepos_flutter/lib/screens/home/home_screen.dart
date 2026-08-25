@@ -28,6 +28,7 @@ import '../settings/back_office_screens.dart';
 import '../billing/billing_screen.dart';
 import '../marketplace/marketplace_screen.dart';
 import '../../utils/role_permissions.dart';
+import '../../widgets/feature_tour.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
 import '../../widgets/plan_gate.dart';
@@ -737,35 +738,43 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       // double-pad and leave a ~47px white band between the banner and the
       // inner header. Removing it for the children only tells them "the
       // parent already handled the inset".
-      body: Column(
+      // Feature tour (2026-08-25): Stack so the first-login tour card can
+      // float above whichever tab is showing. Owner-only — staff roles
+      // have restricted tabs the tour would point at uselessly.
+      body: Stack(
         children: [
-          const SafeArea(
-            bottom: false,
-            left: false,
-            right: false,
-            child: TrialBanner(),
+          Column(
+            children: [
+              const SafeArea(
+                bottom: false,
+                left: false,
+                right: false,
+                child: TrialBanner(),
+              ),
+              Expanded(
+                child: MediaQuery.removePadding(
+                  context: context,
+                  removeTop: true,
+                  child: Builder(builder: (_) {
+                    final screens = _screensFor(role, perms);
+                    // Push 16j — if Home isn't in this user's visible tabs
+                    // (e.g. captain without 'home' perm), fall back to the
+                    // first tab they DO have access to (typically POS).
+                    // Without this they'd land on the empty welcome screen
+                    // on first launch even though POS was a tap away.
+                    final visible = RolePerms.visibleTabs(role, permissions: perms);
+                    int idx = _index;
+                    if (!visible.contains(idx)) {
+                      idx = visible.isNotEmpty ? visible.first : 0;
+                    }
+                    if (idx >= screens.length) idx = 0;
+                    return IndexedStack(index: idx, children: screens);
+                  }),
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            child: MediaQuery.removePadding(
-              context: context,
-              removeTop: true,
-              child: Builder(builder: (_) {
-                final screens = _screensFor(role, perms);
-                // Push 16j — if Home isn't in this user's visible tabs
-                // (e.g. captain without 'home' perm), fall back to the
-                // first tab they DO have access to (typically POS).
-                // Without this they'd land on the empty welcome screen
-                // on first launch even though POS was a tap away.
-                final visible = RolePerms.visibleTabs(role, permissions: perms);
-                int idx = _index;
-                if (!visible.contains(idx)) {
-                  idx = visible.isNotEmpty ? visible.first : 0;
-                }
-                if (idx >= screens.length) idx = 0;
-                return IndexedStack(index: idx, children: screens);
-              }),
-            ),
-          ),
+          if (role == 'business_owner') const FeatureTour(),
         ],
       ),
       // FF-402 pass 3 — shared HomeBottomNav so drawer-pushed screens

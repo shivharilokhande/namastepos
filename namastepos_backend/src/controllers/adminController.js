@@ -3,6 +3,7 @@
 const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
+const logger = require('../config/logger');
 
 const adminTeam   = require('../services/adminTeamService');
 const adminCust   = require('../services/customerAdminService');
@@ -231,7 +232,17 @@ const listPlans = asyncHandler(async (_req, res) => {
 });
 const updatePlan = asyncHandler(async (req, res) => {
   const plan = await sub.updatePlan(req.params.tier, req.body);
-  res.json({ plan });
+  // Price-change fix (2026-08-25): Razorpay plans are immutable, so a
+  // price edit must produce a replacement Razorpay plan. syncPlans is now
+  // amount-aware; run it right away (best-effort — a Razorpay hiccup must
+  // not fail the admin save; the manual Sync button remains as fallback).
+  if (req.body && (req.body.price_inr_paise != null
+      || req.body.price_yearly_paise != null)) {
+    try { await razorpay.syncPlans(); } catch (err) {
+      logger.warn(`Auto plan-sync after price change failed: ${err.message}`);
+    }
+  }
+  res.json({ plan: (await sub.listAllPlans()).find((p) => p.tier === req.params.tier) || plan });
 });
 const syncRazorpayPlans = asyncHandler(async (_req, res) => {
   await razorpay.syncPlans();
