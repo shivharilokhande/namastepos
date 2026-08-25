@@ -93,6 +93,15 @@ const env = {
   FOUNDER_ADMIN_EMAIL: (process.env.FOUNDER_ADMIN_EMAIL
     || process.env.SUPER_ADMIN_EMAIL || '').toLowerCase(),
 
+  // Cloudflare R2 object storage (2026-08-25). When ALL are set, image
+  // uploads go to R2 and are served from R2_PUBLIC_URL; otherwise the
+  // route falls back to local disk (dev only — Render disk is ephemeral).
+  R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID || '',
+  R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID || '',
+  R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY || '',
+  R2_BUCKET: process.env.R2_BUCKET || '',
+  R2_PUBLIC_URL: process.env.R2_PUBLIC_URL || '',
+
   // Twilio (WhatsApp Business)
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',

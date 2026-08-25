@@ -49,7 +49,14 @@ const MIME_EXT = {
   'image/gif':  '.gif',
 };
 
-const storage = multer.diskStorage({
+// Storage backend (2026-08-25): Cloudflare R2 when configured (production —
+// Render's disk is ephemeral so local files vanish on every deploy),
+// local disk otherwise (dev). R2 mode buffers in memory (5 MB cap) and
+// PUTs via storageService; the response keeps the same `{ url }` shape,
+// except the URL is absolute (https://images.namastepos.in/...).
+const storageSvc = require('../services/storageService');
+
+const diskStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
     const bid = req.params.businessId;
     if (!bid || !UUID_RE.test(bid)) {
@@ -72,7 +79,7 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({
-  storage,
+  storage: storageSvc.isR2Enabled() ? multer.memoryStorage() : diskStorage,
   limits: { fileSize: 5 * 1024 * 1024 },   // 5 MB cap
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_MIME.has(file.mimetype)) return cb(null, true);
@@ -84,8 +91,26 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'BAD_REQUEST', message: 'No file provided' });
   }
-  // Public URL the client can serve back as <img src=...>
   const bid = req.params.businessId;
+
+  if (storageSvc.isR2Enabled()) {
+    // AUDIT-S002/S003 still hold: bid is a validated UUID and the key
+    // extension is derived from the (allow-listed) MIME type.
+    if (!UUID_RE.test(bid)) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'Invalid businessId' });
+    }
+    const ext = MIME_EXT[req.file.mimetype] || '.jpg';
+    const key = `${bid}/${uuidv4()}${ext}`;
+    const url = await storageSvc.putObject(key, req.file.buffer, req.file.mimetype);
+    return res.status(201).json({
+      url,                            // absolute public URL (R2 custom domain)
+      filename: key.split('/').pop(),
+      size: req.file.size,
+      mime: req.file.mimetype,
+    });
+  }
+
+  // Dev fallback — local disk, relative URL served by the static mount.
   const url = `/uploads/${bid}/${req.file.filename}`;
   res.status(201).json({
     url,                              // relative; client prefixes with API origin
