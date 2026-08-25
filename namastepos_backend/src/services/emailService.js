@@ -43,8 +43,34 @@ function ensureTransporter() {
     port: Number(SMTP_PORT) || 587,
     secure: Number(SMTP_PORT) === 465,
     auth: { user: SMTP_USER, pass: SMTP_PASS },
+    // Reliability fix (2026-08-25): every compliance email failed with
+    // "Connection timeout" on Render's request path while background
+    // (welcome) emails succeeded — the transporter was cached forever and
+    // its idle SMTP socket went stale, so the next inline send hung until
+    // it timed out. Pooling keeps warm connections and recycles dead ones;
+    // explicit timeouts fail fast instead of blocking; and sendMail resets
+    // + retries once on a connection error (see below).
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 50,
+    connectionTimeout: 10000,   // 10s to establish the TCP/TLS connection
+    greetingTimeout: 10000,     // 10s for the SMTP greeting
+    socketTimeout: 20000,       // 20s of inactivity before giving up
   });
   return transporter;
+}
+
+/** Drop the cached transporter so the next send rebuilds a fresh one. */
+function _resetTransporter() {
+  try { if (transporter && transporter.close) transporter.close(); } catch (_) { /* ignore */ }
+  transporter = null;
+  configured = false;
+}
+
+/** Heuristic: is this a connection-level failure worth one retry? */
+function _isConnError(err) {
+  const m = (err && (err.code || err.message) || '').toString().toLowerCase();
+  return /timeout|econn|esocket|closed|greeting|etimedout|network/.test(m);
 }
 
 /**
@@ -94,14 +120,28 @@ async function sendMail({
     return { suppressed: true };
   }
 
+  const mail = {
+    from: env.SMTP_FROM || 'NamastePOS <hello@namastepos.in>',
+    to: recipient,
+    subject,
+    html: html || undefined,
+    text: text || undefined,
+  };
   try {
-    const info = await tx.sendMail({
-      from: env.SMTP_FROM || 'NamastePOS <hello@namastepos.in>',
-      to: recipient,
-      subject,
-      html: html || undefined,
-      text: text || undefined,
-    });
+    let info;
+    try {
+      info = await tx.sendMail(mail);
+    } catch (err1) {
+      // Reliability fix (2026-08-25): a stale pooled socket surfaces as a
+      // connection timeout. Rebuild the transporter once and retry before
+      // giving up, so a dead connection doesn't drop a compliance email.
+      if (!_isConnError(err1)) throw err1;
+      logger.warn(`[email] conn error, rebuilding transporter + retrying: ${err1.message}`);
+      _resetTransporter();
+      const tx2 = ensureTransporter();
+      if (!tx2) throw err1;
+      info = await tx2.sendMail(mail);
+    }
     await query(
       `UPDATE email_dispatch_log
           SET status = 'sent', provider_id = $2, sent_at = NOW()
