@@ -15,7 +15,6 @@ import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../constants/strings.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/auth_service.dart';
 import 'otp_screen.dart';       // FF-402 restore-orphans
 import 'pin_login_screen.dart';
 import 'register_screen.dart';
@@ -64,24 +63,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _openStaffPinLogin() async {
-    // PIN login needs a businessId. We get it from the device's cached
-    // owner session. If no cache (e.g. fresh install, fully wiped), the
-    // owner has to sign in once on this device to "bind" it to their
-    // business. Subsequent owner sign-outs preserve the cache so staff
-    // can PIN-login from this screen.
-    final biz = await AuthService.instance.cachedBusiness();
-    if (!mounted) return;
-    if (biz == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text(
-            'Sign in as the owner first on this device. After the owner '
-            'signs out, staff can use PIN login here.'),
-        duration: Duration(seconds: 5),
-      ));
-      return;
-    }
+    // Phone-first staff login (2026-08-26): staff enter their own mobile
+    // number and PIN — the owner no longer has to sign in on this device
+    // first. The number resolves to the staffer's outlet(s) server-side.
     Navigator.push(context, MaterialPageRoute(
-      builder: (_) => PinLoginScreen(businessId: biz.id),
+      builder: (_) => const PinLoginScreen(),
     ));
   }
 

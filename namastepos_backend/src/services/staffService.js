@@ -379,17 +379,43 @@ async function createStaffWithPin(businessId, body) {
   // hardcoded TIER_STAFF_CAPS map below. Keeping the map only for the
   // `listStaffWithPin` summary view since it's still informational.
 
-  const userId = uuid();
-  const userEmail = email || `${userId}@staff.namastepos.local`;
-  try {
+  // Cross-business identity (2026-08-26): a phone number identifies a PERSON,
+  // not a single restaurant. The same staffer can legitimately work at two
+  // restaurants that both run NamastePOS (part-time, or moved jobs and the
+  // old owner hasn't deactivated them yet). users.phone is NOT unique, so we
+  // treat the phone as the person's identity: if a user row already exists
+  // for this phone, REUSE it and just add a new membership for THIS business.
+  // Never block the second owner with "phone already in use" — the two
+  // memberships are independent, each with its own PIN/role/permissions.
+  let userId;
+  let createdNewUser = false;
+  const existingUser = await query(
+    `SELECT id FROM users WHERE phone = $1 ORDER BY created_at ASC LIMIT 1`,
+    [phone],
+  );
+  if (existingUser.rowCount > 0) {
+    userId = existingUser.rows[0].id;
+    // Backfill display_name only if the shared user row never had one; do not
+    // clobber the name another restaurant is already using for this person.
     await query(
-      `INSERT INTO users (id, email, phone, display_name)
-       VALUES ($1, $2, $3, $4)`,
-      [userId, userEmail, phone, displayName],
+      `UPDATE users SET display_name = COALESCE(NULLIF(display_name, ''), $1)
+        WHERE id = $2`,
+      [displayName, userId],
     );
-  } catch (err) {
-    if (err.code === '23505') throw new Conflict('Email or phone already in use');
-    throw err;
+  } else {
+    userId = uuid();
+    createdNewUser = true;
+    const userEmail = email || `${userId}@staff.namastepos.local`;
+    try {
+      await query(
+        `INSERT INTO users (id, email, phone, display_name)
+         VALUES ($1, $2, $3, $4)`,
+        [userId, userEmail, phone, displayName],
+      );
+    } catch (err) {
+      if (err.code === '23505') throw new Conflict('Email already in use');
+      throw err;
+    }
   }
 
   const pinHash = await bcrypt.hash(pin, 10);
@@ -402,14 +428,21 @@ async function createStaffWithPin(businessId, body) {
     await query(
       `INSERT INTO business_users
          (business_id, user_id, role, display_name, pin_hash, is_active, permissions)
-       VALUES ($1, $2, $3::user_role, $4, $5, TRUE, $6::jsonb)`,
+       VALUES ($1, $2, $3::user_role, $4, $5, TRUE, $6::jsonb)
+       ON CONFLICT (business_id, user_id) DO UPDATE
+         SET role = EXCLUDED.role, display_name = EXCLUDED.display_name,
+             pin_hash = EXCLUDED.pin_hash, is_active = TRUE,
+             permissions = EXCLUDED.permissions`,
       [businessId, userId, role, displayName, pinHash,
         JSON.stringify(seededPerms)],
     );
   } catch (err) {
-    // Roll back the orphaned users row we just inserted so a retry doesn't
-    // trip the unique-email guard.
-    await query(`DELETE FROM users WHERE id = $1`, [userId]).catch(() => {});
+    // Roll back the orphaned users row ONLY if we created it in this call.
+    // A reused user (shared with another restaurant) must never be deleted —
+    // that would wipe the person's membership at their other job.
+    if (createdNewUser) {
+      await query(`DELETE FROM users WHERE id = $1`, [userId]).catch(() => {});
+    }
     // 22P02 = invalid_text_representation → the role value isn't in the
     // user_role enum yet. This is exactly what happens for 'staff_driver'
     // when migration 054 (ADD VALUE 'staff_driver') hasn't been applied.
@@ -560,6 +593,36 @@ async function listForPicker(businessId) {
     userId: row.user_id,
     role: row.role,
     displayName: row.display_name,
+  }));
+}
+
+/// Resolve every active restaurant a staffer belongs to, by phone number.
+/// Powers the mobile "Sign in as staff" flow so the owner never has to log in
+/// first on the staffer's phone: enter phone -> pick outlet (if >1) -> PIN.
+/// Returns only ACTIVE, non-owner memberships that have a PIN set. A phone at
+/// two restaurants yields two rows (each independent). Owners keep using
+/// email/Google, so they are intentionally excluded here.
+async function resolveStaffByPhone(phone) {
+  if (!phone) return [];
+  const r = await query(
+    `SELECT bu.user_id, bu.business_id, bu.role, bu.display_name,
+            b.name AS business_name
+       FROM business_users bu
+       JOIN users u ON u.id = bu.user_id
+       LEFT JOIN businesses b ON b.id = bu.business_id
+      WHERE u.phone = $1
+        AND bu.is_active = TRUE
+        AND bu.role <> 'business_owner'
+        AND bu.pin_hash IS NOT NULL
+      ORDER BY b.name`,
+    [phone],
+  );
+  return r.rows.map((row) => ({
+    userId: row.user_id,
+    businessId: row.business_id,
+    role: row.role,
+    displayName: row.display_name,
+    businessName: row.business_name,
   }));
 }
 
@@ -724,6 +787,8 @@ module.exports = {
   verifyPin,
   // Push 14b — public picker (no auth)
   listForPicker,
+  // 2026-08-26 — phone-first staff login (no owner pre-login on device)
+  resolveStaffByPhone,
   // Push 14c — permissions
   PERMISSION_KEYS,
   DEFAULT_PERMS_BY_ROLE,

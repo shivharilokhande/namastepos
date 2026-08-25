@@ -125,6 +125,14 @@ const staffPickerSchema = {
     businessId: Joi.string().uuid().required(),
   }),
 };
+// 2026-08-26 — phone-first staff login. Staff enter their own mobile number;
+// we return the outlets they can sign into (so no owner has to log in first
+// on the device). Digits only, 8–15 to cover +country variants stored raw.
+const staffResolveSchema = {
+  body: Joi.object({
+    phone: Joi.string().pattern(/^[0-9+\-\s]{8,20}$/).required(),
+  }),
+};
 
 /** Helper — build the standard session payload + plan summary. */
 async function _sessionPayload(user, { req, name }) {
@@ -552,6 +560,16 @@ module.exports = {
   staffPicker: [validate(staffPickerSchema), asyncHandler(async (req, res) => {
     const staff = require('../services/staffService');
     res.json({ staff: await staff.listForPicker(req.body.businessId) });
+  })],
+  // Phone-first staff login step 1: resolve the outlets a phone can sign into.
+  // Returns [] for an unknown phone (never reveals whether a number exists via
+  // a different status code — same 200 + empty list either way). The client
+  // then shows an outlet picker if >1, or jumps straight to PIN if exactly 1,
+  // and finishes with the existing POST /auth/pin-login (which owns lockout).
+  staffResolve: [validate(staffResolveSchema), asyncHandler(async (req, res) => {
+    const staff = require('../services/staffService');
+    const phone = String(req.body.phone).trim();
+    res.json({ outlets: await staff.resolveStaffByPhone(phone) });
   })],
   refresh: [validate(refreshSchema), refresh],
   // Bug fix: there used to be a stub here that overrode the rich `logout` defined

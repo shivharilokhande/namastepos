@@ -374,6 +374,20 @@ class ApiService {
     return (r as Map)['staff'] as List? ?? const [];
   }
 
+  /// Public (no-auth) phone-first staff login step 1. Given a mobile number,
+  /// returns the outlets the staffer can sign into:
+  ///   [{userId, businessId, role, displayName, businessName}]
+  /// Empty list = no staff account for that number (never errors, so a
+  /// stranger can't tell whether a number exists). The caller then collects
+  /// the PIN and finishes via [pinLogin] with the chosen outlet's ids. This
+  /// removes the old requirement that the OWNER log in first on the device.
+  Future<List<dynamic>> staffResolve(String phone) async {
+    final r = await _wrap(() => _dio.post('/auth/staff-resolve', data: {
+          'phone': phone,
+        }));
+    return (r as Map)['outlets'] as List? ?? const [];
+  }
+
   /// POST /businesses/:id/billing/change → creates a Razorpay subscription
   /// (or downgrades to free) and returns the checkout payload the SDK needs:
   ///   { subscriptionId, razorpayKeyId, plan: {...},

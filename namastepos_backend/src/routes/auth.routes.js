@@ -33,6 +33,7 @@ router.post ('/register',        loginLimiter, ...c.register);
 router.post ('/login',           loginLimiter, ...c.passwordLogin);
 router.post ('/pin-login',       pinLimiter, ...c.pinLogin);   // Push 14a
 router.post ('/staff-picker',    pinLimiter, ...c.staffPicker); // Push 14b
+router.post ('/staff-resolve',   pinLimiter, ...c.staffResolve); // phone-first staff login
 router.post ('/refresh',         loginLimiter, ...c.refresh);
 router.post ('/logout',          requireAuth,  c.logout);
 router.get  ('/me',              requireAuth,  c.me);
