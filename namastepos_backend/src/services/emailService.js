@@ -120,6 +120,29 @@ async function sendMail({
     return { suppressed: true };
   }
 
+  // Preferred path (2026-08-25): Brevo HTTP API over 443. Render's
+  // instances block outbound SMTP (25/465/587), so nodemailer to
+  // smtp-relay.brevo.com times out — that's why every email failed with
+  // "Connection timeout". The HTTP API is never port-blocked. When
+  // BREVO_API_KEY is set we use it; otherwise fall back to SMTP (local dev).
+  if (process.env.BREVO_API_KEY) {
+    try {
+      await _sendViaBrevoApi({ recipient, subject, html, text });
+      await query(
+        `UPDATE email_dispatch_log SET status = 'sent', sent_at = NOW() WHERE id = $1`,
+        [logRow.id]
+      );
+      return { sent: true, via: 'brevo_api' };
+    } catch (err) {
+      await query(
+        `UPDATE email_dispatch_log SET status = 'failed', error_message = $2 WHERE id = $1`,
+        [logRow.id, err.message]
+      );
+      logger.warn(`[email] brevo-api failed ${template} → ${recipient}: ${err.message}`);
+      return { failed: true, error: err.message };
+    }
+  }
+
   const mail = {
     from: env.SMTP_FROM || 'NamastePOS <hello@namastepos.in>',
     to: recipient,
@@ -159,6 +182,56 @@ async function sendMail({
     logger.warn(`[email] failed ${template} → ${recipient}: ${err.message}`);
     return { failed: true, error: err.message };
   }
+}
+
+/**
+ * Send one email through Brevo's transactional HTTP API (v3). Uses the
+ * built-in https module (zero deps). Parses "Name <addr>" sender/recipient
+ * into Brevo's {name,email} shape. Throws on non-2xx so sendMail records
+ * the failure. (2026-08-25 — replaces SMTP on Render where 587 is blocked.)
+ */
+function _parseAddr(s, fallbackName) {
+  const m = /^\s*(.*?)\s*<\s*([^>]+)\s*>\s*$/.exec(s || '');
+  if (m) return { name: m[1] || fallbackName || undefined, email: m[2] };
+  return { name: fallbackName || undefined, email: (s || '').trim() };
+}
+
+function _sendViaBrevoApi({ recipient, subject, html, text }) {
+  return new Promise((resolve, reject) => {
+    const https = require('https');
+    const from = _parseAddr(env.SMTP_FROM || 'NamastePOS <hello@namastepos.in>', 'NamastePOS');
+    const to = _parseAddr(recipient);
+    if (!to.email) return reject(new Error('no recipient email'));
+    const payload = JSON.stringify({
+      sender: { name: from.name || 'NamastePOS', email: from.email },
+      to: [{ email: to.email, ...(to.name ? { name: to.name } : {}) }],
+      subject,
+      ...(html ? { htmlContent: html } : {}),
+      ...(text ? { textContent: text } : {}),
+    });
+    const req = https.request({
+      hostname: 'api.brevo.com',
+      path: '/v3/smtp/email',
+      method: 'POST',
+      headers: {
+        'api-key': process.env.BREVO_API_KEY,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(payload),
+      },
+      timeout: 15000,
+    }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) return resolve(body);
+        reject(new Error(`Brevo API ${res.statusCode}: ${body.slice(0, 200)}`));
+      });
+    });
+    req.on('timeout', () => req.destroy(new Error('Brevo API timeout')));
+    req.on('error', reject);
+    req.write(payload);
+    req.end();
+  });
 }
 
 module.exports = { sendMail, ensureTransporter };
