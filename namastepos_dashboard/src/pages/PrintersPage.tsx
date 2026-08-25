@@ -4,7 +4,10 @@
 // stores the printer registry; the actual ESC/POS bytes are produced by
 // the Flutter app (Bluetooth) or the namastepos_print_agent polling
 // GET /print-jobs/next on the cashier's LAN — a browser cannot open raw
-// TCP sockets to a 192.168.x.x printer, so there is no "test print" here.
+// TCP sockets to a 192.168.x.x printer. The one exception (added
+// 2026-08-25) is Web Bluetooth: Chromium can drive a nearby BLE thermal
+// printer directly, so this page now also hosts a connect/test-print card
+// backed by src/lib/btPrinter.ts.
 //
 // Endpoint shapes (verified against sprintsAll.routes.js + printerService.js,
 // 2026-08-25):
@@ -15,7 +18,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, Printer as PrinterIcon, Pencil, Trash2, Info, Star } from 'lucide-react';
+import { Plus, Printer as PrinterIcon, Pencil, Trash2, Info, Star, Bluetooth } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,6 +35,12 @@ import { ffApi } from '@/api/namastepos';
 // and API files are frozen for this change — so DELETE goes through the raw
 // axios client with the cached business id, same URL shape the backend expects.
 import { api, getBusinessCache, apiError } from '@/api/client';
+// Web Bluetooth ESC/POS driver (2026-08-25) — Chromium-only browser printing
+// to nearby BLE thermal printers; see btPrinter.ts for the full caveat list.
+import {
+  isWebBluetoothSupported, connectBtPrinter,
+  getSharedBtPrinter, setSharedBtPrinter, type BtPrinter,
+} from '@/lib/btPrinter';
 
 // ── Types ─────────────────────────────────────────────────────────────────
 // WHY snake_case (2026-08-25): printerService.listPrinters returns raw pg
@@ -108,6 +117,57 @@ export function PrintersPage() {
   const [form, setForm] = useState<PrinterForm>(EMPTY_FORM);
   const [deleting, setDeleting] = useState<PrinterRow | null>(null);
 
+  // ── Web Bluetooth printer (2026-08-25) ──────────────────────────────────
+  // WHY lazy initialiser from the shared singleton: the BLE connection lives
+  // at module scope (btPrinter.ts) so it survives SPA navigation — when the
+  // owner returns to this page we re-adopt the live handle instead of making
+  // them re-pair. getSharedBtPrinter() also self-clears dead links.
+  const btSupported = isWebBluetoothSupported();
+  const [btPrinter, setBtPrinter] = useState<BtPrinter | null>(() => getSharedBtPrinter());
+  const [btConnecting, setBtConnecting] = useState(false);
+  const [btTesting, setBtTesting] = useState(false);
+
+  const handleBtConnect = async () => {
+    setBtConnecting(true);
+    try {
+      const p = await connectBtPrinter();
+      setSharedBtPrinter(p);
+      setBtPrinter(p);
+      toast.success(`Connected to ${p.deviceName}`);
+    } catch (e) {
+      // WHY the NotFoundError filter (2026-08-25): Chromium throws it when
+      // the owner simply closes the device chooser — cancelling is not an
+      // error, and a red toast for it reads like a broken feature.
+      if ((e as DOMException | null)?.name !== 'NotFoundError') {
+        toast.error(e instanceof Error ? e.message : 'Could not connect to the printer');
+      }
+    } finally {
+      setBtConnecting(false);
+    }
+  };
+
+  const handleBtTest = async () => {
+    if (!btPrinter) return;
+    setBtTesting(true);
+    try {
+      await btPrinter.printTest();
+      toast.success('Test print sent');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Test print failed');
+      // Print failures are usually the link dying (printer sleep/out of
+      // range) — re-read the singleton so a dead handle drops the green dot.
+      setBtPrinter(getSharedBtPrinter());
+    } finally {
+      setBtTesting(false);
+    }
+  };
+
+  const handleBtDisconnect = () => {
+    setSharedBtPrinter(null); // disconnects the old handle internally
+    setBtPrinter(null);
+    toast.success('Bluetooth printer disconnected');
+  };
+
   const set = <K extends keyof PrinterForm>(key: K, value: PrinterForm[K]) =>
     setForm((f) => ({ ...f, [key]: value }));
 
@@ -167,6 +227,67 @@ export function PrintersPage() {
         </div>
         <Button onClick={openAdd}><Plus className="mr-2 h-4 w-4" /> Add printer</Button>
       </div>
+
+      {/* Web Bluetooth printer (2026-08-25): direct browser → BLE thermal
+          printer connection, Chromium-only. Sits above the registry list
+          because it's the only thing on this page that physically prints. */}
+      <Card>
+        <CardContent className="space-y-3 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <Bluetooth className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+              <div>
+                <p className="font-medium">Web Bluetooth printer</p>
+                <p className="text-sm text-muted-foreground">
+                  Connect a nearby BLE thermal printer and print directly from this browser.
+                </p>
+              </div>
+            </div>
+
+            {!btSupported ? (
+              <Badge variant="outline" className="border-destructive/40 text-destructive">
+                Not supported in this browser
+              </Badge>
+            ) : btPrinter && btPrinter.isConnected ? (
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Green dot = live GATT link, mirrors the mobile app's
+                    paired-printer indicator (2026-08-25). */}
+                <span className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm">
+                  <span className="h-2.5 w-2.5 rounded-full bg-green-500" />
+                  <span className="font-medium">{btPrinter.deviceName}</span>
+                </span>
+                <Button variant="outline" size="sm" onClick={handleBtTest} disabled={btTesting}>
+                  {btTesting ? 'Printing…' : 'Test print'}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={handleBtDisconnect}>
+                  Disconnect
+                </Button>
+              </div>
+            ) : (
+              <Button size="sm" onClick={handleBtConnect} disabled={btConnecting}>
+                <Bluetooth className="mr-2 h-4 w-4" />
+                {btConnecting ? 'Connecting…' : 'Connect printer'}
+              </Button>
+            )}
+          </div>
+
+          {!btSupported && (
+            <p className="text-xs text-muted-foreground">
+              Web Bluetooth needs Chrome or Edge over HTTPS. iOS Safari does not support
+              it at all — on iPhone/iPad, print from the NamastePOS mobile app instead.
+            </p>
+          )}
+          {/* WHY this caveat (2026-08-25): browser BLE printing dies with the
+              tab and skips classic-Bluetooth printers, so we say out loud that
+              it's a convenience, not the production print path. */}
+          <p className="text-xs text-muted-foreground">
+            Best for quick prints at the counter. For reliable day-long printing, use the
+            NamastePOS mobile app (Bluetooth) or the{' '}
+            <span className="font-medium text-foreground">namastepos_print_agent</span> for
+            LAN printers — this connection ends when the browser tab closes.
+          </p>
+        </CardContent>
+      </Card>
 
       {/* WHY this note (2026-08-25): owners kept asking why "test print" isn't
           on the web. Browsers can't reach LAN/Bluetooth printers, so we set

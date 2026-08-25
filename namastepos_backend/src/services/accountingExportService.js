@@ -139,6 +139,33 @@ async function listExports(businessId) {
   return r.rows;
 }
 
+// WHY (2026-08-25): founder — "IRN generated · 580ce2… but where do those
+// invoices go?" generateIrn() writes einvoice_irns and the success toast
+// was the ONLY place the IRN ever appeared: tax_invoices.irn exists but is
+// never populated, and no endpoint read einvoice_irns back. This is that
+// read path. One list per business, keyed by order_id, so the dashboard
+// can join IRNs onto both orders and tax invoices (tax_invoices.order_id)
+// with a single fetch — no per-row lookups.
+async function listIrns(businessId) {
+  const r = await query(
+    `SELECT order_id, irn, ack_no, ack_date, status, cancelled_at, created_at
+       FROM einvoice_irns
+      WHERE business_id = $1
+      ORDER BY created_at DESC
+      LIMIT 500`,
+    [businessId]
+  );
+  return r.rows.map((row) => ({
+    orderId: row.order_id,
+    irn: row.irn,
+    ackNo: row.ack_no,
+    ackDate: row.ack_date,
+    status: row.status,
+    cancelledAt: row.cancelled_at,
+    createdAt: row.created_at,
+  }));
+}
+
 module.exports = {
-  tallyExport, zohoCsv, generateIrn, generateEwayBill, listExports,
+  tallyExport, zohoCsv, generateIrn, generateEwayBill, listExports, listIrns,
 };

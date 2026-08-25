@@ -30,6 +30,16 @@ async function _appendInbound(businessId, phone, body, providerMsgId, name) {
   });
 }
 
+// WHY (2026-08-25): in production the TWILIO_* env vars are empty, so
+// _sendOutbound silently mock-logs and returns null — campaigns showed
+// "sent 0/N" with no explanation and the founder couldn't tell whether
+// WhatsApp was connected at all. Expose a single source of truth the API
+// can surface to the dashboard. All three values are required for a real
+// Twilio send (see the guard in _sendOutbound below).
+function isProviderConfigured() {
+  return !!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_WA_FROM);
+}
+
 async function _sendOutbound(businessId, phone, body) {
   // Real send (Twilio):
   if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_WA_FROM) {
@@ -146,10 +156,35 @@ async function listCampaigns(businessId) {
       ORDER BY created_at DESC LIMIT 50`,
     [businessId]
   );
-  return r.rows;
+  // WHY (2026-08-25): the route wraps this array as {campaigns: [...]} and
+  // JSON.stringify drops extra properties on arrays, so the provider status
+  // rides on each row (same value for all — it's a deployment-level fact).
+  // The dashboard uses it to show a "WhatsApp not connected" banner instead
+  // of a mysterious "sent 0/N".
+  const providerConfigured = isProviderConfigured();
+  return r.rows.map((row) => ({ ...row, provider_configured: providerConfigured }));
 }
 
 async function runCampaign(businessId, campaignId) {
+  // WHY (2026-08-25): previously an unconfigured provider still flipped the
+  // campaign to 'done' with sent_count 0 — the UI read "sent 0/1" and the
+  // founder couldn't tell if WhatsApp was broken or not connected. Now we
+  // check creds FIRST: without a provider the campaign stays 'scheduled'
+  // (so it can genuinely run once Twilio/Meta creds are added — no data is
+  // lost) and the response says honestly that recipients are queued.
+  if (!isProviderConfigured()) {
+    const existing = await query(
+      `SELECT recipient_count FROM wa_campaigns
+        WHERE business_id = $1 AND id = $2`,
+      [businessId, campaignId]
+    );
+    if (existing.rowCount === 0) return null;
+    return {
+      sent: 0,
+      queued: existing.rows[0].recipient_count,
+      providerConfigured: false,
+    };
+  }
   const c = await query(
     `UPDATE wa_campaigns SET status = 'running'
       WHERE business_id = $1 AND id = $2 RETURNING *`,
@@ -173,7 +208,9 @@ async function runCampaign(businessId, campaignId) {
       WHERE id = $2`,
     [sent, campaignId]
   );
-  return { sent };
+  // queued = provider accepted nothing for these (per-message failures);
+  // surfaced so the UI never conflates "attempted" with "delivered to Twilio".
+  return { sent, queued: audience.rows.length - sent, providerConfigured: true };
 }
 
 /**
@@ -189,6 +226,6 @@ async function sendRaw({ to, body }) {
 }
 
 module.exports = {
-  handleInbound, _sendOutbound, sendRaw,
+  handleInbound, _sendOutbound, sendRaw, isProviderConfigured,
   createCampaign, listCampaigns, runCampaign,
 };

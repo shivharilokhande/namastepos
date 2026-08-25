@@ -208,6 +208,53 @@ export function SettingsPage() {
 
   const labelFor = (p: string) => p.charAt(0).toUpperCase() + p.slice(1);
 
+  // ── Google reviews (founder, 2026-08-25) ────────────────────────────────
+  // Owner pastes their Google Maps link (or Place ID); it persists onto the
+  // businesses row through the same PATCH /auth/me whitelist path as
+  // logo_url (migration 061 columns). "Fetch now" hits
+  // POST /businesses/:id/reviews/fetch — the backend resolves the Place ID
+  // from the link and pulls reviews in; they show on the Reviews page under
+  // the Google source. Kept as separate state from `form` so saving this
+  // card can't accidentally resubmit half-edited profile fields.
+  const [gmapsUrl, setGmapsUrl] = useState('');
+  const [gplaceId, setGplaceId] = useState('');
+  useEffect(() => {
+    if (me?.business) {
+      setGmapsUrl(me.business.googleMapsUrl || '');
+      setGplaceId(me.business.googlePlaceId || '');
+    }
+  }, [me]);
+
+  const saveGoogleReviews = useMutation({
+    mutationFn: () => ffApi.patchMe({
+      google_maps_url: gmapsUrl.trim(),
+      google_place_id: gplaceId.trim(),
+    }),
+    onSuccess: (res: any) => {
+      toast.success('Google reviews settings saved');
+      if (res.business) setBusinessCache(res.business);
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const fetchGoogleReviews = useMutation({
+    mutationFn: () => api
+      .post(`/businesses/${me!.business.id}/reviews/fetch`)
+      .then((r) => r.data),
+    onSuccess: (res: any) => {
+      // Backend returns { fetched, reason?, message? } — a friendly message
+      // accompanies every zero-fetch reason (no key, bad link, Places error).
+      if (res.fetched > 0) {
+        toast.success(`Fetched ${res.fetched} Google review${res.fetched === 1 ? '' : 's'} — see the Reviews page`);
+      } else {
+        toast(res.message || 'No new reviews since the last fetch.');
+      }
+      qc.invalidateQueries({ queryKey: ['reviews'] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
   return (
     <div className="space-y-6">
       <div>
@@ -404,6 +451,60 @@ export function SettingsPage() {
               </div>
             </>
           )}
+        </CardContent>
+      </Card>
+
+      {/* ── Google reviews (founder, 2026-08-25) ────────────────────────── */}
+      <Card>
+        <CardHeader><CardTitle>Google reviews</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Paste your restaurant's Google Maps link and we'll pull your
+            Google reviews onto the Reviews page. Note: Google's API only
+            returns your 5 most relevant reviews per fetch — fetch regularly
+            to build up history over time.
+          </p>
+          <div>
+            <Label>Google Maps link</Label>
+            <Input
+              value={gmapsUrl}
+              onChange={(e) => setGmapsUrl(e.target.value)}
+              placeholder="https://www.google.com/maps/place/…"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Use the full link from your browser's address bar or the Share
+              button — shortened maps.app.goo.gl links don't carry the Place ID.
+            </p>
+          </div>
+          <div>
+            <Label>Place ID (optional)</Label>
+            <Input
+              value={gplaceId}
+              onChange={(e) => setGplaceId(e.target.value)}
+              placeholder="ChIJ…"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              If we can't read the ID from your link, find it with Google's
+              "Place ID Finder" and paste it here directly.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => fetchGoogleReviews.mutate()}
+              disabled={
+                fetchGoogleReviews.isPending
+                // Nothing configured server-side yet → the fetch can only
+                // fail; nudge the owner to save first.
+                || (!me?.business?.googleMapsUrl && !me?.business?.googlePlaceId)
+              }
+            >
+              {fetchGoogleReviews.isPending ? 'Fetching…' : 'Fetch reviews now'}
+            </Button>
+            <Button onClick={() => saveGoogleReviews.mutate()} disabled={saveGoogleReviews.isPending}>
+              {saveGoogleReviews.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

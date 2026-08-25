@@ -260,13 +260,19 @@ async function subscribe(businessId, slug) {
     throw new Conflict('Addon already active for this business');
   }
 
-  // Push 16g — every addon activates for free now. Marketplace is no
-  // longer a paid storefront; features come from the plan, and addons
-  // are just toggles for things that don't fit cleanly in plan_features.
-  // The Razorpay branch below stays in code so a future paid addon can
-  // be re-enabled by flipping a config — but the current default is
-  // free instant activation.
-  if (true || addon.price_inr_paise === 0) {
+  // Founder bug fix (2026-08-25): Push 16g had `if (true || price === 0)`
+  // here, so PAID addons also fell into the free branch and activated
+  // without any Razorpay charge. Paid addons now require a completed
+  // Razorpay payment (see confirmPayment below) before the
+  // business_addons row is written.
+  //
+  // WHY the razorpayConfigured escape hatch: local dev / CI usually runs
+  // without RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET and rzCall() hard-fails
+  // in that case. We keep the old instant activation there so the
+  // marketplace stays usable offline; production always has keys, so real
+  // customers always go through payment.
+  const razorpayConfigured = !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+  if (addon.price_inr_paise === 0 || !razorpayConfigured) {
     const ins = await query(
       `INSERT INTO business_addons
          (business_id, addon_id, status, trial_ends_at, current_period_end)
@@ -281,49 +287,94 @@ async function subscribe(businessId, slug) {
     return { activated: true, activation: serializeActivation(ins.rows[0], addon) };
   }
 
-  // Paid addon (DISABLED in Push 16g — kept for future use) → Razorpay
-  if (!addon.razorpay_plan_id) {
-    throw new BadRequest('Addon Razorpay plan not synced. Run /admin/addons/sync-razorpay first.');
-  }
-  const sub = await rzCall('POST', '/v1/subscriptions', {
-    plan_id: addon.razorpay_plan_id,
-    customer_notify: 1,
-    total_count: 120,
+  // Paid addon → create a one-time Razorpay Order for the first billing
+  // period (beta keeps this simple: one order up-front; recurring renewal
+  // can layer on later). Deliberately NO business_addons write here —
+  // activation happens only in confirmPayment() after the signature
+  // verifies, mirroring the Push 13.1 rule for plan upgrades: a dismissed
+  // checkout must never grant a paid feature.
+  const rz = require('./razorpayService'); // lazy: avoids require cycle (razorpayService lazily requires us for webhooks)
+  const order = await rz.createOneTimeOrder({
+    amountPaise: addon.price_inr_paise,
+    // Razorpay caps `receipt` at 40 chars, so no UUIDs here — the
+    // business/addon identity travels in `notes` instead.
+    receipt: `addon_${Date.now()}`,
     notes: { businessId, addonSlug: addon.slug, kind: 'addon' },
   });
-
-  // Stash pending row
-  const periodEnd = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  const trialEnds = addon.trial_days > 0
-    ? new Date(Date.now() + addon.trial_days * 24 * 60 * 60 * 1000)
-    : null;
-  await query(
-    `INSERT INTO business_addons
-       (business_id, addon_id, status, trial_ends_at,
-        current_period_end, razorpay_subscription_id)
-     VALUES ($1, $2,
-             CASE WHEN $3::int > 0 THEN 'trialing'::addon_status ELSE 'trialing'::addon_status END,
-             $4, $5, $6)
-     ON CONFLICT (business_id, addon_id) DO UPDATE
-       SET status = 'trialing'::addon_status,
-           cancelled_at = NULL,
-           cancel_at_period_end = FALSE,
-           razorpay_subscription_id = EXCLUDED.razorpay_subscription_id,
-           current_period_end = EXCLUDED.current_period_end,
-           trial_ends_at = EXCLUDED.trial_ends_at`,
-    [businessId, addon.id, addon.trial_days, trialEnds, periodEnd, sub.id]
-  );
-
   return {
     activated: false,
-    checkoutOptions: {
-      key: env.RAZORPAY_KEY_ID,
-      subscription_id: sub.id,
-      name: 'NamastePOS',
-      description: `${addon.name} addon · ${addon.tagline}`,
-      theme: { color: '#FF6B35' },
-    },
+    requiresPayment: true,
+    razorpayOrder: { id: order.id, amount: order.amount, currency: order.currency },
+    keyId: env.RAZORPAY_KEY_ID,
+    addon: serializeAddon(addon),
   };
+}
+
+/**
+ * 2026-08-25 — second leg of the paid-addon flow (founder bug fix).
+ * The dashboard posts back Razorpay Checkout's success payload; we verify
+ * HMAC-SHA256(`${orderId}|${paymentId}`, RAZORPAY_KEY_SECRET) equals the
+ * returned signature (via razorpayService.verifyCheckoutSignature), then
+ * activate the addon and record the payment.
+ */
+async function confirmPayment(businessId, slug,
+                              { razorpayPaymentId, razorpayOrderId, razorpaySignature }) {
+  const addon = await getBySlug(slug);
+  const rz = require('./razorpayService'); // lazy: same cycle-avoidance as in subscribe()
+
+  // The signature proves Razorpay (sole other holder of KEY_SECRET)
+  // authorised exactly this order+payment pair — a forged or dismissed
+  // checkout cannot produce it.
+  const ok = rz.verifyCheckoutSignature({
+    orderId: razorpayOrderId,
+    paymentId: razorpayPaymentId,
+    signature: razorpaySignature,
+  });
+  if (!ok) throw new BadRequest('Payment signature verification failed');
+
+  // Cross-check the order server-side: a VALID signature for a different
+  // order (cheaper addon, other tenant) must not activate this one, so we
+  // re-fetch the order and match tenant, addon and amount against it.
+  const order = await rzCall('GET', `/v1/orders/${razorpayOrderId}`);
+  const notes = order.notes || {};
+  if (notes.kind !== 'addon'
+      || notes.addonSlug !== addon.slug
+      || String(notes.businessId) !== String(businessId)) {
+    throw new BadRequest('Payment order does not match this addon subscription');
+  }
+  if (Number(order.amount) !== Number(addon.price_inr_paise)) {
+    throw new BadRequest('Payment amount does not match the addon price');
+  }
+
+  // Activate — same write as the free path, but with a real paid period
+  // (first month/year) instead of the free 100-year window.
+  const periodInterval = addon.billing_period === 'yearly' ? '365 days' : '30 days';
+  const ins = await query(
+    `INSERT INTO business_addons
+       (business_id, addon_id, status, trial_ends_at, current_period_end)
+     VALUES ($1, $2, 'active', NULL, NOW() + $3::interval)
+     ON CONFLICT (business_id, addon_id) DO UPDATE
+       SET status = 'active', cancelled_at = NULL, cancel_at_period_end = FALSE,
+           current_period_end = NOW() + $3::interval
+     RETURNING *`,
+    [businessId, addon.id, periodInterval]
+  );
+
+  // Record the payment — same insert pattern as razorpayService's
+  // _onChargeSuccess webhook path. ON CONFLICT keeps double-submits of the
+  // same checkout callback idempotent.
+  await query(
+    `INSERT INTO payments
+       (business_id, amount_paise, currency, method,
+        razorpay_payment_id, status, raw_payload)
+     VALUES ($1, $2, 'INR', NULL, $3, 'captured', $4)
+     ON CONFLICT (razorpay_payment_id) DO NOTHING`,
+    [businessId, addon.price_inr_paise, razorpayPaymentId,
+     { razorpayOrderId, addonSlug: addon.slug, source: 'addon-confirm-payment' }]
+  );
+
+  try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
+  return { activated: true, activation: serializeActivation(ins.rows[0], addon) };
 }
 
 async function cancel(businessId, slug) {
@@ -445,7 +496,7 @@ module.exports = {
   listCatalog, getBySlug, getById,
   createAddon, updateAddon, syncRazorpayPlans,
   listActiveForBusiness, listAllForBusiness, hasAddon,
-  subscribe, cancel, detach, resume, updateSettings,
+  subscribe, confirmPayment, cancel, detach, resume, updateSettings,
   handleRazorpayEvent,
   serializeAddon, serializeActivation,
 };

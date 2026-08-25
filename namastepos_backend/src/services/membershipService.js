@@ -76,7 +76,16 @@ async function deleteMembership(businessId, id) {
 }
 
 async function subscribe(businessId, body) {
-  const { customerId, membershipId, paymentMethod = 'cash' } = body;
+  // 2026-08-25 (founder): membership SELL is a real payment now —
+  // paymentMethod may be 'wallet' (debits the customer wallet atomically
+  // with the sale) and an optional paymentBreakdown splits the charge
+  // across 1-3 tenders. The charge is always the plan price; breakdown
+  // legs must sum to it (±₹0.01 → 400). Sales land in revenue reporting
+  // via membership_subscriptions.amount_paid_paise + payment_method
+  // (incomeStatementService 'Membership sales' other-income line).
+  const {
+    customerId, membershipId, paymentMethod = 'cash', paymentBreakdown = null,
+  } = body;
   return withTransaction(async (client) => {
     const m = await client.query(
       `SELECT * FROM memberships WHERE business_id = $1 AND id = $2`,
@@ -84,6 +93,49 @@ async function subscribe(businessId, body) {
     );
     if (m.rowCount === 0) throw new NotFound('Membership not found');
     const plan = m.rows[0];
+    const pricePaise = Number(plan.price_paise);
+
+    // Tenant-scope the customer (standing security rule: every id lookup
+    // is scoped) — also needed before we touch their wallet.
+    const cust = await client.query(
+      `SELECT id FROM customers WHERE business_id = $1 AND id = $2`,
+      [businessId, customerId]
+    );
+    if (cust.rowCount === 0) throw new NotFound('Customer not found');
+
+    // Collect the payment. Wallet legs debit inside THIS txn so an
+    // insufficient balance aborts the sale (no membership, no charge).
+    const gc = require('./giftCardService');
+    let walletPaise = 0;
+    // Recorded tender: when a breakdown is sent, the LARGEST leg's method
+    // wins (same convention as orders.payment_method, 2026-08-25) so
+    // reports get one primary method per sale.
+    let recordedMethod = paymentMethod;
+    if (Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0) {
+      const legs = paymentBreakdown.map((l) => ({
+        method: l.method,
+        amountPaise: Math.round((l.amountInr || 0) * 100),
+      }));
+      const sumPaise = legs.reduce((s, l) => s + l.amountPaise, 0);
+      if (Math.abs(sumPaise - pricePaise) > 1) {
+        throw new BadRequest(
+          `paymentBreakdown legs total ₹${(sumPaise / 100).toFixed(2)} but the `
+          + `membership price is ₹${(pricePaise / 100).toFixed(2)} — they must match`
+        );
+      }
+      walletPaise = legs.filter((l) => l.method === 'wallet')
+        .reduce((s, l) => s + l.amountPaise, 0);
+      recordedMethod = [...legs].sort((a, b) => b.amountPaise - a.amountPaise)[0].method;
+    } else if (paymentMethod === 'wallet') {
+      walletPaise = pricePaise;
+    }
+    if (walletPaise > 0) {
+      await gc.debitWalletTx(client, businessId, customerId, walletPaise, {
+        reason: 'order_payment',
+        note: `Membership purchase — ${plan.name}`,
+      });
+    }
+
     const expires = new Date(Date.now() + plan.validity_days * 24 * 60 * 60 * 1000);
     // Bundle entitlements (2026-08-23): copy the plan's item bundle into
     // the subscription's `remaining` so redemption can count it down.
@@ -92,11 +144,134 @@ async function subscribe(businessId, body) {
     const ins = await client.query(
       `INSERT INTO membership_subscriptions
          (business_id, customer_id, membership_id, expires_at,
-          amount_paid_paise, remaining)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb) RETURNING *`,
-      [businessId, customerId, membershipId, expires, plan.price_paise, bundle]
+          amount_paid_paise, remaining, payment_method)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING *`,
+      [businessId, customerId, membershipId, expires, pricePaise, bundle,
+        recordedMethod]
     );
     return ins.rows[0];
+  });
+}
+
+// ── Membership cancel → refund (2026-08-25, founder) ─────────────────────
+// Remaining value = price_paid × (remaining bundle qty ÷ original bundle
+// qty). Plans without an item bundle fall back to time proration
+// (remaining validity days ÷ total validity days) — same "unused share"
+// idea, just measured in days instead of coffees. A cancellation charge
+// (pct) is deducted; the pct comes from the request (UI passes the
+// business's configured value), else platform_settings key
+// 'membership.cancellation_pct', else 10. WHY request-first: there is no
+// per-BUSINESS settings KV in this codebase (platform_settings is
+// platform-wide), and inventing one for a single number would be
+// overkill pre-launch — the UI owns the per-business default for now.
+async function cancelSubscription(businessId, subscriptionId, {
+  mode, cancellationPct = null,
+} = {}) {
+  if (!['wallet', 'cash', 'upi'].includes(mode)) {
+    throw new BadRequest("mode must be 'wallet', 'cash' or 'upi'");
+  }
+  // 2026-08-25: :id comes straight off the URL — reject junk before it
+  // hits a uuid cast (22P02 would surface as a 500, not a 400). Same
+  // guard pattern as tableService.assertUuid.
+  if (typeof subscriptionId !== 'string'
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(subscriptionId)) {
+    throw new BadRequest('subscription id must be a valid id');
+  }
+  let pct = cancellationPct;
+  if (pct == null) {
+    try {
+      const settings = require('./settingsService');
+      const v = await settings.get('membership.cancellation_pct');
+      if (v != null && Number.isFinite(Number(v))) pct = Number(v);
+    } catch (_) { /* settings lookup is best-effort */ }
+  }
+  if (pct == null) pct = 10; // founder default
+  pct = Math.min(100, Math.max(0, Number(pct)));
+
+  return withTransaction(async (client) => {
+    const q = await client.query(
+      `SELECT ms.*, m.name AS plan_name, m.benefits, m.validity_days
+         FROM membership_subscriptions ms
+         JOIN memberships m ON m.id = ms.membership_id
+        WHERE ms.business_id = $1 AND ms.id = $2
+        FOR UPDATE OF ms`,
+      [businessId, subscriptionId]
+    );
+    if (q.rowCount === 0) throw new NotFound('Subscription not found');
+    const sub = q.rows[0];
+    if (sub.status !== 'active') {
+      throw new BadRequest(`Subscription is already ${sub.status}`);
+    }
+
+    // Unused share: bundle-based when the plan has an item bundle,
+    // time-based otherwise (see WHY-comment above).
+    const paidPaise = Number(sub.amount_paid_paise);
+    const originalQty = (sub.benefits?.items || [])
+      .reduce((s, i) => s + Number(i.qty || 0), 0);
+    let ratio;
+    let basis;
+    if (originalQty > 0) {
+      const remainingQty = (Array.isArray(sub.remaining) ? sub.remaining : [])
+        .reduce((s, i) => s + Number(i.qty || 0), 0);
+      ratio = Math.min(1, Math.max(0, remainingQty / originalQty));
+      basis = 'bundle';
+    } else {
+      const msLeft = new Date(sub.expires_at).getTime() - Date.now();
+      const msTotal = Number(sub.validity_days) * 24 * 60 * 60 * 1000;
+      ratio = msTotal > 0 ? Math.min(1, Math.max(0, msLeft / msTotal)) : 0;
+      basis = 'time';
+    }
+    const grossPaise = Math.round(paidPaise * ratio);
+    const feePaise = Math.round(grossPaise * (pct / 100));
+    const refundPaise = Math.max(0, grossPaise - feePaise);
+
+    if (refundPaise > 0) {
+      if (mode === 'wallet') {
+        await require('./giftCardService').creditWalletTx(
+          client, businessId, sub.customer_id, refundPaise,
+          { reason: 'membership_refund', note: `Membership cancelled — ${sub.plan_name}` },
+        );
+      } else {
+        // cash/upi payout — mirror how order refunds are recorded (a row
+        // in `refunds`, status 'processed' since there's no gateway to
+        // reconcile). It's a REVENUE REVERSAL, not an expense — the
+        // income statement nets it off as 'Membership refunds', reading
+        // refund_paise straight from the subscription row.
+        await client.query(
+          `INSERT INTO refunds
+             (business_id, amount_paise, currency, reason, status, raw_payload)
+           VALUES ($1, $2, 'INR', $3, 'processed', $4::jsonb)`,
+          [businessId, refundPaise,
+            `Membership cancelled — ${sub.plan_name}`,
+            JSON.stringify({
+              source: 'membership-cancel',
+              subscriptionId,
+              customerId: sub.customer_id,
+              mode,
+              cancellationPct: pct,
+            })],
+        );
+      }
+    }
+
+    const upd = await client.query(
+      `UPDATE membership_subscriptions
+          SET status = 'cancelled', cancelled_at = NOW(),
+              refund_paise = $1, refund_mode = $2, cancellation_fee_paise = $3
+        WHERE id = $4 RETURNING *`,
+      [refundPaise, mode, feePaise, subscriptionId]
+    );
+    return {
+      subscription: upd.rows[0],
+      refund: {
+        mode,
+        basis, // 'bundle' | 'time' — how the unused share was measured
+        remainingValueInr: grossPaise / 100,
+        cancellationPct: pct,
+        cancellationFeeInr: feePaise / 100,
+        refundInr: refundPaise / 100,
+      },
+    };
   });
 }
 
@@ -255,6 +430,7 @@ async function tipReport(businessId, { startDate, endDate } = {}) {
 
 module.exports = {
   listMemberships, createMembership, updateMembership, deleteMembership, subscribe,
+  cancelSubscription,
   activeForCustomer, lastExpiredForCustomer,
   issueGiftCard, listGiftCards, redeemGiftCard,
   walletTopup,

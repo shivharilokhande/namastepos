@@ -22,6 +22,7 @@ const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const svc = require('../services/complianceService');
+const { BadRequest } = require('../utils/errors');
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -177,6 +178,13 @@ const publicGrievanceOfficer = asyncHandler(async (_req, res) => {
   });
 });
 
+// Founder bug (2026-08-25): this schema used to end with
+// `.or('complainantEmail', 'complainantPhone')`, which made a contact field
+// mandatory for EVERY caller. The dashboard Privacy page posts here as a
+// signed-in owner and never collects email/phone, so every submission died
+// with an opaque "BAD_REQUEST: Validation failed". Joi can't see req.user,
+// so the contact-or-authenticated rule now lives in the handler below where
+// the (optionally decoded) principal is visible.
 const grievanceBodySchema = {
   body: Joi.object({
     businessId:       Joi.string().uuid().allow(null),
@@ -188,18 +196,33 @@ const grievanceBodySchema = {
     ).default('other'),
     subject: Joi.string().max(255).required(),
     body:    Joi.string().max(5000).required(),
-  }).or('complainantEmail', 'complainantPhone'),
+  }),
 };
 
 const publicFileGrievance = [
   validate(grievanceBodySchema),
   asyncHandler(async (req, res) => {
+    // Fall back to the token's email/business for signed-in filers so the
+    // Grievance Officer always has a reply channel + tenant context without
+    // forcing the dashboard to re-collect data we already hold (DPDP data
+    // minimisation). req.user is set by optionalAuth on the route (2026-08-25).
+    const complainantEmail = req.body.complainantEmail || req.user?.email || null;
+    const complainantPhone = req.body.complainantPhone || null;
+    if (!req.user?.id && !complainantEmail && !complainantPhone) {
+      // Mirror validate.js output shape, but put the field hint in the
+      // MESSAGE too — the dashboard's apiError() only surfaces `message`,
+      // and "Validation failed" alone left the founder guessing.
+      throw new BadRequest(
+        'Please provide complainantEmail or complainantPhone (or sign in) so the Grievance Officer can reply',
+        ['body.complainantEmail: required when not signed in (or provide body.complainantPhone)']
+      );
+    }
     const out = await svc.fileGrievance({
       userId: req.user?.id || null,
-      businessId: req.body.businessId || null,
+      businessId: req.body.businessId || req.user?.businessId || null,
       complainantName:  req.body.complainantName || null,
-      complainantEmail: req.body.complainantEmail || null,
-      complainantPhone: req.body.complainantPhone || null,
+      complainantEmail,
+      complainantPhone,
       category:         req.body.category,
       subject:          req.body.subject,
       body:             req.body.body,

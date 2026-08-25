@@ -20,20 +20,28 @@
 // ui dependency.
 
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import axios from 'axios';
 import {
   X, Receipt, Heart, CreditCard, Award, Star, Wallet,
-  ChevronDown, ChevronUp, Loader2,
+  ChevronDown, ChevronUp, Loader2, Plus, Ban, AlertTriangle,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from '@/components/ui/dialog';
 // WHY `api` directly (2026-08-25): ffApi has no customer-history or
 // single-order binding and the api files are out of scope for this fix,
 // so we call the endpoints with the shared axios instance + cached
 // business id, exactly like ffApi's own helpers do internally.
+// ffApi IS used where a binding already exists (listMemberships for the
+// plan picker, lookupCustomer for the subscription id — see WHY below).
 import { api, apiError, getBusinessCache } from '@/api/client';
+import { ffApi } from '@/api/namastepos';
 import { formatINR, formatDate, formatDateTime } from '@/lib/utils';
 
 // ── Types (mirror backend response, see header comment) ──────────────────
@@ -89,6 +97,51 @@ interface HistoryProfile {
   } | null;
 }
 
+// GET /businesses/:id/customers/:customerId/wallet (giftCardService.getWallet).
+// Backend returns INR floats + the raw ledger `kind` as `reason`.
+interface WalletData {
+  balanceInr: number;
+  transactions: Array<{
+    id: string;
+    orderId: string | null;
+    reason: string;
+    amountInr: number; // positive = credit, negative = debit
+    note: string | null;
+    createdAt: string;
+  }>;
+}
+
+// Membership plan row (snake_case straight from the memberships table —
+// same shape MembershipsPage consumes via ffApi.listMemberships).
+interface MembershipPlan {
+  id: string;
+  name: string;
+  description: string | null;
+  price_paise: number;
+  validity_days: number;
+}
+
+// membershipService.activeForCustomer row, surfaced by GET /customers/lookup.
+interface ActiveSubscription {
+  subscription_id: string;
+  membership_id: string;
+  name: string;
+  price_paise: number;
+  validity_days: number;
+  expires_at: string;
+}
+
+// POST /customer-memberships/:id/cancel → `refund` (backend computes it —
+// bundle- or time-based unused share; NOT reproducible client-side).
+interface CancelRefund {
+  mode: 'wallet' | 'cash' | 'upi';
+  basis: 'bundle' | 'time';
+  remainingValueInr: number;
+  cancellationPct: number;
+  cancellationFeeInr: number;
+  refundInr: number;
+}
+
 interface OrderDetail {
   id: string;
   orderNo: number;
@@ -112,6 +165,19 @@ const TIER_ICONS: Record<string, typeof Award> = {
   bronze: Award, silver: Star, gold: Award,
 };
 
+// Humanized wallet-ledger labels (2026-08-25). Keys are the raw `kind`
+// values giftCardService writes; anything unknown falls back to the raw
+// key so a future ledger reason is never rendered as a blank row.
+const WALLET_REASON_LABELS: Record<string, string> = {
+  order_payment: 'Order payment',
+  shortfall: 'Shortfall due',
+  membership_refund: 'Membership refund',
+  topup: 'Top-up',
+  redeem: 'Redeemed',
+  manual_adjust: 'Manual adjustment',
+  gift_card_load: 'Gift card load',
+};
+
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-amber-100 text-amber-800',
   ready: 'bg-blue-100 text-blue-800',
@@ -128,6 +194,10 @@ export function CustomerDetailDrawer({
   customer: CustomerListRow;
   onClose: () => void;
 }) {
+  const qc = useQueryClient();
+  // 'add' = sell a plan, 'cancel' = refund flow, null = no dialog open.
+  const [membershipDialog, setMembershipDialog] = useState<'add' | 'cancel' | null>(null);
+
   const { data, isLoading, error } = useQuery<HistoryProfile | null>({
     queryKey: ['customer-history', customer.phone],
     queryFn: async () => {
@@ -149,6 +219,40 @@ export function CustomerDetailDrawer({
     retry: false,
   });
 
+  // Wallet card (2026-08-25, founder: wallet visibility on the customer
+  // screen). 402 = the plan doesn't include the wallet feature → return
+  // null and hide the whole section instead of erroring.
+  const {
+    data: wallet,
+    isLoading: walletLoading,
+    error: walletError,
+  } = useQuery<WalletData | null>({
+    queryKey: ['customer-wallet', customer.id],
+    queryFn: async () => {
+      const b = getBusinessCache();
+      try {
+        const r = await api.get(
+          `/businesses/${b.id}/customers/${customer.id}/wallet`,
+        );
+        return r.data as WalletData;
+      } catch (e) {
+        if (axios.isAxiosError(e) && e.response?.status === 402) return null;
+        throw e;
+      }
+    },
+    retry: false,
+  });
+
+  // Everything money-related in the drawer can change after a membership
+  // sale/cancel (wallet ledger, walletInr on the profile, activeMembership),
+  // so refresh them together. The lookup key backs the cancel dialog's
+  // subscription-id fetch (see CancelMembershipDialog).
+  const refreshAll = () => {
+    qc.invalidateQueries({ queryKey: ['customer-history', customer.phone] });
+    qc.invalidateQueries({ queryKey: ['customer-wallet', customer.id] });
+    qc.invalidateQueries({ queryKey: ['customer-active-subscription', customer.phone] });
+  };
+
   // Surface real failures (network / 5xx) but keep the drawer open with
   // the list-row fallback data so the page isn't a dead end.
   useEffect(() => {
@@ -156,12 +260,15 @@ export function CustomerDetailDrawer({
   }, [error]);
 
   // Close on Escape — a hand-rolled panel doesn't get this for free the
-  // way the shadcn Dialog does.
+  // way the shadcn Dialog does. While a membership dialog is open, Escape
+  // belongs to the dialog (Radix closes it) — don't ALSO close the drawer.
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !membershipDialog) onClose();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, membershipDialog]);
 
   const prof = data?.customer;
   const TierIcon = TIER_ICONS[prof?.tier ?? customer.tier] || Award;
@@ -220,11 +327,60 @@ export function CustomerDetailDrawer({
                 <Stat label="Points"
                       value={String(prof?.pointsBalance ?? customer.pointsBalance)} />
               </div>
-              {(prof?.walletInr ?? 0) > 0 && (
-                <div className="flex items-center gap-2 rounded-md bg-primary/5 px-3 py-2 text-sm">
-                  <Wallet className="h-4 w-4 text-primary" />
-                  Wallet balance: <strong>{formatINR(prof!.walletInr, { decimals: true })}</strong>
-                </div>
+              {/* Wallet — hidden entirely when the backend answers 402
+                  (feature not on the business plan → wallet === null). */}
+              {wallet !== null && (
+                <section>
+                  <SectionTitle icon={Wallet} text="Wallet" />
+                  {walletLoading ? (
+                    <div className="flex items-center py-2 text-sm text-muted-foreground">
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading wallet…
+                    </div>
+                  ) : walletError ? (
+                    <p className="text-sm text-muted-foreground">Couldn't load wallet.</p>
+                  ) : wallet ? (
+                    <div className="rounded-md border">
+                      <div className="flex items-center justify-between p-3">
+                        <span className="text-sm text-muted-foreground">Balance</span>
+                        <div className="text-right">
+                          <div className={`text-base font-bold ${wallet.balanceInr < 0 ? 'text-red-600' : ''}`}>
+                            {formatINR(wallet.balanceInr, { decimals: true })}
+                          </div>
+                          {/* Negative wallet = recorded shortfall debt
+                              ("customer underpaid, owes us"). */}
+                          {wallet.balanceInr < 0 && (
+                            <div className="text-[11px] text-red-600">
+                              Customer owes this amount
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {wallet.transactions.length > 0 && (
+                        <ul className="divide-y border-t">
+                          {wallet.transactions.slice(0, 10).map((t) => (
+                            <li key={t.id} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
+                              <div className="min-w-0">
+                                <div className="font-medium">
+                                  {WALLET_REASON_LABELS[t.reason] ?? t.reason}
+                                </div>
+                                {t.note && (
+                                  <div className="truncate text-muted-foreground">{t.note}</div>
+                                )}
+                                <div className="text-muted-foreground">
+                                  {formatDateTime(t.createdAt)}
+                                </div>
+                              </div>
+                              <span className={`shrink-0 font-semibold ${t.amountInr < 0 ? 'text-red-600' : 'text-emerald-600'}`}>
+                                {t.amountInr < 0 ? '−' : '+'}
+                                {formatINR(Math.abs(t.amountInr), { decimals: true })}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : null}
+                </section>
               )}
 
               {/* Membership */}
@@ -253,9 +409,27 @@ export function CustomerDetailDrawer({
                         ))}
                       </div>
                     )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full text-destructive"
+                      onClick={() => setMembershipDialog('cancel')}
+                    >
+                      <Ban className="mr-1 h-3.5 w-3.5" /> Cancel membership
+                    </Button>
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground">No active membership.</p>
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground">No active membership.</p>
+                    {/* Selling needs the profile row (customer id is on the
+                        list row, so only require the history load to have
+                        settled — a 404'd profile can still be sold to). */}
+                    {!isLoading && (
+                      <Button size="sm" onClick={() => setMembershipDialog('add')}>
+                        <Plus className="mr-1 h-3.5 w-3.5" /> Add membership
+                      </Button>
+                    )}
+                  </div>
                 )}
               </section>
 
@@ -298,7 +472,336 @@ export function CustomerDetailDrawer({
           )}
         </div>
       </aside>
+
+      {/* Membership sell / cancel dialogs (Radix portals to <body>, so
+          they stack above this hand-rolled z-50 panel). */}
+      {membershipDialog === 'add' && (
+        <AddMembershipDialog
+          customerId={customer.id}
+          walletBalanceInr={wallet ? wallet.balanceInr : null}
+          onClose={() => setMembershipDialog(null)}
+          onDone={() => { refreshAll(); setMembershipDialog(null); }}
+        />
+      )}
+      {membershipDialog === 'cancel' && data?.activeMembership && (
+        <CancelMembershipDialog
+          customerPhone={customer.phone}
+          membershipName={data.activeMembership.name}
+          onClose={() => setMembershipDialog(null)}
+          onDone={() => { refreshAll(); setMembershipDialog(null); }}
+        />
+      )}
     </div>
+  );
+}
+
+// ── Membership dialogs (2026-08-25, founder: sell/cancel with payment) ────
+
+/**
+ * Sell a plan to this customer. POST /memberships/subscribe records the
+ * sale with a real tender (cash/upi/card/wallet) so it lands in revenue
+ * reporting (membership_subscriptions.amount_paid_paise + payment_method
+ * → income statement "Membership sales").
+ */
+function AddMembershipDialog({
+  customerId,
+  walletBalanceInr,
+  onClose,
+  onDone,
+}: {
+  customerId: string;
+  /** null when the wallet section is hidden (402 / not loaded). */
+  walletBalanceInr: number | null;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  // Reuse the MembershipsPage query key so the plan list is shared with
+  // (and warmed by) that page's cache.
+  const { data: plans = [], isLoading, error } = useQuery<MembershipPlan[]>({
+    queryKey: ['memberships'],
+    queryFn: ffApi.listMemberships,
+  });
+  const [planId, setPlanId] = useState('');
+  const [method, setMethod] = useState<'cash' | 'upi' | 'card' | 'wallet'>('cash');
+
+  const plan = plans.find((p) => p.id === planId);
+  const priceInr = plan ? plan.price_paise / 100 : 0;
+  // Wallet tender is only offered when the balance covers the full price —
+  // the backend debits atomically and would 400 on insufficient funds, so
+  // don't present a tender we know will fail.
+  const walletOk = walletBalanceInr != null && plan != null && walletBalanceInr >= priceInr;
+  // Guard against a stale 'wallet' selection after switching to a plan the
+  // balance can't cover (state persists across plan changes).
+  const effectiveMethod = method === 'wallet' && !walletOk ? 'cash' : method;
+
+  const subscribe = useMutation({
+    mutationFn: async () => {
+      const b = getBusinessCache();
+      const r = await api.post(`/businesses/${b.id}/memberships/subscribe`, {
+        customerId,
+        membershipId: planId,
+        paymentMethod: effectiveMethod,
+      });
+      return r.data.subscription;
+    },
+    onSuccess: () => {
+      toast.success(
+        `${plan?.name ?? 'Membership'} sold — ${formatINR(priceInr, { decimals: true })} by ${effectiveMethod === 'upi' ? 'UPI' : effectiveMethod}`,
+      );
+      onDone();
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const methods: Array<{ key: typeof method; label: string; disabled: boolean; hint?: string }> = [
+    { key: 'cash', label: 'Cash', disabled: false },
+    { key: 'upi', label: 'UPI', disabled: false },
+    { key: 'card', label: 'Card', disabled: false },
+    {
+      key: 'wallet',
+      label: 'Wallet',
+      disabled: !walletOk,
+      hint: walletBalanceInr == null
+        ? undefined
+        : `${formatINR(walletBalanceInr, { decimals: true })} available`,
+    },
+  ];
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add membership</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Plan *</Label>
+            {isLoading ? (
+              <div className="flex items-center py-2 text-sm text-muted-foreground">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading plans…
+              </div>
+            ) : error ? (
+              <p className="py-1 text-sm text-muted-foreground">Couldn't load plans.</p>
+            ) : plans.length === 0 ? (
+              <p className="py-1 text-sm text-muted-foreground">
+                No membership plans yet — create one on the Memberships page first.
+              </p>
+            ) : (
+              <select
+                className="h-9 w-full rounded-md border bg-background px-2 text-sm"
+                value={planId}
+                onChange={(e) => setPlanId(e.target.value)}
+              >
+                <option value="">Select plan…</option>
+                {plans.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} — {formatINR(p.price_paise / 100, { decimals: true })}
+                  </option>
+                ))}
+              </select>
+            )}
+            {plan && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Valid {plan.validity_days} days · charges{' '}
+                {formatINR(priceInr, { decimals: true })} now.
+              </p>
+            )}
+          </div>
+
+          <div>
+            <Label>Payment method</Label>
+            <div className="mt-1 grid grid-cols-4 gap-2">
+              {methods.map((m) => (
+                <button
+                  key={m.key}
+                  type="button"
+                  disabled={m.disabled}
+                  onClick={() => setMethod(m.key)}
+                  className={`rounded-md border px-2 py-2 text-sm font-medium ${
+                    effectiveMethod === m.key
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'bg-background'
+                  } ${m.disabled ? 'cursor-not-allowed opacity-40' : 'hover:bg-muted/50'}`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+            {walletBalanceInr != null && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Wallet balance {formatINR(walletBalanceInr, { decimals: true })}
+                {plan && !walletOk ? " — not enough for this plan's price." : ''}
+              </p>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={() => subscribe.mutate()}
+            disabled={!planId || subscribe.isPending}
+          >
+            {subscribe.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {plan
+              ? `Charge ${formatINR(priceInr, { decimals: true })}`
+              : 'Sell membership'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Cancel the active subscription with a refund of the unused share.
+ * The refund maths (bundle- vs time-based) lives server-side, so the
+ * dialog only collects inputs and shows the returned summary.
+ */
+function CancelMembershipDialog({
+  customerPhone,
+  membershipName,
+  onClose,
+  onDone,
+}: {
+  customerPhone: string;
+  membershipName: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  // WHY lookup here (2026-08-25): the customer-history payload's
+  // activeMembership has NO subscription id (customerHistoryService only
+  // selects m.name, ms.expires_at, m.benefits, ms.remaining) and the
+  // backend is frozen for this change. GET /customers/lookup?phone= DOES
+  // return it (membershipService.activeForCustomer → subscription_id),
+  // and ffApi.lookupCustomer already binds it — so we fetch the id from
+  // there when the dialog opens.
+  const { data: sub, isLoading, error } = useQuery<ActiveSubscription | null>({
+    queryKey: ['customer-active-subscription', customerPhone],
+    queryFn: async () => {
+      const r = await ffApi.lookupCustomer(customerPhone);
+      return (r.membership ?? null) as ActiveSubscription | null;
+    },
+    retry: false,
+  });
+
+  // Keep the raw string so the field can be cleared while typing; parse
+  // on use. Backend clamps to 0–100 anyway; we pre-validate for UX.
+  const [pctRaw, setPctRaw] = useState('10');
+  const [mode, setMode] = useState<'wallet' | 'cash' | 'upi'>('wallet');
+  const pct = Number(pctRaw);
+  const pctValid = pctRaw.trim() !== '' && Number.isFinite(pct) && pct >= 0 && pct <= 100;
+
+  const cancel = useMutation({
+    mutationFn: async () => {
+      const b = getBusinessCache();
+      const r = await api.post(
+        `/businesses/${b.id}/customer-memberships/${sub!.subscription_id}/cancel`,
+        { mode, cancellationPct: pct },
+      );
+      return r.data.refund as CancelRefund;
+    },
+    onSuccess: (refund) => {
+      const amt = formatINR(refund.refundInr, { decimals: true });
+      const fee = formatINR(refund.cancellationFeeInr, { decimals: true });
+      // e.g. "₹180 credited to wallet after ₹20 fee"
+      toast.success(
+        refund.mode === 'wallet'
+          ? `${amt} credited to wallet after ${fee} fee`
+          : `${amt} to pay out by ${refund.mode === 'upi' ? 'UPI' : 'cash'} after ${fee} fee`,
+      );
+      onDone();
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const modes: Array<{ key: typeof mode; label: string }> = [
+    { key: 'wallet', label: 'Wallet credit (recommended)' },
+    { key: 'cash', label: 'Cash' },
+    { key: 'upi', label: 'UPI' },
+  ];
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Cancel membership</DialogTitle>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex items-center py-4 text-sm text-muted-foreground">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading subscription…
+          </div>
+        ) : error || !sub ? (
+          // No id → nothing to cancel against (race: it expired / was
+          // cancelled elsewhere between drawer load and this click).
+          <p className="py-2 text-sm text-muted-foreground">
+            Couldn't find an active subscription for this customer — it may
+            have just expired or been cancelled. Close and reopen the
+            customer to refresh.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm">
+              Cancelling <strong>{sub.name || membershipName}</strong>.
+            </p>
+
+            <div>
+              <Label>Cancellation charge (%)</Label>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                value={pctRaw}
+                onChange={(e) => setPctRaw(e.target.value)}
+              />
+              {!pctValid && (
+                <p className="mt-1 text-xs text-red-600">Enter a value between 0 and 100.</p>
+              )}
+            </div>
+
+            <div>
+              <Label>Refund payout</Label>
+              <div className="mt-1 space-y-1.5">
+                {modes.map((m) => (
+                  <label key={m.key} className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="radio"
+                      name="refund-mode"
+                      checked={mode === m.key}
+                      onChange={() => setMode(m.key)}
+                    />
+                    {m.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* The exact ₹ figures depend on the unused bundle/time share
+                which only the backend knows — so we state the rule, not a
+                number, and show the real summary in the success toast. */}
+            <div className="flex items-start gap-2 rounded-md bg-amber-50 p-3 text-xs text-amber-800">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>
+                Remaining value minus {pctValid ? pct : '—'}% cancellation
+                charge will be refunded. The final amount is computed on
+                confirm from the unused part of the plan.
+              </span>
+            </div>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>Keep membership</Button>
+          <Button
+            variant="destructive"
+            onClick={() => cancel.mutate()}
+            disabled={!sub || !pctValid || cancel.isPending}
+          >
+            {cancel.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Cancel &amp; refund
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

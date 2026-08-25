@@ -99,6 +99,129 @@ async function getWalletBalance(businessId, customerId) {
   return parseFloat(r.rows[0]?.balance_paise || 0) / 100;
 }
 
+// ── Wallet-as-tender + shortfall (2026-08-25, founder) ──────────────
+//
+// These two helpers take a `client` (an open pg transaction) instead of
+// owning their own withTransaction like redeem() above. WHY: wallet
+// payment legs must commit/roll back ATOMICALLY with the order / session
+// settle / membership sale that they pay for — a nested standalone txn
+// (the redeem() pattern) would let the wallet debit survive an order
+// rollback, i.e. take the customer's money for an order that never
+// existed. Ledger `kind` vocabulary for these flows (fixed, agreed with
+// the UI agents): 'order_payment' | 'shortfall' | 'membership_refund' |
+// 'manual_adjust' | 'gift_card_load'.
+
+/**
+ * Debit a customer wallet inside an existing transaction.
+ * - default: refuses to overdraw (atomic conditional UPDATE → 400 with
+ *   the current balance when insufficient — same guard as redeem()).
+ * - allowNegative: ONLY for reason 'shortfall' ("customer underpaid,
+ *   owes us") — the balance may go below zero so the debt shows up as
+ *   a negative wallet on the customer card.
+ */
+async function debitWalletTx(client, businessId, customerId, amountPaise, {
+  reason, orderId = null, note = null, allowNegative = false,
+} = {}) {
+  const paise = Math.round(Number(amountPaise));
+  if (!(paise > 0)) throw new BadRequest('Wallet debit must be > 0');
+  if (!customerId) throw new BadRequest('Wallet debit requires a customer');
+  let balanceAfter;
+  if (allowNegative) {
+    // Upsert so a customer with no wallet row yet can still go negative
+    // (first-ever interaction being a shortfall is legal).
+    const r = await client.query(
+      `INSERT INTO customer_wallets (business_id, customer_id, balance_paise)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (business_id, customer_id) DO UPDATE
+         SET balance_paise = customer_wallets.balance_paise + EXCLUDED.balance_paise,
+             updated_at = NOW()
+       RETURNING balance_paise`,
+      [businessId, customerId, -paise]
+    );
+    balanceAfter = Number(r.rows[0].balance_paise);
+  } else {
+    const upd = await client.query(
+      `UPDATE customer_wallets SET balance_paise = balance_paise - $1,
+                                   updated_at = NOW()
+        WHERE business_id = $2 AND customer_id = $3
+          AND balance_paise >= $1
+        RETURNING balance_paise`,
+      [paise, businessId, customerId]
+    );
+    if (upd.rowCount === 0) {
+      const cur = await client.query(
+        `SELECT balance_paise FROM customer_wallets
+          WHERE business_id = $1 AND customer_id = $2 LIMIT 1`,
+        [businessId, customerId]
+      );
+      const bal = parseFloat(cur.rows[0]?.balance_paise || 0) / 100;
+      throw new BadRequest(
+        `Insufficient wallet balance: ₹${bal.toFixed(2)} available, `
+        + `₹${(paise / 100).toFixed(2)} needed`
+      );
+    }
+    balanceAfter = Number(upd.rows[0].balance_paise);
+  }
+  await client.query(
+    `INSERT INTO wallet_ledger
+       (business_id, customer_id, order_id, kind, amount_paise, note)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [businessId, customerId, orderId, reason || 'manual_adjust', -paise, note]
+  );
+  return { balanceAfterInr: balanceAfter / 100 };
+}
+
+/** Credit a customer wallet inside an existing transaction (refunds etc). */
+async function creditWalletTx(client, businessId, customerId, amountPaise, {
+  reason, orderId = null, note = null,
+} = {}) {
+  const paise = Math.round(Number(amountPaise));
+  if (!(paise > 0)) throw new BadRequest('Wallet credit must be > 0');
+  if (!customerId) throw new BadRequest('Wallet credit requires a customer');
+  const r = await client.query(
+    `INSERT INTO customer_wallets (business_id, customer_id, balance_paise)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (business_id, customer_id) DO UPDATE
+       SET balance_paise = customer_wallets.balance_paise + EXCLUDED.balance_paise,
+           updated_at = NOW()
+     RETURNING balance_paise`,
+    [businessId, customerId, paise]
+  );
+  await client.query(
+    `INSERT INTO wallet_ledger
+       (business_id, customer_id, order_id, kind, amount_paise, note)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [businessId, customerId, orderId, reason || 'manual_adjust', paise, note]
+  );
+  return { balanceAfterInr: Number(r.rows[0].balance_paise) / 100 };
+}
+
+/**
+ * Wallet read API for the dashboard customer card (2026-08-25):
+ * balance + last 50 ledger movements, newest first.
+ */
+async function getWallet(businessId, customerId) {
+  const balanceInr = await getWalletBalance(businessId, customerId);
+  const r = await query(
+    `SELECT id, order_id, kind, amount_paise, note, created_at
+       FROM wallet_ledger
+      WHERE business_id = $1 AND customer_id = $2
+      ORDER BY created_at DESC LIMIT 50`,
+    [businessId, customerId]
+  );
+  return {
+    balanceInr,
+    transactions: r.rows.map((t) => ({
+      id: t.id,
+      orderId: t.order_id,
+      reason: t.kind,
+      amountInr: Number(t.amount_paise) / 100, // positive = credit, negative = debit
+      note: t.note,
+      createdAt: t.created_at,
+    })),
+  };
+}
+
 // ── Redeem (either source) ──────────────────────────────────────────
 async function redeem(businessId, {
   giftCardCode, customerId, orderId, amountInr,
@@ -197,6 +320,7 @@ async function listGiftCards(businessId, { active = true } = {}) {
 
 module.exports = {
   issueGiftCard, findGiftCardByCode,
-  topUpWallet, getWalletBalance,
+  topUpWallet, getWalletBalance, getWallet,
+  debitWalletTx, creditWalletTx,
   redeem, listGiftCards,
 };

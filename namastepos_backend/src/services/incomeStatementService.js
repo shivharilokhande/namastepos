@@ -143,6 +143,55 @@ async function incomeStatement(businessId, { startDate, endDate }) {
   const grossRevenue = fromOperations.reduce((s, r) => s + r.grossValue, 0);
   const taxableRevenue = fromOperations.reduce((s, r) => s + r.taxableValue, 0);
 
+  // 1b. Other income — membership sales/refunds (2026-08-25, founder:
+  //     "selling a membership must show up on the income statement").
+  //     Sales = subscriptions sold in the period (amount_paid_paise);
+  //     refunds = cancellations paid out in the period (refund_paise,
+  //     migration 060) as a contra line. Schedule III puts these under
+  //     "Other income" — they aren't restaurant *operations* revenue, so
+  //     they stay out of fromOperations/by-source. Try/catch like every
+  //     other block: deployments without migration 020/060 just get [].
+  const otherIncome = [];
+  try {
+    const ms = await query(
+      `SELECT
+         COALESCE(SUM(amount_paid_paise) FILTER (WHERE
+           (created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $2::date AND $3::date
+         ), 0)::bigint AS sales_paise,
+         COALESCE(SUM(refund_paise) FILTER (WHERE
+           cancelled_at IS NOT NULL AND
+           (cancelled_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $2::date AND $3::date
+         ), 0)::bigint AS refunds_paise,
+         COUNT(*) FILTER (WHERE
+           (created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $2::date AND $3::date
+         ) AS sold_count
+         FROM membership_subscriptions
+        WHERE business_id = $1`,
+      [businessId, startDate, endDate],
+    );
+    const salesInr = Number(ms.rows[0]?.sales_paise || 0) / 100;
+    const refundsInr = Number(ms.rows[0]?.refunds_paise || 0) / 100;
+    if (salesInr > 0) {
+      otherIncome.push({
+        source: 'membership_sales',
+        label: 'Membership sales',
+        count: parseInt(ms.rows[0].sold_count, 10),
+        amount: salesInr,
+      });
+    }
+    if (refundsInr > 0) {
+      otherIncome.push({
+        source: 'membership_refunds',
+        label: 'Less: membership refunds',
+        amount: -refundsInr,
+      });
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[incomeStatement] membership other-income query failed:', e?.message);
+  }
+  const otherIncomeTotal = otherIncome.reduce((s, r) => s + r.amount, 0);
+
   // 2. Indirect taxes collected — passed through to government, excluded
   //    from net profit. Shown for auditor reference. cgst/sgst/igst added
   //    in migration 017; deployments that haven't applied it get zeros.
@@ -220,8 +269,10 @@ async function incomeStatement(businessId, { startDate, endDate }) {
   );
   const totalOperatingExpenses = operatingExpenses.reduce((s, e) => s + e.amount, 0);
 
-  // 5. Totals — Schedule III ordering
-  const netRevenue = grossRevenue - tax.total;
+  // 5. Totals — Schedule III ordering. Other income (membership sales net
+  //    of refunds, 2026-08-25) has no GST tracked on it, so it joins net
+  //    revenue after the GST pass-through is stripped from operations.
+  const netRevenue = grossRevenue - tax.total + otherIncomeTotal;
   const grossProfit = netRevenue - cogs;
   const ebitda = grossProfit - totalOperatingExpenses;
   // No depreciation/finance/tax provisioning until journal module is
@@ -257,7 +308,10 @@ async function incomeStatement(businessId, { startDate, endDate }) {
     },
     revenue: {
       fromOperations,
-      otherIncome: [],
+      // 2026-08-25: membership sales (+) / refunds (−); [] when none.
+      otherIncome,
+      // grossRevenue stays operations-only (sum of fromOperations) so the
+      // by-source table still foots; other income enters at netRevenue.
       grossRevenue,
       taxableRevenue,
       netRevenue,

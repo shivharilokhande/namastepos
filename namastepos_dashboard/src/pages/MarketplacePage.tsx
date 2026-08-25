@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter }
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ffApi } from '@/api/namastepos';
-import { apiError } from '@/api/client';
+import { api, apiError, getBusinessCache } from '@/api/client';
 import { formatINR, formatDate } from '@/lib/utils';
 
 declare global { interface Window { Razorpay: any; } }
@@ -30,47 +30,67 @@ export function MarketplacePage() {
   const activeSlugs = new Set(active.map((a: any) => a.addon.slug));
 
   const subscribe = useMutation({
+    // 2026-08-25 (founder bug: addons subscribed without charging) — paid
+    // addons no longer activate on POST /subscribe. The backend returns
+    // { requiresPayment, razorpayOrder, keyId }; we open Razorpay Checkout
+    // for that order and the addon only activates after the backend
+    // verifies the payment signature in /confirm-payment. Dismissing the
+    // checkout activates nothing.
     mutationFn: async (slug: string) => {
       const r = await ffApi.subscribeAddon(slug);
-      if (r.activated) return { slug, activated: true };
+      if (r.activated) return { slug };
+
+      if (!r.requiresPayment || !r.razorpayOrder?.id) {
+        // Backend contract changed under us — fail loudly rather than
+        // pretending the addon is on.
+        throw new Error('Unexpected subscribe response — add-on not activated');
+      }
+
       await loadRzp();
-      return new Promise<{ slug: string; activated: boolean }>((resolve, reject) => {
+      const b = getBusinessCache();
+      await new Promise<void>((resolve, reject) => {
         const rz = new window.Razorpay({
-          ...r.checkoutOptions,
-          handler: () => resolve({ slug, activated: false }),
-          modal: { ondismiss: () => reject(new Error('Cancelled')) },
+          key: r.keyId,
+          order_id: r.razorpayOrder.id,
+          amount: r.razorpayOrder.amount,
+          currency: r.razorpayOrder.currency,
+          name: 'NamastePOS',
+          description: r.addon?.name ? `${r.addon.name} add-on` : 'Marketplace add-on',
+          theme: { color: '#FF6B35' },
+          handler: async (resp: any) => {
+            // Confirm server-side: the backend re-verifies the HMAC
+            // signature before activating, so a spoofed handler call
+            // can't turn the addon on. Unlike the old webhook flow this
+            // is synchronous — no 30s activation polling needed.
+            try {
+              await api.post(`/businesses/${b.id}/addons/${slug}/confirm-payment`, {
+                razorpayPaymentId: resp.razorpay_payment_id,
+                razorpayOrderId: resp.razorpay_order_id,
+                razorpaySignature: resp.razorpay_signature,
+              });
+              resolve();
+            } catch (err) {
+              reject(err);
+            }
+          },
+          modal: { ondismiss: () => reject(new Error('PAYMENT_CANCELLED')) },
         });
         rz.open();
       });
+      return { slug };
     },
-    // P1 (Suresh #7): Razorpay's "handler" callback fires after the payment
-    // is captured, but the addon row only flips to "active" once OUR webhook
-    // handler runs — which can lag a few seconds. We previously toasted
-    // success immediately, then the marketplace card stayed in "subscribing…"
-    // state because the queryClient invalidation raced the webhook. We now
-    // poll for up to 30s and show the right toast on each outcome.
-    onSuccess: async ({ slug, activated }) => {
-      if (activated) {
-        toast.success('Addon activated');
-        qc.invalidateQueries({ queryKey: ['my-addons'] });
+    onSuccess: () => {
+      toast.success('Add-on activated');
+      qc.invalidateQueries({ queryKey: ['my-addons'] });
+      qc.invalidateQueries({ queryKey: ['plan-summary'] });
+    },
+    onError: (e: any) => {
+      if (e?.message === 'PAYMENT_CANCELLED') {
+        toast.warning('Payment cancelled — add-on was not activated');
         return;
       }
-      toast.message('Payment captured — activating…');
-      for (let attempt = 0; attempt < 15; attempt += 1) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const fresh = await qc.fetchQuery({
-          queryKey: ['my-addons'],
-          queryFn: ffApi.myAddons,
-        });
-        const live = (fresh as any)?.active?.some((a: any) => a.addon.slug === slug);
-        if (live) {
-          toast.success('Addon activated');
-          return;
-        }
-      }
-      toast.warning('Webhook is taking longer than usual — refresh the page in a minute');
+      toast.error(apiError(e));
     },
-    onError: (e) => toast.error(apiError(e)),
   });
 
   const cancel = useMutation({

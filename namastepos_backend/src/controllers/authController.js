@@ -51,6 +51,13 @@ const updateBusinessSchema = {
     onboarded: Joi.boolean(),
     // FF-252 — chosen in the setup wizard. `hybrid` = per-table decides.
     default_service_mode: Joi.string().valid('dine_in', 'self_pickup', 'hybrid'),
+    // 2026-08-25 (founder: Google reviews) — owner pastes their Google Maps
+    // link (or the Place ID directly) in dashboard Settings; reviewsService
+    // resolves + calls the Places Details API with it. '' clears the field,
+    // same convention as logo_url. Not in OWNER_ONLY_FIELDS: a wrong value
+    // only affects review fetching, not payouts.
+    google_maps_url: Joi.string().uri().max(2048).allow('', null),
+    google_place_id: Joi.string().max(100).allow('', null),
   }).min(1),
 };
 

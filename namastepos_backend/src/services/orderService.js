@@ -32,6 +32,8 @@ function serializeOrder(row, items = []) {
     discount: parseFloat(row.discount),
     total: parseFloat(row.total),
     paymentMethod: row.payment_method,
+    // 2026-08-25 split payments: [{method, amountInr}] or null (single tender)
+    paymentBreakdown: row.payment_breakdown || null,
     status: row.status,
     cancelReason: row.cancel_reason,
     cancelReasonCode: row.cancel_reason_code,
@@ -128,6 +130,13 @@ async function create(businessId, body) {
     // orders.is_split_tender=true. `paymentMethod` above becomes the
     // largest leg's method (for the KOT header + Overview donut).
     splits = null,
+    // 2026-08-25 (founder) — split payments v2. [{method, amountInr}],
+    // 1-3 legs, methods cash|upi|card|online|wallet. Unlike the legacy
+    // `splits` above this is STRICT: the legs must sum to the order
+    // total (±₹0.01 → 400), it's persisted on orders.payment_breakdown,
+    // and a 'wallet' leg debits the customer's wallet atomically inside
+    // this txn. Supersedes `splits` when both are sent.
+    paymentBreakdown = null,
     // FF-1005 gift card / wallet redemption applied to this order.
     // {giftCardCode?, customerId?, amountInr}. Deducted BEFORE splits.
     walletRedeem = null,
@@ -657,7 +666,7 @@ async function create(businessId, body) {
     // FF-312 — split-tender. Insert one `payments` row per leg. The
     // primary method already lives in orders.payment_method; here we
     // just persist the breakdown + flag the order.
-    if (Array.isArray(splits) && splits.length > 1) {
+    if (!paymentBreakdown && Array.isArray(splits) && splits.length > 1) {
       let sum = 0;
       for (const s of splits) {
         const amt = Math.round((s.amountInr || 0) * 100);
@@ -682,6 +691,62 @@ async function create(businessId, body) {
         [orderRow.id],
       );
       orderRow.is_split_tender = true;
+    }
+
+    // ── Split payments v2 (2026-08-25, founder) ─────────────────────
+    // Strict breakdown: legs must sum to the order total (±₹0.01 for
+    // float dust, else 400 and the whole order rolls back — no order,
+    // no charge). 'wallet' legs debit the customer wallet INSIDE this
+    // txn (see giftCardService.debitWalletTx WHY-comment) so an
+    // insufficient balance also aborts the order atomically.
+    if (Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0) {
+      const legs = paymentBreakdown.map((l) => ({
+        method: l.method,
+        amountPaise: Math.round((l.amountInr || 0) * 100),
+      }));
+      const sumPaise = legs.reduce((s, l) => s + l.amountPaise, 0);
+      const totalPaise = Math.round(total * 100);
+      if (Math.abs(sumPaise - totalPaise) > 1) {
+        throw new BadRequest(
+          `paymentBreakdown legs total ₹${(sumPaise / 100).toFixed(2)} but the `
+          + `order total is ₹${(totalPaise / 100).toFixed(2)} — they must match`,
+        );
+      }
+      const walletPaise = legs
+        .filter((l) => l.method === 'wallet')
+        .reduce((s, l) => s + l.amountPaise, 0);
+      if (walletPaise > 0) {
+        if (!customerRow?.id) {
+          throw new BadRequest(
+            'Wallet payment requires a customer on the order — send customerPhone',
+          );
+        }
+        await require('./giftCardService').debitWalletTx(
+          client, businessId, customerRow.id, walletPaise,
+          { reason: 'order_payment', orderId: orderRow.id, note: `Order #${orderRow.order_no} payment` },
+        );
+      }
+      // One payments row per leg — same persistence the legacy `splits`
+      // path uses, so receipts/exports that read `payments` keep working.
+      for (const l of legs) {
+        await client.query(
+          `INSERT INTO payments (business_id, order_id, method, amount_paise, status)
+           VALUES ($1, $2, $3, $4, 'captured')`,
+          [businessId, orderRow.id, l.method, l.amountPaise],
+        );
+      }
+      // Backward compat for reports: orders.payment_method = largest leg.
+      const primary = [...legs].sort((a, b) => b.amountPaise - a.amountPaise)[0].method;
+      const upd = await client.query(
+        `UPDATE orders
+            SET payment_method = $1::payment_method,
+                payment_breakdown = $2::jsonb,
+                is_split_tender = $3
+          WHERE id = $4
+          RETURNING payment_method, payment_breakdown, is_split_tender`,
+        [primary, JSON.stringify(paymentBreakdown), legs.length > 1, orderRow.id],
+      );
+      Object.assign(orderRow, upd.rows[0]);
     }
 
     // P1 fix (2026-08-22): _pendingRedeem was set on the raw DB row but

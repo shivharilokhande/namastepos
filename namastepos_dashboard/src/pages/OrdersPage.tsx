@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, Printer, FileText, RotateCcw, Bike } from 'lucide-react';
@@ -12,8 +12,9 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { NewOrderDialog } from '@/components/NewOrderDialog';
 import { ffApi } from '@/api/namastepos';
-import { apiError } from '@/api/client';
+import { api, apiError, getBusinessCache } from '@/api/client';
 import { formatINR, formatDateTime } from '@/lib/utils';
+import { printReceipt } from '@/lib/receiptPrint';
 
 const STATUS_TABS = [
   { key: 'pending',    label: 'Pending' },
@@ -56,24 +57,112 @@ export function OrdersPage() {
     queryKey: ['cancel-reasons'], queryFn: ffApi.listCancelReasons,
   });
 
+  // Bill-template settings (Settings → Receipt template). Loaded once so
+  // web-printed receipts carry the SAME header/footer/GSTIN/FSSAI the
+  // owner configured for thermal prints — one template, every surface.
+  const { data: billTemplate } = useQuery({
+    queryKey: ['bill-template'],
+    queryFn: ffApi.getBillTemplate,
+    staleTime: 5 * 60 * 1000, // template changes are rare; don't refetch per print
+  });
+
+  // Founder bug (2026-08-25): "Reprint does nothing / just says Duplicate
+  // print". The old handler only POSTed /reprint (audit counter) and
+  // toasted — no output ever appeared on web. Now the button opens a real
+  // 80mm print preview via printReceipt(); this mutation is kept purely as
+  // the audit trail (reprint_count / last_reprint_at) behind it.
   const reprint = useMutation({
     mutationFn: ffApi.reprintOrder,
     onSuccess: (r: any) => {
-      toast.success(`Duplicate printed (copy ${r.reprintCount})`);
+      toast.success(`Duplicate recorded (copy ${r.reprintCount})`);
+      // reprintCount is shown on the button label — refresh it.
+      qc.invalidateQueries({ queryKey: ['orders'] });
     },
     onError: (e) => toast.error(apiError(e)),
   });
+
+  // Map an order card onto the shared receipt printer. Used by BOTH the
+  // plain "Print receipt" action (founder ask: POS-style small invoice on
+  // placed/settled orders) and the duplicate Reprint flow.
+  const printOrderReceipt = (o: any, duplicate = false): boolean =>
+    printReceipt({
+      title: 'TAX INVOICE', // mirrors mobile printBill()'s customer receipt
+      orderNo: o.displayNo ?? o.orderNo,
+      tokenNo: o.tokenNo,
+      tableLabel: o.tableNo,
+      dateTime: o.createdAt, // printed in IST by receiptPrint
+      customerName: o.customerName,
+      customerPhone: o.customerPhone,
+      items: (o.items || []).map((it: any) => ({
+        qty: it.qty,
+        name: it.name,
+        price: it.price,
+        variantLabel: it.variantLabel,
+        note: it.note,
+      })),
+      totals: {
+        subtotal: o.subtotal,
+        discount: o.discount,
+        tax: o.tax,
+        serviceCharge: o.serviceChargeInr,
+        roundOff: o.roundOffInr,
+        total: o.total,
+      },
+      paymentMethod: o.paymentMethod,
+      duplicate,
+      // Optimistic "copy N" — the audit POST lands right after; worst case
+      // a failed POST prints copy 2 that the backend never counted.
+      reprintCount: duplicate ? (o.reprintCount || 0) + 1 : undefined,
+      headerLines: billTemplate?.headerLines,
+      footerText: billTemplate?.footerText,
+      gstin: billTemplate?.gstin,
+      fssaiNo: billTemplate?.fssaiNo,
+    });
+
+  // Popup FIRST (window.open only works inside the live click gesture —
+  // after an await the browser may block it), audit POST second.
+  const handleReprint = (o: any) => {
+    const opened = printOrderReceipt(o, true);
+    if (opened) reprint.mutate(o.id);
+  };
 
   // FF-602: GST E-Invoice (IRN) generation — only meaningful once the
   // order has been settled. Backend posts to the IRP and returns IRN.
   const einvoice = useMutation({
     mutationFn: (orderId: string) => ffApi.generateEinvoice(orderId),
-    onSuccess: (irn: any) => {
-      toast.success(`IRN generated · ${irn?.irn || 'OK'}`);
+    onSuccess: () => {
+      // WHY (2026-08-25): the old toast printed the IRN once ("IRN
+      // generated · 580ce2…") and it then had no home anywhere in the UI —
+      // founder: "where do those invoices go?" Point at its permanent home.
+      toast.success('IRN saved — view it in Tax invoices');
       qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['einvoice-irns'] });
     },
     onError: (e) => toast.error(apiError(e)),
   });
+
+  // WHY (2026-08-25): the orders payload never exposed the IRN — the old
+  // `o.irn` check below was always undefined (orderService doesn't select
+  // einvoice_irns), so the Generate button never flipped state after an IRN
+  // existed. One list fetch of the business's IRNs (new GET /einvoice),
+  // mapped by orderId — a single request, never N+1 per card. Only
+  // collected orders can carry an IRN, so other tabs skip the fetch.
+  const { data: irnList = [] } = useQuery({
+    queryKey: ['einvoice-irns'],
+    queryFn: async () => {
+      const b = getBusinessCache();
+      const r = await api.get(`/businesses/${b.id}/einvoice`);
+      return (r.data.irns || []) as Array<{ orderId: string; irn: string; status?: string }>;
+    },
+    enabled: status === 'collected',
+    staleTime: 60 * 1000, // IRNs are immutable once generated; no live polling needed
+  });
+  const irnByOrder = useMemo(() => {
+    const m: Record<string, string> = {};
+    // API returns newest-first — keep the latest IRN per order.
+    for (const r of irnList) if (r.orderId && !m[r.orderId]) m[r.orderId] = r.irn;
+    return m;
+  }, [irnList]);
 
   const { data: orders = [], isLoading } = useQuery({
     queryKey: ['orders', status, channel],
@@ -195,6 +284,10 @@ export function OrdersPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {orders.map((o: any) => {
           const src = SOURCE_BADGE[o.source] || SOURCE_BADGE.other;
+          // Founder ask (2026-08-25): see at a glance which dine-in orders
+          // were paid upfront. Same paid rule the refund gate uses:
+          // unpaid/null paymentMethod ⇒ money not collected yet.
+          const paid = !!o.paymentMethod && o.paymentMethod !== 'unpaid';
           return (
             <Card key={o.id}>
               <CardContent className="p-5">
@@ -210,6 +303,15 @@ export function OrdersPage() {
                     )}
                   </div>
                   <div className="flex items-center gap-1.5">
+                    {/* PAID/UNPAID at a glance (skip cancelled — no money
+                        question left to answer there). */}
+                    {o.status !== 'cancelled' && (
+                      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                        paid ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {paid ? 'PAID' : 'UNPAID'}
+                      </span>
+                    )}
                     <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${src.cls}`}>
                       {src.label}
                     </span>
@@ -270,25 +372,53 @@ export function OrdersPage() {
                     Assign driver
                   </Button>
                 )}
-                {/* FF-305: reprint available once the order has been
-                    collected or cancelled (i.e. its lifecycle is closed). */}
-                {(o.status === 'collected' || o.status === 'cancelled') && (
-                  <Button size="sm" variant="ghost" className="mt-3 w-full"
-                    onClick={() => reprint.mutate(o.id)} disabled={reprint.isPending}>
+                {/* Founder ask (2026-08-25): POS-style receipt print on
+                    placed + settled orders. First print of the bill —
+                    no DUPLICATE banner, no audit bump. */}
+                {o.status !== 'cancelled' && (
+                  <Button size="sm" variant="outline" className="mt-3 w-full"
+                    onClick={() => printOrderReceipt(o)}>
                     <Printer className="mr-1 h-3.5 w-3.5" />
-                    Reprint {o.reprintCount > 0 ? `(${o.reprintCount + 1})` : ''}
+                    Print receipt
+                  </Button>
+                )}
+                {/* FF-305: reprint available once the order has been
+                    collected or cancelled (i.e. its lifecycle is closed).
+                    2026-08-25: now opens a REAL print preview (with the
+                    DUPLICATE banner) instead of only logging the copy. */}
+                {(o.status === 'collected' || o.status === 'cancelled') && (
+                  <Button size="sm" variant="ghost" className="mt-2 w-full"
+                    onClick={() => handleReprint(o)} disabled={reprint.isPending}>
+                    <Printer className="mr-1 h-3.5 w-3.5" />
+                    Reprint duplicate {o.reprintCount > 0 ? `(copy ${o.reprintCount + 1})` : ''}
                   </Button>
                 )}
                 {/* FF-602: e-invoice for B2B orders > 5 lakh OR business has
                     forceEinvoice flag. We surface it on every collected order
-                    so the cashier can decide; backend rejects if not B2B-eligible. */}
-                {o.status === 'collected' && (
-                  <Button size="sm" variant="ghost" className="mt-2 w-full"
-                    onClick={() => einvoice.mutate(o.id)} disabled={einvoice.isPending || !!o.irn}>
-                    <FileText className="mr-1 h-3.5 w-3.5" />
-                    {o.irn ? `IRN ${String(o.irn).slice(0, 12)}…` : 'Generate e-invoice'}
-                  </Button>
-                )}
+                    so the cashier can decide; backend rejects if not B2B-eligible.
+                    WHY (2026-08-25): once an IRN exists show a chip instead of
+                    the button — IRN state comes from the einvoice_irns list
+                    (o.irn was never populated by the orders payload). Bill rows
+                    wrap several KOTs, so any KOT's IRN counts for the bill. */}
+                {o.status === 'collected' && (() => {
+                  const hasIrn = !!o.irn
+                    || !!irnByOrder[o.id]
+                    || (Array.isArray(o.kots) && o.kots.some((k: any) => !!irnByOrder[k.id]));
+                  return hasIrn ? (
+                    <div className="mt-2 flex justify-center"
+                      title="IRN generated — open Tax invoices to view or copy it">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2.5 py-1 text-[11px] font-semibold">
+                        e-invoiced ✓
+                      </span>
+                    </div>
+                  ) : (
+                    <Button size="sm" variant="ghost" className="mt-2 w-full"
+                      onClick={() => einvoice.mutate(o.id)} disabled={einvoice.isPending}>
+                      <FileText className="mr-1 h-3.5 w-3.5" />
+                      Generate e-invoice
+                    </Button>
+                  );
+                })()}
                 {/* FF-304 partial-refund entry point — mobile parity
                     (2026-08-25). The Flutter app gates refunds on
                     status == collected AND paymentMethod != unpaid:

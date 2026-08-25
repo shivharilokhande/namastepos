@@ -20,6 +20,19 @@ import { Label } from '@/components/ui/label';
 import { ffApi } from '@/api/namastepos';
 import { setSession, apiError } from '@/api/client';
 
+// Founder bug (2026-08-25): apiError() only surfaces the top-level `message`,
+// so Joi rejections rendered as an unhelpful "BAD_REQUEST: Validation failed".
+// The backend's validate middleware puts per-field reasons in `details`
+// (e.g. `body.subject: "subject" is required`) — append the first one so the
+// user can actually see WHICH field failed.
+function friendlyError(err: unknown): string {
+  const base = apiError(err);
+  const details = (err as any)?.response?.data?.details;
+  return Array.isArray(details) && details.length > 0
+    ? `${base} — ${details[0]}`
+    : base;
+}
+
 type Consent = {
   consentKey: string;
   granted: boolean;
@@ -50,6 +63,12 @@ export function PrivacyPage() {
   const [consents, setConsents] = useState<Consent[]>([]);
   const [loading, setLoading] = useState(true);
   const [officer, setOfficer] = useState<any>(null);
+  // Founder bug (2026-08-25): /compliance/grievance is a public endpoint that
+  // (for anonymous filers) needs a contact email/phone — fields this page
+  // never collected, so filings failed validation. We already know who the
+  // signed-in owner is: load the profile once and attach name/email/business
+  // to the grievance instead of making the founder retype them.
+  const [me, setMe] = useState<any>(null);
 
   // Grievance form
   const [grievSubject, setGrievSubject] = useState('');
@@ -71,14 +90,18 @@ export function PrivacyPage() {
   async function reload() {
     setLoading(true);
     try {
-      const [c, g] = await Promise.all([
+      const [c, g, m] = await Promise.all([
         ffApi.currentConsents(),
         ffApi.grievanceOfficer().catch(() => null),
+        // Best-effort — the page still works if the profile call fails; the
+        // backend also falls back to the JWT's email for signed-in filers.
+        ffApi.me().catch(() => null),
       ]);
       setConsents(c || []);
       setOfficer(g);
+      setMe(m);
     } catch (err) {
-      toast.error(apiError(err));
+      toast.error(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -95,7 +118,7 @@ export function PrivacyPage() {
       toast.success(granted ? 'Consent recorded' : 'Consent withdrawn');
       await reload();
     } catch (err) {
-      toast.error(apiError(err));
+      toast.error(friendlyError(err));
     }
   }
 
@@ -110,7 +133,7 @@ export function PrivacyPage() {
       a.click(); URL.revokeObjectURL(url);
       toast.success('Your data has been exported.');
     } catch (err) {
-      toast.error(apiError(err));
+      toast.error(friendlyError(err));
     } finally {
       setExportBusy(false);
     }
@@ -129,7 +152,7 @@ export function PrivacyPage() {
       setSession(null, null);
       navigate('/login', { replace: true });
     } catch (err) {
-      toast.error(apiError(err));
+      toast.error(friendlyError(err));
     } finally {
       setEraseBusy(false);
     }
@@ -144,7 +167,7 @@ export function PrivacyPage() {
       toast.success('Correction request filed. Our team will review within 30 days.');
       setCorField(''); setCorValue(''); setCorReason('');
     } catch (err) {
-      toast.error(apiError(err));
+      toast.error(friendlyError(err));
     } finally {
       setCorBusy(false);
     }
@@ -155,13 +178,21 @@ export function PrivacyPage() {
     if (!grievSubject || !grievBody) return;
     setGrievBusy(true);
     try {
+      // 2026-08-25: include the signed-in owner's identity so the Grievance
+      // Officer has a reply channel (the public endpoint requires a contact
+      // for anonymous filers) and the complaint is linked to this business.
+      // Keys are only sent when we have a value — the backend rejects
+      // unknown/empty-invalid fields (allowUnknown: false).
       await ffApi.fileGrievance({
         subject: grievSubject, body: grievBody, category: grievCategory,
+        ...(me?.user?.email ? { complainantEmail: me.user.email } : {}),
+        ...(me?.user?.displayName ? { complainantName: me.user.displayName } : {}),
+        ...(me?.business?.id ? { businessId: me.business.id } : {}),
       });
       toast.success('Grievance filed. You will hear back from the Grievance Officer.');
       setGrievSubject(''); setGrievBody(''); setGrievCategory('privacy');
     } catch (err) {
-      toast.error(apiError(err));
+      toast.error(friendlyError(err));
     } finally {
       setGrievBusy(false);
     }

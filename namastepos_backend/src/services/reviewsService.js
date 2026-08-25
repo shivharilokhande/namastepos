@@ -54,29 +54,87 @@ async function ingestReview(businessId, body) {
   );
 }
 
+// 2026-08-25 (founder: "add google map link in settings") — pull the
+// place_id out of a pasted Google Maps URL. Two URL shapes actually carry
+// one: an explicit place_id=/place_id: param (Maps API-style links) and the
+// ChIJ… token embedded in long share-link data blobs. Short links
+// (maps.app.goo.gl) and pin/coordinate links carry NO place id — we
+// deliberately do NOT follow redirects or fall back to a Places Text Search
+// guess: a name-based match can silently pick a different restaurant and
+// ingest a stranger's reviews, which is worse than asking the owner for the
+// real Place ID. The route surfaces our `message` for exactly that case.
+function extractPlaceIdFromUrl(url) {
+  if (!url) return null;
+  const explicit = url.match(/place_id[=:]([A-Za-z0-9_-]{10,})/);
+  if (explicit) return explicit[1];
+  const chij = url.match(/(ChIJ[A-Za-z0-9_-]{10,})/);
+  if (chij) return chij[1];
+  return null;
+}
+
 // Real fetcher: Google Places API "place details" endpoint with reviews.
-// To use: set GOOGLE_PLACES_API_KEY in env, and store the place_id per
-// business in platform_settings.kv (key: "google_place_id"). Zomato and
-// Swiggy don't expose review APIs publicly, so for those sources we still
-// rely on operator manual entry / forwarded emails.
+// Config lives on the businesses row (migration 061: google_place_id +
+// google_maps_url), saved from the dashboard Settings "Google reviews" card
+// via PATCH /auth/me. (2026-08-25 fix: this used to query platform_settings
+// scoped by business_id — but that table is platform-global KV with no
+// business_id column, so the lookup could never match.) Zomato and Swiggy
+// don't expose review APIs publicly, so for those sources we still rely on
+// operator manual entry / forwarded emails.
+//
+// LIMITATION: the Places Details API returns at most the 5 "most relevant"
+// reviews per call — there is no paging. Repeated fetches accumulate
+// history over time via the (business_id, source, external_id) unique
+// constraint, but this will never mirror the full Google review list.
 async function fetchAllProviders(businessId) {
-  const apiKey = process.env.GOOGLE_PLACES_API_KEY || process.env.GOOGLE_API_KEY;
+  const apiKey = env.GOOGLE_PLACES_API_KEY;
   if (!apiKey) {
+    // Graceful: self-hosted / staging installs without a Places key get a
+    // clear reason instead of an error toast.
     logger.info(`Reviews fetch ${businessId}: no GOOGLE_PLACES_API_KEY — skipping live fetch`);
-    return { fetched: 0, reason: 'no_api_key' };
+    return {
+      fetched: 0,
+      reason: 'not_configured',
+      message: 'Google reviews are not configured on this server (missing GOOGLE_PLACES_API_KEY).',
+    };
   }
 
-  // Resolve place_id from platform_settings KV
-  const placeIdRow = await query(
-    `SELECT value FROM platform_settings
-      WHERE business_id = $1 AND key = 'google_place_id' LIMIT 1`,
+  const bizRow = await query(
+    `SELECT google_place_id, google_maps_url FROM businesses WHERE id = $1 LIMIT 1`,
     [businessId]
   );
-  if (placeIdRow.rowCount === 0) {
-    logger.info(`Reviews fetch ${businessId}: no google_place_id configured`);
-    return { fetched: 0, reason: 'no_place_id' };
+  const biz = bizRow.rows[0] || {};
+  let placeId = biz.google_place_id || null;
+
+  // No stored Place ID yet — try to derive one from the pasted Maps link.
+  if (!placeId && biz.google_maps_url) {
+    placeId = extractPlaceIdFromUrl(biz.google_maps_url);
+    if (placeId) {
+      // Persist the resolved ID so future fetches (and npsService's
+      // write-a-review link) skip re-parsing the URL.
+      await query(
+        `UPDATE businesses SET google_place_id = $1 WHERE id = $2`,
+        [placeId, businessId]
+      );
+    } else {
+      logger.info(`Reviews fetch ${businessId}: maps URL has no extractable place_id`);
+      return {
+        fetched: 0,
+        reason: 'no_place_id',
+        message: 'Could not find a Place ID in that Google Maps link. Please paste the full '
+          + 'share link from Google Maps (not a shortened maps.app.goo.gl link), or enter '
+          + 'your Place ID directly in Settings → Google reviews.',
+      };
+    }
   }
-  const placeId = placeIdRow.rows[0].value;
+
+  if (!placeId) {
+    logger.info(`Reviews fetch ${businessId}: no google_place_id configured`);
+    return {
+      fetched: 0,
+      reason: 'no_place_id',
+      message: 'Add your Google Maps link or Place ID in Settings → Google reviews first.',
+    };
+  }
 
   let data;
   try {
@@ -93,13 +151,28 @@ async function fetchAllProviders(businessId) {
     return { fetched: 0, error: err.message };
   }
 
+  // Places returns HTTP 200 with an in-body status for API-level failures
+  // (INVALID_REQUEST, NOT_FOUND on a bad place_id, REQUEST_DENIED on key
+  // problems…) — surface those instead of silently reporting 0 fetched.
+  if (data?.status && data.status !== 'OK') {
+    logger.warn(`Reviews fetch ${businessId}: Places status ${data.status}`);
+    return {
+      fetched: 0,
+      reason: 'places_error',
+      message: `Google Places error: ${data.status}${data.error_message ? ` — ${data.error_message}` : ''}`,
+    };
+  }
+
   const reviews = data?.result?.reviews || [];
   let inserted = 0;
   for (const rv of reviews) {
     try {
       await ingestReview(businessId, {
         source: 'google',
-        externalId: `g_${rv.time}_${rv.author_name}`,   // Google reuses this hash
+        // Places has no stable review id in this API shape; time+author is
+        // stable per review, and uq_review (business_id, source,
+        // external_id) dedupes re-fetches via ON CONFLICT DO NOTHING.
+        externalId: `g_${rv.time}_${rv.author_name}`,
         rating: rv.rating,
         reviewerName: rv.author_name,
         body: rv.text,
@@ -109,7 +182,12 @@ async function fetchAllProviders(businessId) {
     } catch (e) { /* duplicates land here — already deduped via ON CONFLICT */ }
   }
   logger.info(`Reviews fetch ${businessId}: ingested ${inserted} from Google`);
-  return { fetched: inserted, source: 'google' };
+  return {
+    fetched: inserted,
+    source: 'google',
+    rating: data?.result?.rating ?? null,
+    totalRatings: data?.result?.user_ratings_total ?? null,
+  };
 }
 
 module.exports = { listReviews, reviewStats, postReply, ingestReview, fetchAllProviders };

@@ -3,6 +3,16 @@
 const { query, withTransaction } = require('../config/db');
 const { NotFound, Conflict, BadRequest } = require('../utils/errors');
 
+// Joined-tables endpoints take a tableId from the request body and feed it
+// into ANY($..) / array operators — reject junk up-front with a 400 instead
+// of letting Postgres throw a 22P02 (which surfaces as a 500).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function assertUuid(v, label) {
+  if (typeof v !== 'string' || !UUID_RE.test(v)) {
+    throw new BadRequest(`${label} must be a valid id`);
+  }
+}
+
 function serializeFloor(f) {
   return { id: f.id, name: f.name, displayOrder: f.display_order, createdAt: f.created_at };
 }
@@ -23,9 +33,23 @@ function serializeTable(t) {
     // FF-252 — null means "inherit from business default". Dashboard
     // shows this as "Auto" so owners understand the fallback.
     serviceMode: t.service_mode || null,
+    // Joined tables (2026-08-25): a SECONDARY member of a joined group has
+    // current_session_id pointing at a session whose primary table_id is a
+    // DIFFERENT table. The dashboard uses this to draw the link icon; the
+    // shared session still resolves through currentSessionId like any
+    // occupied table, so "tap any joined table → same running bill" needs
+    // no extra lookup.
+    isJoinedSecondary: !!(
+      t.current_session_id &&
+      t.session_primary_table_id &&
+      t.session_primary_table_id !== t.id
+    ),
+    // On the PRIMARY table this lists the extra tables in the group (so it
+    // gets the link icon too); [] everywhere else.
+    sessionJoinedTableIds: t.session_joined_table_ids || [],
   };
 }
-function serializeSession(s, orders = [], itemsByOrder = new Map()) {
+function serializeSession(s, orders = [], itemsByOrder = new Map(), joinedTables = []) {
   // Aggregated running bill — every dish the table has consumed across all
   // KOTs, line by line. This is what powers the "click table → see what
   // they ate so far" view.
@@ -70,6 +94,11 @@ function serializeSession(s, orders = [], itemsByOrder = new Map()) {
     customerName: s.customer_name, customerId: s.customer_id,
     status: s.status, openedAt: s.opened_at, closedAt: s.closed_at,
     notes: s.notes,
+    // Joined tables (2026-08-25) — extra physical tables sharing this
+    // session's bill. Ids come off the row; labels are resolved by
+    // sessionDetail so the dialog can render "T2, T3" without a 2nd call.
+    joinedTableIds: s.joined_table_ids || [],
+    joinedTables,
     // Use the live SUM(orders.total) so newly-saved KOTs show up
     // immediately — total_paise is only refreshed on session close.
     totalInr: s.status === 'closed' ? (s.total_paise || 0) / 100 : liveTotal,
@@ -147,7 +176,9 @@ async function listTables(businessId, { floorId } = {}) {
     `SELECT t.*, f.name AS floor_name,
             s.opened_at AS session_opened_at,
             s.guest_count AS session_guest_count,
-            s.total_paise AS session_total_paise
+            s.total_paise AS session_total_paise,
+            s.table_id AS session_primary_table_id,
+            s.joined_table_ids AS session_joined_table_ids
        FROM tables t
        JOIN floors f ON f.id = t.floor_id
   LEFT JOIN table_sessions s
@@ -254,7 +285,121 @@ async function openSession(businessId, tableId, body, openedByUserId) {
   });
 }
 
-async function closeSession(businessId, sessionId, closedByUserId, paymentMethod = 'cash', discountInr = 0) {
+// ── Joined tables (2026-08-25, founder request) ────────────────────────
+// A 10-person party spans 3 physical tables but runs ONE bill. Extra
+// tables are appended to table_sessions.joined_table_ids AND get their
+// status/current_session_id pointed at the shared session — so every
+// existing "resolve table → session" path (listTables LEFT JOIN on
+// current_session_id, dashboard tap, settle's
+// `UPDATE tables … WHERE current_session_id = $session`) works for the
+// whole group with zero special-casing. Settle/abandon/force-close all
+// free by current_session_id, so closing releases EVERY joined table.
+
+async function joinTable(businessId, sessionId, tableId) {
+  assertUuid(sessionId, 'sessionId');
+  assertUuid(tableId, 'tableId');
+  return withTransaction(async (client) => {
+    // Lock the session row so two captains can't join tables concurrently
+    // and lose one append (read-modify-write on the array).
+    const s = await client.query(
+      `SELECT * FROM table_sessions
+        WHERE business_id = $1 AND id = $2 AND status = 'open'
+        FOR UPDATE`,
+      [businessId, sessionId]
+    );
+    if (s.rowCount === 0) throw new NotFound('Open session not found');
+    const session = s.rows[0];
+    if (session.table_id === tableId) {
+      throw new BadRequest("That is already this session's main table");
+    }
+    if ((session.joined_table_ids || []).includes(tableId)) {
+      throw new Conflict('Table is already joined to this session');
+    }
+
+    // Tenant-scoped + must be genuinely free. Locked so a concurrent
+    // openSession/join on the same table serialises behind us.
+    const t = await client.query(
+      `SELECT id, status, current_session_id FROM tables
+        WHERE business_id = $1 AND id = $2 FOR UPDATE`,
+      [businessId, tableId]
+    );
+    if (t.rowCount === 0) throw new NotFound('Table not found');
+    if (t.rows[0].status !== 'available' || t.rows[0].current_session_id) {
+      throw new Conflict('Table is not free — settle or release it first');
+    }
+    // Belt & braces: an open session where this table is PRIMARY would not
+    // show in tables.current_session_id if a crash left them out of sync.
+    const dup = await client.query(
+      `SELECT id FROM table_sessions
+        WHERE table_id = $1 AND status = 'open' LIMIT 1`,
+      [tableId]
+    );
+    if (dup.rowCount > 0) throw new Conflict('Table already has an open session');
+
+    const upd = await client.query(
+      `UPDATE table_sessions
+          SET joined_table_ids =
+              array_append(COALESCE(joined_table_ids, '{}'::uuid[]), $1)
+        WHERE id = $2 RETURNING *`,
+      [tableId, sessionId]
+    );
+    await client.query(
+      `UPDATE tables
+          SET status = 'occupied'::table_status, current_session_id = $1
+        WHERE business_id = $2 AND id = $3`,
+      [sessionId, businessId, tableId]
+    );
+    return upd.rows[0];
+  });
+}
+
+async function unjoinTable(businessId, sessionId, tableId) {
+  assertUuid(sessionId, 'sessionId');
+  assertUuid(tableId, 'tableId');
+  return withTransaction(async (client) => {
+    const s = await client.query(
+      `SELECT * FROM table_sessions
+        WHERE business_id = $1 AND id = $2 AND status = 'open'
+        FOR UPDATE`,
+      [businessId, sessionId]
+    );
+    if (s.rowCount === 0) throw new NotFound('Open session not found');
+    if (s.rows[0].table_id === tableId) {
+      // The primary table IS the session — removing it means settling or
+      // abandoning, never unjoining.
+      throw new BadRequest("Cannot unjoin the session's main table");
+    }
+    if (!(s.rows[0].joined_table_ids || []).includes(tableId)) {
+      throw new NotFound('Table is not joined to this session');
+    }
+    const upd = await client.query(
+      `UPDATE table_sessions
+          SET joined_table_ids = array_remove(joined_table_ids, $1)
+        WHERE id = $2 RETURNING *`,
+      [tableId, sessionId]
+    );
+    // `AND current_session_id = $1` keeps this a no-op if the table was
+    // somehow re-pointed elsewhere — we only free what we own.
+    await client.query(
+      `UPDATE tables
+          SET status = 'available'::table_status, current_session_id = NULL
+        WHERE business_id = $2 AND id = $3 AND current_session_id = $1`,
+      [sessionId, businessId, tableId]
+    );
+    return upd.rows[0];
+  });
+}
+
+// 2026-08-25 (founder): settle also accepts
+//   paymentBreakdown — [{method: cash|upi|card|online|wallet, amountInr}],
+//     1-3 legs that must sum to the session total minus shortfall
+//     (±₹0.01 → 400). Stored on the HEAD order (like the settle
+//     discount) so bills/reports have one canonical place to read it.
+//   shortfallInr — customer underpaid; the gap is booked as a NEGATIVE
+//     wallet movement (reason 'shortfall') so the debt lives on the
+//     customer's wallet and is visible on their card. Requires an
+//     identified customer on the session.
+async function closeSession(businessId, sessionId, closedByUserId, paymentMethod = 'cash', discountInr = 0, paymentBreakdown = null, shortfallInr = 0) {
   return withTransaction(async (client) => {
     // Settle-time discount (2026-08-22, founder request): applied to the
     // HEAD order (smallest order_no) of the session so it's auditable on
@@ -309,6 +454,91 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
     );
     if (upd.rowCount === 0) throw new NotFound('Open session not found');
 
+    // ── Split payments + shortfall on settle (2026-08-25, founder) ──
+    // All inside the settle txn: a failed wallet debit / mismatched
+    // breakdown aborts the whole settle, so the table never closes
+    // half-paid.
+    const shortPaise = Math.round(Math.max(0, Number(shortfallInr) || 0) * 100);
+    let breakdownPrimary = null; // largest leg's method → orders.payment_method
+    if (shortPaise > 0 || (Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0)) {
+      const ordersQ = await client.query(
+        `SELECT id, order_no, customer_id FROM orders
+          WHERE table_session_id = $1 AND business_id = $2
+            AND status <> 'cancelled'
+          ORDER BY order_no ASC`,
+        [sessionId, businessId],
+      );
+      const head = ordersQ.rows[0];
+      if (!head) throw new BadRequest('Session has no orders to settle');
+      // First identified customer across the session's KOTs — wallet
+      // debits (payment leg or shortfall debt) need a real customer.
+      const customerId = ordersQ.rows.find((o) => o.customer_id)?.customer_id || null;
+      const gc = require('./giftCardService');
+
+      if (shortPaise > 0) {
+        if (!customerId) {
+          throw new BadRequest(
+            'shortfallInr requires an identified customer on the session — '
+            + 'attach a customer phone to the order first',
+          );
+        }
+        // Negative wallet movement = "customer owes us". allowNegative
+        // is deliberate and ONLY here — see debitWalletTx WHY-comment.
+        await gc.debitWalletTx(client, businessId, customerId, shortPaise, {
+          reason: 'shortfall',
+          orderId: head.id,
+          note: `Underpaid ₹${(shortPaise / 100).toFixed(2)} on settle (order #${head.order_no})`,
+          allowNegative: true,
+        });
+      }
+
+      if (Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0) {
+        const legs = paymentBreakdown.map((l) => ({
+          method: l.method,
+          amountPaise: Math.round((l.amountInr || 0) * 100),
+        }));
+        const sumPaise = legs.reduce((s, l) => s + l.amountPaise, 0);
+        // Legs cover what was actually PAID = session total − shortfall.
+        const duePaise = totalPaise - shortPaise;
+        if (Math.abs(sumPaise - duePaise) > 1) {
+          throw new BadRequest(
+            `paymentBreakdown legs total ₹${(sumPaise / 100).toFixed(2)} but the `
+            + `session total due is ₹${(duePaise / 100).toFixed(2)} — they must match`,
+          );
+        }
+        const walletPaise = legs
+          .filter((l) => l.method === 'wallet')
+          .reduce((s, l) => s + l.amountPaise, 0);
+        if (walletPaise > 0) {
+          if (!customerId) {
+            throw new BadRequest(
+              'Wallet payment requires an identified customer on the session',
+            );
+          }
+          await gc.debitWalletTx(client, businessId, customerId, walletPaise, {
+            reason: 'order_payment',
+            orderId: head.id,
+            note: `Session settle (order #${head.order_no})`,
+          });
+        }
+        // Persist: one payments row per leg + the JSON breakdown on the
+        // HEAD order (same place the settle discount lands).
+        for (const l of legs) {
+          await client.query(
+            `INSERT INTO payments (business_id, order_id, method, amount_paise, status)
+             VALUES ($1, $2, $3, $4, 'captured')`,
+            [businessId, head.id, l.method, l.amountPaise],
+          );
+        }
+        await client.query(
+          `UPDATE orders SET payment_breakdown = $1::jsonb, is_split_tender = $2
+            WHERE id = $3`,
+          [JSON.stringify(paymentBreakdown), legs.length > 1, head.id],
+        );
+        breakdownPrimary = [...legs].sort((a, b) => b.amountPaise - a.amountPaise)[0].method;
+      }
+    }
+
     // Settle every order in the session.
     //
     // Two distinct things happen on settle:
@@ -323,7 +553,11 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
     // 'collected · unpaid'. Now we touch ALL non-cancelled orders for
     // payment_method, and only the not-yet-collected ones for status.
     const allowedPM = ['cash', 'upi', 'card', 'online'];
-    const pm = allowedPM.includes(paymentMethod) ? paymentMethod : 'cash';
+    // 2026-08-25: when a breakdown was sent, the LARGEST leg's method
+    // (may be 'wallet' — enum value added in migration 060) wins, so
+    // reports keep a single primary method per order.
+    const pm = breakdownPrimary
+      || (allowedPM.includes(paymentMethod) ? paymentMethod : 'cash');
 
     // (a) Payment method — applies to every non-cancelled order
     await client.query(
@@ -485,12 +719,26 @@ async function sessionDetail(businessId, sessionId) {
       itemsByOrder.get(row.order_id).push(row);
     }
   }
-  return serializeSession(s.rows[0], orders.rows, itemsByOrder);
+  // Joined tables (2026-08-25) — resolve labels so the session dialog can
+  // show "also on T2, T3" and offer per-table unjoin without extra calls.
+  let joinedTables = [];
+  const joinedIds = s.rows[0].joined_table_ids || [];
+  if (joinedIds.length > 0) {
+    const jt = await query(
+      `SELECT id, label FROM tables
+        WHERE business_id = $1 AND id = ANY($2::uuid[])
+        ORDER BY label`,
+      [businessId, joinedIds]
+    );
+    joinedTables = jt.rows.map((r) => ({ id: r.id, label: r.label }));
+  }
+  return serializeSession(s.rows[0], orders.rows, itemsByOrder, joinedTables);
 }
 
 module.exports = {
   listFloors, createFloor, updateFloor, deleteFloor,
   listTables, createTable, updateTable, deleteTable,
   openSession, closeSession, abandonSession, sessionDetail,
+  joinTable, unjoinTable,
   serializeFloor, serializeTable, serializeSession,
 };

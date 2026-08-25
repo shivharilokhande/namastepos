@@ -43,6 +43,24 @@ router.post  ('/sessions/:sessionId/close',   ...c.closeSession);
 // Push 22 — release a table whose customer left without ordering.
 router.post  ('/sessions/:sessionId/abandon', c.abandonSession);
 
+// ── Joined tables (2026-08-25, founder request) ───────────────────────
+// One big party across several physical tables shares ONE session/bill.
+// Handlers are inline (thin) because all validation lives in tableService
+// (uuid checks + tenant scoping + free-table locking); the response only
+// needs the id + the updated membership list — the dashboard re-fetches
+// the full session/tables views it already polls.
+const tableSvc = require('../services/tableService');
+router.post('/sessions/:sessionId/join-table', (req, res, next) => {
+  tableSvc.joinTable(req.params.businessId, req.params.sessionId, req.body?.tableId)
+    .then((s) => res.json({ session: { id: s.id, tableId: s.table_id, joinedTableIds: s.joined_table_ids || [] } }))
+    .catch(next);
+});
+router.post('/sessions/:sessionId/unjoin-table', (req, res, next) => {
+  tableSvc.unjoinTable(req.params.businessId, req.params.sessionId, req.body?.tableId)
+    .then((s) => res.json({ session: { id: s.id, tableId: s.table_id, joinedTableIds: s.joined_table_ids || [] } }))
+    .catch(next);
+});
+
 // ── QR settings + per-table token ────────────────────────────────────
 router.get   ('/qr/settings',           c.qrSettings);
 router.put   ('/qr/settings',           requireRole(['business_owner']), c.qrSettingsUpdate);

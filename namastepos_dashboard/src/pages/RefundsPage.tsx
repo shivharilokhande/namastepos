@@ -41,8 +41,14 @@ export function RefundsPage() {
             <button
               key={s}
               onClick={() => setStatus(s)}
+              // Bugfix 2026-08-25: the active tab used `bg-brand text-white`,
+              // but `brand` is NOT a color in tailwind.config.js — the class
+              // compiled to nothing, leaving white text on the white page, so
+              // the selected tab's label went invisible on click. Use the
+              // theme tokens (`bg-primary text-primary-foreground`) like the
+              // segmented controls on MenuPage/TablesPage.
               className={`px-3 py-1 text-sm rounded-md capitalize transition ${
-                status === s ? 'bg-brand text-white' : 'hover:bg-muted'
+                status === s ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'
               }`}
             >
               {s}
@@ -65,8 +71,13 @@ export function RefundsPage() {
                 <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>
               )}
               {!isLoading && (refunds as any[]).length === 0 && (
+                // Empty-state 2026-08-25: filter-aware wording — with a status
+                // tab active, "No refunds yet" would read like a bug ("I KNOW
+                // I have refunds"); say the filter matched nothing instead.
                 <TableRow><TableCell colSpan={4} className="text-center py-10 text-muted-foreground">
-                  No refunds yet.
+                  {status === 'all'
+                    ? 'No refunds yet. Start one from Orders → Refund… on a collected order.'
+                    : `No ${status} refunds. Switch to "all" to see every refund.`}
                 </TableCell></TableRow>
               )}
               {(refunds as any[]).map((r) => (

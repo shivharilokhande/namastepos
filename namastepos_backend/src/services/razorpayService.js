@@ -461,3 +461,28 @@ module.exports = {
   createCheckoutOrder,       // FF-250
   verifyCheckoutSignature,   // FF-250
 };
+
+// ── Addon marketplace one-time orders (2026-08-25) ──────────────────────
+/**
+ * Create a one-time Razorpay Order (first month/year of a paid marketplace
+ * addon). Added for the founder bug "addons get subscribed without charging
+ * anything": addonService.subscribe() now creates this order and the addon
+ * only activates in addonService.confirmPayment() after the checkout
+ * signature verifies.
+ *
+ * WHY a separate helper instead of reusing createCheckoutOrder: that one is
+ * shaped for guest checkout ({ razorpayOrderId, keyId, ... }) and is part of
+ * the FF-250 contract — this returns Razorpay's raw order identifiers
+ * ({ id, amount, currency }) which map 1:1 onto Checkout.js `order_id` /
+ * `amount` / `currency` options. Appended (not edited) per append-only rule.
+ */
+async function createOneTimeOrder({ amountPaise, receipt, notes = {} }) {
+  const created = await rzCall('POST', '/v1/orders', {
+    amount: amountPaise,
+    currency: 'INR',
+    receipt,
+    notes,
+  });
+  return { id: created.id, amount: created.amount, currency: created.currency };
+}
+module.exports.createOneTimeOrder = createOneTimeOrder;

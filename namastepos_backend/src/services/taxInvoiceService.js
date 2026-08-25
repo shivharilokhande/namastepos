@@ -465,8 +465,13 @@ async function getById(businessId, invoiceId) {
 async function list(businessId, { startDate, endDate, status, limit = 200 } = {}) {
   const params = [businessId];
   const where = ['business_id = $1'];
-  if (startDate) { params.push(startDate); where.push(`invoice_date::date >= $${params.length}::date`); }
-  if (endDate)   { params.push(endDate);   where.push(`invoice_date::date <= $${params.length}::date`); }
+  // Timezone fix (2026-08-25): invoice_date is timestamptz; a bare ::date
+  // cast buckets it by the SERVER's timezone (UTC in production), so an
+  // invoice issued 00:30 IST landed in the previous day's filter range and
+  // "today's invoices" looked wrong/missing to the owner. Invoices are IST
+  // business documents — bucket the calendar-day filter in Asia/Kolkata.
+  if (startDate) { params.push(startDate); where.push(`(invoice_date AT TIME ZONE 'Asia/Kolkata')::date >= $${params.length}::date`); }
+  if (endDate)   { params.push(endDate);   where.push(`(invoice_date AT TIME ZONE 'Asia/Kolkata')::date <= $${params.length}::date`); }
   if (status)    { params.push(status);    where.push(`status = $${params.length}`); }
   params.push(limit);
   const r = await query(

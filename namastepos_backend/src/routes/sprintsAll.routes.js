@@ -119,6 +119,15 @@ router.post('/customers/:customerId/wallet/topup',
     res.json(await giftCard.topUpWallet(
       req.params.businessId, req.params.customerId,
       req.body.amountInr, req.body.note))));
+// 2026-08-25 (founder, wallet-as-tender): read API for the customer wallet
+// card — balance + last 50 ledger movements (topups, order payments,
+// shortfall debts, membership refunds). Ungated like the gift-card list
+// above; any authenticated staff member settling a bill needs to see the
+// balance before offering "pay by wallet".
+router.get('/customers/:customerId/wallet',
+  asyncHandler(async (req, res) =>
+    res.json(await giftCard.getWallet(
+      req.params.businessId, req.params.customerId))));
 
 // ── FF-1002 NPS ─────────────────────────────────────────────────────────
 router.get('/reports/nps',
@@ -361,13 +370,19 @@ router.post('/daily-closings/:date/reopen',
 router.get ('/wastage', asyncHandler(async (req, res) =>
   res.json({ report: await wastage.report(req.params.businessId, req.query) })));
 router.post('/wastage',
+  // 2026-08-25 (founder): dish wastage — "prepared 20 plates, sold 17" →
+  // log the 3 unsold plates against the MENU ITEM. Either ingredientId or
+  // menuItemId must be set (service enforces; Joi can't cleanly express
+  // "at least one non-null" with allow(null)). New reason 'extra_prepared'
+  // for exactly that case. costPaise is optional for dishes — the service
+  // values plates at recipe cost when omitted.
   validate({ body: Joi.object({
     ingredientId: Joi.string().uuid().allow(null),
     menuItemId: Joi.string().uuid().allow(null),
     qty: Joi.number().positive().required(),
     unit: Joi.string().max(20).allow('', null),
     costPaise: Joi.number().integer().min(0),
-    reason: Joi.string().valid('expired','spilled','over_prep','damaged','other').required(),
+    reason: Joi.string().valid('expired','spilled','over_prep','extra_prepared','damaged','other').required(),
     note: Joi.string().max(500).allow('', null),
   })}),
   asyncHandler(async (req, res) =>
@@ -513,9 +528,37 @@ router.post('/memberships/subscribe',
   validate({ body: Joi.object({
     customerId: Joi.string().uuid().required(),
     membershipId: Joi.string().uuid().required(),
-    paymentMethod: Joi.string().valid('cash','upi','card','online').default('cash'),
+    // 2026-08-25 (founder): membership sell is a real payment now —
+    // 'wallet' debits the customer wallet atomically with the sale, and an
+    // optional paymentBreakdown splits the plan price across 1-3 tenders
+    // (service enforces legs sum = plan price ±₹0.01, else 400).
+    paymentMethod: Joi.string().valid('cash','upi','card','online','wallet').default('cash'),
+    paymentBreakdown: Joi.array().items(Joi.object({
+      method: Joi.string().valid('cash','upi','card','online','wallet').required(),
+      amountInr: Joi.number().positive().required(),
+    })).min(1).max(3).allow(null),
   })}),
   asyncHandler(async (req, res) => res.status(201).json({ subscription: await membership.subscribe(req.params.businessId, req.body) }))
+);
+// 2026-08-25 (founder): cancel a sold membership → refund the unused share.
+// Remaining value = price paid × (remaining bundle qty ÷ original bundle
+// qty) — time-prorated for plans without an item bundle — minus the
+// cancellation charge (cancellationPct, default 10). mode 'wallet' credits
+// the customer wallet (ledger reason 'membership_refund'); 'cash'/'upi'
+// records a payout in `refunds` so the income statement can net it off as
+// 'Membership refunds'. Owner/manager only — refunds move money.
+router.post('/customer-memberships/:id/cancel',
+  requireRole(['business_owner', 'staff_manager']),
+  validate({ body: Joi.object({
+    mode: Joi.string().valid('wallet', 'cash', 'upi').required(),
+    cancellationPct: Joi.number().min(0).max(100).allow(null),
+  })}),
+  asyncHandler(async (req, res) => res.json(
+    await membership.cancelSubscription(
+      req.params.businessId, req.params.id, {
+        mode: req.body.mode,
+        cancellationPct: req.body.cancellationPct ?? null,
+      })))
 );
 // SECURITY FIX (2026-08-23, review H1): these membership.* gift-card /
 // wallet variants formed a SECOND ledger on the same gift_cards table
@@ -658,6 +701,12 @@ router.post('/exports/zoho',
 );
 router.get ('/exports', asyncHandler(async (req, res) =>
   res.json({ exports: await accountingExport.listExports(req.params.businessId) })));
+// WHY (2026-08-25): the POST below stores the IRN in einvoice_irns but
+// nothing ever read it back — the founder saw "IRN generated · 580ce2…"
+// and the IRN then vanished. Read-only list (same ungated GET shape as
+// /exports above) so Orders + Tax Invoices pages can badge e-invoiced rows.
+router.get ('/einvoice', asyncHandler(async (req, res) =>
+  res.json({ irns: await accountingExport.listIrns(req.params.businessId) })));
 router.post('/einvoice/:orderId',
   requireRole(['business_owner','staff_manager']),
   asyncHandler(async (req, res) =>
@@ -814,6 +863,136 @@ router.post('/retail/warehouses',
   asyncHandler(async (req, res) =>
     res.status(201).json({ warehouse: await retail.createWarehouse(req.params.businessId, req.body) })
   )
+);
+
+// ── Bulk-import hub (Founder request 2026-08-25) ────────────────────────
+// CSV imports for ingredients, ingredient purchases, and expenses. The
+// dashboard parses the CSV client-side (same minimal parser as the menu
+// dialog) and POSTs a JSON `rows` array; each row is re-validated here with
+// Joi because these endpoints are also reachable directly via the API.
+//
+// Path naming is deliberate (2026-08-25): featureGate matches substrings,
+// and '/bulk-import' maps to the enterprise-only `bulk_import` key (that
+// gate is meant for the retail SKU import). We mount under '/imports/…'
+// instead so:
+//   /imports/ingredients[…]  → matches the '/ingredients' rule →
+//                              recipe_costing (Pro), same plan tier as the
+//                              rest of the ingredients module;
+//   /imports/expenses        → ungated, like the single-expense routes.
+// No new tables — rows land in the existing ingredients /
+// ingredient_transactions / expenses tables via the existing services.
+const ingredientSvc = require('../services/ingredientService');
+const expenseSvc = require('../services/expenseService');
+
+const importRowsBody = Joi.object({
+  rows: Joi.array().items(Joi.object().unknown(true)).min(1).max(1000).required(),
+});
+
+// Mirrors ingredientController.ingredientBody — keep the two in sync.
+const ingredientRowSchema = Joi.object({
+  name: Joi.string().min(1).max(255).required(),
+  category: Joi.string().max(50).allow('', null),
+  unit: Joi.string().valid('g', 'kg', 'ml', 'l', 'piece', 'pack', 'dozen').default('g'),
+  stock: Joi.number().min(0).default(0),
+  reorderLevel: Joi.number().min(0).default(0),
+  costPerUnitInr: Joi.number().min(0).default(0),
+  vendor: Joi.string().max(255).allow('', null),
+  vendorPhone: Joi.string().max(20).allow('', null),
+  notes: Joi.string().max(500).allow('', null),
+});
+
+// Mirrors ingredientController.purchaseBody, plus `ingredient` (name lookup —
+// CSV authors know names, not UUIDs).
+const purchaseRowSchema = Joi.object({
+  ingredient: Joi.string().min(1).max(255).required(),
+  qty: Joi.number().positive().required(),
+  unitCostInr: Joi.number().min(0),
+  totalCostInr: Joi.number().min(0),
+  vendor: Joi.string().max(255).allow('', null),
+  note: Joi.string().max(500).allow('', null),
+}).or('unitCostInr', 'totalCostInr');
+
+// Mirrors expenseController.createBody (categories = expense_category enum,
+// migrations 001/055/058) — keep in sync when the enum grows.
+const expenseRowSchema = Joi.object({
+  date: Joi.date().iso().required(),
+  category: Joi.string().valid(
+    'ingredients', 'fuel', 'labor', 'rent', 'utilities',
+    'packaging', 'marketing', 'maintenance',
+    'chef_salary', 'helper_salary', 'staff_salary', 'gas', 'electricity',
+    'water', 'transport', 'equipment', 'cleaning', 'license_fees',
+    'other'
+  ).default('other'),
+  amount: Joi.number().positive().precision(2).required(),
+  description: Joi.string().max(500).allow('', null),
+});
+
+/**
+ * Runs `handler` for each row, collecting a per-row report. Row numbers are
+ * 1-based CSV *file* lines (data starts at line 2, after the header) so the
+ * error table matches what the user sees in Excel/Sheets.
+ */
+async function runImport(rows, schema, handler) {
+  let imported = 0;
+  const failed = [];
+  for (let i = 0; i < rows.length; i++) {
+    const rowNo = i + 2;
+    // stripUnknown: CSVs often carry extra columns (totals, remarks) — drop
+    // them instead of failing the whole row.
+    const { value, error } = schema.validate(rows[i], { stripUnknown: true });
+    if (error) { failed.push({ row: rowNo, error: error.message }); continue; }
+    try {
+      await handler(value);
+      imported++;
+    } catch (err) {
+      // Service errors (Conflict on duplicate name, NotFound, …) become
+      // per-row failures — one bad row must not abort the batch.
+      failed.push({ row: rowNo, error: err.message || 'Import failed' });
+    }
+  }
+  return { imported, failed };
+}
+
+router.post('/imports/ingredients',
+  requireRole(['business_owner', 'staff_manager']),
+  validate({ body: importRowsBody }),
+  asyncHandler(async (req, res) => {
+    const result = await runImport(req.body.rows, ingredientRowSchema, (row) =>
+      ingredientSvc.create(req.params.businessId, row));
+    res.json(result);
+  })
+);
+
+// Purchases = goods received against existing ingredients. Reuses
+// recordPurchase so stock + weighted-average cost + the
+// ingredient_transactions audit log all update exactly like a manual entry.
+// (The retail purchase_orders/goods_receipts tables are a multi-step
+// PO→GRN flow scoped to retail SKUs — not a fit for a flat CSV.)
+router.post('/imports/ingredients/purchases',
+  requireRole(['business_owner', 'staff_manager']),
+  validate({ body: importRowsBody }),
+  asyncHandler(async (req, res) => {
+    // One name→id lookup up front instead of a query per row.
+    const existing = await ingredientSvc.list(req.params.businessId, { onlyActive: true });
+    const byName = new Map(existing.map((i) => [i.name.trim().toLowerCase(), i.id]));
+    const result = await runImport(req.body.rows, purchaseRowSchema, async (row) => {
+      const id = byName.get(row.ingredient.trim().toLowerCase());
+      if (!id) throw new Error(`Ingredient "${row.ingredient}" not found — import it on the Ingredients tab first`);
+      const { ingredient: _name, ...purchase } = row;
+      await ingredientSvc.recordPurchase(req.params.businessId, id, purchase);
+    });
+    res.json(result);
+  })
+);
+
+router.post('/imports/expenses',
+  requireRole(['business_owner', 'staff_manager']),
+  validate({ body: importRowsBody }),
+  asyncHandler(async (req, res) => {
+    const result = await runImport(req.body.rows, expenseRowSchema, (row) =>
+      expenseSvc.create(req.params.businessId, row));
+    res.json(result);
+  })
 );
 
 module.exports = router;

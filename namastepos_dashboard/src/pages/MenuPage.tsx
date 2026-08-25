@@ -17,7 +17,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Plus, Trash2, Edit2, Search, Filter, Gift, Leaf, X, ChefHat, ImageOff,
-  Ban, Check as CheckIcon, Upload as UploadIcon,
+  Ban, Check as CheckIcon, Upload as UploadIcon, Lock,
 } from 'lucide-react';
 import { MenuCsvImportDialog } from '@/components/MenuCsvImportDialog';
 import { Card, CardContent } from '@/components/ui/card';
@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/dialog';
 import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
+import { usePlan } from '@/hooks/usePlan';
 import { formatINR, fullImageUrl } from '@/lib/utils';
 
 const COMBO_KEY = '__combos__';
@@ -219,6 +220,13 @@ export function MenuPage() {
           onClose={() => setEditing(null)}
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ['menu'] });
+            // WHY (2026-08-25, founder bug "variants not working"): the
+            // EditDialog caches its variant rows under ['variants', itemId].
+            // We never invalidated that key after a save, so reopening the
+            // dialog seeded the editor from the STALE cached list and the
+            // just-saved variants appeared to vanish. Invalidate here so the
+            // next open refetches from the server.
+            qc.invalidateQueries({ queryKey: ['variants'] });
             setEditing(null);
           }}
         />
@@ -422,6 +430,17 @@ function EditDialog({
 }: { item: any; allItems: any[]; onClose: () => void; onSaved: () => void }) {
   const mode = item.id ? 'edit' : 'create';
 
+  // WHY (2026-08-25, founder bug "variants not working"): variants +
+  // modifier-groups are gated server-side by the `menu_variants_modifiers`
+  // plan feature (Pro tier — see backend featureGate.js + migration 031).
+  // On the free Starter plan the backend 402s BOTH the list (GET) and save
+  // (PUT) endpoints, and this dialog used to swallow the 402 — so the form
+  // rendered, accepted input, said "Item updated"… and silently dropped the
+  // variants. We now read the plan here and (a) skip the gated network
+  // calls, (b) replace the dead forms with an explicit lock + upgrade hint.
+  const plan = usePlan();
+  const canVariants = plan.has('menu_variants_modifiers');
+
   const [f, setF] = useState<any>({
     name:         item.name || '',
     description:  item.description || '',
@@ -445,30 +464,41 @@ function EditDialog({
   // Variants + modifier-group attachments are persisted via separate
   // endpoints, so we hold them in their own state and save in a chain
   // after the main item save below.
+  // WHY: `enabled: canVariants` — on Starter these GETs would 402 (and
+  // react-query would retry them), so we don't fire them at all when the
+  // plan lacks the feature.
   const { data: existingVariants = [] } = useQuery({
     queryKey: ['variants', item.id],
     queryFn: () => item.id ? ffApi.listVariants(item.id) : Promise.resolve([]),
-    enabled: !!item.id,
+    enabled: !!item.id && canVariants,
   });
   const { data: allModGroups = [] } = useQuery({
     queryKey: ['modifier-groups'], queryFn: () => ffApi.listModifierGroups(),
+    enabled: canVariants,
   });
   const [variants, setVariants] = useState<any[]>([]);
   const [attachedGroupIds, setAttachedGroupIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (existingVariants.length > 0 && variants.length === 0) {
-      setVariants(existingVariants.map((v: any) => ({
-        id: v.id, label: v.label, price: v.price, sku: v.sku || '',
-      })));
+      // WHY (2026-08-25): deletes are SOFT on the backend (is_active=false,
+      // to keep historical order_items.variant_id intact) and listVariants
+      // returns those rows too. Seeding them back made deleted variants
+      // "reappear" every time the dialog opened — filter them out.
+      setVariants(existingVariants
+        .filter((v: any) => v.isActive !== false)
+        .map((v: any) => ({
+          id: v.id, label: v.label, price: v.price, sku: v.sku || '',
+        })));
     }
   }, [existingVariants]);
   useEffect(() => {
-    if (item.id && attachedGroupIds.length === 0) {
+    // WHY: skip on Starter — this endpoint is feature-gated (402) too.
+    if (canVariants && item.id && attachedGroupIds.length === 0) {
       ffApi.getItemModifierGroups?.(item.id)?.then((ids: string[]) => setAttachedGroupIds(ids || [])).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.id]);
+  }, [item.id, canVariants]);
 
   const componentChoices = allItems.filter((it: any) => !it.isCombo && it.id !== item.id);
   const comboTotal = (f.comboItems || []).reduce((s: number, c: any) => {
@@ -489,24 +519,32 @@ function EditDialog({
         ? await ffApi.createMenuItem(body)
         : await ffApi.updateMenuItem(item.id, body);
       const itemId = saved.id || item.id;
-      // Variants + modifier-groups are PRO features. On the Starter plan
-      // the backend 402s these endpoints — but the item itself was already
-      // created/updated above, so swallow the failure and still report
-      // success. The user sees the new item; the variant/modifier UI just
-      // becomes a no-op until they upgrade.
-      const cleanVariants = variants.filter((v) => v.label && v.price >= 0);
-      if (cleanVariants.length > 0 || existingVariants.length > 0) {
-        try { await ffApi.setVariants(itemId, cleanVariants); }
+      // WHY (2026-08-25): variants + modifier-groups are Pro features
+      // (`menu_variants_modifiers`). Previously we always fired these calls
+      // and silently swallowed the Starter plan's 402 — the founder-reported
+      // "variants not working" bug: the form accepted input, toasted
+      // success, and persisted nothing. Now: when the plan lacks the
+      // feature the editor renders a lock instead of a form (below), so
+      // there is nothing to save and we skip the calls entirely. The 402
+      // swallow stays only as a backstop for a mid-session downgrade race
+      // (plan changed after the dialog opened) — the item save itself must
+      // still succeed in that case.
+      if (canVariants) {
+        const cleanVariants = variants.filter((v) => v.label && v.price >= 0);
+        if (cleanVariants.length > 0 || existingVariants.length > 0) {
+          try { await ffApi.setVariants(itemId, cleanVariants); }
+          catch (err: any) {
+            if (err?.response?.status !== 402) throw err;
+            toast.warning('Variants need the Pro plan — item saved without them.');
+          }
+        }
+        // Bug fix: always send the group set, even when empty — otherwise
+        // un-checking the last attached group never reaches the backend and
+        // the modifier remains attached on the server.
+        try { await ffApi.setItemModifierGroups(itemId, attachedGroupIds); }
         catch (err: any) {
           if (err?.response?.status !== 402) throw err;
         }
-      }
-      // Bug fix: always send the group set, even when empty — otherwise
-      // un-checking the last attached group never reaches the backend and
-      // the modifier remains attached on the server.
-      try { await ffApi.setItemModifierGroups(itemId, attachedGroupIds); }
-      catch (err: any) {
-        if (err?.response?.status !== 402) throw err;
       }
       return saved;
     },
@@ -690,7 +728,27 @@ function EditDialog({
           </div>
 
           {/* Variants (Sprint 1 / FF-201) */}
-          {!f.isCombo && (
+          {/* WHY (2026-08-25, founder bug): on Starter this section used to
+              render a fully editable form whose save was a silent 402 no-op.
+              Plan-gated features must LOOK locked — show the lock + upgrade
+              hint instead of a dead form. */}
+          {!f.isCombo && !canVariants && (
+            <div className="rounded-lg border border-dashed bg-muted/30 p-3">
+              <div className="font-semibold mb-1 flex items-center gap-2">
+                <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Variants</span>
+                <Badge variant="muted" className="text-[10px]">Pro</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Sell one dish in multiple portions with their own prices
+                (Half / Full, Small / Medium / Large). Available on the Pro plan.{' '}
+                <a href="/billing" className="underline text-primary font-medium">
+                  Upgrade to unlock
+                </a>
+              </p>
+            </div>
+          )}
+          {!f.isCombo && canVariants && (
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="font-semibold mb-2 flex items-center gap-2">
                 <span>Variants</span>
@@ -731,7 +789,25 @@ function EditDialog({
           )}
 
           {/* Modifier groups attachment (Sprint 1 / FF-202) */}
-          {!f.isCombo && (
+          {/* WHY: gated by the same `menu_variants_modifiers` Pro feature as
+              variants — same explicit lock instead of a silently dead list. */}
+          {!f.isCombo && !canVariants && (
+            <div className="rounded-lg border border-dashed bg-muted/30 p-3">
+              <div className="font-semibold mb-1 flex items-center gap-2">
+                <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+                <span>Modifier groups</span>
+                <Badge variant="muted" className="text-[10px]">Pro</Badge>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Reusable add-on sets (toppings, spice level, extras) you attach
+                to many items. Available on the Pro plan.{' '}
+                <a href="/billing" className="underline text-primary font-medium">
+                  Upgrade to unlock
+                </a>
+              </p>
+            </div>
+          )}
+          {!f.isCombo && canVariants && (
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="font-semibold mb-2">Modifier groups</div>
               {/* Founder bug #2 fix (2026-08-25): the "TBD" placeholder is

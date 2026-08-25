@@ -161,11 +161,21 @@ const closeSession = [
     paymentMethod: Joi.string().valid('cash', 'upi', 'card', 'online').default('cash'),
     // Settle-time discount in rupees (2026-08-22). Capped server-side.
     discountInr: Joi.number().min(0).default(0),
+    // 2026-08-25 split payments: 1-3 legs; service enforces that they sum
+    // to (session total − shortfall) within ₹0.01, else 400.
+    paymentBreakdown: Joi.array().items(Joi.object({
+      method: Joi.string().valid('cash', 'upi', 'card', 'online', 'wallet').required(),
+      amountInr: Joi.number().positive().required(),
+    })).min(1).max(3).allow(null),
+    // 2026-08-25 shortfall: customer underpaid this much — booked as a
+    // negative wallet movement (debt) on the identified customer.
+    shortfallInr: Joi.number().min(0).default(0),
   })}),
   asyncHandler(async (req, res) => {
     const session = await tables.closeSession(
       req.params.businessId, req.params.sessionId, req.user.id,
-      req.body.paymentMethod || 'cash', req.body.discountInr || 0);
+      req.body.paymentMethod || 'cash', req.body.discountInr || 0,
+      req.body.paymentBreakdown || null, req.body.shortfallInr || 0);
     res.json({ session });
   }),
 ];

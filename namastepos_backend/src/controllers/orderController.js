@@ -56,6 +56,13 @@ const createBody = Joi.object({
     method: Joi.string().valid('cash', 'upi', 'card', 'online').required(),
     amountInr: Joi.number().min(0).required(),
   })).allow(null),
+  // 2026-08-25 split payments v2 (CASH+UPI / CASH+CARD / UPI+CARD /
+  // +WALLET). Strict: 1-3 legs, positive amounts, must sum to the order
+  // total (service enforces ±₹0.01 → 400). Supersedes `splits`.
+  paymentBreakdown: Joi.array().items(Joi.object({
+    method: Joi.string().valid('cash', 'upi', 'card', 'online', 'wallet').required(),
+    amountInr: Joi.number().positive().required(),
+  })).min(1).max(3).allow(null),
   // FF-903 server attribution + tip:
   serverUserId: Joi.string().uuid().allow(null),
   tipInr: Joi.number().min(0).allow(null),

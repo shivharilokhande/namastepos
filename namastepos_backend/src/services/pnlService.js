@@ -1,6 +1,17 @@
-// P&L + Balance Sheet + Trial Balance (R19) — double-entry from journal_entries.
+// P&L + Balance Sheet + Trial Balance (R19).
+//
+// 2026-08-25 (founder bug: "P&L showing zero despite 9 orders / ₹2000+"):
+// profitAndLoss() no longer aggregates journal_entries — nothing in the POS
+// ever posts journals (journalizeOrder below has ZERO callers), so the P&L
+// was permanently zero while Reports → Daily showed real revenue. It now
+// derives from orders/expenses via incomeStatementService — the exact same
+// aggregation the working mobile Income Statement screen and the dashboard
+// Reports page use — so all three surfaces agree. Trial balance and balance
+// sheet still read journals (they have no orders-based equivalent) and stay
+// zero until a journal-posting pipeline exists.
 
 const { query, withTransaction } = require('../config/db');
+const incomeStmt = require('./incomeStatementService');
 
 // ── Chart of accounts seed ───────────────────────────────────────────────
 const DEFAULT_COA = [
@@ -32,7 +43,11 @@ async function seedCoa(businessId) {
   }
 }
 
-// ── Auto-journalize an order (call after order is collected) ─────────────
+// ── Auto-journalize an order ─────────────────────────────────────────────
+// WHY-comment 2026-08-25: this was meant to be called after an order is
+// collected but was never wired into orderService — which is exactly why
+// journal_entries stayed empty and the P&L read zero. Kept for the future
+// journal module; profitAndLoss() below no longer depends on it.
 async function journalizeOrder(businessId, orderId) {
   return withTransaction(async (client) => {
     const o = await client.query(
@@ -95,24 +110,83 @@ async function trialBalance(businessId, asOfDate) {
   return { lines, totalDebitInr: totalDebit / 100, totalCreditInr: totalCredit / 100 };
 }
 
+// Display-only account codes for expense categories (COA-style so the
+// dashboard's "code · name" rows keep their familiar shape). These are NOT
+// GL postings — just stable labels for the derived numbers.
+const PNL_EXPENSE_CODES = {
+  fuel: '5210',
+  labor: '5300',
+  rent: '5100',
+  utilities: '5200',
+  packaging: '5220',
+  marketing: '5400',
+  maintenance: '5230',
+  refund_cogs: '5240',
+  other: '5999',
+};
+
 async function profitAndLoss(businessId, { startDate, endDate }) {
-  const r = await query(
-    `SELECT a.code, a.name, a.kind,
-            COALESCE(SUM(jl.debit_paise - jl.credit_paise), 0)::bigint AS net_paise
-       FROM accounts a
-  LEFT JOIN journal_lines jl ON jl.account_code = a.code
-  LEFT JOIN journal_entries je ON je.id = jl.journal_entry_id
-      WHERE a.business_id = $1
-        AND a.kind IN ('income','expense')
-        AND (je.entry_date IS NULL OR (je.entry_date BETWEEN $2::date AND $3::date))
-      GROUP BY a.code, a.name, a.kind
-      ORDER BY a.code`,
-    [businessId, startDate, endDate]
-  );
-  const income = r.rows.filter((x) => x.kind === 'income')
-    .map((x) => ({ ...x, amount_inr: -Number(x.net_paise) / 100 }));
-  const expense = r.rows.filter((x) => x.kind === 'expense')
-    .map((x) => ({ ...x, amount_inr: Number(x.net_paise) / 100 }));
+  // WHY 2026-08-25: derive from the SAME orders/expenses aggregation the
+  // working income statement uses (IST date bucketing, non-cancelled orders,
+  // expenses table incl. wastage + refund_cogs, ingredients+wastage folded
+  // into COGS) instead of the never-populated journal_entries table. This
+  // makes the Accounting P&L agree with Reports → Daily and the mobile
+  // Income Statement screen, which already showed the founder's ₹2000+.
+  const stmt = await incomeStmt.incomeStatement(businessId, { startDate, endDate });
+
+  // Refunds reduce P&L revenue. They are NOT netted out of orders.total
+  // (refundService only inserts a refunds row + a refund_cogs expense), so
+  // subtract them here. order_id IS NOT NULL keeps platform-subscription
+  // refunds (order_id NULL) out of the tenant's books; failed/cancelled
+  // refunds never left the till so they don't count. Same IST bucketing as
+  // the revenue query. Defensive try/catch like incomeStatementService —
+  // older deployments may not have migration 051's order_id column.
+  let refundsInr = 0;
+  try {
+    const r = await query(
+      `SELECT COALESCE(SUM(amount_paise), 0)::bigint AS p
+         FROM refunds
+        WHERE business_id = $1
+          AND order_id IS NOT NULL
+          AND status IN ('pending', 'processed')
+          AND (created_at AT TIME ZONE 'Asia/Kolkata')::date >= $2::date
+          AND (created_at AT TIME ZONE 'Asia/Kolkata')::date <= $3::date`,
+      [businessId, startDate, endDate]
+    );
+    refundsInr = Number(r.rows[0]?.p || 0) / 100;
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[pnl] refunds query failed (missing order_id column?):', e?.message);
+  }
+
+  // Income: net revenue (gross order totals minus GST collected — GST is a
+  // pass-through, never the restaurant's income), then refunds as a
+  // contra-revenue line so the founder can see why revenue shrank.
+  const income = [
+    { code: '4000', name: 'Sales revenue (net of GST)', kind: 'income', amount_inr: stmt.revenue.netRevenue },
+  ];
+  if (refundsInr > 0) {
+    income.push({ code: '4090', name: 'Less: customer refunds', kind: 'income', amount_inr: -refundsInr });
+  }
+
+  // Expenses: COGS first (ingredients expense + wastage_log — already
+  // de-duplicated inside incomeStatementService), then each operating
+  // expense category with spend. Zero-spend categories are skipped so the
+  // page isn't a wall of ₹0 rows.
+  const expense = [
+    { code: '5000', name: 'COGS (ingredients + wastage)', kind: 'expense', amount_inr: stmt.cogs.total },
+  ];
+  for (const e of stmt.operatingExpenses) {
+    if (e.amount > 0) {
+      expense.push({
+        code: PNL_EXPENSE_CODES[e.category] || '5999',
+        name: e.label,
+        kind: 'expense',
+        amount_inr: e.amount,
+      });
+    }
+  }
+
   const totalIncome = income.reduce((s, x) => s + x.amount_inr, 0);
   const totalExpense = expense.reduce((s, x) => s + x.amount_inr, 0);
   return {

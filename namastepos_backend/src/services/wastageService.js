@@ -2,10 +2,38 @@
 
 const { query, withTransaction } = require('../config/db');
 const { BadRequest } = require('../utils/errors');
+const recipeService = require('./recipeService');
 
 async function log(businessId, body, userId) {
-  const { ingredientId, menuItemId, qty, unit, costPaise, reason, note } = body;
+  const { ingredientId, menuItemId, qty, unit, reason, note } = body;
+  let { costPaise } = body;
   if (!qty || qty <= 0) throw new BadRequest('qty must be positive');
+  // 2026-08-25 (founder): wastage isn't only ingredients — over-prepared
+  // dishes count too ("made 20 plates pav bhaji, sold 17 → log 3"). Either
+  // way a log row must reference SOMETHING, else reports show nameless loss.
+  if (!ingredientId && !menuItemId) {
+    throw new BadRequest('Provide ingredientId or menuItemId');
+  }
+  let menuItemName = null;
+  if (menuItemId) {
+    // Tenant-scope the id: the FK alone would happily accept another
+    // business's menu item (see security pattern — scope every id lookup).
+    const mi = await query(
+      'SELECT name FROM menu_items WHERE business_id = $1 AND id = $2',
+      [businessId, menuItemId]
+    );
+    if (!mi.rows.length) throw new BadRequest('Menu item not found');
+    menuItemName = mi.rows[0].name;
+    // Dish valuation (2026-08-25): when the caller sends no cost, value the
+    // wasted plates at RECIPE cost — that's the ingredient money actually
+    // burned. If the item has no recipe, log at ₹0 (qty still recorded for
+    // over-prep trends) rather than guessing from the menu price: wastage
+    // is a COGS loss, not lost revenue, and sale-price valuation would
+    // inflate the expense mirror and corrupt P&L.
+    if (!costPaise) {
+      costPaise = await recipeService.previewCost(businessId, menuItemId, qty);
+    }
+  }
   return withTransaction(async (client) => {
     const r = await client.query(
       `INSERT INTO wastage_log
@@ -43,8 +71,12 @@ async function log(businessId, body, userId) {
           `INSERT INTO expenses (business_id, category, amount, description, date)
            VALUES ($1, 'wastage', $2, $3,
                    (NOW() AT TIME ZONE 'Asia/Kolkata')::date)`,
+          // 2026-08-25: dish wastage rides the same mirror — the only
+          // difference is the description names the dish + plate count.
           [businessId, costPaise / 100,
-            `Wastage (${reason})${note ? ` — ${note}` : ''}`]
+            `Wastage (${reason})` +
+            `${menuItemName ? ` — ${qty} × ${menuItemName}` : ''}` +
+            `${note ? ` — ${note}` : ''}`]
         );
       } catch (e) {
         // eslint-disable-next-line no-console

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   LayoutGrid, Plus, Edit2, Trash2, Users, ArrowRight, X, Building, Move, Check, Printer,
+  Link2, Unlink, BadgeCheck,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,8 +15,56 @@ import { NewOrderDialog } from '@/components/NewOrderDialog';
 import { BillSplitDialog } from '@/components/BillSplitDialog';
 import { FloorCanvas } from '@/components/FloorCanvas';
 import { ffApi } from '@/api/namastepos';
-import { apiError, getBusinessCache } from '@/api/client';
+import { api, apiError, getBusinessCache } from '@/api/client';
 import { formatINR, formatDateTime } from '@/lib/utils';
+
+// ── Joined tables API (2026-08-25, founder request) ─────────────────────
+// One big party across several physical tables shares ONE session/bill.
+// Called via the shared axios client directly (kept local to this page —
+// TablesPage is the only consumer of the join/unjoin endpoints).
+function joinTableApi(sessionId: string, tableId: string) {
+  const b = getBusinessCache();
+  return api
+    .post(`/businesses/${b.id}/ops/sessions/${sessionId}/join-table`, { tableId })
+    .then((r) => r.data.session);
+}
+function unjoinTableApi(sessionId: string, tableId: string) {
+  const b = getBusinessCache();
+  return api
+    .post(`/businesses/${b.id}/ops/sessions/${sessionId}/unjoin-table`, { tableId })
+    .then((r) => r.data.session);
+}
+
+// ── Split settle + shortfall (2026-08-25, founder) ──────────────────────
+// ffApi.closeSession only carries paymentMethod; the settle rework needs
+// the full close body (paymentBreakdown legs + shortfallInr), so the raw
+// endpoint is called locally — same pattern as join/unjoin above.
+function closeSessionApi(
+  sessionId: string,
+  body: { paymentMethod: string; paymentBreakdown?: { method: string; amountInr: number }[]; shortfallInr?: number },
+) {
+  const b = getBusinessCache();
+  return api
+    .post(`/businesses/${b.id}/ops/sessions/${sessionId}/close`, body)
+    .then((r) => r.data.session);
+}
+// Wallet read: {balanceInr, transactions}. Shown beside the 'wallet' tender
+// option; a 402 (loyalty addon missing) hides the option via the query's
+// error state instead of surfacing an error toast at settle time.
+function customerWalletApi(customerId: string) {
+  const b = getBusinessCache();
+  return api
+    .get(`/businesses/${b.id}/customers/${customerId}/wallet`)
+    .then((r) => r.data as { balanceInr: number; transactions: any[] });
+}
+
+// One split-payment leg. Amount stays a STRING while typing (clearable
+// input); parsed only for math + submit.
+type SettleLeg = {
+  method: 'cash' | 'upi' | 'card' | 'online' | 'wallet';
+  amountInr: string;
+};
+const SETTLE_METHODS = ['cash', 'upi', 'card', 'online'] as const;
 
 const STATUS_COLORS: Record<string, string> = {
   available: 'bg-emerald-100 border-emerald-300 text-emerald-700',
@@ -62,6 +111,17 @@ export function TablesPage() {
   const visibleTables = selectedFloor
     ? tables.filter((t: any) => t.floorId === selectedFloor)
     : tables;
+
+  // Joined tables (2026-08-25): every member of a joined group — the primary
+  // (has sessionJoinedTableIds) and the secondaries (isJoinedSecondary) —
+  // gets a small link marker on its floor-plan chip. FloorCanvas renders the
+  // label verbatim, so the marker rides along on the label string; tapping
+  // any member still resolves to the SAME session via currentSessionId.
+  const canvasTables = visibleTables.map((t: any) =>
+    t.isJoinedSecondary || (t.sessionJoinedTableIds?.length > 0)
+      ? { ...t, label: `${t.label} 🔗` }
+      : t
+  );
 
   return (
     <div className="space-y-6">
@@ -145,14 +205,18 @@ export function TablesPage() {
       {/* Free-position floor canvas — drag tables in edit mode, tap in view mode */}
       {visibleTables.length > 0 && (
         <FloorCanvas
-          tables={visibleTables}
+          tables={canvasTables}
           editMode={layoutEdit}
           onTableTap={(t: any) => {
             if (t.status === 'available') setSeating(t);
             else if (t.currentSessionId) setViewing({ tableId: t.id, sessionId: t.currentSessionId });
           }}
-          onEdit={(t: any) => setEditingTable(t)}
-          onDelete={(t: any) => {
+          // Resolve back to the ORIGINAL row — canvasTables may carry the
+          // join marker inside `label`, which must never prefill the edit
+          // dialog or get saved back as the table's real label.
+          onEdit={(t: any) => setEditingTable(visibleTables.find((x: any) => x.id === t.id) || t)}
+          onDelete={(canvasT: any) => {
+            const t = visibleTables.find((x: any) => x.id === canvasT.id) || canvasT;
             // Block deletion if the table is currently occupied — closing
             // the session first is the right move.
             if (t.status === 'occupied') {
@@ -300,11 +364,49 @@ function TableDialog({ table, floors, onClose, onSaved }: any) {
   );
 }
 
+// Clamp to the backend's Joi bounds (1..50) so the cashier can't submit a
+// value the API would 400 on — typing stays free, the number just snaps.
+const clampGuests = (n: number) => Math.max(1, Math.min(50, Math.round(n) || 1));
+
 function SeatingDialog({ table, onClose, onSeated }: any) {
-  const [f, setF] = useState({ guestCount: table.seats, customerPhone: '', customerName: '', notes: '' });
+  // Guest count defaults to 2 (founder, 2026-08-25: "always shows 2 — should
+  // have option to put guest numbers"). The backend always ACCEPTED
+  // guestCount; the dashboard just has to actually send what's typed here.
+  const [f, setF] = useState({ guestCount: 2, customerPhone: '', customerName: '', notes: '' });
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+  // Joined tables (2026-08-25): a big party can grab extra free tables
+  // UPFRONT — all of them share the one session/bill opened below.
+  const [extraTableIds, setExtraTableIds] = useState<string[]>([]);
+  const { data: allTables = [] } = useQuery({
+    queryKey: ['ops-tables'], queryFn: () => ffApi.listOpsTables(),
+  });
+  const freeTables = allTables.filter(
+    (t: any) => t.status === 'available' && t.id !== table.id
+  );
+  const toggleExtra = (id: string) =>
+    setExtraTableIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+
   const seat = useMutation({
-    mutationFn: () => ffApi.openSession(table.id, f),
+    mutationFn: async () => {
+      // Open the session on the tapped table first, then join the extras.
+      // Joins are separate calls (POST sessions/:id/join-table) so a single
+      // stolen table doesn't roll back the whole seating — the captain gets
+      // a toast per failed join and the party is still seated.
+      const session = await ffApi.openSession(table.id, {
+        ...f, guestCount: clampGuests(f.guestCount),
+      });
+      for (const id of extraTableIds) {
+        try {
+          await joinTableApi(session.id, id);
+        } catch (e) {
+          const lbl = freeTables.find((t: any) => t.id === id)?.label || '';
+          toast.error(`Could not join table ${lbl}: ${apiError(e)}`);
+        }
+      }
+      return session;
+    },
     onSuccess: () => { toast.success('Table seated'); onSeated(); },
     onError: (e) => toast.error(apiError(e)),
   });
@@ -313,14 +415,52 @@ function SeatingDialog({ table, onClose, onSeated }: any) {
       <DialogContent>
         <DialogHeader><DialogTitle>Seat table {table.label}</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div><Label>Guest count</Label><Input type="number" value={f.guestCount} onChange={(e) => set('guestCount', +e.target.value)} /></div>
+          <div>
+            <Label>Guest count</Label>
+            <Input
+              type="number" min={1} max={50} value={f.guestCount}
+              onChange={(e) => set('guestCount', clampGuests(+e.target.value))}
+            />
+          </div>
           <div><Label>Customer phone (optional)</Label><Input value={f.customerPhone} onChange={(e) => set('customerPhone', e.target.value)} placeholder="9876543210" /></div>
           <div><Label>Customer name (optional)</Label><Input value={f.customerName} onChange={(e) => set('customerName', e.target.value)} /></div>
           <div><Label>Notes (optional)</Label><Input value={f.notes} onChange={(e) => set('notes', e.target.value)} placeholder="Birthday party, allergic to peanuts…" /></div>
+          {freeTables.length > 0 && (
+            <div>
+              <Label className="flex items-center gap-1">
+                <Link2 className="h-3.5 w-3.5" /> Join more tables (big group)
+              </Label>
+              <p className="text-[11px] text-muted-foreground mb-1.5">
+                Selected tables share ONE bill with {table.label}. Tap any of them later to open the same session.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {freeTables.map((t: any) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => toggleExtra(t.id)}
+                    className={`px-3 h-8 rounded-md border text-xs font-semibold transition-colors ${
+                      extraTableIds.includes(t.id)
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-input hover:bg-accent'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => seat.mutate()} disabled={seat.isPending}>Seat guests</Button>
+          <Button onClick={() => seat.mutate()} disabled={seat.isPending}>
+            {seat.isPending
+              ? 'Seating…'
+              : extraTableIds.length > 0
+                ? `Seat guests (${extraTableIds.length + 1} tables)`
+                : 'Seat guests'}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -478,10 +618,118 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
   // eaten so far) and "KOTs" (the kitchen-side history of orders).
   const [viewMode, setViewMode] = useState<'items' | 'kots'>('items');
 
+  // ── Split settle + shortfall state (2026-08-25, founder) ──────────────
+  // Split off = single-method flow untouched. Shortfall = customer paid
+  // less than the bill; the gap books as a NEGATIVE wallet movement (debt)
+  // on the identified customer — server refuses without one.
+  const [splitOn, setSplitOn] = useState(false);
+  const [settleLegs, setSettleLegs] = useState<SettleLeg[]>([
+    { method: 'cash', amountInr: '' }, { method: 'upi', amountInr: '' },
+  ]);
+  const [shortfallOpen, setShortfallOpen] = useState(false);
+  const [shortfallInput, setShortfallInput] = useState(0);
+
+  // Resolve the session's customer → id (customer-history lookup, the same
+  // endpoint NewOrderDialog uses) → wallet balance for the wallet tender.
+  const custPhone: string | undefined = session?.customerPhone || undefined;
+  const { data: custProfile } = useQuery({
+    queryKey: ['cust-profile', custPhone],
+    queryFn: () => ffApi.customerProfile(custPhone!),
+    enabled: !!custPhone,
+    retry: false,
+  });
+  const custId: string | undefined = custProfile?.customer?.id;
+  const { data: walletInfo, isError: walletError } = useQuery({
+    queryKey: ['cust-wallet', custId],
+    queryFn: () => customerWalletApi(custId!),
+    enabled: !!custId,
+    retry: false,
+  });
+  const walletBalance: number = walletInfo?.balanceInr ?? 0;
+  const walletAvailable = !!custId && !!walletInfo && !walletError;
+
+  // A hidden wallet option must never stay selected (server would 400 on
+  // settle) — fall those legs back to cash if the wallet disappears.
+  useEffect(() => {
+    if (!walletAvailable) {
+      setSettleLegs((ls) => ls.some((l) => l.method === 'wallet')
+        ? ls.map((l) => (l.method === 'wallet' ? { ...l, method: 'cash' as const } : l))
+        : ls);
+    }
+  }, [walletAvailable]);
+
+  const setSettleLeg = (i: number, patch: Partial<SettleLeg>) =>
+    setSettleLegs((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+
   const close = useMutation({
-    mutationFn: () => ffApi.closeSession(sessionId, paymentMethod),
+    mutationFn: () => {
+      // 2026-08-25: full close body. Legs must sum to (session total −
+      // shortfall) ±₹0.01 — validated client-side below before the button
+      // enables, and again server-side inside the settle txn.
+      const body: any = { paymentMethod };
+      if (shortfallOpen && shortfallInput > 0) body.shortfallInr = shortfallInput;
+      if (splitOn) {
+        body.paymentBreakdown = settleLegs.map((l) => ({
+          method: l.method,
+          amountInr: +(parseFloat(l.amountInr) || 0).toFixed(2),
+        }));
+      }
+      return closeSessionApi(sessionId, body);
+    },
     onSuccess: () => {
-      toast.success(`Bill settled — paid by ${paymentMethod.toUpperCase()}`);
+      toast.success(splitOn
+        ? 'Bill settled — split payment recorded'
+        : `Bill settled — paid by ${paymentMethod.toUpperCase()}`);
+      qc.invalidateQueries({ queryKey: ['ops-tables'] });
+      qc.invalidateQueries({ queryKey: ['cust-wallet'] });
+      onClosed();
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  // Joined tables (2026-08-25) — attach/detach extra free tables to THIS
+  // running session. Every joined table flips to occupied and taps back
+  // into this same dialog; settle/release frees the whole group at once.
+  const [showJoinPicker, setShowJoinPicker] = useState(false);
+  const { data: allTables = [] } = useQuery({
+    queryKey: ['ops-tables'], queryFn: () => ffApi.listOpsTables(),
+  });
+  const join = useMutation({
+    mutationFn: (tableId: string) => joinTableApi(sessionId, tableId),
+    onSuccess: () => {
+      toast.success('Table joined — one bill for the whole group');
+      setShowJoinPicker(false);
+      qc.invalidateQueries({ queryKey: ['session', sessionId] });
+      qc.invalidateQueries({ queryKey: ['ops-tables'] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const unjoin = useMutation({
+    mutationFn: (tableId: string) => unjoinTableApi(sessionId, tableId),
+    onSuccess: () => {
+      toast.success('Table unjoined and freed');
+      qc.invalidateQueries({ queryKey: ['session', sessionId] });
+      qc.invalidateQueries({ queryKey: ['ops-tables'] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  // Paid-early release (2026-08-25, founder): every KOT was paid at order
+  // time ("Pay & place") yet the table stays occupied because nobody hits
+  // Settle — there is nothing left to collect. This closes the session via
+  // the SAME settle endpoint, passing the HEAD order's payment method so
+  // reporting stays truthful. No double charge: closeSession only flips
+  // payment_method on orders still marked 'unpaid' (there are none here)
+  // and re-marking collected is idempotent.
+  const releasePaid = useMutation({
+    mutationFn: () => {
+      const active = (session?.orders || []).filter((o: any) => o.status !== 'cancelled');
+      const headPm = active[0]?.paymentMethod;
+      const pm = ['cash', 'upi', 'card', 'online'].includes(headPm) ? headPm : 'cash';
+      return ffApi.closeSession(sessionId, pm);
+    },
+    onSuccess: () => {
+      toast.success('Table released — bill was already paid');
       qc.invalidateQueries({ queryKey: ['ops-tables'] });
       onClosed();
     },
@@ -512,6 +760,50 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
 
   const items = session.items || [];
   const orders = session.orders || [];
+  const joinedTables = session.joinedTables || [];
+  const freeTables = allTables.filter((t: any) => t.status === 'available');
+
+  // ── Settle math (2026-08-25, founder) ─────────────────────────────────
+  // Shortfall is clamped to the bill so the due can't go negative; the
+  // split legs must then cover exactly what's actually PAID (total − short).
+  const sessionTotal = Number(session.totalInr) || 0;
+  const shortfall = shortfallOpen
+    ? Math.min(Math.max(0, Number(shortfallInput) || 0), sessionTotal)
+    : 0;
+  const totalDue = Math.max(0, +(sessionTotal - shortfall).toFixed(2));
+  const legSum = settleLegs.reduce((s, l) => s + (parseFloat(l.amountInr) || 0), 0);
+  const settleRemaining = +(totalDue - legSum).toFixed(2);
+  const walletLegInr = settleLegs
+    .filter((l) => l.method === 'wallet')
+    .reduce((s, l) => s + (parseFloat(l.amountInr) || 0), 0);
+  // Client-side mirror of the server's insufficient-wallet 400.
+  const walletOver = walletLegInr > walletBalance + 0.001;
+  // Backend: 1-3 POSITIVE legs summing to the due within ±₹0.01.
+  const splitValid =
+    Math.abs(settleRemaining) <= 0.01 && !walletOver &&
+    settleLegs.every((l) => (parseFloat(l.amountInr) || 0) > 0);
+  // Shortfall books a wallet DEBT — server refuses without an identified
+  // customer on the session's orders; custId is the client-side proxy.
+  const shortfallBlocked = shortfall > 0 && !custId;
+
+  // Paid upfront = at least one live KOT and EVERY one already carries a
+  // real payment method (the "Pay & place" flow). Only then does the
+  // "Release table (already paid)" shortcut make sense.
+  const activeOrders = orders.filter((o: any) => o.status !== 'cancelled');
+  const allPaidUpfront =
+    activeOrders.length > 0 &&
+    activeOrders.every((o: any) => o.paymentMethod && o.paymentMethod !== 'unpaid');
+
+  const onReleasePaidClick = () => {
+    if (!window.confirm(
+      'Release this table? All orders in this session are already paid, so ' +
+      'nothing more will be charged — the session closes and ' +
+      (joinedTables.length > 0
+        ? 'the tables (including joined ones) go back to Available.'
+        : 'the table goes back to Available.')
+    )) return;
+    releasePaid.mutate();
+  };
 
   // Group identical lines together so "2× Paneer Tikka" from KOT 1 +
   // "1× Paneer Tikka" from KOT 2 collapse into one line ("3× Paneer Tikka").
@@ -537,7 +829,12 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
         <DialogContent className="max-w-xl w-[95vw] max-h-[92vh] overflow-hidden flex flex-col p-0">
           <DialogHeader className="px-5 py-3 border-b">
             <DialogTitle className="flex items-center justify-between gap-2">
-              <span>Table {session.tableLabel} · Running bill</span>
+              <span>
+                Table {session.tableLabel}
+                {joinedTables.length > 0 &&
+                  ` + ${joinedTables.map((jt: any) => jt.label).join(', ')}`}
+                {' '}· Running bill
+              </span>
               <Badge variant="warning" className="text-[10px]">OPEN</Badge>
             </DialogTitle>
           </DialogHeader>
@@ -562,6 +859,63 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
               <div className="text-xs">📞 {session.customerPhone}{session.customerName ? ` · ${session.customerName}` : ''}</div>
             )}
             {session.notes && <div className="text-xs italic text-muted-foreground">"{session.notes}"</div>}
+
+            {/* Joined tables (2026-08-25) — the whole group shares this one
+                bill. Unjoin frees just that table; Settle/Release frees all. */}
+            <div className="rounded-lg border border-dashed px-3 py-2 space-y-2">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <Link2 className="h-3.5 w-3.5 text-muted-foreground" />
+                {joinedTables.length > 0 ? (
+                  <>
+                    <span className="text-muted-foreground">Joined:</span>
+                    {joinedTables.map((jt: any) => (
+                      <span
+                        key={jt.id}
+                        className="inline-flex items-center gap-1 rounded-md border bg-muted px-2 py-0.5 font-semibold"
+                      >
+                        {jt.label}
+                        <button
+                          title={`Unjoin table ${jt.label}`}
+                          onClick={() => unjoin.mutate(jt.id)}
+                          disabled={unjoin.isPending}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          <Unlink className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">
+                    Big group? Join a nearby free table onto this bill.
+                  </span>
+                )}
+                <button
+                  onClick={() => setShowJoinPicker((v) => !v)}
+                  className="ml-auto text-primary font-semibold hover:underline"
+                >
+                  {showJoinPicker ? 'Hide' : '+ Join another table'}
+                </button>
+              </div>
+              {showJoinPicker && (
+                freeTables.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">No free tables right now.</div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {freeTables.map((t: any) => (
+                      <button
+                        key={t.id}
+                        onClick={() => join.mutate(t.id)}
+                        disabled={join.isPending}
+                        className="px-3 h-8 rounded-md border border-input text-xs font-semibold hover:bg-accent transition-colors"
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
 
             {/* View toggle */}
             <div className="flex gap-1 border-b">
@@ -627,21 +981,37 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                     No KOTs sent yet.
                   </div>
                 )}
-                {orders.map((o: any) => (
-                  <div key={o.id} className="px-3 py-2 flex items-center justify-between gap-2">
-                    <div>
-                      <div className="font-medium">
-                        KOT #{o.orderNo}
-                        <span className="ml-2 text-xs text-muted-foreground capitalize">· {o.status}</span>
+                {orders.map((o: any) => {
+                  // Paid-early (2026-08-25): make it obvious per-KOT whether
+                  // money was already taken (Pay & place) or is still due at
+                  // settle — cashiers were re-charging paid tables.
+                  const paid = !!o.paymentMethod && o.paymentMethod !== 'unpaid';
+                  return (
+                    <div key={o.id} className="px-3 py-2 flex items-center justify-between gap-2">
+                      <div>
+                        <div className="font-medium flex items-center gap-2">
+                          KOT #{o.orderNo}
+                          <span className="text-xs text-muted-foreground capitalize">· {o.status}</span>
+                          {o.status !== 'cancelled' && (
+                            <span
+                              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${
+                                paid
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'bg-amber-100 text-amber-800'
+                              }`}
+                            >
+                              {paid ? `Paid · ${o.paymentMethod}` : 'Unpaid'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {formatDateTime(o.createdAt)} · {o.itemCount} item{o.itemCount === 1 ? '' : 's'}
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {formatDateTime(o.createdAt)} · {o.itemCount} item{o.itemCount === 1 ? '' : 's'}
-                        {o.paymentMethod && ` · ${o.paymentMethod}`}
-                      </div>
+                      <div className="font-semibold">{formatINR(o.total)}</div>
                     </div>
-                    <div className="font-semibold">{formatINR(o.total)}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -668,23 +1038,116 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
             {/* Payment method picker, only when there's something to settle */}
             {orders.length > 0 && (
               <div>
-                <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                  Settle payment with
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Settle payment with
+                  </div>
+                  {/* Split payments on settle (2026-08-25, founder) */}
+                  <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                    <input type="checkbox" checked={splitOn}
+                      onChange={(e) => setSplitOn(e.target.checked)} />
+                    Split payment
+                  </label>
                 </div>
-                <div className="grid grid-cols-3 gap-1">
-                  {(['cash', 'upi', 'card'] as const).map((m) => (
-                    <button
-                      key={m}
-                      onClick={() => setPaymentMethod(m)}
-                      className={`h-9 rounded-md border text-xs font-semibold capitalize transition-colors ${
-                        paymentMethod === m
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-input hover:bg-accent'
-                      }`}
-                    >
-                      {m}
-                    </button>
-                  ))}
+                {!splitOn ? (
+                  <div className="grid grid-cols-3 gap-1">
+                    {(['cash', 'upi', 'card'] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => setPaymentMethod(m)}
+                        className={`h-9 rounded-md border text-xs font-semibold capitalize transition-colors ${
+                          paymentMethod === m
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-input hover:bg-accent'
+                        }`}
+                      >
+                        {m}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {settleLegs.map((leg, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
+                        <select value={leg.method}
+                          onChange={(e) => setSettleLeg(i, { method: e.target.value as SettleLeg['method'] })}
+                          className="h-8 flex-1 rounded-md border border-input bg-background px-2 text-xs capitalize">
+                          {SETTLE_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                          {/* Wallet only for an identified customer — the
+                              live balance rides on the option label. */}
+                          {walletAvailable && (
+                            <option value="wallet">wallet — {formatINR(walletBalance)}</option>
+                          )}
+                        </select>
+                        <Input type="number" min={0} placeholder="0" value={leg.amountInr}
+                          onChange={(e) => setSettleLeg(i, { amountInr: e.target.value })}
+                          className="h-8 w-24 text-xs" />
+                        {settleLegs.length > 2 && (
+                          <button onClick={() => setSettleLegs((ls) => ls.filter((_, j) => j !== i))}
+                            className="p-1 hover:bg-accent rounded" title="Remove leg">
+                            <Trash2 className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    {/* Backend caps the breakdown at 3 legs */}
+                    {settleLegs.length < 3 && (
+                      <button onClick={() => setSettleLegs((ls) => [...ls, { method: 'cash', amountInr: '' }])}
+                        className="text-xs text-primary font-semibold hover:underline">
+                        + Add payment method
+                      </button>
+                    )}
+                    <div className={`text-xs font-medium ${
+                      Math.abs(settleRemaining) <= 0.01 ? 'text-emerald-700' : 'text-amber-700'
+                    }`}>
+                      {Math.abs(settleRemaining) <= 0.01
+                        ? '✓ Fully covered'
+                        : settleRemaining > 0
+                          ? `${formatINR(settleRemaining)} remaining`
+                          : `${formatINR(-settleRemaining)} over`}
+                    </div>
+                    {walletOver && (
+                      <div className="text-xs text-destructive">
+                        Wallet has only {formatINR(walletBalance)} — reduce the wallet amount.
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Shortfall (2026-08-25, founder): customer can't pay the
+                    full bill — the gap becomes a wallet debt so it's
+                    recoverable on the next visit instead of silent leakage. */}
+                <div className="mt-3 border-t pt-2">
+                  <button
+                    onClick={() => setShortfallOpen((v) => !v)}
+                    className="text-xs text-primary font-semibold hover:underline"
+                  >
+                    {shortfallOpen ? 'Hide shortfall' : 'Customer short on payment?'}
+                  </button>
+                  {shortfallOpen && (
+                    !custId ? (
+                      <p className="mt-1.5 text-xs text-muted-foreground">
+                        Shortfall is booked as due on the customer's wallet — this
+                        session has no identified customer. Attach a customer phone
+                        (via Add items) first.
+                      </p>
+                    ) : (
+                      <div className="mt-1.5 space-y-1.5">
+                        <Label className="text-xs">Shortfall (₹)</Label>
+                        <Input type="number" min={0} max={sessionTotal} value={shortfallInput}
+                          onChange={(e) => setShortfallInput(
+                            Math.min(Math.max(0, +e.target.value || 0), sessionTotal))}
+                          className="h-8" />
+                        {shortfall > 0 && (
+                          <div className="text-xs text-amber-700">
+                            {formatINR(shortfall)} will be added as due on{' '}
+                            <strong>{session.customerName || session.customerPhone}</strong>'s wallet.
+                            Collect {formatINR(totalDue)} now.
+                          </div>
+                        )}
+                      </div>
+                    )
+                  )}
                 </div>
               </div>
             )}
@@ -700,6 +1163,19 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                 disabled={abandon.isPending}
               >
                 {abandon.isPending ? 'Releasing…' : 'Release table'}
+              </Button>
+            )}
+            {/* Paid-early release (2026-08-25) — every KOT already paid at
+                order time; close the session without collecting again. */}
+            {allPaidUpfront && (
+              <Button
+                variant="outline"
+                className="text-emerald-700 border-emerald-300 hover:bg-emerald-50"
+                onClick={onReleasePaidClick}
+                disabled={releasePaid.isPending}
+              >
+                <BadgeCheck className="mr-1 h-4 w-4" />
+                {releasePaid.isPending ? 'Releasing…' : 'Release table (already paid)'}
               </Button>
             )}
             <Button variant="outline" onClick={() => setAddingItems(true)}>
@@ -724,11 +1200,15 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
             >
               <Users className="mr-1 h-4 w-4" /> Split bill
             </Button>
+            {/* 2026-08-25: split mode gates Settle until the legs balance;
+                a shortfall without an identified customer is blocked (the
+                server would refuse the wallet debt anyway). */}
             <Button
               onClick={() => close.mutate()}
-              disabled={close.isPending || orders.length === 0}
+              disabled={close.isPending || orders.length === 0
+                || (splitOn && !splitValid) || shortfallBlocked}
             >
-              {close.isPending ? '…' : `Settle ${formatINR(session.totalInr)}`}
+              {close.isPending ? '…' : `Settle ${formatINR(totalDue)}`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { MessageCircle, Plus, Send } from 'lucide-react';
+import { AlertTriangle, MessageCircle, Plus, Send } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,9 +16,22 @@ export function CampaignsPage() {
   const qc = useQueryClient();
   const { data: campaigns = [] } = useQuery({ queryKey: ['wa-campaigns'], queryFn: ffApi.listCampaigns });
   const [adding, setAdding] = useState(false);
+  // WHY (2026-08-25): the backend stamps provider_configured on every campaign
+  // row (deployment-level fact, same on all rows). `!== false` keeps older API
+  // responses (field absent) from falsely showing the "not connected" banner.
+  const providerConfigured = campaigns.length === 0 || campaigns[0].provider_configured !== false;
   const run = useMutation({
     mutationFn: (id: string) => ffApi.runCampaign(id),
-    onSuccess: (r: any) => { toast.success(`Sent to ${r.sent} customers`); qc.invalidateQueries({ queryKey: ['wa-campaigns'] }); },
+    onSuccess: (r: any) => {
+      // WHY (2026-08-25): without Twilio/Meta creds nothing is delivered — the
+      // old "Sent to 0 customers" toast pretended success. Say "queued" honestly.
+      if (r.providerConfigured === false) {
+        toast.warning(`Queued ${r.queued} message${r.queued === 1 ? '' : 's'} — WhatsApp provider not connected, nothing was delivered yet`);
+      } else {
+        toast.success(`Sent to ${r.sent} customers`);
+      }
+      qc.invalidateQueries({ queryKey: ['wa-campaigns'] });
+    },
     onError: (e) => toast.error(apiError(e)),
   });
   return (
@@ -32,6 +45,17 @@ export function CampaignsPage() {
         </div>
         <Button onClick={() => setAdding(true)}><Plus className="mr-1 h-4 w-4" />New campaign</Button>
       </div>
+      {/* WHY (2026-08-25): founder saw "sent 0/1" with no clue that outbound WA
+          was never wired up in prod. Make the missing provider loud and amber. */}
+      {!providerConfigured && (
+        <div className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <AlertTriangle className="h-5 w-5 shrink-0 text-amber-600" />
+          <div>
+            <div className="font-semibold">WhatsApp sending is not connected yet</div>
+            <div>Messages will queue but not deliver. Connect a WhatsApp Business provider (Twilio/Meta) in backend settings.</div>
+          </div>
+        </div>
+      )}
       <Card><CardContent className="p-0">
         <table className="w-full text-sm">
           <thead className="text-left text-xs text-muted-foreground border-b">
@@ -44,8 +68,19 @@ export function CampaignsPage() {
                 <td className="p-3 font-medium">{c.name}</td>
                 <td><Badge variant={c.status === 'done' ? 'success' : c.status === 'running' ? 'warning' : 'muted'}>{c.status}</Badge></td>
                 <td>{c.recipient_count}</td>
-                <td>{c.sent_count} / {c.recipient_count}</td>
-                <td><Button size="sm" variant="outline" onClick={() => run.mutate(c.id)} disabled={c.status === 'done'}>
+                {/* WHY (2026-08-25): "0 / 1" looked like a failure. With no
+                    provider connected nothing was ever attempted — say so.
+                    Covers legacy rows already marked 'done' with sent 0. */}
+                <td>
+                  {!providerConfigured && Number(c.sent_count) === 0 && Number(c.recipient_count) > 0
+                    ? <span className="text-amber-700">queued, awaiting provider</span>
+                    : <>{c.sent_count} / {c.recipient_count}</>}
+                </td>
+                {/* WHY (2026-08-25): legacy rows got marked 'done' with 0 sent when the
+                    provider was missing — keep Send enabled for those so they can
+                    actually go out once Twilio/Meta is connected. */}
+                <td><Button size="sm" variant="outline" onClick={() => run.mutate(c.id)}
+                  disabled={run.isPending || (c.status === 'done' && Number(c.sent_count) > 0)}>
                   <Send className="mr-1 h-3 w-3" />Send</Button></td>
               </tr>
             ))}

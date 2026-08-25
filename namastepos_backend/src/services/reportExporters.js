@@ -343,7 +343,9 @@ function streamTaxInvoicePdf(res, inv) {
   doc.fontSize(9);
   doc.text(`Invoice No: `, rx, y + 6).font('Helvetica-Bold').text(inv.invoiceNo, rx + 70, y + 6);
   doc.font('Helvetica').text(`Date: `, rx, y + 22).font('Helvetica-Bold')
-     .text(new Date(inv.invoiceDate).toLocaleString('en-IN'), rx + 70, y + 22);
+     // IST fix (2026-08-25): server runs in UTC on Render — without an
+     // explicit timeZone the printed invoice time was 5h30 behind.
+     .text(new Date(inv.invoiceDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), rx + 70, y + 22);
   doc.font('Helvetica').text(`Place of supply: `, rx, y + 38).text(inv.placeOfSupply, rx + 100, y + 38);
   doc.text(`Reverse charge: `, rx, y + 52).text(inv.reverseCharge ? 'Yes' : 'No', rx + 100, y + 52);
   doc.text(`Payment: `, rx, y + 66).text(`${inv.paymentMethod || '-'} (${inv.paymentStatus})`, rx + 100, y + 66);

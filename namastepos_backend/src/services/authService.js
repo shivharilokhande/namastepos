@@ -326,6 +326,10 @@ async function updateBusiness(id, patch) {
     'name', 'phone', 'city', 'category', 'gstin', 'address',
     'upi_id', 'bank_account', 'bank_ifsc', 'logo_url', 'onboarded',
     'default_service_mode',   // FF-252
+    // 2026-08-25 — Google reviews source config (migration 061). Lives on
+    // businesses, NOT platform_settings: that table is platform-global KV
+    // with no business_id column, so per-business rows can't exist there.
+    'google_maps_url', 'google_place_id',
   ];
   const updates = [];
   const values = [];
@@ -376,6 +380,10 @@ function serializeBusiness(b) {
     bankAccount: b.bank_account,
     bankIfsc: b.bank_ifsc,
     logoUrl: b.logo_url,
+    // 2026-08-25 — surfaced so the dashboard Settings "Google reviews" card
+    // can show what's currently configured (migration 061 columns).
+    googleMapsUrl: b.google_maps_url || null,
+    googlePlaceId: b.google_place_id || null,
     onboarded: b.onboarded,
     // FF-252 — surfaced to dashboard/wizard so owners can choose the
     // default service style once. hybrid = per-table (default).
