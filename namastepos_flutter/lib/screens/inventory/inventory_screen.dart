@@ -129,6 +129,7 @@ class _InventoryRow extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<InventoryReason>(
+                menuMaxHeight: 320, isExpanded: true, // scroll long lists (2026-08-25)
                 value: reason,
                 items: InventoryReason.values.map((r) => DropdownMenuItem(
                   value: r,

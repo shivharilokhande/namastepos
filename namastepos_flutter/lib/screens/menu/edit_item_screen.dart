@@ -177,6 +177,7 @@ class _EditItemScreenState extends State<EditItemScreen> {
             const SizedBox(height: 14),
             _label('Unit'),
             DropdownButtonFormField<MenuUnit>(
+              menuMaxHeight: 320, isExpanded: true, // scroll long lists (2026-08-25)
               value: _unit,
               items: MenuUnit.values.map((u) => DropdownMenuItem(
                 value: u,

@@ -7,8 +7,10 @@ import '../models/menu_item.dart';
 import '../models/order.dart';
 import '../utils/formatters.dart';
 import 'package:uuid/uuid.dart';
+import 'package:dio/dio.dart';
 import '../services/api_service.dart';
 import '../services/repositories.dart';
+import '../services/offline_outbox.dart';
 
 class OrdersProvider extends ChangeNotifier {
   // Active cart for the POS screen
@@ -311,11 +313,22 @@ class OrdersProvider extends ChangeNotifier {
     }
     if (businessId.isNotEmpty) {
       try {
-        await ApiService.instance.updateOrderStatus(
-            businessId, orderId, status.name);
-      } on ApiException catch (e) {
+        // Offline-tolerant status change (2026-08-25): the old code called
+        // ApiService.updateOrderStatus directly and RETHREW on any error —
+        // so with no internet, "Mark ready / Next" threw and the ticket
+        // never advanced. Route through the OfflineOutbox instead (same
+        // path the offline order-create uses): when offline it QUEUES the
+        // PUT and replays it on reconnect, returning null (no throw), so
+        // the kitchen keeps moving tickets. A real 4xx (e.g. 404 ghost)
+        // still rethrows via sendOrQueue so we can clean it up below.
+        await OfflineOutbox().sendOrQueue(
+          endpoint: '/businesses/$businessId/orders/$orderId/status',
+          method: 'PUT',
+          body: {'status': status.name, if (reason != null) 'reason': reason},
+        );
+      } on DioException catch (e) {
         debugPrint('updateStatus($orderId → ${status.name}) failed: $e');
-        if (e.statusCode == 404) {
+        if (e.response?.statusCode == 404) {
           // Ghost order — exists only in local cache, never reached the
           // backend (or was wiped server-side). Remove it from the in-mem
           // list AND local SQLite so the UI is no longer broken.
@@ -329,6 +342,8 @@ class OrdersProvider extends ChangeNotifier {
         rethrow;
       }
     }
+    // Optimistic local update — applies whether the PUT was sent live or
+    // queued for later sync, so the UI reflects the new status immediately.
     await OrderRepo.instance.updateStatus(orderId, status, reason: reason);
     final idx = _orders.indexWhere((o) => o.id == orderId);
     if (idx >= 0) {

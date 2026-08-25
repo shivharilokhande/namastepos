@@ -478,6 +478,21 @@ class _CaptainScreenState extends State<CaptainScreen> {
           final pm = (o['paymentMethod'] as String?) ?? '';
           return pm.isNotEmpty && pm != 'unpaid';
         });
+    // Pending-balance fix (2026-08-25, founder): a session can be PART paid
+    // (customer paid at "Pay & place", then ordered more) or FULLY paid.
+    // Settle must collect only the UNPAID portion, and be disabled when
+    // nothing is pending. Sum per-KOT totals split by payment state.
+    double paidTotal = 0, pendingTotal = 0;
+    for (final o in activeOrders) {
+      final pm = (o['paymentMethod'] as String?) ?? '';
+      final t = (o['total'] as num?)?.toDouble() ?? 0;
+      if (pm.isNotEmpty && pm != 'unpaid') {
+        paidTotal += t;
+      } else {
+        pendingTotal += t;
+      }
+    }
+    final hasPending = pendingTotal > 0.005;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -567,6 +582,31 @@ class _CaptainScreenState extends State<CaptainScreen> {
                     style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               ],
             ),
+            // Paid / Pending breakdown (2026-08-25) — shown only when some
+            // money was already collected, so the cashier sees exactly how
+            // much is still due.
+            if (paidTotal > 0.005) ...[
+              const SizedBox(height: 4),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Already paid', style: TextStyle(color: Colors.grey)),
+                  Text('− ${AppFmt.money(paidTotal)}',
+                      style: const TextStyle(color: AppColors.success)),
+                ],
+              ),
+              const SizedBox(height: 2),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Pending', style: TextStyle(fontWeight: FontWeight.w700)),
+                  Text(AppFmt.money(pendingTotal),
+                      style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: hasPending ? AppColors.error : AppColors.success)),
+                ],
+              ),
+            ],
             const SizedBox(height: 16),
             Row(
               children: [
@@ -616,19 +656,26 @@ class _CaptainScreenState extends State<CaptainScreen> {
                 Expanded(
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.point_of_sale),
-                    label: const Text('Settle'),
-                    onPressed: () {
-                      Navigator.pop(context); // close bottom sheet first
-                      _settleSession(
-                        sessionId: t['currentSessionId'] as String,
-                        tableLabel: t['label']?.toString() ?? '?',
-                        totalInr:
-                            ((session!['totalInr'] as num?) ?? 0).toDouble(),
-                        items: (session['items'] as List?) ?? const [],
-                        customerPhone: session['customerPhone']?.toString(),
-                        customerName: session['customerName']?.toString(),
-                      );
-                    },
+                    // Disabled when nothing is due (fully paid upfront); label
+                    // shows the pending amount so it's obvious what will be
+                    // collected. Settle passes PENDING, not the whole total,
+                    // so already-paid KOTs are never re-charged.
+                    label: Text(hasPending
+                        ? 'Settle ${AppFmt.money(pendingTotal)}'
+                        : 'Paid'),
+                    onPressed: !hasPending
+                        ? null
+                        : () {
+                            Navigator.pop(context); // close bottom sheet first
+                            _settleSession(
+                              sessionId: t['currentSessionId'] as String,
+                              tableLabel: t['label']?.toString() ?? '?',
+                              totalInr: pendingTotal,
+                              items: (session!['items'] as List?) ?? const [],
+                              customerPhone: session['customerPhone']?.toString(),
+                              customerName: session['customerName']?.toString(),
+                            );
+                          },
                   ),
                 ),
               ],

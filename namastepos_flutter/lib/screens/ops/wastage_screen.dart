@@ -274,6 +274,7 @@ class _WastageScreenState extends State<WastageScreen> {
                     style: TextStyle(fontWeight: FontWeight.w800)),
                 const SizedBox(height: 6),
                 DropdownButtonFormField<String>(
+                  menuMaxHeight: 320, // scroll long lists (2026-08-25)
                   value: _itemId,
                   hint: const Text('Pick a menu item'),
                   isExpanded: true,

@@ -69,6 +69,13 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
             _label('Category'),
             DropdownButtonFormField<ExpenseCategory>(
               value: _category,
+              // Overflow fix (2026-08-25): the category list grew long (Chef
+              // Salary, Gas, Electricity, …) and the default popup tried to
+              // render every row at once, pushing content off-screen.
+              // isExpanded makes the field fill its width; menuMaxHeight caps
+              // the popup so it SCROLLS instead of overflowing the screen.
+              isExpanded: true,
+              menuMaxHeight: 320,
               items: ExpenseCategory.values
                   .where((c) => c.userSelectable)
                   .map((c) => DropdownMenuItem(
