@@ -103,6 +103,18 @@ class _ExpenseTile extends StatelessWidget {
       // icon switch wasn't updated, which broke the release build.
       case ExpenseCategory.wastage: return Icons.delete_outline;
       case ExpenseCategory.refundCogs: return Icons.assignment_return_outlined;
+      // Founder bug #4 (2026-08-25): restaurant-specific categories.
+      // Exhaustive switch — every new enum value MUST get a case here.
+      case ExpenseCategory.chef_salary: return Icons.restaurant_outlined;
+      case ExpenseCategory.helper_salary: return Icons.support_agent_outlined;
+      case ExpenseCategory.staff_salary: return Icons.badge_outlined;
+      case ExpenseCategory.gas: return Icons.propane_tank_outlined;
+      case ExpenseCategory.electricity: return Icons.electric_bolt_outlined;
+      case ExpenseCategory.water: return Icons.water_drop_outlined;
+      case ExpenseCategory.transport: return Icons.local_shipping_outlined;
+      case ExpenseCategory.equipment: return Icons.blender_outlined;
+      case ExpenseCategory.cleaning: return Icons.cleaning_services_outlined;
+      case ExpenseCategory.license_fees: return Icons.receipt_long_outlined;
       case ExpenseCategory.other: return Icons.more_horiz_rounded;
     }
   }

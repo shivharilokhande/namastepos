@@ -241,6 +241,217 @@ async function issueFromOrder(businessId, orderId, opts = {}) {
   });
 }
 
+/**
+ * Issue ONE combined tax invoice for an entire table session (bug #5,
+ * 2026-08-25). A dine-in visit fires several KOTs = several orders; the
+ * customer must receive a single invoice covering all of them, issued at
+ * settlement (payment collected + table released) — not one per KOT.
+ *
+ * Anchoring: the invoice row's order_id points at the session's HEAD
+ * order (smallest order_no) which makes the flow idempotent — re-calling
+ * for the same session returns the existing invoice. Items/discount/
+ * service-charge aggregate across every non-cancelled order in the
+ * session.
+ */
+async function issueFromSession(businessId, sessionId, opts = {}) {
+  return withTransaction(async (client) => {
+    const ordersRes = await client.query(
+      `SELECT o.*, b.name AS biz_name, b.gstin AS biz_gstin, b.address AS biz_address,
+              b.state_code AS biz_state, b.phone AS biz_phone
+         FROM orders o
+         JOIN businesses b ON b.id = o.business_id
+        WHERE o.table_session_id = $1 AND o.business_id = $2
+          AND o.status <> 'cancelled'
+        ORDER BY o.order_no ASC`,
+      [sessionId, businessId]
+    );
+    if (ordersRes.rowCount === 0) throw new NotFound('Session has no orders');
+    const head = ordersRes.rows[0];
+
+    // Single-order sessions take the plain path — same output, less code.
+    if (ordersRes.rowCount === 1) {
+      return issueFromOrderInTx(client, businessId, head.id, opts);
+    }
+
+    // Idempotency via the head order.
+    const ex = await client.query(
+      `SELECT * FROM tax_invoices WHERE order_id = $1 AND status = 'issued'`, [head.id]);
+    if (ex.rowCount > 0) return _serialize(ex.rows[0]);
+
+    const orderIds = ordersRes.rows.map((o) => o.id);
+    const itemsRes = await client.query(
+      `SELECT oi.*, mi.hsn_code AS hsn
+         FROM order_items oi
+    LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+        WHERE oi.order_id = ANY($1)
+        ORDER BY oi.id`,
+      [orderIds]
+    );
+    if (itemsRes.rowCount === 0) throw new BadRequest('Session has no items');
+
+    const placeOfSupply = opts.placeOfSupply
+      || _stateFromGstin(opts.recipientGstin)
+      || head.biz_state
+      || '00';
+    const isInterstate = !!(head.biz_state && placeOfSupply !== head.biz_state);
+
+    const { items, hsn_summary } = _buildItemsAndHsn(itemsRes.rows, isInterstate);
+
+    const subtotalPaise = items.reduce((s, i) => s + i.lineTaxablePaise, 0);
+    const cgstPaise     = items.reduce((s, i) => s + i.cgstPaise, 0);
+    const sgstPaise     = items.reduce((s, i) => s + i.sgstPaise, 0);
+    const igstPaise     = items.reduce((s, i) => s + i.igstPaise, 0);
+    // Aggregate across every order in the session (settle-time discounts
+    // land on the head order, per-KOT discounts on their own orders).
+    const servicePaise  = ordersRes.rows.reduce((s, o) => s + (parseInt(o.service_charge_paise, 10) || 0), 0);
+    const discountPaise = ordersRes.rows.reduce((s, o) => s + Math.round(parseFloat(o.discount || 0) * 100), 0);
+    const beforeRound = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise - discountPaise;
+    const totalPaise  = Math.round(beforeRound / 100) * 100;
+    const roundOff    = totalPaise - beforeRound;
+
+    const fy = _financialYear(new Date());
+    const seq = await _nextSeq(client, businessId, fy.short);
+    const invoiceNo = _formatInvoiceNo(fy.short, seq);
+
+    const qrPayload = JSON.stringify({
+      sellerGstin: head.biz_gstin || null,
+      buyerGstin: opts.recipientGstin || null,
+      invoice: invoiceNo,
+      date: new Date().toISOString().slice(0, 10),
+      totalInr: totalPaise / 100,
+    });
+
+    // Customer identity: first order in the session that captured one.
+    const named = ordersRes.rows.find((o) => o.customer_name) || head;
+
+    const insert = await client.query(
+      `INSERT INTO tax_invoices (
+         business_id, order_id, invoice_no, fy, fy_seq, invoice_date,
+         supplier_name, supplier_gstin, supplier_address, supplier_state_code,
+         recipient_name, recipient_gstin, recipient_address, recipient_state_code, recipient_phone,
+         place_of_supply, is_interstate, reverse_charge,
+         subtotal_paise, discount_paise, cgst_paise, sgst_paise, igst_paise,
+         service_charge_paise, round_off_paise, total_paise, amount_in_words,
+         items, hsn_summary,
+         payment_method, payment_status, paid_at,
+         qr_code_payload, issued_by_user_id
+       ) VALUES (
+         $1, $2, $3, $4, $5, NOW(),
+         $6, $7, $8, $9,
+         $10, $11, $12, $13, $14,
+         $15, $16, $17,
+         $18, $19, $20, $21, $22,
+         $23, $24, $25, $26,
+         $27, $28,
+         $29, $30, $31,
+         $32, $33
+       ) RETURNING *`,
+      [
+        businessId, head.id, invoiceNo, fy.short, seq,
+        head.biz_name, head.biz_gstin, head.biz_address, head.biz_state,
+        opts.recipientName || named.customer_name, opts.recipientGstin || null,
+        opts.recipientAddress || null, _stateFromGstin(opts.recipientGstin) || null,
+        opts.recipientPhone || named.customer_phone,
+        placeOfSupply, isInterstate, !!opts.reverseCharge,
+        subtotalPaise, discountPaise, cgstPaise, sgstPaise, igstPaise,
+        servicePaise, roundOff, totalPaise, _amountInWords(totalPaise),
+        JSON.stringify(items), JSON.stringify(hsn_summary),
+        head.payment_method, 'paid', new Date(),
+        qrPayload, opts.issuedByUserId || null,
+      ]
+    );
+    return _serialize(insert.rows[0]);
+  });
+}
+
+/**
+ * Same as issueFromOrder but running on an EXISTING transaction client —
+ * needed because issueFromSession already holds one and nesting
+ * withTransaction would deadlock on a second pool client (2026-08-25).
+ */
+async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
+  const ex = await client.query(
+    `SELECT * FROM tax_invoices WHERE order_id = $1`, [orderId]);
+  if (ex.rowCount > 0) return _serialize(ex.rows[0]);
+  // Delegate the heavy lifting to issueFromOrder AFTER this tx? No —
+  // simplest correct approach: rerun the same INSERT flow via the
+  // standalone function once our surrounding tx commits is not possible
+  // here, so we inline the single-order path by treating the order as a
+  // one-order "session": the aggregation below degrades to identical
+  // maths for a single order.
+  const oRes = await client.query(
+    `SELECT o.*, b.name AS biz_name, b.gstin AS biz_gstin, b.address AS biz_address,
+            b.state_code AS biz_state, b.phone AS biz_phone
+       FROM orders o JOIN businesses b ON b.id = o.business_id
+      WHERE o.id = $1 AND o.business_id = $2`,
+    [orderId, businessId]
+  );
+  if (oRes.rowCount === 0) throw new NotFound('Order not found');
+  const o = oRes.rows[0];
+  const itemsRes = await client.query(
+    `SELECT oi.*, mi.hsn_code AS hsn
+       FROM order_items oi
+  LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+      WHERE oi.order_id = $1 ORDER BY oi.id`,
+    [orderId]
+  );
+  if (itemsRes.rowCount === 0) throw new BadRequest('Order has no items');
+
+  const placeOfSupply = opts.placeOfSupply
+    || _stateFromGstin(opts.recipientGstin) || o.biz_state || '00';
+  const isInterstate = !!(o.biz_state && placeOfSupply !== o.biz_state);
+  const { items, hsn_summary } = _buildItemsAndHsn(itemsRes.rows, isInterstate);
+  const subtotalPaise = items.reduce((s, i) => s + i.lineTaxablePaise, 0);
+  const cgstPaise = items.reduce((s, i) => s + i.cgstPaise, 0);
+  const sgstPaise = items.reduce((s, i) => s + i.sgstPaise, 0);
+  const igstPaise = items.reduce((s, i) => s + i.igstPaise, 0);
+  const servicePaise = parseInt(o.service_charge_paise, 10) || 0;
+  const discountPaise = Math.round(parseFloat(o.discount || 0) * 100);
+  const beforeRound = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise - discountPaise;
+  const totalPaise = Math.round(beforeRound / 100) * 100;
+  const roundOff = totalPaise - beforeRound;
+  const fy = _financialYear(new Date());
+  const seq = await _nextSeq(client, businessId, fy.short);
+  const invoiceNo = _formatInvoiceNo(fy.short, seq);
+  const qrPayload = JSON.stringify({
+    sellerGstin: o.biz_gstin || null, buyerGstin: opts.recipientGstin || null,
+    invoice: invoiceNo, date: new Date().toISOString().slice(0, 10),
+    totalInr: totalPaise / 100,
+  });
+  const insert = await client.query(
+    `INSERT INTO tax_invoices (
+       business_id, order_id, invoice_no, fy, fy_seq, invoice_date,
+       supplier_name, supplier_gstin, supplier_address, supplier_state_code,
+       recipient_name, recipient_gstin, recipient_address, recipient_state_code, recipient_phone,
+       place_of_supply, is_interstate, reverse_charge,
+       subtotal_paise, discount_paise, cgst_paise, sgst_paise, igst_paise,
+       service_charge_paise, round_off_paise, total_paise, amount_in_words,
+       items, hsn_summary,
+       payment_method, payment_status, paid_at,
+       qr_code_payload, issued_by_user_id
+     ) VALUES (
+       $1, $2, $3, $4, $5, NOW(), $6, $7, $8, $9, $10, $11, $12, $13, $14,
+       $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28,
+       $29, $30, $31, $32, $33
+     ) RETURNING *`,
+    [
+      businessId, orderId, invoiceNo, fy.short, seq,
+      o.biz_name, o.biz_gstin, o.biz_address, o.biz_state,
+      opts.recipientName || o.customer_name, opts.recipientGstin || null,
+      opts.recipientAddress || null, _stateFromGstin(opts.recipientGstin) || null,
+      opts.recipientPhone || o.customer_phone,
+      placeOfSupply, isInterstate, !!opts.reverseCharge,
+      subtotalPaise, discountPaise, cgstPaise, sgstPaise, igstPaise,
+      servicePaise, roundOff, totalPaise, _amountInWords(totalPaise),
+      JSON.stringify(items), JSON.stringify(hsn_summary),
+      o.payment_method, o.status === 'collected' ? 'paid' : 'unpaid',
+      o.status === 'collected' ? new Date() : null,
+      qrPayload, opts.issuedByUserId || null,
+    ]
+  );
+  return _serialize(insert.rows[0]);
+}
+
 async function getById(businessId, invoiceId) {
   const r = await query(
     `SELECT * FROM tax_invoices
@@ -346,6 +557,6 @@ function _serialize(row) {
 }
 
 module.exports = {
-  issueFromOrder, getById, list, cancel,
+  issueFromOrder, issueFromSession, getById, list, cancel,
   _financialYear, _formatInvoiceNo, _amountInWords,   // exported for tests
 };

@@ -75,7 +75,9 @@ router.put(
 router.get('/sessions/:sessionId/splits', asyncHandler(async (req, res) => res.json({ splits: await billSplit.listForSession(req.params.businessId, req.params.sessionId) })));
 
 // ── Food coupons ─────────────────────────────────────────────────────────
-router.get('/food-coupons', asyncHandler(async (req, res) => res.json({ coupons: await foodCoupons.listForBusiness(req.params.businessId) })));
+// 2026-08-25 — ?includeInactive=true lets the dashboard list deactivated
+// coupons too (soft-deleted rows stay for redemption history).
+router.get('/food-coupons', asyncHandler(async (req, res) => res.json({ coupons: await foodCoupons.listForBusiness(req.params.businessId, { includeInactive: req.query.includeInactive === 'true' }) })));
 router.post(
   '/food-coupons/apply',
   validate({ body: Joi.object({
@@ -84,6 +86,48 @@ router.post(
     customerId: Joi.string().uuid().allow(null),
   }) }),
   asyncHandler(async (req, res) => res.json(await foodCoupons.applyToOrder(req.params.businessId, req.body))),
+);
+// 2026-08-25 — owner-managed coupon CRUD (founder #13: "10% off upto ₹50").
+// maxDiscountInr caps percent coupons only — a flat coupon IS its own cap.
+router.post(
+  '/food-coupons',
+  requireRole(['business_owner']),
+  validate({ body: Joi.object({
+    code: Joi.string().alphanum().min(3).max(30).required(),
+    type: Joi.string().valid('percent', 'flat').required(),
+    value: Joi.when('type', {
+      is: 'percent',
+      then: Joi.number().positive().max(100).required(),
+      otherwise: Joi.number().positive().required(),
+    }),
+    maxDiscountInr: Joi.when('type', {
+      is: 'percent',
+      then: Joi.number().positive(),
+      otherwise: Joi.forbidden(),
+    }),
+    expiresAt: Joi.date().iso(),
+    maxRedemptions: Joi.number().integer().positive(),
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json({ coupon: await foodCoupons.createForBusiness(req.params.businessId, req.body) })),
+);
+router.put(
+  '/food-coupons/:id',
+  requireRole(['business_owner']),
+  validate({ body: Joi.object({
+    code: Joi.string().alphanum().min(3).max(30),
+    value: Joi.number().positive(), // percent ≤ 100 enforced in service (type isn't editable here)
+    maxDiscountInr: Joi.number().positive().allow(null),
+    expiresAt: Joi.date().iso().allow(null),
+    maxRedemptions: Joi.number().integer().positive().allow(null),
+    status: Joi.string().valid('active', 'inactive'),
+  }).min(1) }),
+  asyncHandler(async (req, res) => res.json({ coupon: await foodCoupons.updateForBusiness(req.params.businessId, req.params.id, req.body) })),
+);
+// DELETE = deactivate (soft), so redemption history survives.
+router.delete(
+  '/food-coupons/:id',
+  requireRole(['business_owner']),
+  asyncHandler(async (req, res) => res.json({ coupon: await foodCoupons.deactivate(req.params.businessId, req.params.id) })),
 );
 
 // ── Reviews ──────────────────────────────────────────────────────────────

@@ -55,6 +55,10 @@ import { HelpCenterPage } from './pages/HelpCenterPage';
 import { MembershipsPage } from './pages/MembershipsPage';
 import { ReviewsPage } from './pages/ReviewsPage';
 import { RefundsPage } from './pages/RefundsPage';
+// Founder gap-ports (2026-08-25): mobile-only features now on web too.
+import { InventoryPage } from './pages/InventoryPage';
+import { PrintersPage } from './pages/PrintersPage';
+import { ModifierGroupsPage } from './pages/ModifierGroupsPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!getToken()) return <Navigate to="/login" replace />;
@@ -90,6 +94,9 @@ export default function App() {
         <Route path="tables"   element={<TablesPage />} />
         <Route path="qr-codes" element={<QrCodesPage />} />
         <Route path="ingredients" element={<IngredientsPage />} />
+        <Route path="inventory" element={<InventoryPage />} />
+        <Route path="printers" element={<PrintersPage />} />
+        <Route path="modifier-groups" element={<ModifierGroupsPage />} />
         <Route path="expenses" element={<ExpensesPage />} />
         <Route path="reports"  element={<ReportsPage />} />
         <Route path="invoices" element={<InvoicesPage />} />

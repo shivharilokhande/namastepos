@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ClipboardCheck, Lock } from 'lucide-react';
+import { ClipboardCheck, Lock, Unlock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ffApi } from '@/api/namastepos';
-import { apiError } from '@/api/client';
+import { api, apiError, getBusinessCache } from '@/api/client';
 import { formatINR } from '@/lib/utils';
 
 export function DailyClosingPage() {
@@ -17,6 +18,7 @@ export function DailyClosingPage() {
   const [cashCounted, setCashCounted] = useState<number>(0);
   const [notes, setNotes] = useState('');
   const [signature, setSignature] = useState('');
+  const [confirmUnlock, setConfirmUnlock] = useState(false);
 
   const { data: preview, refetch } = useQuery({
     queryKey: ['closing-preview', date],
@@ -38,10 +40,41 @@ export function DailyClosingPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
+  const reopen = useMutation({
+    // WHY (2026-08-25, Bug #11b): ffApi has no reopen helper yet, so call the
+    // backend endpoint directly: POST /businesses/:id/daily-closings/:date/reopen
+    // (owner-only, responds { success: true }). It deletes the closing row and
+    // clears day_closed on that day's orders.
+    mutationFn: () => {
+      const b = getBusinessCache();
+      return api.post(`/businesses/${b.id}/daily-closings/${date}/reopen`).then((r) => r.data);
+    },
+    onSuccess: () => {
+      setConfirmUnlock(false);
+      toast.success(`Day ${date} unlocked`);
+      qc.invalidateQueries({ queryKey: ['closings'] });
+      qc.invalidateQueries({ queryKey: ['closing-preview'] });
+    },
+    onError: (e: any) => {
+      setConfirmUnlock(false);
+      // WHY (2026-08-25, Bug #11b): backend gates reopen behind
+      // requireRole(['business_owner']) — managers get a 403. Show a human
+      // message for that case instead of the raw error code.
+      if (e?.response?.status === 403) toast.error('Only the owner can unlock a closed day');
+      else toast.error(apiError(e));
+    },
+  });
+
   if (!preview) return <div className="p-10 text-center text-muted-foreground">Loading…</div>;
 
   const expected = (preview.cashExpectedPaise || 0) / 100;
   const variance = cashCounted - expected;
+
+  // WHY (2026-08-25, Bug #11b): a day is "locked" iff a daily_closings row
+  // exists for it (reopen deletes the row, so no separate flag). pg may
+  // serialize closing_date as a bare date or a full ISO timestamp, so
+  // compare on the YYYY-MM-DD prefix only.
+  const isLocked = history.some((c: any) => String(c.closing_date).slice(0, 10) === date);
 
   return (
     <div className="space-y-4">
@@ -100,9 +133,19 @@ export function DailyClosingPage() {
             </div>
             <div className="mt-3"><Label>Cashier signature</Label><Input value={signature} onChange={(e) => setSignature(e.target.value)} placeholder="Type your name" /></div>
             <div className="mt-3"><Label>Notes</Label><Input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Anything unusual today?" /></div>
-            <Button className="mt-3" onClick={() => close.mutate()} disabled={close.isPending || !signature}>
-              <Lock className="mr-2 h-4 w-4" /> Close &amp; lock {date}
-            </Button>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button onClick={() => close.mutate()} disabled={close.isPending || !signature}>
+                <Lock className="mr-2 h-4 w-4" /> Close &amp; lock {date}
+              </Button>
+              {/* WHY (2026-08-25, Bug #11b): mobile already exposes reopen but
+                  the dashboard had no way to unlock a mis-closed day. Only
+                  rendered when this date is locked (a closing row exists). */}
+              {isLocked && (
+                <Button variant="destructive" onClick={() => setConfirmUnlock(true)} disabled={reopen.isPending}>
+                  <Unlock className="mr-2 h-4 w-4" /> Unlock day
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -119,6 +162,27 @@ export function DailyClosingPage() {
           ))}
         </CardContent>
       </Card>
+
+      {/* WHY (2026-08-25, Bug #11b): unlocking deletes the Z-report and lets
+          that day's orders be edited again — destructive enough to warrant an
+          explicit confirm instead of a one-click action. */}
+      {confirmUnlock && (
+        <Dialog open onOpenChange={(o) => !o && setConfirmUnlock(false)}>
+          <DialogContent>
+            <DialogHeader><DialogTitle>Unlock {date}?</DialogTitle></DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Unlocking lets entries be edited — owner only. The Z-report for this day
+              will be deleted, and the day must be closed and signed off again.
+            </p>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setConfirmUnlock(false)}>Cancel</Button>
+              <Button variant="destructive" onClick={() => reopen.mutate()} disabled={reopen.isPending}>
+                <Unlock className="mr-2 h-4 w-4" /> Unlock day
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

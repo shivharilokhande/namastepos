@@ -11,7 +11,37 @@ import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
 import { formatINR, formatDate } from '@/lib/utils';
 
-const CATEGORIES = ['ingredients','fuel','labor','rent','utilities','packaging','marketing','maintenance','other'];
+// Founder bug #4 (2026-08-25): restaurants book salaries, gas, electricity
+// etc. — value/label pairs because snake_case values (chef_salary) render
+// badly with the old capitalize-the-raw-string approach. Keep in sync with
+// the backend whitelist (expenseController) + expense_category enum (058).
+const CATEGORIES: { value: string; label: string }[] = [
+  { value: 'ingredients', label: 'Ingredients' },
+  { value: 'fuel', label: 'Fuel' },
+  { value: 'labor', label: 'Labor' },
+  { value: 'rent', label: 'Rent' },
+  { value: 'utilities', label: 'Utilities' },
+  { value: 'packaging', label: 'Packaging' },
+  { value: 'marketing', label: 'Marketing' },
+  { value: 'maintenance', label: 'Maintenance' },
+  { value: 'chef_salary', label: 'Chef Salary' },
+  { value: 'helper_salary', label: 'Helper Salary' },
+  { value: 'staff_salary', label: 'Staff Salary' },
+  { value: 'gas', label: 'Gas' },
+  { value: 'electricity', label: 'Electricity' },
+  { value: 'water', label: 'Water' },
+  { value: 'transport', label: 'Transport' },
+  { value: 'equipment', label: 'Equipment' },
+  { value: 'cleaning', label: 'Cleaning' },
+  { value: 'license_fees', label: 'License Fees' },
+  { value: 'other', label: 'Other' },
+];
+
+// Table rows can also carry backend-generated categories (wastage,
+// refund_cogs) that aren't user-pickable — fall back to the raw value.
+function categoryLabel(value: string): string {
+  return CATEGORIES.find((c) => c.value === value)?.label || value;
+}
 
 export function ExpensesPage() {
   const qc = useQueryClient();
@@ -45,9 +75,9 @@ export function ExpensesPage() {
           <CardContent className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <Label>Category</Label>
-              <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm capitalize"
+              <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                       value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-                {CATEGORIES.map((c) => <option key={c} value={c} className="capitalize">{c}</option>)}
+                {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </div>
             <div><Label>Amount (₹)</Label><Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></div>
@@ -82,7 +112,7 @@ export function ExpensesPage() {
               {expenses.map((e: any) => (
                 <TableRow key={e.id}>
                   <TableCell>{formatDate(e.date)}</TableCell>
-                  <TableCell className="capitalize">{e.category}</TableCell>
+                  <TableCell>{categoryLabel(e.category)}</TableCell>
                   <TableCell>{e.description || '—'}</TableCell>
                   <TableCell className="text-right font-medium">{formatINR(e.amount, { decimals: true })}</TableCell>
                   <TableCell><Button variant="ghost" size="sm" onClick={() => remove.mutate(e.id)}><Trash2 className="h-4 w-4 text-destructive" /></Button></TableCell>

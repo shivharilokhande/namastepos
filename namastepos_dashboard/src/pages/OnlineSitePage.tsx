@@ -68,9 +68,12 @@ export function OnlineSitePage() {
             {/* Hardcode-audit fix (2026-08-24): domain + API base were
                 hardcoded here (missed in the 2026-08-23 ReservationWidgetPage
                 sweep). Both are env-driven now. */}
-            🎉 Live at <code>{f.brandSlug}.{siteDomain}</code>{' '}
-            <a href={`${api.defaults.baseURL}/site/${f.brandSlug}`} target="_blank" rel="noreferrer" className="underline text-emerald-800">
-              preview <ExternalLink className="inline h-3 w-3" />
+            {/* Founder bug #12 fix (2026-08-25): the old link hit the JSON
+                API (/v1/site/:slug) so "publish" looked broken. It now
+                opens the server-rendered HTML mini-site. */}
+            🎉 Live at <code>{siteDomain}/site/{f.brandSlug}</code>{' '}
+            <a href={`https://${siteDomain}/site/${f.brandSlug}`} target="_blank" rel="noreferrer" className="underline text-emerald-800">
+              open site <ExternalLink className="inline h-3 w-3" />
             </a>
           </CardContent>
         </Card>

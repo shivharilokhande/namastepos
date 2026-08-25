@@ -213,6 +213,10 @@ function buildApp() {
   app.use(`${env.API_PREFIX}/wa-webhooks`,                        whatsappWebhookRoutes);
   app.use(`${env.API_PREFIX}/outlet-groups`,                      multiOutletRoutes);
   app.use(`${env.API_PREFIX}/site`,                               publicSiteRoutes);
+  // Founder bug #12 (2026-08-25): human-visible restaurant mini-site.
+  // HTML (not JSON) so it lives OUTSIDE the /v1 API prefix:
+  //   https://api.namastepos.in/site/<slug>
+  app.use('/site', require('./routes/siteRender.routes'));
 
   // Sentry error handler — captures 5xx before our JSON responder.
   sentry.installErrorHandler(app);

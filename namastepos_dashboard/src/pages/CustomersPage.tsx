@@ -13,6 +13,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
 import { formatINR, formatDate } from '@/lib/utils';
+// Bug #7 (2026-08-25): port the mobile customer profile to the web —
+// clicking a row opens this drawer (stats, membership, favourites,
+// order history via GET /customer-history/:phone).
+import { CustomerDetailDrawer, type CustomerListRow } from '@/components/CustomerDetailDrawer';
 
 const TIER_COLORS: Record<string, any> = {
   bronze: 'muted', silver: 'secondary', gold: 'default',
@@ -26,6 +30,9 @@ export function CustomersPage() {
   const [sort, setSort] = useState<'recent' | 'top_spender' | 'top_loyalty'>('recent');
   const [openSettings, setOpenSettings] = useState(false);
   const [addNew, setAddNew] = useState(false);
+  // Bug #7 (2026-08-25): selected row → detail drawer (parity with mobile
+  // customer_detail_screen.dart).
+  const [selected, setSelected] = useState<CustomerListRow | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['customers-crm', search, sort],
@@ -115,7 +122,12 @@ export function CustomersPage() {
               {data?.customers.map((c: any) => {
                 const TierIcon = TIER_ICONS[c.tier] || Award;
                 return (
-                  <TableRow key={c.id}>
+                  // Bug #7 (2026-08-25): whole row is clickable → drawer.
+                  <TableRow
+                    key={c.id}
+                    className="cursor-pointer"
+                    onClick={() => setSelected(c as CustomerListRow)}
+                  >
                     <TableCell>
                       <div className="font-medium">{c.name || c.phone}</div>
                       <div className="text-xs text-muted-foreground">{c.phone}</div>
@@ -141,6 +153,9 @@ export function CustomersPage() {
 
       {openSettings && <LoyaltySettingsDialog onClose={() => setOpenSettings(false)} />}
       {addNew && <AddCustomerDialog onClose={() => setAddNew(false)} />}
+      {selected && (
+        <CustomerDetailDrawer customer={selected} onClose={() => setSelected(null)} />
+      )}
     </div>
   );
 }

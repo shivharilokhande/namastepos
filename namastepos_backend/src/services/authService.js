@@ -90,6 +90,37 @@ async function setPasswordForUser(userId, newPassword) {
   await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, userId]);
 }
 
+// Founder bug #1 (2026-08-25): change password from the profile screen.
+// Two modes:
+//   - Account already has a password → currentPassword is mandatory and
+//     must bcrypt-match, otherwise anyone holding a stolen access token
+//     could silently lock the owner out.
+//   - Google-only account (password_hash IS NULL) → first-time password
+//     set, no currentPassword needed (there is nothing to compare).
+async function changePassword(userId, { currentPassword, newPassword } = {}) {
+  if (!newPassword || newPassword.length < 8) {
+    throw new BadRequest('Password must be at least 8 characters');
+  }
+  const r = await query(
+    `SELECT id, password_hash FROM users WHERE id = $1 LIMIT 1`,
+    [userId]
+  );
+  if (r.rowCount === 0) throw new NotFound('User not found');
+
+  const existingHash = r.rows[0].password_hash;
+  if (existingHash) {
+    if (!currentPassword) throw new BadRequest('Current password is required');
+    const ok = await bcrypt.compare(currentPassword, existingHash);
+    if (!ok) throw new BadRequest('Current password is incorrect');
+  }
+
+  const hash = await bcrypt.hash(newPassword, PWD_SALT_ROUNDS);
+  await query(
+    `UPDATE users SET password_hash = $1, last_login_method = 'password' WHERE id = $2`,
+    [hash, userId]
+  );
+}
+
 async function findOrCreateUser({ sub, email, name, picture }) {
   // Prefer google_sub (stable identifier)
   let r = await query(`SELECT * FROM users WHERE google_sub = $1 LIMIT 1`, [sub]);
@@ -366,6 +397,7 @@ module.exports = {
   registerWithPassword,
   loginWithPassword,
   setPasswordForUser,
+  changePassword,
   getUserById,
   listMembershipsForUser,
   getMembership,

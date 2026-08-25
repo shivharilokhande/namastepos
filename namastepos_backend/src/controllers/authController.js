@@ -93,6 +93,17 @@ const passwordLoginSchema = {
   }),
 };
 
+// Founder bug #1 (2026-08-25) — change password from the profile screen.
+// currentPassword is optional at the schema level because Google-only
+// accounts (no password_hash yet) set their first password without one;
+// the service enforces it whenever a hash already exists.
+const changePasswordSchema = {
+  body: Joi.object({
+    currentPassword: Joi.string().allow('', null),
+    newPassword: Joi.string().min(8).required(),
+  }),
+};
+
 // Push 14a — PIN-based staff login. The mobile staff-picker shows a list
 // of names for a business; the user taps theirs and enters 4 digits.
 const pinLoginSchema = {
@@ -475,6 +486,11 @@ const me = asyncHandler(async (req, res) => {
     memberships,
     plan,                 // { tierKind, features: [...] }
     permissions,          // null for owner = "all"; array for staff
+    // Founder bug #1 (2026-08-25): the profile screen needs to know
+    // whether to ask for the current password (has one) or offer a
+    // first-time "set password" flow (Google-only account). Boolean
+    // only — the hash itself must never leave the server.
+    hasPassword: !!user.password_hash,
   });
 });
 
@@ -497,6 +513,13 @@ const patchMe = asyncHandler(async (req, res) => {
 
   const business = await auth.updateBusiness(req.user.businessId, req.body);
   res.json({ business: auth.serializeBusiness(business) });
+});
+
+// Founder bug #1 (2026-08-25): POST /v1/auth/change-password.
+const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  await auth.changePassword(req.user.id, { currentPassword, newPassword });
+  res.json({ success: true });
 });
 
 const switchBusiness = asyncHandler(async (req, res) => {
@@ -530,6 +553,7 @@ module.exports = {
   // canonical version from line ~348 instead.
   logout,
   me,
+  changePassword: [validate(changePasswordSchema), changePassword],
   patchMe: [validate(updateBusinessSchema), patchMe],
   switchBusiness: [validate(switchBusinessSchema), switchBusiness],
 };

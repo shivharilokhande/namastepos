@@ -734,10 +734,15 @@ function EditDialog({
           {!f.isCombo && (
             <div className="rounded-lg border bg-muted/30 p-3">
               <div className="font-semibold mb-2">Modifier groups</div>
+              {/* Founder bug #2 fix (2026-08-25): the "TBD" placeholder is
+                  dead — a real management page exists at /modifier-groups. */}
               {allModGroups.length === 0 && (
                 <div className="text-xs text-muted-foreground">
-                  No modifier groups yet. Create them under Catalog → Modifier groups (TBD).
-                  For now you can POST to <code>/v1/businesses/:id/modifier-groups</code>.
+                  No modifier groups yet.{' '}
+                  <a href="/modifier-groups" className="underline text-primary font-medium">
+                    Create them in Modifier groups
+                  </a>{' '}
+                  (sidebar), then attach them here.
                 </div>
               )}
               {allModGroups.map((g: any) => {

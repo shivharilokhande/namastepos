@@ -1,19 +1,21 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Plus, ChefHat, Edit2, Trash2, Settings as SettingsIcon, Play, Check, X } from 'lucide-react';
+import { Plus, ChefHat, Edit2, Trash2, Settings as SettingsIcon, Play, Check, X, History, Search } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { DateInput } from '@/components/ui/date-input';
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@/components/ui/table';
 import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
 import { formatDateTime } from '@/lib/utils';
 
 export function KotPage() {
-  const [tab, setTab] = useState<'live' | 'stations'>('live');
+  const [tab, setTab] = useState<'live' | 'stations' | 'history'>('live');
   return (
     <div className="space-y-6">
       <div>
@@ -33,8 +35,14 @@ export function KotPage() {
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             tab === 'stations' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'
           }`}>Stations</button>
+        <button onClick={() => setTab('history')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            tab === 'history' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'
+          }`}>History</button>
       </div>
-      {tab === 'live' ? <LiveTickets /> : <StationsTab />}
+      {tab === 'live' && <LiveTickets />}
+      {tab === 'stations' && <StationsTab />}
+      {tab === 'history' && <HistoryTab />}
     </div>
   );
 }
@@ -136,6 +144,169 @@ function LiveTickets() {
         );
       })}
     </div>
+  );
+}
+
+// ── KOT History (Bug #9, 2026-08-25) ────────────────────────────────────
+// The Live tab intentionally hides `done`/`cancelled` tickets (2026-08-20
+// fix), which left owners with no way to review what the kitchen actually
+// produced — the end-of-day ritual every Indian restaurant expects. We
+// reuse the existing GET /ops/kot/tickets endpoint: it already supports a
+// `day` filter (defaults to today server-side) and its serializer carries
+// createdAt/completedAt, so no backend change is needed. We fetch the whole
+// day and filter to done/cancelled client-side because the endpoint's
+// `status` param accepts only ONE status per request — one call beats two.
+
+interface KotHistoryItem { id: string; name: string; qty: number; note: string | null }
+interface KotHistoryTicket {
+  id: string;
+  ticketNo: number;
+  orderNo: number;
+  status: 'pending' | 'in_progress' | 'done' | 'cancelled';
+  stationName: string | null;
+  tableLabel: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  items: KotHistoryItem[];
+}
+
+// Local-timezone ISO date (yyyy-mm-dd). toISOString() would shift dates
+// for IST users after 5:30 AM UTC rollover — en-CA formats local time as ISO.
+function todayISO(): string {
+  return new Date().toLocaleDateString('en-CA');
+}
+
+// Human prep duration: ticket fired (createdAt) → marked done (completedAt).
+// That is the number a kitchen cares about — how long the guest waited on
+// the KOT — not just cooking time, so we don't start from startedAt.
+function prepTime(t: KotHistoryTicket): string {
+  if (!t.completedAt || !t.createdAt) return '—';
+  const ms = new Date(t.completedAt).getTime() - new Date(t.createdAt).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const mins = Math.floor(ms / 60000);
+  const secs = Math.floor((ms % 60000) / 1000);
+  if (mins >= 60) return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+  if (mins > 0) return `${mins}m ${secs}s`;
+  return `${secs}s`;
+}
+
+function HistoryTab() {
+  const [day, setDay] = useState<string>(todayISO());
+  const [search, setSearch] = useState('');
+  const { data: tickets = [], isLoading, isError, error } = useQuery<KotHistoryTicket[]>({
+    queryKey: ['kot-history', day],
+    queryFn: () => ffApi.listTickets({ day }),
+    // Poll only when watching today — past days can't gain new tickets.
+    refetchInterval: day === todayISO() ? 30000 : false,
+  });
+
+  // History = tickets that left the live queue. Cancelled ones stay visible
+  // (flagged red) so voided KOTs can't silently disappear — an anti-theft
+  // expectation in Indian POS (matches the revenue-leakage philosophy).
+  const finished = tickets.filter((t) => t.status === 'done' || t.status === 'cancelled');
+  const q = search.trim().toLowerCase();
+  const visible = finished
+    .filter((t) => {
+      if (!q) return true;
+      // Search by order no, ticket no, table, or any item name.
+      return (
+        String(t.orderNo).includes(q) ||
+        String(t.ticketNo).includes(q) ||
+        (t.tableLabel || '').toLowerCase().includes(q) ||
+        t.items.some((i) => i.name.toLowerCase().includes(q))
+      );
+    })
+    // Newest-first by when work ended; fall back to createdAt for
+    // cancelled tickets that never got a completedAt.
+    .sort((a, b) =>
+      new Date(b.completedAt || b.createdAt).getTime() -
+      new Date(a.completedAt || a.createdAt).getTime());
+
+  const doneCount = finished.filter((t) => t.status === 'done').length;
+  const cancelledCount = finished.length - doneCount;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <History className="h-5 w-5 text-primary" /> Completed tickets
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {doneCount} done{cancelledCount > 0 ? ` · ${cancelledCount} cancelled` : ''} on this day
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search item, order or table…" className="pl-9 sm:w-56" />
+            </div>
+            <DateInput value={day} onChange={(iso) => iso && setDay(iso)} className="sm:w-36" />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isError && (
+          <div className="py-10 text-center text-sm text-destructive">{apiError(error)}</div>
+        )}
+        {!isError && isLoading && (
+          <div className="py-10 text-center text-sm text-muted-foreground">Loading history…</div>
+        )}
+        {!isError && !isLoading && visible.length === 0 && (
+          <div className="py-10 text-center text-sm text-muted-foreground">
+            {q ? 'No tickets match your search.' : 'No completed tickets on this day.'}
+          </div>
+        )}
+        {!isError && !isLoading && visible.length > 0 && (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ticket</TableHead>
+                <TableHead>Order</TableHead>
+                <TableHead>Table</TableHead>
+                <TableHead>Station</TableHead>
+                <TableHead>Items</TableHead>
+                <TableHead>Completed</TableHead>
+                <TableHead>Prep time</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visible.map((t) => (
+                <TableRow key={t.id}>
+                  <TableCell className="font-bold">#{t.ticketNo}</TableCell>
+                  <TableCell>#{t.orderNo}</TableCell>
+                  <TableCell>{t.tableLabel ? `T-${t.tableLabel}` : '—'}</TableCell>
+                  <TableCell>{t.stationName || '—'}</TableCell>
+                  <TableCell>
+                    <ul className="space-y-0.5">
+                      {t.items.map((i) => (
+                        <li key={i.id}>
+                          <strong>{i.qty}×</strong> {i.name}
+                          {i.note && <span className="text-xs text-muted-foreground"> · {i.note}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {t.completedAt ? formatDateTime(t.completedAt) : '—'}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">{prepTime(t)}</TableCell>
+                  <TableCell>
+                    {t.status === 'done'
+                      ? <Badge variant="success">Done</Badge>
+                      : <Badge variant="destructive">Cancelled</Badge>}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

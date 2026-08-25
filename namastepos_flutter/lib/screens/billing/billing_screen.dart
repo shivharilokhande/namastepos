@@ -227,6 +227,9 @@ class _BillingScreenState extends State<BillingScreen> {
     try {
       final res = await ApiService.instance
           .changePlan(biz.id, tierKind, billingPeriod: _billingPeriod);
+      // Lint fix (2026-08-25): everything below touches `context` after the
+      // await — bail if the screen was disposed while the API call ran.
+      if (!mounted) return;
       // Manual activation path (2026-08-24): when the backend has no Razorpay
       // keys configured it activates the plan immediately and returns
       // {manual:true, subscription} instead of Razorpay checkoutOptions. Treat
@@ -248,6 +251,57 @@ class _BillingScreenState extends State<BillingScreen> {
         throw const FormatException(
             'Backend did not return a valid Razorpay subscription. '
             'Is RAZORPAY_KEY_ID set and razorpay plans synced?');
+      }
+      // Bug #14 (2026-08-25) — RBI e-mandate disclosure. The native Razorpay
+      // modal below authorises a RECURRING autopay mandate (UPI Autopay /
+      // card autopay), not a one-off charge, and RBI rules require explicit
+      // informed consent BEFORE the mandate is set up. Deliberately placed
+      // AFTER the manual-activation early-return above and AFTER the `co`
+      // validation, so the popup only ever appears when the Razorpay
+      // checkout will actually open (free tier / no-Razorpay installs never
+      // see it). Pull real plan name + price + cadence from the tier card
+      // data, which _rebuildTiers() already prices for _billingPeriod.
+      final tierInfo = _tiers.firstWhere(
+        (t) => t['kind'] == tierKind,
+        orElse: () => <String, dynamic>{},
+      );
+      final planLabel = (tierInfo['label'] as String?) ?? tierKind;
+      final priceLabel = (tierInfo['price'] as String?) ?? '';
+      final cadenceWord = _billingPeriod == 'yearly' ? 'year' : 'month';
+      if (!mounted) return;
+      final agreed = await showDialog<bool>(
+        context: context,
+        // Force a deliberate choice — tapping outside must not be read as
+        // consent, and RBI disclosure shouldn't be dismissible by accident.
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Auto-pay setup'),
+          content: Text(
+            'You are setting up automatic recurring payment for the '
+            '$planLabel plan ($priceLabel/$cadenceWord). Your payment method '
+            'will be charged automatically each billing cycle. You can '
+            'cancel anytime from Plans & Billing — no questions asked.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Agree & Continue'),
+            ),
+          ],
+        ),
+      );
+      // Anything short of an explicit "Agree & Continue" aborts checkout —
+      // no mandate is created, mirroring a Razorpay modal dismiss.
+      if (agreed != true) {
+        if (mounted) {
+          setState(() { _checkoutBusy = false; _pendingTier = null; });
+          _showSnack('Checkout cancelled');
+        }
+        return;
       }
       // razorpay_flutter wants a Map<String, dynamic>. Pass through the
       // backend's options unchanged so any future fields (notes, theme,

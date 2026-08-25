@@ -384,7 +384,21 @@ router.post('/reservations',
     customerPhone: Joi.string().min(7).max(20).required(),
     customerEmail: Joi.string().email().allow('', null),
     partySize: Joi.number().integer().min(1).max(50).required(),
-    reservedAt: Joi.date().iso().required(),
+    // Founder bug #11 (2026-08-25): reservations could be booked in the
+    // past or years ahead. Enforced via .custom() so "now" is computed at
+    // REQUEST time — a module-load-time `new Date()` would freeze the
+    // boundary at server boot and rot as the process stays up.
+    reservedAt: Joi.date().iso().required().custom((value, helpers) => {
+      const now = Date.now();
+      const t = value.getTime();
+      if (t < now) {
+        return helpers.message('Reservation time must be in the future');
+      }
+      if (t > now + 90 * 24 * 60 * 60 * 1000) {
+        return helpers.message('Reservations can be made at most 90 days ahead');
+      }
+      return value;
+    }),
     durationMin: Joi.number().integer().min(15).max(360).default(90),
     tableId: Joi.string().uuid().allow(null),
     specialRequests: Joi.string().max(1000).allow('', null),

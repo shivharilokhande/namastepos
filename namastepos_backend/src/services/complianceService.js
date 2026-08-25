@@ -28,6 +28,104 @@ const CONSENT_KEYS = new Set([
   'data_sharing_payment',
 ]);
 
+// ── Compliance notification emails (founder bug #15, 2026-08-25) ────
+// WHY: DPDP Act 2023 puts an acknowledgement duty on the data fiduciary —
+// grievances and data-subject requests must be acknowledged to the data
+// principal (we publish ack_due_at / sla deadlines), and the business
+// owner has to actually LEARN a complaint exists to act on it in time.
+// Until now these rows only landed in Postgres and nobody was told.
+// All sends are best-effort: emailService.sendMail() already no-ops when
+// SMTP isn't configured, and we additionally try/catch every call so an
+// email hiccup can never fail the API insert that already succeeded.
+// NOTE: userId is deliberately passed as null to sendMail — the
+// email_dispatch_log unique index on (user_id, template) is a one-shot
+// dedupe for lifecycle emails, and a user may legitimately file more
+// than one grievance/DSR.
+
+async function _businessOwnerEmail(businessId) {
+  if (!businessId) return null;
+  const r = await query(
+    `SELECT email FROM businesses WHERE id = $1 LIMIT 1`,
+    [businessId]
+  );
+  return r.rows[0]?.email || null;
+}
+
+function _fmtDue(d) {
+  if (!d) return 'n/a';
+  try {
+    return new Date(d).toLocaleString('en-IN', {
+      dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata',
+    });
+  } catch (_) { return String(d); }
+}
+
+/**
+ * Best-effort pair of emails after a grievance/DSR insert:
+ *   (a) notify the business owner (businesses.email when businessId is
+ *       present; falls back to SMTP_FROM so platform-level filings still
+ *       reach the grievance inbox; skipped when neither exists)
+ *   (b) acknowledgement to the complainant/requester when we have an email
+ * Never throws.
+ */
+async function _sendComplianceEmails({
+  kind,            // 'grievance' | 'request'
+  refId,
+  businessId = null,
+  principalEmail = null,
+  summaryHtml = '',
+  ackDueAt = null,
+  resolveDueAt = null,
+}) {
+  const { sendMail } = require('./emailService');
+  const noun = kind === 'grievance' ? 'grievance' : 'request';
+
+  // (a) Owner notification
+  try {
+    const ownerEmail = (await _businessOwnerEmail(businessId))
+      || require('../config/env').SMTP_FROM
+      || process.env.SMTP_FROM
+      || null;
+    if (ownerEmail) {
+      await sendMail({
+        template: `compliance_${kind}_owner_notify`,
+        recipient: ownerEmail,
+        businessId,
+        userId: null,
+        subject: `New ${noun} filed (ref ${refId}) — action required`,
+        html: `<p>A new ${noun} has been filed on NamastePOS (ref <b>${refId}</b>).</p>`
+          + summaryHtml
+          + `<p>Acknowledge by: <b>${_fmtDue(ackDueAt)}</b><br/>`
+          + `Resolve by: <b>${_fmtDue(resolveDueAt)}</b></p>`
+          + `<p>Please handle it from the compliance section of your dashboard.</p>`,
+      });
+    }
+  } catch (err) {
+    console.warn(`[compliance] owner notify email failed (${kind} ${refId}): ${err.message}`);
+  }
+
+  // (b) Acknowledgement to the data principal
+  try {
+    if (principalEmail) {
+      await sendMail({
+        template: `compliance_${kind}_ack`,
+        recipient: principalEmail,
+        businessId,
+        userId: null,
+        subject: `We received your ${noun} (ref ${refId})`,
+        html: `<p>Thank you — we have received your ${noun} (reference <b>${refId}</b>).</p>`
+          + `<p>You will get an acknowledgement by <b>${_fmtDue(ackDueAt)}</b>`
+          + (resolveDueAt
+              ? ` and a resolution by <b>${_fmtDue(resolveDueAt)}</b>.` : '.')
+          + `</p><p>This mailbox records your reference for the DPDP grievance process; `
+          + `please quote ref ${refId} in any follow-up.</p>`,
+      });
+    }
+  } catch (err) {
+    console.warn(`[compliance] ack email failed (${kind} ${refId}): ${err.message}`);
+  }
+}
+
 const REQUEST_TYPES   = new Set(['access', 'correction', 'erasure', 'portability', 'withdraw_consent']);
 const REQUEST_STATUS  = new Set(['pending', 'in_review', 'completed', 'rejected', 'partial']);
 const GRIEVANCE_STATUS = new Set(['received', 'acknowledged', 'resolved', 'rejected', 'escalated']);
@@ -181,6 +279,17 @@ async function fileDataSubjectRequest({
      VALUES ($1, 'pending', 'Request filed')`,
     [r.rows[0].id]
   );
+  // Founder bug #15 (2026-08-25): DPDP acknowledgement duty — notify the
+  // owner + ack the requester. Best-effort, never fails the insert above.
+  await _sendComplianceEmails({
+    kind: 'request',
+    refId: r.rows[0].id,
+    businessId,
+    principalEmail: contactEmail,
+    summaryHtml: `<p>Type: <b>${requestType}</b></p>`,
+    ackDueAt: r.rows[0].sla_due_at,
+    resolveDueAt: r.rows[0].sla_due_at,
+  });
   return {
     id:        r.rows[0].id,
     status:    r.rows[0].status,
@@ -298,6 +407,17 @@ async function fileGrievance({
     [businessId, userId, complainantName, complainantEmail, complainantPhone,
      category, subject, body]
   );
+  // Founder bug #15 (2026-08-25): DPDP acknowledgement duty — notify the
+  // owner + ack the complainant. Best-effort, never fails the insert above.
+  await _sendComplianceEmails({
+    kind: 'grievance',
+    refId: r.rows[0].id,
+    businessId,
+    principalEmail: complainantEmail,
+    summaryHtml: `<p>Category: <b>${category}</b><br/>Subject: <b>${subject}</b></p>`,
+    ackDueAt: r.rows[0].ack_due_at,
+    resolveDueAt: r.rows[0].resolve_due_at,
+  });
   return {
     id:           r.rows[0].id,
     status:       r.rows[0].status,

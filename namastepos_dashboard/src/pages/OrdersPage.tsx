@@ -289,16 +289,36 @@ export function OrdersPage() {
                     {o.irn ? `IRN ${String(o.irn).slice(0, 12)}…` : 'Generate e-invoice'}
                   </Button>
                 )}
-                {/* FF-304 partial-refund entry point. Only visible on
-                    collected orders (nothing to refund otherwise) and
-                    when the order was actually paid (paymentMethod set). */}
-                {o.status === 'collected' && o.paymentMethod && (
-                  <Button size="sm" variant="ghost" className="mt-2 w-full"
-                    onClick={() => setRefunding(o)}>
-                    <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                    Refund…
-                  </Button>
-                )}
+                {/* FF-304 partial-refund entry point — mobile parity
+                    (2026-08-25). The Flutter app gates refunds on
+                    status == collected AND paymentMethod != unpaid:
+                    there is no money to reverse until the bill is
+                    actually settled. We keep the button VISIBLE on every
+                    collected order but DISABLE it with a tooltip + hint
+                    when payment wasn't collected, so the owner learns
+                    why instead of wondering where the button went. */}
+                {o.status === 'collected' && (() => {
+                  const paid = !!o.paymentMethod && o.paymentMethod !== 'unpaid';
+                  return (
+                    <div
+                      className="mt-2"
+                      title={paid ? undefined
+                        : 'Payment not collected — settle the bill before refunding'}
+                    >
+                      <Button size="sm" variant="ghost" className="w-full"
+                        disabled={!paid}
+                        onClick={() => setRefunding(o)}>
+                        <RotateCcw className="mr-1 h-3.5 w-3.5" />
+                        Refund…
+                      </Button>
+                      {!paid && (
+                        <p className="mt-1 text-center text-[11px] text-muted-foreground">
+                          Refunds unlock once payment is collected.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
                 {/* FF-501: token display for takeaway */}
                 {o.tokenNo && (
                   <div className="mt-2 text-center text-2xl font-extrabold tracking-wider text-primary border-t pt-2">
@@ -398,29 +418,59 @@ function CancelOrderDialog({
   );
 }
 
-// FF-304 partial-refund dialog. Two modes:
+// 2026-08-25 — the shared api client types refundOrder's body as
+// {itemIds?, amountInr?, reason?}; it predates partial-qty refunds. The
+// backend route (sprintsAll.routes.js) ALSO validates
+// `items: [{id: uuid, qty: number > 0}]`, which is what the mobile app
+// sends. Widen the type locally instead of touching the shared client
+// in this single-file fix.
+type RefundBody = {
+  itemIds?: string[];
+  items?: Array<{ id: string; qty: number }>;
+  amountInr?: number;
+  reason?: string;
+};
+const postRefund =
+  ffApi.refundOrder as (orderId: string, body: RefundBody) => Promise<unknown>;
+
+// FF-304 partial-refund dialog. Two modes (mobile parity 2026-08-25 —
+// ported from order_detail_screen.dart so both clients drive the backend
+// with identical bodies and the refund math matches):
 //   * Amount refund — owner enters a rupee amount ≤ order total.
-//   * Item refund   — owner ticks specific items; amount is computed
-//                     as sum(qty*price) of ticked items so it reflects
-//                     the pre-tax line-item value the customer paid.
-// Backend derives whichever path the caller sent (itemIds vs amountInr)
-// and issues the reversal through the original payment gateway.
+//   * Item refund   — per-line QTY STEPPERS, not whole-line checkboxes
+//                     (founder: "2 pav bhaji ordered, refund just 1").
+//                     Line refund = qty × unit price, live total below.
+// In item mode we send `items: [{id, qty}]` so the backend re-derives
+// the value from stored order_items prices and caps each qty at
+// ordered − already-refunded — a stale UI can never over-refund.
 function RefundOrderDialog({
   order, onClose, onRefunded,
 }: { order: any; onClose: () => void; onRefunded: () => void }) {
   const orderTotal = Number(order?.total ?? 0);
   const [mode, setMode] = useState<'amount' | 'items'>('amount');
   const [amountStr, setAmountStr] = useState<string>(orderTotal.toFixed(2));
-  const [checked, setChecked] = useState<Record<number, boolean>>({});
+  // Per-line refund QUANTITY keyed by order_item id (index fallback for
+  // legacy rows without ids). 0 / absent = not refunding that line.
+  const [qtySel, setQtySel] = useState<Record<string, number>>({});
   const [reason, setReason] = useState('');
 
   const items: Array<{ id?: string; name: string; qty: number; price: number }> =
     Array.isArray(order?.items) ? order.items : [];
 
-  const itemsTotal = items.reduce((sum, it, i) => {
-    if (!checked[i]) return sum;
-    return sum + Number(it.price ?? 0) * Number(it.qty ?? 0);
-  }, 0);
+  // Stable per-line key: real order_item id when present, index otherwise.
+  const keyOf = (it: { id?: string }, i: number) => (it.id ? String(it.id) : `idx:${i}`);
+
+  // Stepper: clamp to 0..orderedQty (same bounds as the mobile +/- buttons).
+  const step = (key: string, delta: number, orderedQty: number) =>
+    setQtySel((s) => ({
+      ...s,
+      [key]: Math.min(orderedQty, Math.max(0, (s[key] ?? 0) + delta)),
+    }));
+
+  const itemsTotal = items.reduce(
+    (sum, it, i) => sum + (qtySel[keyOf(it, i)] ?? 0) * Number(it.price ?? 0),
+    0,
+  );
 
   const parsedAmount = Number.parseFloat(amountStr);
   const effectiveAmount = mode === 'items' ? itemsTotal : parsedAmount;
@@ -430,26 +480,31 @@ function RefundOrderDialog({
 
   const refund = useMutation({
     mutationFn: () => {
-      // In item-mode, prefer sending itemIds (backend re-derives the
-      // amount from menu-item prices so a stale UI number can't
-      // over-refund). If the items don't have IDs (some legacy rows),
-      // fall back to amountInr.
       if (mode === 'items') {
-        const withIds = items
-          .map((it, i) => (checked[i] && it.id ? String(it.id) : null))
-          .filter((x): x is string => !!x);
-        if (withIds.length > 0) {
-          return ffApi.refundOrder(order.id, {
-            itemIds: withIds,
+        const selected = items
+          .map((it, i) => ({
+            id: it.id ? String(it.id) : null,
+            qty: qtySel[keyOf(it, i)] ?? 0,
+          }))
+          .filter((s) => s.qty > 0);
+        // Mirror the mobile app: send `items: [{id, qty}]` so the backend
+        // values each line at its stored price AND enforces the
+        // already-refunded-qty cap ("1 of 2 chai" can't be refunded twice).
+        // Only when a selected line has NO id (legacy rows predating item
+        // ids) do we fall back to a plain amount — sending items would
+        // silently drop those lines and under-refund the customer.
+        if (selected.length > 0 && selected.every((s) => !!s.id)) {
+          return postRefund(order.id, {
+            items: selected.map((s) => ({ id: s.id as string, qty: s.qty })),
             reason: reason || undefined,
           });
         }
-        return ffApi.refundOrder(order.id, {
+        return postRefund(order.id, {
           amountInr: itemsTotal,
           reason: reason || undefined,
         });
       }
-      return ffApi.refundOrder(order.id, {
+      return postRefund(order.id, {
         amountInr: parsedAmount,
         reason: reason || undefined,
       });
@@ -517,6 +572,9 @@ function RefundOrderDialog({
             </div>
           )}
 
+          {/* Qty steppers (2026-08-25, ported from mobile): refund PART
+              of a line — e.g. 1 of the 2 pav bhaji — instead of the old
+              all-or-nothing checkbox. Range 0..orderedQty per line. */}
           {mode === 'items' && (
             <div className="max-h-56 overflow-auto rounded-md border">
               {items.length === 0 ? (
@@ -524,21 +582,41 @@ function RefundOrderDialog({
               ) : (
                 <ul className="divide-y">
                   {items.map((it, i) => {
-                    const line = Number(it.price ?? 0) * Number(it.qty ?? 0);
+                    const key = keyOf(it, i);
+                    const orderedQty = Number(it.qty ?? 0);
+                    const unitPrice = Number(it.price ?? 0);
+                    const sel = qtySel[key] ?? 0;
                     return (
-                      <li key={i}
-                        className="flex items-center justify-between gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40"
-                        onClick={() => setChecked((c) => ({ ...c, [i]: !c[i] }))}
-                      >
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={!!checked[i]}
-                            onChange={() => setChecked((c) => ({ ...c, [i]: !c[i] }))}
-                          />
-                          <span>{it.qty} × {it.name}</span>
-                        </label>
-                        <span className="text-muted-foreground">{formatINR(line)}</span>
+                      <li key={key} className="flex items-center gap-2 px-3 py-2 text-sm">
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate font-medium">{orderedQty} × {it.name}</div>
+                          <div className="text-xs text-muted-foreground">{formatINR(unitPrice)} each</div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            type="button" size="sm" variant="outline"
+                            className="h-7 w-7 p-0"
+                            aria-label={`Refund one less ${it.name}`}
+                            disabled={sel <= 0}
+                            onClick={() => step(key, -1, orderedQty)}
+                          >
+                            −
+                          </Button>
+                          <span className="w-6 text-center font-bold tabular-nums">{sel}</span>
+                          <Button
+                            type="button" size="sm" variant="outline"
+                            className="h-7 w-7 p-0"
+                            aria-label={`Refund one more ${it.name}`}
+                            disabled={sel >= orderedQty}
+                            onClick={() => step(key, 1, orderedQty)}
+                          >
+                            +
+                          </Button>
+                        </div>
+                        {/* Live line refund = selected qty × unit price */}
+                        <span className="w-16 text-right text-muted-foreground tabular-nums">
+                          {formatINR(sel * unitPrice)}
+                        </span>
                       </li>
                     );
                   })}

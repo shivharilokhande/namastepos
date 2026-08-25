@@ -46,6 +46,14 @@ const nav: { to: string; icon: any; label: string; feature: string | null; addon
   { to: '/reviews',     icon: MessageSquare,   label: 'Reviews',          feature: 'reviews' },
   { to: '/staff',     icon: Users,           label: 'Staff',            feature: 'staff_lite' },
   { to: '/bill-template', icon: ReceiptText, label: 'Receipt template', feature: null },
+  // Founder bug #16 + gap-ports (2026-08-25): every shipped feature must
+  // be reachable from the sidebar (locked or not). Inventory/Printers/
+  // Modifier groups are the mobile-parity ports; Marketplace existed as
+  // a route but was never listed.
+  { to: '/inventory', icon: Package,         label: 'Inventory',        feature: 'menu_basic' },
+  { to: '/modifier-groups', icon: MenuIcon,  label: 'Modifier groups',  feature: 'menu_variants_modifiers' },
+  { to: '/printers',  icon: ReceiptText,     label: 'Printers',         feature: null },
+  { to: '/marketplace', icon: ShoppingBag,   label: 'Marketplace',      feature: null },
   // Pro
   { to: '/kot',       icon: ChefHat,         label: 'Kitchen (KOT)',    feature: 'kds' },
   { to: '/kds',       icon: ChefHat,         label: 'KDS',              feature: 'kds' },

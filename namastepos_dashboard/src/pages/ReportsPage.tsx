@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip, BarChart, Bar, CartesianGrid,
+  PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import { toast } from 'sonner';
 import { Download, FileSpreadsheet, FileText } from 'lucide-react';
@@ -14,6 +15,36 @@ import { api, apiError, getBusinessCache } from '@/api/client';
 import { formatINR } from '@/lib/utils';
 
 type TabId = 'pnl' | 'income' | 'expense' | 'invoices' | 'daily' | 'monthly' | 'tips';
+
+// ── Report charts — mobile parity (2026-08-25) ───────────────────────
+// The Flutter reports screens (reports_screen.dart, monthly_report.dart)
+// render pies/bars via fl_chart; the web dashboard only had the monthly
+// area chart. The blocks below reuse data the page ALREADY fetches
+// (dailyReport, incomeRegister, expenseRegister, monthlyReport) — no
+// new endpoints were added.
+
+// WHY (2026-08-25): mirrors AppColors.chartPalette in
+// namastepos_flutter/lib/constants/colors.dart so web and mobile
+// reports read the same. Keep the two lists in sync.
+const CHART_COLORS = ['#FF6B35', '#2EC4B6', '#FFB627', '#8B5CF6', '#3B82F6', '#EC4899'];
+
+// WHY (2026-08-25): raw INR axis labels overflow the axis gutter above
+// ₹99,999, so compact to Indian k/L units for ticks only. Tooltips and
+// tables keep full formatINR precision.
+function inrAxisTick(v: number): string {
+  const abs = Math.abs(v);
+  if (abs >= 100000) return `₹${(v / 100000).toFixed(1)}L`;
+  if (abs >= 1000) return `₹${(v / 1000).toFixed(0)}k`;
+  return `₹${v}`;
+}
+
+function ChartEmpty({ msg }: { msg: string }) {
+  return (
+    <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
+      {msg}
+    </div>
+  );
+}
 
 export function ReportsPage() {
   const [tab, setTab] = useState<TabId>('pnl');
@@ -204,6 +235,9 @@ export function ReportsPage() {
         <>
           {incomeReg.isLoading && <div className="py-8 text-center text-muted-foreground">Loading…</div>}
           {incomeReg.error && <RegisterError error={incomeReg.error} refetch={() => incomeReg.refetch()} />}
+          {/* Mobile parity (2026-08-25): revenue-by-day bar for the selected
+              period, aggregated client-side from register rows. */}
+          {incomeReg.data && <RevenueByDayChart rows={incomeReg.data.rows ?? []} />}
           {incomeReg.data && <IncomeRegisterTable data={incomeReg.data} />}
         </>
       )}
@@ -211,6 +245,9 @@ export function ReportsPage() {
         <>
           {expenseReg.isLoading && <div className="py-8 text-center text-muted-foreground">Loading…</div>}
           {expenseReg.error && <RegisterError error={expenseReg.error} refetch={() => expenseReg.refetch()} />}
+          {/* Mobile parity (2026-08-25): category split pie fed by the
+              register's existing per-category summary. */}
+          {expenseReg.data && <ExpenseCategoryPie slices={expenseReg.data.summary ?? []} />}
           {expenseReg.data && <ExpenseRegisterTable data={expenseReg.data} />}
         </>
       )}
@@ -307,6 +344,21 @@ export function ReportsPage() {
             <Kpi label="Profit" value={formatINR(daily.data?.profit ?? 0)} />
             <Kpi label="Margin" value={`${(daily.data?.margin ?? 0).toFixed(0)}%`} />
           </div>
+          {/* Mobile parity (2026-08-25): reports_screen.dart shows a
+              top-items chart and an expense split for the day; render the
+              same from the dailyReport payload this tab already fetches. */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <TopItemsChart items={daily.data?.topItems ?? []} />
+            <ExpenseCategoryPie
+              title="Expenses by category"
+              // WHY (2026-08-25): dailyReport.expenses arrives flattened as
+              // { [category]: amount, total } — strip the `total` key so the
+              // pie doesn't double-count the whole day as a slice.
+              slices={Object.entries((daily.data?.expenses ?? {}) as Record<string, number>)
+                .filter(([k]) => k !== 'total')
+                .map(([category, amount]) => ({ category, amount: Number(amount) }))}
+            />
+          </div>
           <Card>
             <CardHeader><CardTitle>Top items</CardTitle></CardHeader>
             <CardContent>
@@ -336,21 +388,36 @@ export function ReportsPage() {
           <Card>
             <CardHeader><CardTitle>Daily series</CardTitle></CardHeader>
             <CardContent className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={monthly.data?.series || []}>
-                  <defs>
-                    <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#FF6B35" stopOpacity={0.4} />
-                      <stop offset="100%" stopColor="#FF6B35" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="date" fontSize={11} />
-                  <YAxis fontSize={11} />
-                  <Tooltip />
-                  <Area type="monotone" dataKey="revenue" stroke="#FF6B35" fill="url(#rev)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
+              {(monthly.data?.series || []).length === 0 ? (
+                <ChartEmpty msg="No activity recorded this month." />
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={monthly.data?.series || []}>
+                    <defs>
+                      <linearGradient id="rev" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#FF6B35" stopOpacity={0.4} />
+                        <stop offset="100%" stopColor="#FF6B35" stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="exp" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#2EC4B6" stopOpacity={0.25} />
+                        <stop offset="100%" stopColor="#2EC4B6" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="date" fontSize={11} />
+                    {/* 2026-08-25: INR ticks + ₹ tooltip — axis previously
+                        showed bare numbers, breaking the page's ₹ convention. */}
+                    <YAxis fontSize={11} tickFormatter={inrAxisTick} width={52} />
+                    <Tooltip formatter={(v: any) => formatINR(Number(v))} />
+                    <Legend />
+                    <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#FF6B35" fill="url(#rev)" strokeWidth={2} />
+                    {/* 2026-08-25: monthlyReport.series already carries a
+                        per-day `expenses` value — plot it so owners see the
+                        spend line the same way mobile P&L implies it. */}
+                    <Area type="monotone" dataKey="expenses" name="Expenses" stroke="#2EC4B6" fill="url(#exp)" strokeWidth={2} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </CardContent>
           </Card>
         </>
@@ -365,6 +432,158 @@ function Kpi({ label, value }: { label: string; value: string }) {
       <CardContent className="p-5">
         <div className="text-2xl font-bold tracking-tight">{value}</div>
         <div className="text-sm text-muted-foreground">{label}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Mobile-parity charts (2026-08-25) ────────────────────────────────
+
+// Revenue-by-day bar for the selected From/To period (Income register
+// tab). WHY (2026-08-25): the income register already returns every
+// order in the window, so grouping client-side avoids inventing a new
+// /reports endpoint just for a series. en-CA locale gives a sortable
+// YYYY-MM-DD key in the browser's local calendar day — the same day the
+// register table itself displays via en-IN formatting.
+function RevenueByDayChart({ rows }: { rows: Array<{ createdAt: string; total: number | string }> }) {
+  const byDay = new Map<string, number>();
+  for (const r of rows) {
+    const key = new Date(r.createdAt).toLocaleDateString('en-CA');
+    byDay.set(key, (byDay.get(key) ?? 0) + Number(r.total ?? 0));
+  }
+  const series = [...byDay.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, revenue]) => ({
+      label: new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+      revenue,
+    }));
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Revenue by day</CardTitle>
+        <CardDescription>Order totals per day across the selected period.</CardDescription>
+      </CardHeader>
+      <CardContent className="h-72">
+        {series.length === 0 ? (
+          <ChartEmpty msg="No sales in this range." />
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={series}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <XAxis dataKey="label" fontSize={11} />
+              <YAxis fontSize={11} tickFormatter={inrAxisTick} width={52} />
+              <Tooltip formatter={(v: any) => formatINR(Number(v))} />
+              <Bar dataKey="revenue" name="Revenue" fill="#FF6B35" radius={[4, 4, 0, 0]} maxBarSize={36} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Top items as a horizontal bar (Daily tab) — matches the fl_chart
+// top-items visual in reports_screen.dart. Data comes straight from
+// dailyReport.topItems (already limited to 5 server-side).
+function TopItemsChart({ items }: { items: Array<{ name: string; qty: number; revenue: number }> }) {
+  const data = items.map((it) => ({
+    name: it.name,
+    qty: Number(it.qty ?? 0),
+    revenue: Number(it.revenue ?? 0),
+  }));
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Top items by revenue</CardTitle>
+        <CardDescription>Best sellers for the selected day.</CardDescription>
+      </CardHeader>
+      <CardContent className="h-72">
+        {data.length === 0 ? (
+          <ChartEmpty msg="No sales." />
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} layout="vertical" margin={{ left: 8, right: 16 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" horizontal={false} />
+              <XAxis type="number" fontSize={11} tickFormatter={inrAxisTick} />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={120}
+                fontSize={11}
+                // WHY (2026-08-25): long dish names squeeze the plot area to
+                // nothing; recharts has no built-in ellipsis, so cap at 16.
+                tickFormatter={(n: string) => (n.length > 16 ? `${n.slice(0, 15)}…` : n)}
+              />
+              <Tooltip formatter={(v: any) => formatINR(Number(v))} />
+              <Bar dataKey="revenue" name="Revenue" radius={[0, 4, 4, 0]} maxBarSize={22}>
+                {data.map((_, i) => (
+                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Expense split donut — fed by expenseRegister.summary (period) or the
+// flattened dailyReport.expenses map (single day). Matches the category
+// split visual in the Flutter reports screen.
+function ExpenseCategoryPie({
+  slices,
+  title,
+}: {
+  slices: Array<{ category: string; amount: number | string }>;
+  title?: string;
+}) {
+  const data = slices
+    .map((s) => ({
+      name: (s.category || 'other').replace(/_/g, ' '),
+      value: Number(s.amount ?? 0),
+    }))
+    .filter((s) => s.value > 0);
+  const total = data.reduce((sum, d) => sum + d.value, 0);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">{title ?? 'Expense split by category'}</CardTitle>
+        <CardDescription>
+          {total > 0 ? `${formatINR(total)} total` : 'Where the money went.'}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="h-72">
+        {data.length === 0 ? (
+          <ChartEmpty msg="No expenses recorded." />
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={data}
+                dataKey="value"
+                nameKey="name"
+                innerRadius="45%"
+                outerRadius="72%"
+                paddingAngle={3}
+                labelLine={false}
+                // WHY (2026-08-25): percent labels like mobile's pie; amounts
+                // live in the tooltip to keep small slices readable.
+                label={(p: any) => `${((p.percent ?? 0) * 100).toFixed(0)}%`}
+              >
+                {data.map((_, i) => (
+                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(v: any) => formatINR(Number(v))} />
+              <Legend
+                formatter={(name: any) => (
+                  <span className="capitalize text-xs text-foreground">{name}</span>
+                )}
+              />
+            </PieChart>
+          </ResponsiveContainer>
+        )}
       </CardContent>
     </Card>
   );

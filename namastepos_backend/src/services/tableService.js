@@ -401,6 +401,18 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
       // eslint-disable-next-line no-console
       console.warn(`[tableService] settle loyalty earn failed: ${e?.message}`);
     }
+
+    // Bug #5 fix (2026-08-25): issue ONE combined GST tax invoice for the
+    // whole session now that payment is collected and the table released.
+    // Per-KOT auto-issue is suppressed for session orders in orderService,
+    // so this is the only place a dine-in invoice is born. Best-effort —
+    // a missing GSTIN must never un-settle a table.
+    try {
+      await require('./taxInvoiceService').issueFromSession(businessId, sessionId);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn(`[tableService] combined session invoice failed: ${e?.message}`);
+    }
     return closed;
   });
 }

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, Download, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ffApi } from '@/api/namastepos';
@@ -235,10 +236,53 @@ export function BillingPage() {
   const { data: invoices = [] } = useQuery({ queryKey: ['invoices'], queryFn: ffApi.invoices });
   const biz = getBusinessCache() || {};
 
+  // Bug #14 (2026-08-25) — RBI e-mandate disclosure. Razorpay subscription
+  // checkout authorises a RECURRING autopay mandate (UPI Autopay / card
+  // autopay), and RBI rules for recurring payments require explicit,
+  // informed customer consent BEFORE that mandate is set up. `consent`
+  // holds the copy for the popup plus the resolver the checkout flow is
+  // awaiting; null = dialog closed.
+  const [consent, setConsent] = useState<{
+    planName: string;
+    amountInr: number;
+    cadence: 'monthly' | 'yearly';
+    resolve: (agreed: boolean) => void;
+  } | null>(null);
+  // Single close path so Cancel, "Agree & Continue", Esc and the ✕ button
+  // all settle the pending promise exactly once.
+  const answerConsent = (agreed: boolean) => {
+    consent?.resolve(agreed);
+    setConsent(null);
+  };
+
   const change = useMutation({
     mutationFn: async (tier: string) => {
       const res = await ffApi.changePlan(tier, billingPeriod);
-      if (tier === 'free' || !res.subscriptionId) return res;
+      // Free downgrade OR manual activation (backend billingController
+      // returns { manual: true, subscription } — no subscriptionId — when
+      // Razorpay isn't configured, so NO mandate is ever created): keep the
+      // old instant path, deliberately WITHOUT the autopay consent popup.
+      if (tier === 'free' || res.manual === true || !res.subscriptionId) return res;
+      // Bug #14 (2026-08-25): from here on the Razorpay checkout WILL open
+      // and set up a recurring mandate — block on the RBI-required
+      // disclosure and only proceed if the owner explicitly agrees.
+      const plan = plans.find((p: any) => p.tier === tier);
+      // FF-402e semantics: trial-only plans have no yearly price, so even
+      // with the toggle on Yearly the mandate is monthly — mirror that in
+      // the disclosed amount/cadence so the popup never misstates a charge.
+      const cadence: 'monthly' | 'yearly' =
+        billingPeriod === 'yearly' && plan?.priceYearlyInr != null ? 'yearly' : 'monthly';
+      const agreed = await new Promise<boolean>((resolve) => {
+        setConsent({
+          planName: plan?.name || tier,
+          amountInr: cadence === 'yearly' ? (plan?.priceYearlyInr ?? 0) : (plan?.priceInr ?? 0),
+          cadence,
+          resolve,
+        });
+      });
+      // Same rejection shape as dismissing the Razorpay modal below, so
+      // onError shows the familiar "Cancelled" toast and no charge happens.
+      if (!agreed) throw new Error('Cancelled');
       await loadRazorpayScript();
       return new Promise((resolve, reject) => {
         const rz = new window.Razorpay({
@@ -267,6 +311,31 @@ export function BillingPage() {
 
   return (
     <div className="space-y-6">
+      {/* Bug #14 (2026-08-25) — RBI-compliant auto-pay disclosure. Rendered
+          only while the change() mutation is awaiting consent, i.e. only
+          when the Razorpay checkout is actually about to open (never on the
+          free-plan / manual-activation path). onOpenChange catches Esc and
+          the ✕ close button — anything short of an explicit
+          "Agree & Continue" resolves as Cancel and aborts checkout. */}
+      <Dialog open={!!consent} onOpenChange={(open) => { if (!open) answerConsent(false); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Auto-pay setup</DialogTitle>
+            <DialogDescription>
+              You are setting up automatic recurring payment for the{' '}
+              <strong className="text-foreground">{consent?.planName}</strong> plan
+              {' '}({consent ? formatINR(consent.amountInr) : ''}/{consent?.cadence === 'yearly' ? 'year' : 'month'}).
+              Your payment method will be charged automatically each billing cycle.
+              You can cancel anytime from Plans &amp; Billing — no questions asked.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => answerConsent(false)}>Cancel</Button>
+            <Button onClick={() => answerConsent(true)}>Agree &amp; Continue</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Billing</h1>
         <p className="text-muted-foreground">Plan, invoices, payment method.</p>

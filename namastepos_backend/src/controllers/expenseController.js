@@ -6,9 +6,15 @@ const validate = require('../middleware/validate');
 const expense = require('../services/expenseService');
 
 const createBody = Joi.object({
+  // Founder bug #4 (2026-08-25): pilot restaurants book salaries, gas,
+  // electricity etc. — keep in sync with the expense_category enum
+  // (migration 058) and the dashboard/Flutter pickers.
   category: Joi.string().valid(
     'ingredients', 'fuel', 'labor', 'rent', 'utilities',
-    'packaging', 'marketing', 'maintenance', 'other'
+    'packaging', 'marketing', 'maintenance',
+    'chef_salary', 'helper_salary', 'staff_salary', 'gas', 'electricity',
+    'water', 'transport', 'equipment', 'cleaning', 'license_fees',
+    'other'
   ).default('other'),
   amount: Joi.number().positive().precision(2).required(),
   description: Joi.string().max(500).allow('', null),

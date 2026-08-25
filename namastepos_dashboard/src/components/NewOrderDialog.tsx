@@ -10,13 +10,15 @@
 //   • Upsell suggestions strip — "Customers also ordered…"
 //   • Voice command — "two paneer tikka one naan" → parses into cart
 //   • Customer phone autocomplete + auto-apply active membership discount
+//   • Returning-customer name autofill + "N visits" hint (Bug #3a, 2026-08-25)
+//   • Per-line order notes — "No onions, less spicy…" (Bug #3b, 2026-08-25)
 //   • Save KOT (postpaid, dine-in only) vs Pay & place (immediate)
 
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  Plus, Minus, Search, Trash2, ShoppingCart, Sparkles, Crown,
+  Plus, Minus, Search, Trash2, ShoppingCart, Sparkles, Crown, StickyNote, History,
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -66,6 +68,14 @@ export function NewOrderDialog({
   const [tableId, setTableId] = useState(existingSession?.tableId || '');
   const [customerPhone, setCustomerPhone] = useState(existingSession?.customerPhone || '');
   const [customerName, setCustomerName] = useState(existingSession?.customerName || '');
+  // Bug #3a (2026-08-25): true once the cashier types in the name box.
+  // Autofill from the phone lookup must never clobber a manually typed name
+  // (e.g. staff correcting a misspelled name on file), so we gate on this.
+  const [nameEditedByUser, setNameEditedByUser] = useState(false);
+  // Bug #3b (2026-08-25): which cart lines have their note input expanded.
+  // Keyed by lineKey (not menuItemId) so two lines of the same item can carry
+  // different notes — matches the mobile app's per-line note model.
+  const [noteOpen, setNoteOpen] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
   const [tax, setTax] = useState(0);
@@ -113,6 +123,18 @@ export function NewOrderDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customerProfile]);
 
+  // Bug #3a (2026-08-25): auto-fill the customer's name once the phone lookup
+  // matches. The profile was already fetched for loyalty/memberships — staff
+  // were still retyping names we had on file. Fill only when the field is
+  // empty or untouched, so manual typing always wins over the lookup.
+  useEffect(() => {
+    const known = customerProfile?.customer?.name;
+    if (known && (!customerName.trim() || !nameEditedByUser)) {
+      setCustomerName(known);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerProfile]);
+
   // ── Cart helpers ──────────────────────────────────────────────────────
   const _addLine = (line: Omit<CartLine, 'lineKey'>) => {
     const lineKey = [
@@ -146,6 +168,15 @@ export function NewOrderDialog({
     });
   };
   const remove = (lineKey: string) => setCart((c) => c.filter((x) => x.lineKey !== lineKey));
+
+  // Bug #3b (2026-08-25): per-line kitchen note ("No onions"). Stored on the
+  // cart line so the KOT prints it against the exact item, same as mobile.
+  const setLineNote = (lineKey: string, note: string) => {
+    setCart((c) => c.map((x) => (x.lineKey === lineKey ? { ...x, note } : x)));
+  };
+  const toggleNote = (lineKey: string) => {
+    setNoteOpen((prev) => ({ ...prev, [lineKey]: !prev[lineKey] }));
+  };
 
   // Subtotal from cart
   const subtotal = useMemo(() => cart.reduce((s, l) => s + l.price * l.qty, 0), [cart]);
@@ -203,6 +234,9 @@ export function NewOrderDialog({
           variantId: l.variantId || null,
           variantLabel: l.variantLabel || null,
           modifierLines: l.modifierLines || null,
+          // Bug #3b (2026-08-25): backend Joi item schema expects `note`
+          // (singular, ≤500 chars, allows null) — same field mobile sends.
+          note: l.note?.trim() || null,
         })),
         tax, discount,
         discountIsPreTax,
@@ -288,10 +322,28 @@ export function NewOrderDialog({
               </div>
               <div>
                 <Label>Customer name</Label>
-                <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)}
+                <Input value={customerName}
+                  onChange={(e) => {
+                    setCustomerName(e.target.value);
+                    // Manual typing locks out autofill for this dialog (Bug #3a)
+                    setNameEditedByUser(true);
+                  }}
                   placeholder="Walk-in" className="mt-1" />
               </div>
             </div>
+
+            {/* Returning-customer hint (Bug #3a, 2026-08-25). visit count =
+                customer.totalOrders from the customer-history endpoint —
+                there is no separate visits column, orders are the proxy. */}
+            {customerProfile?.customer && (
+              <div className="text-xs text-muted-foreground flex items-center gap-1.5 -mt-2">
+                <History className="h-3.5 w-3.5" />
+                <span>
+                  Returning customer · {customerProfile.customer.totalOrders ?? 0}
+                  {' '}{(customerProfile.customer.totalOrders ?? 0) === 1 ? 'visit' : 'visits'}
+                </span>
+              </div>
+            )}
 
             {/* Customer profile + active membership badge */}
             {customerProfile?.activeMembership && (
@@ -384,10 +436,28 @@ export function NewOrderDialog({
                       )}
                       <div className="text-xs text-muted-foreground">{formatINR(l.price)} each</div>
                     </div>
-                    <button onClick={() => remove(l.lineKey)} className="p-1 hover:bg-accent rounded">
-                      <Trash2 className="h-3 w-3 text-destructive" />
-                    </button>
+                    <div className="flex items-center gap-0.5">
+                      {/* Bug #3b (2026-08-25): note toggle — amber when a
+                          note is set so it stays discoverable when collapsed */}
+                      <button onClick={() => toggleNote(l.lineKey)}
+                        className="p-1 hover:bg-accent rounded" title="Kitchen note">
+                        <StickyNote className={`h-3 w-3 ${l.note ? 'text-amber-600' : 'text-muted-foreground'}`} />
+                      </button>
+                      <button onClick={() => remove(l.lineKey)} className="p-1 hover:bg-accent rounded">
+                        <Trash2 className="h-3 w-3 text-destructive" />
+                      </button>
+                    </div>
                   </div>
+                  {noteOpen[l.lineKey] ? (
+                    <Input value={l.note || ''} autoFocus maxLength={500}
+                      onChange={(e) => setLineNote(l.lineKey, e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') toggleNote(l.lineKey); }}
+                      placeholder="No onions, less spicy…"
+                      className="mt-2 h-7 text-xs" />
+                  ) : l.note ? (
+                    // Collapsed preview — mirrors mobile's quoted-note row
+                    <div className="mt-1 text-xs text-amber-700 italic truncate">"{l.note}"</div>
+                  ) : null}
                   <div className="mt-2 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Button size="sm" variant="outline" className="h-7 w-7 p-0" onClick={() => bump(l.lineKey, -1)}>

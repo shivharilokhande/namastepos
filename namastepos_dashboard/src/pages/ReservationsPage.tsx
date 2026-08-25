@@ -103,10 +103,31 @@ export function ReservationsPage() {
   );
 }
 
+// WHY (2026-08-25, Bug #11): datetime-local inputs speak LOCAL wall-clock
+// strings, but toISOString() emits UTC — for IST users the old default
+// rendered 5.5h behind the wall clock (i.e. in the past). Format manually
+// in local time for value/min/max so all three agree.
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function NewReservationDialog({ onClose, onCreated }: any) {
+  // WHY (2026-08-25, Bug #11): the picker accepted any past date/time. Bound
+  // it to [now rounded up to the next 5 min, now + 90 days] to mirror the
+  // mobile picker (reservations_screen.dart firstDate/lastDate). useState
+  // initializers are enough for "recompute when the dialog opens" because
+  // this component mounts fresh on every open ({adding && <Dialog/>}).
+  const [minAt] = useState(() => {
+    const d = new Date();
+    d.setSeconds(0, 0);
+    d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5); // Date rolls 60 → next hour
+    return d;
+  });
+  const [maxAt] = useState(() => new Date(Date.now() + 90 * 24 * 60 * 60 * 1000));
   const [f, setF] = useState({
     customerName: '', customerPhone: '', customerEmail: '',
-    partySize: 2, reservedAt: new Date(Date.now() + 60*60*1000).toISOString().slice(0,16),
+    partySize: 2, reservedAt: toLocalInputValue(new Date(Date.now() + 60 * 60 * 1000)),
     specialRequests: '',
   });
   const set = (k: string, v: any) => setF((p) => ({ ...p, [k]: v }));
@@ -115,6 +136,20 @@ function NewReservationDialog({ onClose, onCreated }: any) {
     onSuccess: () => { toast.success('Booking saved'); onCreated(); },
     onError: (e) => toast.error(apiError(e)),
   });
+  const save = () => {
+    // WHY (2026-08-25, Bug #11): min/max only constrain the native picker —
+    // typed input bypasses them — so re-validate before hitting the API.
+    const at = new Date(f.reservedAt);
+    if (Number.isNaN(at.getTime()) || at.getTime() < Date.now()) {
+      toast.error('Reservation time is in the past — pick a future time');
+      return;
+    }
+    if (at.getTime() > maxAt.getTime()) {
+      toast.error('Reservations can be made at most 90 days ahead');
+      return;
+    }
+    create.mutate();
+  };
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
@@ -125,13 +160,13 @@ function NewReservationDialog({ onClose, onCreated }: any) {
           <div><Label>Email</Label><Input type="email" value={f.customerEmail} onChange={(e) => set('customerEmail', e.target.value)} /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Party size</Label><Input type="number" value={f.partySize} onChange={(e) => set('partySize', +e.target.value)} /></div>
-            <div><Label>Date &amp; time</Label><Input type="datetime-local" value={f.reservedAt} onChange={(e) => set('reservedAt', e.target.value)} /></div>
+            <div><Label>Date &amp; time</Label><Input type="datetime-local" min={toLocalInputValue(minAt)} max={toLocalInputValue(maxAt)} value={f.reservedAt} onChange={(e) => set('reservedAt', e.target.value)} /></div>
           </div>
           <div><Label>Special requests</Label><Input value={f.specialRequests} onChange={(e) => set('specialRequests', e.target.value)} placeholder="Window seat, vegetarian only…" /></div>
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => create.mutate()} disabled={!f.customerName || !f.customerPhone}>Save booking</Button>
+          <Button onClick={save} disabled={!f.customerName || !f.customerPhone}>Save booking</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

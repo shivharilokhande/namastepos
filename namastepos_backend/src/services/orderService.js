@@ -1110,7 +1110,17 @@ async function updateStatus(businessId, orderId, status, reason = null, reasonCo
   // order state change.
   if (status === 'collected') {
     try {
-      await require('./taxInvoiceService').issueFromOrder(businessId, orderId);
+      // Bug #5 fix (2026-08-25): orders that belong to a table session
+      // must NOT get their own per-KOT invoice — the customer receives
+      // ONE combined invoice for the whole session, issued when the
+      // table is settled (tableService.closeSession →
+      // taxInvoiceService.issueFromSession). Standalone orders
+      // (takeaway/QR/delivery) keep the instant per-order invoice.
+      const sess = await query(
+        'SELECT table_session_id FROM orders WHERE id = $1', [orderId]);
+      if (!sess.rows[0]?.table_session_id) {
+        await require('./taxInvoiceService').issueFromOrder(businessId, orderId);
+      }
     } catch (e) {
       // eslint-disable-next-line no-console
       console.warn('[orderService] auto-issue tax invoice failed:', e?.message);

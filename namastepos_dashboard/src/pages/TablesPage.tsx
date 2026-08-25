@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  LayoutGrid, Plus, Edit2, Trash2, Users, ArrowRight, X, Building, Move, Check,
+  LayoutGrid, Plus, Edit2, Trash2, Users, ArrowRight, X, Building, Move, Check, Printer,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,7 @@ import { NewOrderDialog } from '@/components/NewOrderDialog';
 import { BillSplitDialog } from '@/components/BillSplitDialog';
 import { FloorCanvas } from '@/components/FloorCanvas';
 import { ffApi } from '@/api/namastepos';
-import { apiError } from '@/api/client';
+import { apiError, getBusinessCache } from '@/api/client';
 import { formatINR, formatDateTime } from '@/lib/utils';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -327,6 +327,143 @@ function SeatingDialog({ table, onClose, onSeated }: any) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Gap B (2026-08-25) — consolidated session bill from the dashboard.
+// The mobile app prints ONE merged bill per table session over Bluetooth
+// (printer_service.dart → printSessionBill); the dashboard settle flow had
+// no bill at all. We mirror it with the browser print dialog: an 80mm-style
+// receipt rendered into a popup (window.open + document.write), then
+// window.print() so the cashier can hit any system printer or save a PDF.
+// Data comes from the SAME endpoint the dialog already polls
+// (GET /businesses/:bid/ops/sessions/:id via ffApi.sessionDetail) — no new
+// API surface needed.
+// ---------------------------------------------------------------------------
+
+// Escape user-controlled strings (item names, customer name, notes…) before
+// document.write — a menu item literally named "<img onerror=…>" must print
+// as text, not execute inside the popup.
+function escHtml(s: unknown): string {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// One merged line on the final bill: identical dishes across every KOT of the
+// session collapsed into a single row (same shape SessionDialog's `grouped`
+// memo produces).
+type MergedBillLine = { name: string; qty: number; price: number; lineTotal: number };
+
+function printSessionBill(session: any, mergedLines: MergedBillLine[]) {
+  // Business identity for the header comes from the login-time cache — same
+  // object BillingPage uses for the subscription invoice printout, so the
+  // bill needs zero extra network calls.
+  const biz = getBusinessCache() || {};
+
+  // Bill # = last 8 chars of the session id, mirroring the mobile receipt,
+  // so a bill printed from the app and one from the dashboard carry the SAME
+  // number for the same table-night. KOT numbers stay kitchen-internal.
+  const sessId = String(session.id || '');
+  const billNo = (sessId.length >= 8 ? sessId.slice(-8) : sessId).toUpperCase();
+
+  // Totals come from the backend (already summed across non-cancelled
+  // orders) — we never recompute money client-side, matching the mobile
+  // printer which also trusts subtotal/tax/discount/total off the session.
+  const subtotal = session.subtotalInr || 0;
+  const tax = session.taxInr || 0;
+  const discount = session.discountInr || 0;
+  const total = session.totalInr || 0;
+
+  const itemRows = mergedLines
+    .map(
+      (l) => `
+      <tr>
+        <td>${escHtml(l.qty)}&times; ${escHtml(l.name)}</td>
+        <td class="amt">${escHtml(formatINR(l.lineTotal))}</td>
+      </tr>`
+    )
+    .join('');
+
+  const customerLine = [session.customerName, session.customerPhone]
+    .filter((v: any) => v)
+    .join(' · ');
+
+  const html = `<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Bill #${escHtml(billNo)} · Table ${escHtml(session.tableLabel || '')}</title>
+<style>
+  /* 80mm thermal-roll look: narrow column, dashed rules, mono digits. */
+  @page { size: 80mm auto; margin: 4mm; }
+  body {
+    font-family: ui-monospace, 'Courier New', Menlo, monospace;
+    width: 72mm; margin: 0 auto; padding: 8px 0;
+    color: #000; font-size: 12px; line-height: 1.35;
+  }
+  .c { text-align: center; }
+  .biz { font-size: 16px; font-weight: 800; }
+  hr { border: none; border-top: 1px dashed #000; margin: 6px 0; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 2px 0; vertical-align: top; }
+  .amt { text-align: right; white-space: nowrap; }
+  .tot td { font-weight: 800; font-size: 14px; border-top: 1px solid #000; padding-top: 4px; }
+  .noprint { text-align: center; margin-top: 14px; }
+  .noprint button {
+    padding: 8px 18px; font-weight: 700; cursor: pointer;
+    border: 1px solid #000; background: #fff; border-radius: 4px;
+  }
+  @media print { .noprint { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+  <div class="c biz">${escHtml(biz.name || 'NamastePOS')}</div>
+  ${biz.address ? `<div class="c">${escHtml(biz.address)}</div>` : ''}
+  ${biz.phone ? `<div class="c">Ph: ${escHtml(biz.phone)}</div>` : ''}
+  ${biz.gstin ? `<div class="c">GSTIN: ${escHtml(biz.gstin)}</div>` : ''}
+  <hr />
+  <div class="c" style="font-weight:800">TAX INVOICE</div>
+  <div class="c">Bill #${escHtml(billNo)}</div>
+  ${session.tableLabel ? `<div class="c">Table ${escHtml(session.tableLabel)}</div>` : ''}
+  ${session.guestCount ? `<div class="c">Guests: ${escHtml(session.guestCount)}</div>` : ''}
+  <div class="c">${escHtml(formatDateTime(session.closedAt || session.openedAt))}</div>
+  ${customerLine ? `<div class="c">${escHtml(customerLine)}</div>` : ''}
+  <hr />
+  <table>${itemRows}</table>
+  <hr />
+  <table>
+    <tr><td>Subtotal</td><td class="amt">${escHtml(formatINR(subtotal))}</td></tr>
+    ${discount > 0 ? `<tr><td>Discount</td><td class="amt">-${escHtml(formatINR(discount))}</td></tr>` : ''}
+    ${tax > 0 ? `<tr><td>GST</td><td class="amt">+${escHtml(formatINR(tax))}</td></tr>` : ''}
+    <tr class="tot"><td>TOTAL</td><td class="amt">${escHtml(formatINR(total))}</td></tr>
+  </table>
+  <hr />
+  <div class="c">Thank you, visit again!</div>
+  <div class="noprint">
+    <!-- Fallback for browsers where the auto-print below gets swallowed
+         (e.g. popup focus quirks) — the cashier can always re-trigger. -->
+    <button onclick="window.print()">Print / Save as PDF</button>
+  </div>
+</body>
+</html>`;
+
+  // Popup (not a hidden iframe) so the receipt stays open after printing —
+  // cashiers often re-print or save the PDF a second time.
+  const w = window.open('', '_blank', 'width=420,height=640');
+  if (!w) {
+    toast.error('Popup blocked — allow popups for this site to print the bill');
+    return;
+  }
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  // document.write is synchronous, so the DOM is ready here; focus first so
+  // the print dialog attaches to the popup, not the dashboard tab.
+  w.focus();
+  w.print();
+}
+
 function SessionDialog({ sessionId, onClose, onClosed }: any) {
   const qc = useQueryClient();
   const { data: session } = useQuery({
@@ -567,6 +704,18 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
             )}
             <Button variant="outline" onClick={() => setAddingItems(true)}>
               <Plus className="mr-1 h-4 w-4" /> Add items
+            </Button>
+            {/* Gap B — one consolidated bill for the whole session (all KOTs
+                merged), same as the mobile Bluetooth receipt. Reuses the
+                `grouped` lines already shown in the Items tab so what the
+                cashier sees on screen is exactly what prints. Disabled until
+                a KOT exists — an empty bill helps nobody. */}
+            <Button
+              variant="outline"
+              onClick={() => printSessionBill(session, grouped)}
+              disabled={orders.length === 0}
+            >
+              <Printer className="mr-1 h-4 w-4" /> Print bill
             </Button>
             <Button
               variant="outline"

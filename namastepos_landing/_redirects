@@ -1,0 +1,5 @@
+# Customer mini-sites are rendered by the API (founder bug #12, 2026-08-25).
+# namastepos.in/site/<slug> forwards to the server-rendered page so owners
+# can share a first-party URL. 302 (not 200 proxy) because Cloudflare Pages
+# can't rewrite cross-origin.
+/site/* https://api.namastepos.in/site/:splat 302

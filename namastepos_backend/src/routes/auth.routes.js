@@ -36,6 +36,7 @@ router.post ('/staff-picker',    pinLimiter, ...c.staffPicker); // Push 14b
 router.post ('/refresh',         loginLimiter, ...c.refresh);
 router.post ('/logout',          requireAuth,  c.logout);
 router.get  ('/me',              requireAuth,  c.me);
+router.post ('/change-password', requireAuth,  ...c.changePassword); // founder bug #1
 router.patch('/me',              requireAuth,  ...c.patchMe);
 router.post ('/switch-business', requireAuth,  ...c.switchBusiness);
 
