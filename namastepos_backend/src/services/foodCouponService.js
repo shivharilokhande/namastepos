@@ -144,11 +144,31 @@ async function deactivate(businessId, id) {
   return r.rows[0];
 }
 
-async function recordUse(couponId, orderId) {
-  await query(
-    `UPDATE coupons SET redemption_count = redemption_count + 1 WHERE id = $1`,
+// 2026-08-25 (security review finding #4): recordUse was an unconditional
+// +1 with no max_redemptions guard — and, worse, nothing ever called it,
+// so redemption_count stayed 0 and "max 100 uses" coupons were infinite.
+// It is now ATOMIC: the increment only succeeds while the coupon still
+// has redemptions left; 0 rows updated = fully redeemed → 400, so two
+// concurrent orders can't both consume the last slot. Accepts an optional
+// pg client so callers can run it inside their order transaction (reject
+// the discount + roll back the order when the coupon is exhausted).
+// NOTE: as of 2026-08-25 the POS "apply" endpoint above is a preview —
+// order creation receives the discount as a plain number with no coupon
+// id attached, so there is no order-side call site to wire yet. When the
+// clients start sending the coupon id at order create, call this inside
+// orderService.create's transaction.
+async function recordUse(couponId, orderId, client = null) {
+  const exec = client ? client.query.bind(client) : query;
+  const r = await exec(
+    `UPDATE coupons
+        SET redemption_count = redemption_count + 1
+      WHERE id = $1
+        AND (max_redemptions IS NULL OR redemption_count < max_redemptions)
+      RETURNING id, redemption_count`,
     [couponId]
   );
+  if (r.rowCount === 0) throw new BadRequest('Coupon fully redeemed');
+  return r.rows[0];
 }
 
 module.exports = {

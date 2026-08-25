@@ -166,12 +166,29 @@ async function create(businessId, body) {
     }
   }
 
+  // SECURITY (2026-08-25, review finding #2 — tenant isolation): when the
+  // caller sent a raw tableId (not a label, which is already resolved
+  // tenant-scoped above), verify it belongs to THIS business before the
+  // auto-session logic below opens a session on it — otherwise a known
+  // table UUID from another tenant could be hijacked into our tenant.
+  // Bogus/foreign ids are ignored (order proceeds untabled) — same
+  // posture as the serverUserId sanity check further down.
+  if (resolvedTableId && tableId) {
+    const ownTable = await query(
+      'SELECT id FROM tables WHERE business_id = $1 AND id = $2 LIMIT 1',
+      [businessId, resolvedTableId],
+    );
+    if (ownTable.rowCount === 0) resolvedTableId = null;
+  }
+
   // Auto-open a session if dine-in + table + no session
   let resolvedSessionId = tableSessionId;
   if (!resolvedSessionId && resolvedTableId && source === 'dineIn') {
+    // Business-scoped (2026-08-25, finding #2): never attach to / reuse an
+    // open session that belongs to another tenant's table.
     const existing = await query(
-      'SELECT id FROM table_sessions WHERE table_id = $1 AND status = \'open\' LIMIT 1',
-      [resolvedTableId],
+      'SELECT id FROM table_sessions WHERE table_id = $1 AND business_id = $2 AND status = \'open\' LIMIT 1',
+      [resolvedTableId, businessId],
     );
     if (existing.rowCount > 0) {
       resolvedSessionId = existing.rows[0].id;
@@ -655,12 +672,21 @@ async function create(businessId, body) {
 
     // FF-1005 — wallet / gift-card redemption. Recorded BEFORE splits
     // so the remaining amount is what gets split-tendered.
+    // 2026-08-25 (security review finding #6): this used to be deferred
+    // to a post-commit .then() — a failed debit (insufficient balance,
+    // expired card) left a committed order that was never paid for
+    // (free food, money leak). The debit now runs INSIDE this txn via
+    // giftCardService.redeemTx — a failed debit rolls the whole order
+    // back, exactly like the paymentBreakdown 'wallet' leg below.
     if (walletRedeem && (walletRedeem.giftCardCode || walletRedeem.customerId)
         && walletRedeem.amountInr > 0) {
       const gc = require('./giftCardService');
-      // Delegating; giftCardService owns its own txn. Because we're
-      // inside a txn here, we defer this to the .then() below.
-      orderRow._pendingRedeem = walletRedeem;
+      orderRow._redeemResult = await gc.redeemTx(client, businessId, {
+        giftCardCode: walletRedeem.giftCardCode,
+        customerId: walletRedeem.customerId,
+        orderId: orderRow.id,
+        amountInr: walletRedeem.amountInr,
+      });
     }
 
     // FF-312 — split-tender. Insert one `payments` row per leg. The
@@ -749,11 +775,11 @@ async function create(businessId, body) {
       Object.assign(orderRow, upd.rows[0]);
     }
 
-    // P1 fix (2026-08-22): _pendingRedeem was set on the raw DB row but
-    // serializeOrder returns a fresh object — the flag was lost and the
-    // gift card / wallet was never debited. Carry it through explicitly.
+    // 2026-08-25 (finding #6): the debit already happened in-txn above —
+    // just carry the result through serializeOrder (which returns a
+    // fresh object) so the POS still sees `order.redeem` as before.
     const out = serializeOrder(orderRow, itemRows);
-    if (orderRow._pendingRedeem) out._pendingRedeem = orderRow._pendingRedeem;
+    if (orderRow._redeemResult) out.redeem = orderRow._redeemResult;
     return out;
   }).then(async (result) => {
     // Bump usage AFTER the txn commits (best-effort, doesn't roll back the order)
@@ -764,28 +790,10 @@ async function create(businessId, body) {
       // eslint-disable-next-line no-console
       console.warn(`[orderService] incrementUsage failed biz=${businessId}: ${e?.message}`);
     }
-    // FF-1005 post-commit redemption. Failure here doesn't roll back
-    // the order — the customer's food is already going out. We log
-    // and surface the error to the caller via `result._redeemError`
-    // so the POS can retry.
-    if (result?._pendingRedeem || result?.pendingRedeem) {
-      try {
-        const gc = require('./giftCardService');
-        const wr = result._pendingRedeem || result.pendingRedeem;
-        result.redeem = await gc.redeem(businessId, {
-          giftCardCode: wr.giftCardCode,
-          customerId: wr.customerId,
-          orderId: result.id,
-          amountInr: wr.amountInr,
-        });
-      } catch (e) {
-        require('../config/logger').warn(
-          `[order ${result.id}] redemption failed: ${e.message}`,
-        );
-        result._redeemError = e.message;
-      }
-      delete result._pendingRedeem;
-    }
+    // FF-1005 redemption note (2026-08-25, finding #6): the wallet /
+    // gift-card debit is no longer done here post-commit — it runs
+    // inside the order transaction above (giftCardService.redeemTx), so
+    // a failed debit aborts the order instead of leaving it unpaid.
     return result;
   });
 }
@@ -1013,127 +1021,168 @@ async function updateStatus(businessId, orderId, status, reason = null, reasonCo
   if (status === 'collected') patch.push('collected_at = NOW()');
   if (reason) { patch.push(`cancel_reason = $${values.length + 1}`); values.push(reason); }
   if (reasonCode) { patch.push(`cancel_reason_code = $${values.length + 1}`); values.push(reasonCode); }
-  const r = await query(
-    `UPDATE orders SET ${patch.join(', ')}
-     WHERE business_id = $${values.length + 1} AND id = $${values.length + 2}
-     RETURNING *`,
-    [...values, businessId, orderId],
-  );
-  if (r.rowCount === 0) throw new NotFound('Order not found');
 
-  // Push 13.3 reverse-sync: when the cashier moves an order forward in
-  // the Orders tab, drag the KOT tickets along so the kitchen doesn't
-  // keep showing a ticket the cashier already marked ready.
-  if (status === 'ready' || status === 'collected') {
-    await query(
-      `UPDATE kot_tickets SET status = 'done', completed_at = COALESCE(completed_at, NOW())
-        WHERE order_id = $1 AND status NOT IN ('done','cancelled')`,
-      [orderId],
-    );
-  } else if (status === 'cancelled') {
-    await query(
-      `UPDATE kot_tickets SET status = 'cancelled'
-        WHERE order_id = $1 AND status NOT IN ('done','cancelled')`,
-      [orderId],
-    );
-    // H6 fix (2026-08-23, review): cancelling never restored inventory
-    // or membership-bundle entitlements — stock leaked on every cancel.
-    // Both are best-effort (a failure never blocks the cancel).
-    try {
+  let updatedRow;
+  if (status === 'cancelled') {
+    // 2026-08-25 (review finding #3 — cancel race): cancel used to be a
+    // read-then-write with NO status guard and NO transaction — two
+    // concurrent cancels (double-tap / client retry) both passed the
+    // re-check above, both restored stock and both reversed loyalty
+    // (double-credit). The whole cancel (conditional status flip + KOT
+    // cancel + stock restore + membership return + loyalty reversal)
+    // now runs in ONE transaction, and the UPDATE carries
+    // `AND status = <prior>` so exactly one caller wins; the loser gets
+    // rowCount 0 → 409 instead of a second restore.
+    updatedRow = await withTransaction(async (client) => {
+      const upd = await client.query(
+        `UPDATE orders SET ${patch.join(', ')}
+          WHERE business_id = $${values.length + 1} AND id = $${values.length + 2}
+            AND status = $${values.length + 3}
+          RETURNING *`,
+        [...values, businessId, orderId, currentStatus],
+      );
+      if (upd.rowCount === 0) {
+        throw new Conflict('Order status changed concurrently — refresh and retry');
+      }
+      await client.query(
+        `UPDATE kot_tickets SET status = 'cancelled'
+          WHERE order_id = $1 AND status NOT IN ('done','cancelled')`,
+        [orderId],
+      );
+      // H6 fix (2026-08-23, review) + finding #3: restore inventory in
+      // the SAME txn as the status flip — atomic, and the conditional
+      // UPDATE above guarantees it runs at most once per order.
       // (a) Return stock deducted at create for each line item.
-      const its = await query(
+      const its = await client.query(
         `SELECT menu_item_id, qty FROM order_items
           WHERE order_id = $1 AND menu_item_id IS NOT NULL`,
         [orderId],
       );
       for (const it of its.rows) {
-        const upd = await query(
+        const restored = await client.query(
           `UPDATE menu_items SET stock = stock + $1
             WHERE business_id = $2 AND id = $3
             RETURNING stock`,
           [it.qty, businessId, it.menu_item_id],
         );
-        if (upd.rowCount > 0) {
-          await query(
+        if (restored.rowCount > 0) {
+          await client.query(
             `INSERT INTO inventory_transactions
                (business_id, menu_item_id, qty_change, balance_after, reason, order_id)
              VALUES ($1, $2, $3, $4, 'returned', $5)`,
             [businessId, it.menu_item_id, it.qty,
-              upd.rows[0].stock, orderId],
+              restored.rows[0].stock, orderId],
           );
         }
       }
       // (b) Return consumed membership-bundle entitlements (audit rows
-      // written at create, migration 055).
-      const redemptions = await query(
-        `SELECT subscription_id, menu_item_id, qty
-           FROM membership_redemptions
-          WHERE business_id = $1 AND order_id = $2`,
-        [businessId, orderId],
-      );
-      for (const rd of redemptions.rows) {
-        await query(
-          `UPDATE membership_subscriptions
-              SET remaining = (
-                SELECT jsonb_agg(
-                  CASE WHEN elem->>'menuItemId' = $1
-                       THEN jsonb_set(elem, '{qty}',
-                            to_jsonb((elem->>'qty')::numeric + $2::numeric))
-                       ELSE elem END)
-                  FROM jsonb_array_elements(remaining) elem)
-            WHERE id = $3 AND remaining IS NOT NULL`,
-          [rd.menu_item_id, rd.qty, rd.subscription_id],
-        );
-      }
-      if (redemptions.rowCount > 0) {
-        await query(
-          `DELETE FROM membership_redemptions
+      // written at create, migration 055). Still best-effort — via a
+      // SAVEPOINT, because a plain try/catch inside a txn would poison
+      // the whole transaction on older DBs where 055 hasn't run.
+      await client.query('SAVEPOINT cancel_membership');
+      try {
+        const redemptions = await client.query(
+          `SELECT subscription_id, menu_item_id, qty
+             FROM membership_redemptions
             WHERE business_id = $1 AND order_id = $2`,
           [businessId, orderId],
         );
+        for (const rd of redemptions.rows) {
+          await client.query(
+            `UPDATE membership_subscriptions
+                SET remaining = (
+                  SELECT jsonb_agg(
+                    CASE WHEN elem->>'menuItemId' = $1
+                         THEN jsonb_set(elem, '{qty}',
+                              to_jsonb((elem->>'qty')::numeric + $2::numeric))
+                         ELSE elem END)
+                    FROM jsonb_array_elements(remaining) elem)
+              WHERE id = $3 AND remaining IS NOT NULL`,
+            [rd.menu_item_id, rd.qty, rd.subscription_id],
+          );
+        }
+        if (redemptions.rowCount > 0) {
+          await client.query(
+            `DELETE FROM membership_redemptions
+              WHERE business_id = $1 AND order_id = $2`,
+            [businessId, orderId],
+          );
+        }
+        await client.query('RELEASE SAVEPOINT cancel_membership');
+      } catch (e) {
+        await client.query('ROLLBACK TO SAVEPOINT cancel_membership');
+        // eslint-disable-next-line no-console
+        console.warn(`[orderService] cancel membership restore failed for ${orderId}: ${e?.message}`);
       }
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.warn(`[orderService] cancel restore failed for ${orderId}: ${e?.message}`);
-    }
-  }
 
-  // P1: reverse loyalty earn + restore redeemed points on a collected→cancelled
-  // transition. Best-effort — if loyalty is mis-configured we still cancel.
-  if (cancelling && prior.rows[0].customer_id) {
-    const reverseEarn = prior.rows[0].points_earned || 0;
-    const restoreRedeem = prior.rows[0].points_redeemed || 0;
-    try {
-      if (reverseEarn > 0 || restoreRedeem > 0) {
-        await query(
-          `UPDATE customers
-              SET points_balance    = points_balance - $1 + $2,
-                  lifetime_points   = GREATEST(0, lifetime_points - $1),
-                  lifetime_redeemed = GREATEST(0, lifetime_redeemed - $2)
-            WHERE id = $3 AND business_id = $4`,
-          [reverseEarn, restoreRedeem, prior.rows[0].customer_id, businessId],
-        );
-        await query(
-          `INSERT INTO loyalty_transactions
-             (business_id, customer_id, kind, points, balance_after, order_id, note)
-           SELECT $1, customer_id, 'reverse', $2 - $3,
-                  points_balance, $4, 'Cancel/refund reversal'
-             FROM customers WHERE id = $5`,
-          [businessId, restoreRedeem, reverseEarn, orderId, prior.rows[0].customer_id],
-        );
+      // P1: reverse loyalty earn + restore redeemed points on a
+      // collected→cancelled transition. Inside the cancel txn now
+      // (finding #3) so it can never run twice for one cancel; still
+      // best-effort via SAVEPOINT so a loyalty misconfig doesn't block
+      // the cancel (B21 — but logged for reconciliation).
+      if (cancelling && prior.rows[0].customer_id) {
+        const reverseEarn = prior.rows[0].points_earned || 0;
+        const restoreRedeem = prior.rows[0].points_redeemed || 0;
+        if (reverseEarn > 0 || restoreRedeem > 0) {
+          await client.query('SAVEPOINT cancel_loyalty');
+          try {
+            await client.query(
+              `UPDATE customers
+                  SET points_balance    = points_balance - $1 + $2,
+                      lifetime_points   = GREATEST(0, lifetime_points - $1),
+                      lifetime_redeemed = GREATEST(0, lifetime_redeemed - $2)
+                WHERE id = $3 AND business_id = $4`,
+              [reverseEarn, restoreRedeem, prior.rows[0].customer_id, businessId],
+            );
+            await client.query(
+              `INSERT INTO loyalty_transactions
+                 (business_id, customer_id, kind, points, balance_after, order_id, note)
+               SELECT $1, customer_id, 'reverse', $2 - $3,
+                      points_balance, $4, 'Cancel/refund reversal'
+                 FROM customers WHERE id = $5`,
+              [businessId, restoreRedeem, reverseEarn, orderId, prior.rows[0].customer_id],
+            );
+            await client.query('RELEASE SAVEPOINT cancel_loyalty');
+          } catch (e) {
+            await client.query('ROLLBACK TO SAVEPOINT cancel_loyalty');
+            // eslint-disable-next-line no-console
+            console.warn(`[orderService] loyalty reversal failed for order ${orderId}: ${e?.message}`);
+          }
+        }
       }
-    } catch (e) {
-      // Bug fix (B21): don't fully swallow — loyalty desync is
-      // unrecoverable without an audit trail. Log so support can spot
-      // + reconcile.
-      // eslint-disable-next-line no-console
-      console.warn(`[orderService] loyalty reversal failed for order ${orderId}: ${e?.message}`);
+      return upd.rows[0];
+    });
+  } else {
+    // Non-cancel transitions keep the single-statement pool path but gain
+    // the same `AND status = <prior>` guard (2026-08-25, finding #3) so a
+    // concurrent transition loses cleanly instead of silently overwriting.
+    const r = await query(
+      `UPDATE orders SET ${patch.join(', ')}
+       WHERE business_id = $${values.length + 1} AND id = $${values.length + 2}
+         AND status = $${values.length + 3}
+       RETURNING *`,
+      [...values, businessId, orderId, currentStatus],
+    );
+    if (r.rowCount === 0) {
+      throw new Conflict('Order status changed concurrently — refresh and retry');
+    }
+    updatedRow = r.rows[0];
+
+    // Push 13.3 reverse-sync: when the cashier moves an order forward in
+    // the Orders tab, drag the KOT tickets along so the kitchen doesn't
+    // keep showing a ticket the cashier already marked ready.
+    if (status === 'ready' || status === 'collected') {
+      await query(
+        `UPDATE kot_tickets SET status = 'done', completed_at = COALESCE(completed_at, NOW())
+          WHERE order_id = $1 AND status NOT IN ('done','cancelled')`,
+        [orderId],
+      );
     }
   }
 
   // ── Loyalty: award points on collection ─────────────────────────────
   if (status === 'collected') {
-    const o = r.rows[0];
+    const o = updatedRow;
     if (o.customer_id && o.points_earned === 0) {
       try {
         // Fix (2026-08-22): plan feature, not paid addon (see create()).

@@ -175,17 +175,48 @@ const confirmPayment = [
       signature: req.body.razorpaySignature,
     });
     if (!ok) throw new BadRequest('Invalid Razorpay signature');
+    // SECURITY (2026-08-25, review finding #1 — payment bypass): the HMAC
+    // above only proves the (razorpayOrderId, paymentId) pair is genuine.
+    // It does NOT bind the payment to THIS order — a guest could pay ₹10
+    // on their own cheap order and replay that valid signature against
+    // ANY orderId to mark it collected. createCheckoutOrder stored our
+    // orderId/businessId in the Razorpay order's notes, so re-fetch it
+    // and require (a) notes.orderId == the path orderId, (b) notes
+    // .businessId == this QR token's business, (c) paid amount == the
+    // order's total. Reject with 400 on any mismatch.
+    const rzOrder = await razorpay.getOrder(req.body.razorpayOrderId);
+    if (rzOrder?.notes?.orderId !== req.params.orderId
+        || rzOrder?.notes?.businessId !== businessId) {
+      throw new BadRequest('Payment does not belong to this order');
+    }
+    const own = await query(
+      `SELECT id, total FROM orders
+        WHERE id = $1 AND business_id = $2 LIMIT 1`,
+      [req.params.orderId, businessId]
+    );
+    if (own.rowCount === 0) throw new BadRequest('Order not found');
+    const expectedPaise = Math.round(parseFloat(own.rows[0].total) * 100);
+    if (Number(rzOrder.amount) !== expectedPaise) {
+      throw new BadRequest('Payment amount does not match the order total');
+    }
     // Mark the order paid + record the payment. We don't know the
     // exact method (UPI vs card) client-side, so we default to 'upi'
     // — the webhook path in razorpayService.handleWebhook will
     // reconcile with the real method within seconds.
+    // 2026-08-25 (finding #1): payment_method flips only while 'unpaid'
+    // (idempotent), and the status flip now goes through
+    // orderService.updateStatus (no user id needed) so the guest path
+    // gets the same transition matrix, KOT sync and idempotent
+    // "already collected" no-op as the staff POS instead of a raw
+    // unconditional UPDATE.
     await query(
       `UPDATE orders
-          SET payment_method = 'upi', status = 'collected', collected_at = NOW(),
-              updated_at = NOW()
-        WHERE id = $1 AND business_id = $2`,
+          SET payment_method = 'upi', updated_at = NOW()
+        WHERE id = $1 AND business_id = $2
+          AND payment_method = 'unpaid'::payment_method`,
       [req.params.orderId, businessId]
     );
+    await orderService.updateStatus(businessId, req.params.orderId, 'collected');
     await query(
       `INSERT INTO payments (business_id, order_id, method, amount_paise,
                               status, razorpay_payment_id)
@@ -315,6 +346,35 @@ const confirmSessionPayment = [
       signature: req.body.razorpaySignature,
     });
     if (!ok) throw new BadRequest('Invalid Razorpay signature');
+    // SECURITY (2026-08-25, review finding #1 — payment bypass): same
+    // binding as confirmPayment above — the HMAC alone lets a valid
+    // signature from a cheap paid order settle ANY session. paySession
+    // stored our sessionId/businessId in the Razorpay order's notes;
+    // re-fetch and require the notes to match this session/business AND
+    // the paid amount to equal the session's outstanding total. A repeat
+    // confirm (or a stale checkout after more KOTs were added) fails the
+    // due/amount check → 400, which also gives this endpoint the
+    // idempotency it was missing.
+    const rzOrder = await razorpay.getOrder(req.body.razorpayOrderId);
+    if (rzOrder?.notes?.sessionId !== req.body.sessionId
+        || rzOrder?.notes?.businessId !== businessId) {
+      throw new BadRequest('Payment does not belong to this bill');
+    }
+    const due = await query(
+      `SELECT ts.id, COALESCE(SUM(o.total), 0)::float AS due
+         FROM table_sessions ts
+    LEFT JOIN orders o ON o.table_session_id = ts.id
+                      AND o.status NOT IN ('cancelled','collected')
+        WHERE ts.business_id = $1 AND ts.id = $2 AND ts.closed_at IS NULL
+        GROUP BY ts.id`,
+      [businessId, req.body.sessionId]
+    );
+    if (due.rowCount === 0) throw new BadRequest('No open bill for this session');
+    const duePaise = Math.round(parseFloat(due.rows[0].due) * 100);
+    if (duePaise <= 0) throw new BadRequest('Nothing to pay — the bill is already settled');
+    if (Number(rzOrder.amount) !== duePaise) {
+      throw new BadRequest('Payment amount does not match the outstanding bill — refresh and try again');
+    }
     // Mark all unpaid orders in this session collected + close session.
     await query(
       `UPDATE orders

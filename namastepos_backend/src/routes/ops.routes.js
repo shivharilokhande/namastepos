@@ -39,7 +39,14 @@ router.delete('/tables/:tableId',     requireRole(['business_owner']), c.deleteT
 // ── Sessions (seat / close) ──────────────────────────────────────────
 router.post  ('/tables/:tableId/sessions', ...c.openSession);
 router.get   ('/sessions/:sessionId',      c.sessionDetail);
-router.post  ('/sessions/:sessionId/close',   ...c.closeSession);
+// 2026-08-25 (security review finding #5): settle moves money (discounts,
+// wallet debits, shortfall debt on a customer) — it must not be open to
+// every authenticated staff role. Gated to owner + manager, matching the
+// other money-touching routes (floors/tables CRUD here, expenses/settle
+// flows in sprintsAll.routes; order refunds are owner-only).
+router.post  ('/sessions/:sessionId/close',
+              requireRole(['business_owner', 'staff_manager']),
+              ...c.closeSession);
 // Push 22 — release a table whose customer left without ordering.
 router.post  ('/sessions/:sessionId/abandon', c.abandonSession);
 

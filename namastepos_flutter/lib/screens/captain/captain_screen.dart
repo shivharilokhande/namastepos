@@ -12,6 +12,7 @@
 import 'dart:async';
 import 'package:dio/dio.dart' show DioException;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show FilteringTextInputFormatter;
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
@@ -124,10 +125,30 @@ class _CaptainScreenState extends State<CaptainScreen> {
         title: Text('Seat table ${t['label']}'),
         content: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Guest count 1-50 (2026-08-25): backend openSessionBody now
+            // validates the range, so we clamp client-side and add +/-
+            // steppers — faster than typing on the floor tablet.
             TextField(
               controller: guestCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Guest count *'),
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: 'Guest count * (1–50)',
+                prefixIcon: IconButton(
+                  icon: const Icon(Icons.remove),
+                  onPressed: () {
+                    final n = int.tryParse(guestCtrl.text) ?? 1;
+                    guestCtrl.text = '${(n - 1).clamp(1, 50)}';
+                  },
+                ),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.add),
+                  onPressed: () {
+                    final n = int.tryParse(guestCtrl.text) ?? 1;
+                    guestCtrl.text = '${(n + 1).clamp(1, 50)}';
+                  },
+                ),
+              ),
             ),
             const SizedBox(height: 10),
             TextField(
@@ -166,7 +187,11 @@ class _CaptainScreenState extends State<CaptainScreen> {
       ),
     );
     if (ok != true) return;
-    final guests = int.tryParse(guestCtrl.text) ?? t['seats'];
+    // Clamp to the backend's accepted 1-50 range (2026-08-25) — a typo'd
+    // "0" or "500" would otherwise 400 the whole seat action.
+    final guests =
+        (int.tryParse(guestCtrl.text) ?? (t['seats'] as num?)?.toInt() ?? 2)
+            .clamp(1, 50);
     try {
       // Backend route is /tables/:id/sessions (plural noun) — earlier we
       // were hitting /open-session which 404'd.
@@ -233,7 +258,177 @@ class _CaptainScreenState extends State<CaptainScreen> {
     }
   }
 
+  /// Joined-table tap resolution (2026-08-25, F2): every SECONDARY table of
+  /// a joined group carries the group's shared currentSessionId, so tapping
+  /// ANY member must open the ONE shared bill. We swap the tapped row for
+  /// the PRIMARY (the member that is not isJoinedSecondary) so the sheet
+  /// header and the "Add items" tableId always bind to the head table —
+  /// same net effect as the dashboard resolving the group by session id.
+  Map<String, dynamic> _resolveSessionTable(Map<String, dynamic> t) {
+    if (t['isJoinedSecondary'] != true) return t;
+    final sid = t['currentSessionId'];
+    if (sid == null) return t;
+    return _tables.firstWhere(
+      (x) => x['currentSessionId'] == sid && x['isJoinedSecondary'] != true,
+      orElse: () => t,
+    );
+  }
+
+  /// Join a free table onto this running session (2026-08-25, F2) — one
+  /// bill for the whole group, mirroring dashboard TablesPage. Picker only
+  /// offers 'available' tables; joins are per-table calls so one stolen
+  /// table can't roll back the group. Sheet reopens refreshed afterwards.
+  Future<void> _joinAnotherTable(
+      Map<String, dynamic> t, String sessionId) async {
+    final free = _tables.where((x) => x['status'] == 'available').toList();
+    if (free.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No free tables right now.')),
+      );
+      return;
+    }
+    // Wrap-of-chips picker (NOT a ListView — dialogs + ListView misbehave
+    // on small screens; chips also match the dashboard join picker UX).
+    final picked = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Join a table with ${t['label']}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'The selected table shares ONE bill with this session. '
+                'Tapping it later opens this same bill.',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final ft in free)
+                    ActionChip(
+                      label: Text('${ft['label']}'),
+                      onPressed: () => Navigator.pop(ctx, ft),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    try {
+      await ApiService.instance
+          .joinTable(widget.businessId, sessionId, picked['id'] as String);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            'Table ${picked['label']} joined — one bill for the whole group'),
+        backgroundColor: Colors.green,
+      ));
+      await _load(); // joined table flips to occupied on the floor
+      if (mounted) _showSession(t); // reopen the refreshed bill sheet
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(humanizeError(e)), backgroundColor: Colors.red));
+    }
+  }
+
+  /// Detach ONE joined table and free it — the rest of the group stays on
+  /// the shared bill (2026-08-25, F2). Settle/Release frees all at once.
+  Future<void> _unjoinTable(Map<String, dynamic> t, String sessionId,
+      String tableId, String label) async {
+    try {
+      await ApiService.instance
+          .unjoinTable(widget.businessId, sessionId, tableId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Table $label unjoined and freed')),
+      );
+      await _load();
+      if (mounted) _showSession(t);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(humanizeError(e)), backgroundColor: Colors.red));
+    }
+  }
+
+  /// Paid-early release (2026-08-25, F2): every live KOT was already paid
+  /// at order time ("Pay & place") yet the table stays occupied because
+  /// nobody hits Settle — there is nothing left to collect. Close via the
+  /// SAME settle endpoint carrying the HEAD order's payment method so
+  /// reporting stays truthful; NO new paymentBreakdown, so nothing is
+  /// re-charged (close only flips orders still marked 'unpaid' — none here).
+  Future<void> _releasePaidSession(
+      Map<String, dynamic> t, List<Map> activeOrders,
+      {int joinedCount = 0}) async {
+    final sessionId = t['currentSessionId'] as String?;
+    if (sessionId == null) return;
+    final headPm = (activeOrders.isNotEmpty
+            ? activeOrders.first['paymentMethod']?.toString()
+            : null) ??
+        'cash';
+    // The close contract accepts only the 4 real tender kinds as headline.
+    final pm = const ['cash', 'upi', 'card', 'online'].contains(headPm)
+        ? headPm
+        : 'cash';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Release table ${t['label']}?'),
+        content: Text(
+          'All orders in this session are already paid, so nothing more '
+          'will be charged — the session closes and '
+          '${joinedCount > 0 ? 'the tables (including joined ones) go' : 'the table goes'} '
+          'back to Available.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Keep')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Release')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await ApiService.instance.closeSessionV2(
+        widget.businessId,
+        sessionId,
+        paymentMethod: pm,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Table released — bill was already paid'),
+        backgroundColor: Colors.green,
+      ));
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(humanizeError(e)), backgroundColor: Colors.red));
+    }
+  }
+
   Future<void> _showSession(Map<String, dynamic> t) async {
+    // Joined-table tap resolution (2026-08-25, F2): tapping ANY member of a
+    // joined group must open the group's ONE shared session — resolve the
+    // tapped row to the primary before doing anything else. Covers both the
+    // tap path (_openTable) and the long-press path.
+    t = _resolveSessionTable(t);
     // Long-press from the floor plan can hit any table. Bail with a hint
     // if the table doesn't have an active session yet.
     if (t['currentSessionId'] == null || t['status'] != 'occupied') {
@@ -266,6 +461,23 @@ class _CaptainScreenState extends State<CaptainScreen> {
     }
 
     if (!mounted) return;
+    // Round-2 F2 (2026-08-25): precompute joined-group + paid state once —
+    // any join/unjoin/release closes and reopens the sheet, so no
+    // StatefulBuilder is needed inside it.
+    final sessionId = t['currentSessionId'] as String;
+    final joinedTables =
+        ((session['joinedTables'] as List?) ?? const []).cast<Map>();
+    final orders = ((session['orders'] as List?) ?? const []).cast<Map>();
+    final activeOrders =
+        orders.where((o) => o['status'] != 'cancelled').toList();
+    // Paid upfront = at least one live KOT and EVERY one already carrying a
+    // real payment method (the "Pay & place" flow) — only then does the
+    // "Release table (already paid)" shortcut make sense.
+    final allPaidUpfront = activeOrders.isNotEmpty &&
+        activeOrders.every((o) {
+          final pm = (o['paymentMethod'] as String?) ?? '';
+          return pm.isNotEmpty && pm != 'unpaid';
+        });
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -279,6 +491,45 @@ class _CaptainScreenState extends State<CaptainScreen> {
                 style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             Text('${session!['guestCount'] ?? '?'} guests · KOTs: ${(session['orders'] as List?)?.length ?? 0}',
                 style: const TextStyle(color: Colors.grey)),
+            // Joined tables (2026-08-25, F2) — the whole group shares this
+            // ONE bill. Unjoin frees just that table; Settle/Release frees
+            // all. Any action closes the sheet and reopens it refreshed.
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Icon(Icons.link, size: 16, color: Colors.grey),
+                  if (joinedTables.isEmpty)
+                    const Text('Big group? Join a free table onto this bill.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  for (final jt in joinedTables)
+                    InputChip(
+                      label: Text('${jt['label']}'),
+                      visualDensity: VisualDensity.compact,
+                      deleteIcon: const Icon(Icons.link_off, size: 16),
+                      deleteButtonTooltipMessage:
+                          'Unjoin table ${jt['label']}',
+                      onDeleted: () {
+                        Navigator.pop(context); // sheet reopens refreshed
+                        _unjoinTable(
+                            t, sessionId, '${jt['id']}', '${jt['label']}');
+                      },
+                    ),
+                  ActionChip(
+                    avatar: const Icon(Icons.add_link, size: 16),
+                    label: const Text('Join another table'),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      Navigator.pop(context); // sheet reopens refreshed
+                      _joinAnotherTable(t, sessionId);
+                    },
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 12),
             ...((session['items'] as List?) ?? []).take(8).map((it) {
               final m = it as Map;
@@ -293,6 +544,20 @@ class _CaptainScreenState extends State<CaptainScreen> {
                 ),
               );
             }),
+            // Paid-early (2026-08-25, F2): a PAID/UNPAID chip per KOT so the
+            // cashier sees money already taken via "Pay & place" and never
+            // re-charges a paid table.
+            if (activeOrders.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final o in activeOrders) _KotPaidChip(order: o),
+                  ],
+                ),
+              ),
             const Divider(),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -411,6 +676,38 @@ class _CaptainScreenState extends State<CaptainScreen> {
                 ),
               ),
             ],
+            // Paid-early release (2026-08-25, F2) — every live KOT already
+            // paid at order time, so nothing is left to collect. Closes the
+            // session with the head KOT's payment method, no re-collection.
+            if (allPaidUpfront) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.verified_outlined, size: 18),
+                  label: const Text(
+                    'Release table (already paid)',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.success,
+                    backgroundColor:
+                        AppColors.success.withValues(alpha: 0.06),
+                    side: const BorderSide(
+                        color: AppColors.success, width: 1.4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(context); // close bottom sheet first
+                    _releasePaidSession(t, activeOrders,
+                        joinedCount: joinedTables.length);
+                  },
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -433,6 +730,12 @@ class _CaptainScreenState extends State<CaptainScreen> {
     // get the buy/renew popup here — the moment payment happens. A
     // purchase adds the plan fee to the payable amount below.
     double membershipFee = 0;
+    // Round-2 (2026-08-25): the identified customer also unlocks the
+    // wallet tender (split legs) and the shortfall option — both need a
+    // customer id, so we capture it during the same lookup round-trip.
+    String? customerId;
+    double walletBalance = 0;
+    bool walletAvailable = false;
     if (customerPhone != null && customerPhone.isNotEmpty) {
       try {
         final data = await ApiService.instance
@@ -441,6 +744,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
         final expired =
             (data?['expiredMembership'] as Map?)?.cast<String, dynamic>();
         final custId = ((data?['customer'] as Map?)?['id'])?.toString();
+        customerId = custId;
         if (mem == null && custId != null && mounted) {
           final fee = await showMembershipOfferDialog(
             context,
@@ -451,6 +755,18 @@ class _CaptainScreenState extends State<CaptainScreen> {
           if (fee != null) membershipFee = fee;
         }
       } catch (_) { /* offer is best-effort — never block settling */ }
+      // Wallet balance for the 'wallet' split-leg option. Any error (402 =
+      // loyalty addon missing) just hides wallet — same as the dashboard.
+      if (customerId != null) {
+        try {
+          final w = await ApiService.instance
+              .walletFor(widget.businessId, customerId);
+          if (w != null) {
+            walletBalance = (w['balanceInr'] as num?)?.toDouble() ?? 0;
+            walletAvailable = true;
+          }
+        } catch (_) { /* wallet hidden */ }
+      }
     }
     if (!mounted) return;
 
@@ -458,7 +774,18 @@ class _CaptainScreenState extends State<CaptainScreen> {
     // bill — every ordered item — plus a discount box, then the payment
     // method. Mirrors the order-taking screen so the cashier confirms
     // exactly what the customer is paying for.
+    // Round-2 (2026-08-25): + split payment (2-3 legs incl. wallet) and
+    // shortfall ("pay later" gap booked as due on the customer wallet) —
+    // same rules the dashboard TablesPage settle enforces.
     final discountCtl = TextEditingController(text: '0');
+    final shortfallCtl = TextEditingController(text: '0');
+    // Split legs live OUTSIDE the StatefulBuilder so rebuilds don't reset
+    // what the cashier typed. Default: cash + upi, amounts blank.
+    bool splitOn = false;
+    final legs = <_SettleLeg>[
+      _SettleLeg('cash', TextEditingController()),
+      _SettleLeg('upi', TextEditingController()),
+    ];
     final settleResult = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -466,13 +793,41 @@ class _CaptainScreenState extends State<CaptainScreen> {
         builder: (sheetCtx, setSheetState) {
           final discount =
               (double.tryParse(discountCtl.text.trim()) ?? 0).clamp(0, totalInr);
-          final payable = totalInr - discount + membershipFee;
+          // Shortfall needs an identified customer (server books it as
+          // negative wallet balance) — field is hidden otherwise, so the
+          // parse below can only be non-zero when customerId != null.
+          final shortfall = customerId == null
+              ? 0.0
+              : (double.tryParse(shortfallCtl.text.trim()) ?? 0)
+                  .clamp(0, totalInr - discount)
+                  .toDouble();
+          // Contract: split legs must sum to (session total − discount −
+          // shortfall) ±₹0.01. Membership fee is charged separately by the
+          // subscribe flow, so it's shown but NOT part of the leg target.
+          final legsTarget = (totalInr - discount - shortfall)
+              .clamp(0, double.infinity)
+              .toDouble();
+          final payable = legsTarget + membershipFee;
+          final legSum = legs.fold<double>(
+              0, (s, l) => s + (double.tryParse(l.ctl.text.trim()) ?? 0));
+          final walletSum = legs
+              .where((l) => l.method == 'wallet')
+              .fold<double>(
+                  0, (s, l) => s + (double.tryParse(l.ctl.text.trim()) ?? 0));
+          final walletOver = walletAvailable && walletSum > walletBalance + 0.001;
+          final splitBalance = legsTarget - legSum;
+          final splitValid = splitBalance.abs() <= 0.01 &&
+              !walletOver &&
+              legs.length >= 2 &&
+              legs.every(
+                  (l) => (double.tryParse(l.ctl.text.trim()) ?? 0) > 0);
           return SafeArea(
             child: Padding(
               padding: EdgeInsets.only(
                 left: 16, right: 16, top: 16,
                 bottom: MediaQuery.of(sheetCtx).viewInsets.bottom + 16,
               ),
+              child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -537,6 +892,25 @@ class _CaptainScreenState extends State<CaptainScreen> {
                                 fontWeight: FontWeight.w800)),
                       ]),
                     ),
+                  // Shortfall (2026-08-25): customer pays less than the
+                  // bill; the gap books as DUE on their wallet. Only
+                  // possible with an identified customer.
+                  if (customerId != null) ...[
+                    TextField(
+                      controller: shortfallCtl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Short paid — pay later (₹)',
+                        helperText:
+                            'Amount is added as due on the customer wallet',
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (_) => setSheetState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   Row(
                     children: [
                       const Text('To pay',
@@ -547,41 +921,202 @@ class _CaptainScreenState extends State<CaptainScreen> {
                               fontSize: 18, fontWeight: FontWeight.w900)),
                     ],
                   ),
+                  if (shortfall > 0)
+                    Text(
+                      '${AppFmt.money(shortfall)} added as due on customer wallet',
+                      style: const TextStyle(
+                          fontSize: 11, color: AppColors.warning,
+                          fontWeight: FontWeight.w700),
+                    ),
                   const Divider(),
-                  const Text('Payment method',
-                      style: TextStyle(
-                          fontSize: 12, color: Colors.grey,
-                          fontWeight: FontWeight.w700)),
-                  ListTile(
+                  // Split payment toggle (2026-08-25): off = the familiar
+                  // single-method tiles below stay exactly as before.
+                  SwitchListTile(
                     dense: true,
-                    leading: const Icon(Icons.currency_rupee, color: Colors.green),
-                    title: const Text('Cash'),
-                    onTap: () => Navigator.pop(sheetCtx,
-                        {'pm': 'cash', 'discount': discount}),
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Split payment',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                    value: splitOn,
+                    onChanged: (v) => setSheetState(() => splitOn = v),
                   ),
-                  ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.qr_code_2, color: Colors.blue),
-                    title: const Text('UPI'),
-                    onTap: () => Navigator.pop(sheetCtx,
-                        {'pm': 'upi', 'discount': discount}),
-                  ),
-                  ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.credit_card, color: Colors.purple),
-                    title: const Text('Card'),
-                    onTap: () => Navigator.pop(sheetCtx,
-                        {'pm': 'card', 'discount': discount}),
-                  ),
-                  ListTile(
-                    dense: true,
-                    leading: const Icon(Icons.account_balance_wallet,
-                        color: Colors.orange),
-                    title: const Text('Other / Online'),
-                    onTap: () => Navigator.pop(sheetCtx,
-                        {'pm': 'online', 'discount': discount}),
-                  ),
+                  if (!splitOn) ...[
+                    const Text('Payment method',
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey,
+                            fontWeight: FontWeight.w700)),
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.currency_rupee, color: Colors.green),
+                      title: const Text('Cash'),
+                      onTap: () => Navigator.pop(sheetCtx, {
+                        'pm': 'cash', 'discount': discount,
+                        'shortfall': shortfall,
+                      }),
+                    ),
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.qr_code_2, color: Colors.blue),
+                      title: const Text('UPI'),
+                      onTap: () => Navigator.pop(sheetCtx, {
+                        'pm': 'upi', 'discount': discount,
+                        'shortfall': shortfall,
+                      }),
+                    ),
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.credit_card, color: Colors.purple),
+                      title: const Text('Card'),
+                      onTap: () => Navigator.pop(sheetCtx, {
+                        'pm': 'card', 'discount': discount,
+                        'shortfall': shortfall,
+                      }),
+                    ),
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.account_balance_wallet,
+                          color: Colors.orange),
+                      title: const Text('Other / Online'),
+                      onTap: () => Navigator.pop(sheetCtx, {
+                        'pm': 'online', 'discount': discount,
+                        'shortfall': shortfall,
+                      }),
+                    ),
+                  ] else ...[
+                    // 2-3 legs, each (method, ₹). Wallet appears only for
+                    // an identified customer, with the live balance on the
+                    // label — mirrors dashboard TablesPage settle.
+                    for (var i = 0; i < legs.length; i++)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 3,
+                              child: DropdownButtonFormField<String>(
+                                value: legs[i].method,
+                                decoration:
+                                    const InputDecoration(labelText: 'Method'),
+                                items: [
+                                  const DropdownMenuItem(
+                                      value: 'cash', child: Text('Cash')),
+                                  const DropdownMenuItem(
+                                      value: 'upi', child: Text('UPI')),
+                                  const DropdownMenuItem(
+                                      value: 'card', child: Text('Card')),
+                                  const DropdownMenuItem(
+                                      value: 'online', child: Text('Online')),
+                                  if (walletAvailable)
+                                    DropdownMenuItem(
+                                      value: 'wallet',
+                                      child: Text(
+                                          'Wallet — ${AppFmt.money(walletBalance)}',
+                                          overflow: TextOverflow.ellipsis),
+                                    ),
+                                ],
+                                onChanged: (v) => setSheetState(
+                                    () => legs[i].method = v ?? 'cash'),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 4,
+                              child: TextField(
+                                controller: legs[i].ctl,
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                decoration: const InputDecoration(
+                                    labelText: 'Amount (₹)'),
+                                onChanged: (_) => setSheetState(() {}),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline,
+                                  color: AppColors.error),
+                              onPressed: legs.length <= 2
+                                  ? null
+                                  : () => setSheetState(() {
+                                        legs[i].ctl.dispose();
+                                        legs.removeAt(i);
+                                      }),
+                            ),
+                          ],
+                        ),
+                      ),
+                    // paymentBreakdown contract caps at 3 legs.
+                    if (legs.length < 3)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => setSheetState(() => legs.add(
+                              _SettleLeg('cash', TextEditingController()))),
+                          icon: const Icon(Icons.add, size: 18),
+                          label: const Text('Add leg'),
+                        ),
+                      ),
+                    Row(
+                      children: [
+                        const Text('Balance',
+                            style: TextStyle(fontWeight: FontWeight.w700)),
+                        const Spacer(),
+                        Text(
+                          AppFmt.money(splitBalance),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            color: splitValid
+                                ? AppColors.success
+                                : AppColors.error,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (walletOver)
+                      Text(
+                        'Wallet has only ${AppFmt.money(walletBalance)} — '
+                        'reduce the wallet amount.',
+                        style: const TextStyle(
+                            color: AppColors.error, fontSize: 12,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed: !splitValid
+                          ? null
+                          : () {
+                              // paymentMethod can't be 'wallet' (Joi) — use
+                              // the largest non-wallet leg as the headline
+                              // method; the server records every leg anyway.
+                              String pm = 'cash';
+                              double best = -1;
+                              for (final l in legs) {
+                                final amt =
+                                    double.tryParse(l.ctl.text.trim()) ?? 0;
+                                if (l.method != 'wallet' && amt > best) {
+                                  best = amt;
+                                  pm = l.method;
+                                }
+                              }
+                              Navigator.pop(sheetCtx, {
+                                'pm': pm,
+                                'discount': discount,
+                                'shortfall': shortfall,
+                                'legs': legs
+                                    .map((l) => {
+                                          'method': l.method,
+                                          'amountInr': double.parse(
+                                              (double.tryParse(
+                                                          l.ctl.text.trim()) ??
+                                                      0)
+                                                  .toStringAsFixed(2)),
+                                        })
+                                    .toList(),
+                              });
+                            },
+                      child: const Text('Settle (split)'),
+                    ),
+                  ],
                 ],
+              ),
               ),
             ),
           );
@@ -592,6 +1127,33 @@ class _CaptainScreenState extends State<CaptainScreen> {
     if (!mounted) return;
     final paymentMethod = settleResult['pm'] as String;
     final settleDiscount = (settleResult['discount'] as num?)?.toDouble() ?? 0;
+    final shortfallInr = (settleResult['shortfall'] as num?)?.toDouble() ?? 0;
+    final breakdown = (settleResult['legs'] as List?)
+        ?.cast<Map>()
+        .map((m) => m.cast<String, dynamic>())
+        .toList();
+
+    // Shortfall books real debt — confirm before committing (2026-08-25).
+    if (shortfallInr > 0) {
+      final sure = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Confirm shortfall'),
+          content: Text(
+              '${AppFmt.money(shortfallInr)} added as due on customer wallet. '
+              'Collect it on their next visit.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Back')),
+            ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Confirm')),
+          ],
+        ),
+      );
+      if (sure != true || !mounted) return;
+    }
 
     try {
       // Fetch the full session BEFORE closing so we still have the
@@ -606,18 +1168,23 @@ class _CaptainScreenState extends State<CaptainScreen> {
         sessionForPrint = (r.data['session'] as Map).cast<String, dynamic>();
       } catch (_) { /* non-fatal — settle still proceeds, just no auto-print */ }
 
-      await ApiService.instance.dio.post(
-        '/businesses/${widget.businessId}/ops/sessions/$sessionId/close',
-        data: {
-          'paymentMethod': paymentMethod,
-          if (settleDiscount > 0) 'discountInr': settleDiscount,
-        },
+      // Round-2 (2026-08-25): typed v2 close — carries the split legs and
+      // shortfall alongside the legacy paymentMethod + discountInr.
+      await ApiService.instance.closeSessionV2(
+        widget.businessId,
+        sessionId,
+        paymentMethod: paymentMethod,
+        discountInr: settleDiscount,
+        paymentBreakdown: breakdown,
+        shortfallInr: shortfallInr,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text('Table $tableLabel settled · '
-            '${AppFmt.money(totalInr - settleDiscount + membershipFee)} via $paymentMethod'
+            '${AppFmt.money(totalInr - settleDiscount - shortfallInr + membershipFee)} '
+            'via ${breakdown != null ? 'split (${breakdown.length} legs)' : paymentMethod}'
             '${settleDiscount > 0 ? ' (${AppFmt.money(settleDiscount)} off)' : ''}'
+            '${shortfallInr > 0 ? ' · ${AppFmt.money(shortfallInr)} added as due on customer wallet' : ''}'
             '${membershipFee > 0 ? ' (incl. ${AppFmt.money(membershipFee)} membership)' : ''}'),
         backgroundColor: Colors.green,
       ));
@@ -755,6 +1322,43 @@ class _CaptainScreenState extends State<CaptainScreen> {
 
 }
 
+/// One split-payment leg in the settle sheet (2026-08-25) — mutable method
+/// + its amount controller. Mirrors _SplitLeg in confirm_order_screen.
+class _SettleLeg {
+  String method;
+  final TextEditingController ctl;
+  _SettleLeg(this.method, this.ctl);
+}
+
+/// PAID/UNPAID pill per KOT in the running-bill sheet (2026-08-25, F2) —
+/// the "Pay & place" flow collects money at order time, so the cashier
+/// must see which KOTs are already covered before settling.
+class _KotPaidChip extends StatelessWidget {
+  final Map order;
+  const _KotPaidChip({required this.order});
+
+  @override
+  Widget build(BuildContext context) {
+    final pm = (order['paymentMethod'] as String?) ?? '';
+    final paid = pm.isNotEmpty && pm != 'unpaid';
+    final color = paid ? AppColors.success : AppColors.warning;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        'KOT #${order['orderNo'] ?? '?'} · '
+        '${paid ? 'PAID ${pm.toUpperCase()}' : 'UNPAID'}',
+        style: TextStyle(
+            fontSize: 10, fontWeight: FontWeight.w800, color: color),
+      ),
+    );
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 //                          FLOOR PLAN
 // ──────────────────────────────────────────────────────────────────────────
@@ -889,6 +1493,12 @@ class _Tile extends StatelessWidget {
     final borderRadius = shape == 'round'
         ? BorderRadius.circular(999) // pill / circle
         : BorderRadius.circular(8);
+    // Joined-group marker (2026-08-25, F2): a table is part of a joined
+    // group either as the primary (carries sessionJoinedTableIds) or a
+    // secondary (isJoinedSecondary). Tapping ANY of them opens the group's
+    // one shared bill, so the badge tells staff "this is one party".
+    final joined = table['isJoinedSecondary'] == true ||
+        ((table['sessionJoinedTableIds'] as List?)?.isNotEmpty ?? false);
 
     return Material(
       color: color.withValues(alpha: 0.15),
@@ -907,7 +1517,19 @@ class _Tile extends StatelessWidget {
           // tile NEVER overflows no matter how small the cell ends up. The
           // earlier version raw-stacked fixed-size Texts in a Column, so
           // tight cells got the "BOTTOM OVERFLOWED BY 37 PIXELS" stripe.
-          child: Column(
+          // Stack (2026-08-25, F2): overlays the joined-group link badge in
+          // the corner without disturbing the centered content.
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              if (joined)
+                const Positioned(
+                  top: 0,
+                  right: 0,
+                  child:
+                      Icon(Icons.link, size: 13, color: Colors.blueGrey),
+                ),
+              Column(
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -936,6 +1558,8 @@ class _Tile extends StatelessWidget {
                     fontSize: 9, fontWeight: FontWeight.w700, color: color),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+              ),
+                ],
               ),
             ],
           ),

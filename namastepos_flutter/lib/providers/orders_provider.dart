@@ -172,6 +172,11 @@ class OrdersProvider extends ChangeNotifier {
     // {method:'upi', amountInr: 300}]. When set, paymentMethod is
     // interpreted as the label to show in the KOT header.
     List<Map<String, dynamic>>? splits,
+    // Round-2 split payments v2 (2026-08-25): strict 1-3 leg breakdown
+    // [{method: cash|upi|card|online|wallet, amountInr}] that must sum to
+    // the order total ±₹0.01 (server 400s otherwise). Supersedes `splits`
+    // — wallet legs and the strict sum check only exist on this key.
+    List<Map<String, dynamic>>? paymentBreakdown,
     // Surge pricing (2026-08-23): >1 multiplies every line price. The
     // confirm screen fetches /surge/current and passes it through so
     // "Sun 1-2pm ×2" rules actually change the bill.
@@ -197,6 +202,53 @@ class OrdersProvider extends ChangeNotifier {
         .toList();
     final subtotal = double.parse((cartSubtotal * m).toStringAsFixed(2));
     final total = subtotal + tax - discount;
+
+    // Round-2 (2026-08-25): split payments v2 post DIRECTLY to the backend
+    // instead of via OrderRepo/OfflineOutbox. WHY: the outbox body carries
+    // the legacy `splits` key (no wallet, lenient sum) and lives in
+    // repositories.dart which is shared by legacy callers; the new
+    // `paymentBreakdown` contract needs the server live anyway (wallet
+    // balance + strict leg-sum are validated server-side), so an offline
+    // queue for it would only defer a guaranteed 400. Single-tender and
+    // legacy-split orders keep the offline-tolerant repo path below.
+    if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
+      final resp = await ApiService.instance.createOrder(businessId, {
+        // Same body shape OrderRepo posts — backend Joi requires name +
+        // price on every item, not just menuItemId.
+        'items': items
+            .map((i) => {
+                  'menuItemId': i.menuItemId,
+                  'name': i.name,
+                  'price': i.price,
+                  'qty': i.qty,
+                  if (i.note != null) 'note': i.note,
+                })
+            .toList(),
+        'source': source.name,
+        'tableNo': tableNo,
+        if (tableSessionId != null) 'tableSessionId': tableSessionId,
+        if (tableId != null) 'tableId': tableId,
+        if (pointsToRedeem > 0) 'pointsToRedeem': pointsToRedeem,
+        'customerPhone': customerPhone,
+        'customerName': customerName,
+        'tax': tax,
+        'discount': discount,
+        'paymentMethod': paymentMethod.name,
+        'paymentBreakdown': paymentBreakdown,
+      });
+      final created = Order.fromBackend(
+          ((resp['order'] ?? resp) as Map).cast<String, dynamic>());
+      _cart.clear();
+      _orders.insert(0, created);
+      notifyListeners();
+      // Re-pull so the in-memory list reflects backend truth (points burned,
+      // wallet debited, session grouping) — same pattern as the repo path.
+      Future.microtask(() async {
+        try { await load(businessId); } catch (_) {}
+      });
+      return created;
+    }
+
     final order = await OrderRepo.instance.create(
       businessId: businessId,
       items: items,

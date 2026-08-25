@@ -295,6 +295,86 @@ async function redeem(businessId, {
   throw new BadRequest('Provide giftCardCode or customerId');
 }
 
+/**
+ * In-transaction redeem (2026-08-25, security review finding #6).
+ *
+ * Same semantics + ledger rows as redeem() above, but runs on the
+ * CALLER's open pg client instead of owning its own withTransaction.
+ * WHY: orderService used to defer the walletRedeem debit to a
+ * post-commit .then() — a failed debit (insufficient balance, expired
+ * card) left a fully committed order that was never paid for (free
+ * food). Running the debit inside the order txn means a failed debit
+ * rolls the whole order back, mirroring the paymentBreakdown 'wallet'
+ * leg path (debitWalletTx). Appended (not edited) per append-only rule.
+ */
+async function redeemTx(client, businessId, {
+  giftCardCode, customerId, orderId, amountInr,
+}) {
+  const paise = Math.round(amountInr * 100);
+  if (paise <= 0) throw new BadRequest('Redeem amount must be > 0');
+
+  if (giftCardCode) {
+    const gcQ = await client.query(
+      `SELECT * FROM gift_cards
+        WHERE business_id = $1 AND code = $2
+        LIMIT 1 FOR UPDATE`,
+      [businessId, giftCardCode],
+    );
+    if (gcQ.rowCount === 0) throw new NotFound('Gift card not found');
+    const gc = gcQ.rows[0];
+    if (gc.expires_at && new Date(gc.expires_at) < new Date()) {
+      throw new BadRequest('Gift card expired');
+    }
+    const upd = await client.query(
+      `UPDATE gift_cards SET balance_paise = balance_paise - $1
+        WHERE id = $2 AND balance_paise >= $1
+        RETURNING balance_paise`,
+      [paise, gc.id]
+    );
+    if (upd.rowCount === 0) {
+      throw new BadRequest(`Only ₹${(gc.balance_paise / 100).toFixed(2)} available on this card`);
+    }
+    await client.query(
+      `INSERT INTO wallet_ledger
+         (business_id, gift_card_id, order_id, kind, amount_paise, note)
+       VALUES ($1, $2, $3, 'redeem', $4, $5)`,
+      [businessId, gc.id, orderId || null, -paise, 'Gift card redemption']
+    );
+    return {
+      source: 'gift_card',
+      code: gc.code,
+      remaining: upd.rows[0].balance_paise / 100,
+    };
+  }
+  if (customerId) {
+    const upd = await client.query(
+      `UPDATE customer_wallets SET balance_paise = balance_paise - $1,
+                                   updated_at = NOW()
+        WHERE business_id = $2 AND customer_id = $3
+          AND balance_paise >= $1
+        RETURNING balance_paise`,
+      [paise, businessId, customerId]
+    );
+    if (upd.rowCount === 0) {
+      const cur = await client.query(
+        `SELECT balance_paise FROM customer_wallets
+          WHERE business_id = $1 AND customer_id = $2 LIMIT 1`,
+        [businessId, customerId]
+      );
+      const bal = parseFloat(cur.rows[0]?.balance_paise || 0) / 100;
+      throw new BadRequest(`Only ₹${bal.toFixed(2)} in wallet`);
+    }
+    await client.query(
+      `INSERT INTO wallet_ledger
+         (business_id, customer_id, order_id, kind, amount_paise, note)
+       VALUES ($1, $2, $3, 'redeem', $4, $5)`,
+      [businessId, customerId, orderId || null, -paise, 'Wallet redemption']
+    );
+    return { source: 'wallet', remaining: upd.rows[0].balance_paise / 100 };
+  }
+  throw new BadRequest('Provide giftCardCode or customerId');
+}
+
 // ── Listing (dashboard / admin) ─────────────────────────────────────
 async function listGiftCards(businessId, { active = true } = {}) {
   const r = await query(
@@ -322,5 +402,5 @@ module.exports = {
   issueGiftCard, findGiftCardByCode,
   topUpWallet, getWalletBalance, getWallet,
   debitWalletTx, creditWalletTx,
-  redeem, listGiftCards,
+  redeem, redeemTx, listGiftCards,
 };

@@ -1097,6 +1097,122 @@ class ApiService {
     return r as Map<String, dynamic>;
   }
 
+  // ── Round-2 mobile parity (2026-08-25) ──────────────────────────────────
+  // Wallet-as-tender, split settle + shortfall, join-tables, membership
+  // buy/cancel. Mirrors the dashboard's NewOrderDialog / TablesPage local
+  // API helpers so mobile and web speak the exact same contracts.
+
+  /// GET /customers/:customerId/wallet → {balanceInr, transactions[]}.
+  /// Returns null on 402 (loyalty addon not subscribed) — callers hide the
+  /// wallet tender instead of erroring, same as the dashboard does.
+  Future<Map<String, dynamic>?> walletFor(
+      String businessId, String customerId) async {
+    try {
+      final r = await _wrap(() => _dio.get(
+            '/businesses/$businessId/customers/$customerId/wallet',
+          ));
+      return (r as Map).cast<String, dynamic>();
+    } on ApiException catch (e) {
+      if (e.statusCode == 402) return null; // addon not active → hide wallet
+      rethrow;
+    }
+  }
+
+  /// POST /ops/sessions/:sessionId/close — settle a table session (v2 body).
+  /// paymentBreakdown: 1-3 legs [{method: cash|upi|card|online|wallet,
+  /// amountInr}] which must sum to (session total − discountInr −
+  /// shortfallInr) ±₹0.01 or the server 400s. shortfallInr books the unpaid
+  /// gap as negative wallet balance (due) on the session's identified
+  /// customer — server refuses without one. Returns the closed session.
+  Future<Map<String, dynamic>> closeSessionV2(
+    String businessId,
+    String sessionId, {
+    required String paymentMethod,
+    double discountInr = 0,
+    List<Map<String, dynamic>>? paymentBreakdown,
+    double shortfallInr = 0,
+  }) async {
+    final r = await _wrap(() => _dio.post(
+          '/businesses/$businessId/ops/sessions/$sessionId/close',
+          data: {
+            'paymentMethod': paymentMethod,
+            if (discountInr > 0) 'discountInr': discountInr,
+            if (paymentBreakdown != null && paymentBreakdown.isNotEmpty)
+              'paymentBreakdown': paymentBreakdown,
+            if (shortfallInr > 0) 'shortfallInr': shortfallInr,
+          },
+        ));
+    return ((r as Map)['session'] as Map).cast<String, dynamic>();
+  }
+
+  /// Join-tables (2026-08-25): one big party across several physical tables
+  /// shares ONE session/bill. POST /ops/sessions/:sid/join-table {tableId}.
+  /// Returns the updated session. (UI is agent F2's — method only here.)
+  Future<Map<String, dynamic>> joinTable(
+      String businessId, String sessionId, String tableId) async {
+    final r = await _wrap(() => _dio.post(
+          '/businesses/$businessId/ops/sessions/$sessionId/join-table',
+          data: {'tableId': tableId},
+        ));
+    return ((r as Map)['session'] as Map).cast<String, dynamic>();
+  }
+
+  /// Detach a previously joined table and free it. Returns the session.
+  Future<Map<String, dynamic>> unjoinTable(
+      String businessId, String sessionId, String tableId) async {
+    final r = await _wrap(() => _dio.post(
+          '/businesses/$businessId/ops/sessions/$sessionId/unjoin-table',
+          data: {'tableId': tableId},
+        ));
+    return ((r as Map)['session'] as Map).cast<String, dynamic>();
+  }
+
+  /// Sell a membership at the counter — POST /memberships/subscribe. A real
+  /// payment: method 'wallet' debits the customer wallet atomically; an
+  /// optional paymentBreakdown (1-3 legs) splits the plan price (legs must
+  /// sum to it ±₹0.01). Returns the created subscription row. (UI is agent
+  /// F3's — method only here.)
+  Future<Map<String, dynamic>> subscribeMembership(
+    String businessId, {
+    required String customerId,
+    required String membershipId,
+    String paymentMethod = 'cash',
+    List<Map<String, dynamic>>? paymentBreakdown,
+  }) async {
+    final r = await _wrap(() => _dio.post(
+          '/businesses/$businessId/memberships/subscribe',
+          data: {
+            'customerId': customerId,
+            'membershipId': membershipId,
+            'paymentMethod': paymentMethod,
+            if (paymentBreakdown != null && paymentBreakdown.isNotEmpty)
+              'paymentBreakdown': paymentBreakdown,
+          },
+        ));
+    return ((r as Map)['subscription'] as Map).cast<String, dynamic>();
+  }
+
+  /// Cancel a sold membership → refund the unused share minus the
+  /// cancellation charge. POST /customer-memberships/:id/cancel.
+  /// mode: 'wallet' (credit customer wallet) | 'cash' | 'upi' (payout).
+  /// cancellationPct null → backend default (10%). Owner/manager only.
+  /// Returns the backend result map (refund amounts + subscription state).
+  Future<Map<String, dynamic>> cancelCustomerMembership(
+    String businessId,
+    String customerMembershipId, {
+    required String mode,
+    double? cancellationPct,
+  }) async {
+    final r = await _wrap(() => _dio.post(
+          '/businesses/$businessId/customer-memberships/$customerMembershipId/cancel',
+          data: {
+            'mode': mode,
+            if (cancellationPct != null) 'cancellationPct': cancellationPct,
+          },
+        ));
+    return (r as Map).cast<String, dynamic>();
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────
   Future<dynamic> _wrap(Future<Response> Function() fn) async {
     try {

@@ -257,11 +257,26 @@ async function deleteTable(businessId, id) {
 // ── Sessions ───────────────────────────────────────────────────────────
 async function openSession(businessId, tableId, body, openedByUserId) {
   return withTransaction(async (client) => {
-    // Block if there's already an open session
+    // SECURITY (2026-08-25, review finding #2 — tenant isolation):
+    // tableId comes straight from the URL; without this ownership check
+    // a known table UUID from ANOTHER tenant could be hijacked — the
+    // INSERT below happily wrote our business_id next to a foreign
+    // table_id. Verify + lock the table first (FOR UPDATE mirrors
+    // joinTable so concurrent open/join on the same table serialise).
+    const own = await client.query(
+      `SELECT id FROM tables
+        WHERE business_id = $1 AND id = $2
+        FOR UPDATE`,
+      [businessId, tableId]
+    );
+    if (own.rowCount === 0) throw new NotFound('Table not found');
+
+    // Block if there's already an open session (business-scoped — see
+    // finding #2 above; belt-and-braces now that the table is verified).
     const dup = await client.query(
       `SELECT id FROM table_sessions
-        WHERE table_id = $1 AND status = 'open' LIMIT 1`,
-      [tableId]
+        WHERE business_id = $1 AND table_id = $2 AND status = 'open' LIMIT 1`,
+      [businessId, tableId]
     );
     if (dup.rowCount > 0) throw new Conflict('Table already has an open session');
 
@@ -458,7 +473,14 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
     // All inside the settle txn: a failed wallet debit / mismatched
     // breakdown aborts the whole settle, so the table never closes
     // half-paid.
-    const shortPaise = Math.round(Math.max(0, Number(shortfallInr) || 0) * 100);
+    // 2026-08-25 (security review finding #5): clamp the shortfall to the
+    // session total — it was only clamped to ≥0, so a caller could book an
+    // arbitrary debt (e.g. shortfallInr=999999 on a ₹500 bill) onto the
+    // customer's wallet via the allowNegative debit below.
+    const shortPaise = Math.min(
+      totalPaise,
+      Math.round(Math.max(0, Number(shortfallInr) || 0) * 100),
+    );
     let breakdownPrimary = null; // largest leg's method → orders.payment_method
     if (shortPaise > 0 || (Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0)) {
       const ordersQ = await client.query(
@@ -472,6 +494,12 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
       if (!head) throw new BadRequest('Session has no orders to settle');
       // First identified customer across the session's KOTs — wallet
       // debits (payment leg or shortfall debt) need a real customer.
+      // WHY-caveat (2026-08-25, review finding #5): with JOINED tables one
+      // session spans several physical tables / parties, so "first
+      // identified customer" may pin the shortfall debt or wallet leg on
+      // whichever guest identified themselves first — not necessarily the
+      // payer. Left as-is deliberately (staff confirm the customer at
+      // settle); revisit if joined-table settles start disputing debts.
       const customerId = ordersQ.rows.find((o) => o.customer_id)?.customer_id || null;
       const gc = require('./giftCardService');
 

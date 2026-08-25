@@ -136,6 +136,14 @@ class _TablesScreenState extends State<TablesScreen> {
                           final t = filtered[i];
                           final status = t['status'] as String? ?? 'available';
                           final total = t['sessionTotalInr'];
+                          // Joined-group marker (2026-08-25, F2): the primary
+                          // carries sessionJoinedTableIds, each secondary is
+                          // isJoinedSecondary — all share ONE session/bill,
+                          // so the link badge flags "same party" to staff.
+                          final joined = t['isJoinedSecondary'] == true ||
+                              ((t['sessionJoinedTableIds'] as List?)
+                                      ?.isNotEmpty ??
+                                  false);
                           return InkWell(
                             onTap: () => Navigator.pop(context, t),
                             borderRadius: BorderRadius.circular(12),
@@ -146,7 +154,19 @@ class _TablesScreenState extends State<TablesScreen> {
                                 border: Border.all(color: _statusFg(status).withValues(alpha: 0.4), width: 2),
                               ),
                               padding: const EdgeInsets.all(8),
-                              child: Column(
+                              // Stack (2026-08-25, F2): corner link badge for
+                              // joined tables without moving the centered text.
+                              child: Stack(
+                                alignment: Alignment.center,
+                                children: [
+                                  if (joined)
+                                    Positioned(
+                                      top: 0,
+                                      right: 0,
+                                      child: Icon(Icons.link,
+                                          size: 14, color: _statusFg(status)),
+                                    ),
+                                  Column(
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 children: [
                                   Text(t['label'] ?? '?',
@@ -173,6 +193,8 @@ class _TablesScreenState extends State<TablesScreen> {
                                     Text(AppFmt.money((total as num).toDouble()),
                                         style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
                                             color: _statusFg(status))),
+                                ],
+                              ),
                                 ],
                               ),
                             ),

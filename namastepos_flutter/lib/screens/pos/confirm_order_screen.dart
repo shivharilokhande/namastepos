@@ -47,6 +47,13 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
   int _pointsToRedeem = 0;
   bool _looking = false;
 
+  // Wallet-as-tender (2026-08-25, round-2 parity): balance fetched once a
+  // real customer matches — mirrors dashboard NewOrderDialog. Any fetch
+  // error (402 = loyalty addon missing) simply hides the wallet option in
+  // the split sheet instead of surfacing an error to the cashier.
+  double _walletBalance = 0;
+  bool _walletAvailable = false;
+
   // Membership context (2026-08-23): active bundle → server auto-applies
   // covered items as a discount at billing. Expired/absent → offer shown
   // at Pay & Place time (founder: the popup belongs where money changes
@@ -123,6 +130,8 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         setState(() {
           _customer = null;
           _loyaltySettings = null;
+          _walletBalance = 0;
+          _walletAvailable = false;
           _looking = false;
         });
         return;
@@ -132,14 +141,32 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
       final mem = (data['membership'] as Map?)?.cast<String, dynamic>();
       final expired =
           (data['expiredMembership'] as Map?)?.cast<String, dynamic>();
+      // Wallet balance ride-along (2026-08-25): fetched here (not lazily in
+      // the split sheet) so the sheet can render the balance synchronously.
+      // Best-effort — a failure just hides the wallet tender.
+      double walletBal = 0;
+      bool walletOk = false;
+      if (cu != null) {
+        try {
+          final w = await ApiService.instance
+              .walletFor(biz.id, (cu as Map)['id'].toString());
+          if (w != null) {
+            walletBal = (w['balanceInr'] as num?)?.toDouble() ?? 0;
+            walletOk = true;
+          }
+        } catch (_) { /* wallet hidden */ }
+      }
+      if (!mounted) return;
       setState(() {
-        _customer = cu != null ? Customer.fromMap(cu as Map<String, dynamic>) : null;
+        _customer = cu != null ? Customer.fromMap((cu as Map).cast<String, dynamic>()) : null;
         _loyaltySettings = st != null
             ? LoyaltySettingsLite.fromMap(st as Map<String, dynamic>)
             : null;
         _membership = mem;
         _expiredMembership = expired; // offer fires at Pay & Place
         _pointsToRedeem = 0;
+        _walletBalance = walletBal;
+        _walletAvailable = walletOk;
         _looking = false;
       });
     } catch (_) {
@@ -209,9 +236,11 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         // session instead of relying on the table-label lookup.
         tableSessionId: _tableSessionId,
         tableId: _boundTableId,
-        // FF-322: pass the split-tender legs if the cashier used the
-        // "Split payment" bottom-sheet. Ignored on KOT-only saves.
-        splits: (!kotOnly && _splits != null && _splits!.isNotEmpty)
+        // Round-2 (2026-08-25): split legs now ride the strict
+        // `paymentBreakdown` contract (wallet support + server-enforced
+        // sum = total ±₹0.01) instead of the legacy `splits` key.
+        // Ignored on KOT-only saves — an unpaid order has no tender.
+        paymentBreakdown: (!kotOnly && _splits != null && _splits!.isNotEmpty)
             ? _splits : null,
       );
 
@@ -452,7 +481,16 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                     onChanged: (v) {
                       if (v.length == 10) _lookupCustomer();
                       else if (_customer != null) {
-                        setState(() { _customer = null; _pointsToRedeem = 0; });
+                        // Customer cleared → wallet tender is gone too, and
+                        // any saved split may hold a now-invalid wallet leg
+                        // (server would 400) — drop it (2026-08-25).
+                        setState(() {
+                          _customer = null;
+                          _pointsToRedeem = 0;
+                          _walletBalance = 0;
+                          _walletAvailable = false;
+                          _splits = null;
+                        });
                       }
                     },
                   ),
@@ -543,6 +581,11 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                               total: (subtotalNow - discountNow - loyaltyNow)
                                   .clamp(0, double.infinity)
                                   .toDouble(),
+                              // Wallet-as-tender (2026-08-25): option only
+                              // renders for a matched customer, with the
+                              // live balance on the label.
+                              walletAvailable: _walletAvailable,
+                              walletBalance: _walletBalance,
                             ),
                           );
                           if (result != null) setState(() => _splits = result);
@@ -793,14 +836,23 @@ class _LoyaltyCard extends StatelessWidget {
 
 // ── FF-322 mobile split-tender bottom-sheet ─────────────────────────────
 //
-// Compact two-to-four leg entry. Total is fixed by the bill; each row
-// is (method, amountInr). Balance is shown live. Save is disabled
-// until |sum - total| ≤ ₹1 (tolerance for float rounding). Backend
-// records every leg into `payments` and marks `is_split_tender=true`.
+// Compact two-to-three leg entry. Total is fixed by the bill; each row
+// is (method, amountInr). Balance is shown live. Round-2 rework
+// (2026-08-25): legs are sent as the strict `paymentBreakdown` contract —
+// max 3 legs, every leg positive, sum must match the total within ±₹0.01
+// (the server 400s otherwise, so the old ±₹1 tolerance had to go), and a
+// 'wallet' method appears when a customer is matched, showing the live
+// balance and blocking over-spend client-side.
 
 class _SplitTenderSheet extends StatefulWidget {
   final double total;
-  const _SplitTenderSheet({required this.total});
+  final bool walletAvailable;
+  final double walletBalance;
+  const _SplitTenderSheet({
+    required this.total,
+    this.walletAvailable = false,
+    this.walletBalance = 0,
+  });
   @override
   State<_SplitTenderSheet> createState() => _SplitTenderSheetState();
 }
@@ -826,7 +878,19 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
   double get _sum => _legs.fold<double>(0, (s, l) =>
       s + (double.tryParse(l.ctl.text.trim()) ?? 0));
   double get _balance => widget.total - _sum;
-  bool get _valid => _balance.abs() < 1.0 && _legs.length >= 2;
+  // Client-side mirror of the server's insufficient-wallet 400 — catch it
+  // before the order round-trips and rolls back (2026-08-25).
+  double get _walletSum => _legs
+      .where((l) => l.method == 'wallet')
+      .fold<double>(0, (s, l) => s + (double.tryParse(l.ctl.text.trim()) ?? 0));
+  bool get _walletOver =>
+      widget.walletAvailable && _walletSum > widget.walletBalance + 0.001;
+  bool get _valid =>
+      _balance.abs() <= 0.01 &&
+      !_walletOver &&
+      _legs.length >= 2 &&
+      // Backend Joi requires every paymentBreakdown leg to be POSITIVE.
+      _legs.every((l) => (double.tryParse(l.ctl.text.trim()) ?? 0) > 0);
 
   @override
   Widget build(BuildContext context) {
@@ -864,11 +928,21 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
                         child: DropdownButtonFormField<String>(
                           value: _legs[i].method,
                           decoration: const InputDecoration(labelText: 'Method'),
-                          items: const [
-                            DropdownMenuItem(value: 'cash',   child: Text('Cash')),
-                            DropdownMenuItem(value: 'upi',    child: Text('UPI')),
-                            DropdownMenuItem(value: 'card',   child: Text('Card')),
-                            DropdownMenuItem(value: 'online', child: Text('Online')),
+                          items: [
+                            const DropdownMenuItem(value: 'cash',   child: Text('Cash')),
+                            const DropdownMenuItem(value: 'upi',    child: Text('UPI')),
+                            const DropdownMenuItem(value: 'card',   child: Text('Card')),
+                            const DropdownMenuItem(value: 'online', child: Text('Online')),
+                            // Wallet ONLY for a matched customer — the live
+                            // balance rides on the label so the cashier can
+                            // say it out loud (2026-08-25).
+                            if (widget.walletAvailable)
+                              DropdownMenuItem(
+                                value: 'wallet',
+                                child: Text(
+                                    'Wallet — ${AppFmt.money(widget.walletBalance)}',
+                                    overflow: TextOverflow.ellipsis),
+                              ),
                           ],
                           onChanged: (v) =>
                               setState(() => _legs[i].method = v ?? 'cash'),
@@ -897,7 +971,9 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
                     ],
                   ),
                 ),
-              if (_legs.length < 4)
+              // paymentBreakdown contract caps at 3 legs (2026-08-25) —
+              // the earlier 4-leg cap would 400 on the strict endpoint.
+              if (_legs.length < 3)
                 Align(
                   alignment: Alignment.centerLeft,
                   child: TextButton.icon(
@@ -922,6 +998,17 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
                   ),
                 ],
               ),
+              if (_walletOver)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Wallet has only ${AppFmt.money(widget.walletBalance)} — '
+                    'reduce the wallet amount.',
+                    style: const TextStyle(
+                        color: AppColors.error, fontSize: 12,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
               const SizedBox(height: 12),
               Row(
                 children: [
@@ -935,17 +1022,18 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: !_valid ? null : () {
+                        // _valid already guarantees 2-3 positive legs that
+                        // sum to the total ±₹0.01 — the shape the strict
+                        // paymentBreakdown endpoint expects (2026-08-25).
                         final legs = _legs
-                            .where((l) => (double.tryParse(l.ctl.text.trim()) ?? 0) > 0)
                             .map((l) => {
                                   'method': l.method,
-                                  'amountInr': double.parse(l.ctl.text.trim()),
+                                  'amountInr': double.parse(
+                                      (double.tryParse(l.ctl.text.trim()) ?? 0)
+                                          .toStringAsFixed(2)),
                                 })
                             .toList();
-                        // P2 fix (2026-08-22): fewer than 2 non-zero legs
-                        // isn't a split — return null so the POS treats it
-                        // as a normal single-tender payment.
-                        Navigator.pop(context, legs.length >= 2 ? legs : null);
+                        Navigator.pop(context, legs);
                       },
                       child: const Text('Save split'),
                     ),

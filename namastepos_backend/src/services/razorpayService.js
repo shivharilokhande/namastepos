@@ -486,3 +486,20 @@ async function createOneTimeOrder({ amountPaise, receipt, notes = {} }) {
   return { id: created.id, amount: created.amount, currency: created.currency };
 }
 module.exports.createOneTimeOrder = createOneTimeOrder;
+
+// ── Guest checkout binding (2026-08-25, security review finding #1) ─────
+/**
+ * Fetch a Razorpay Order by id (raw Razorpay shape: {id, amount, notes, …}).
+ *
+ * WHY: the Checkout.js callback HMAC only proves "payment X belongs to
+ * Razorpay order Y" — it says NOTHING about which of OUR orders/sessions
+ * Y was created for, or for how much. The guest confirm endpoints must
+ * therefore re-fetch Y and check the notes we wrote in createCheckoutOrder
+ * ({businessId, orderId|sessionId}) plus the amount, otherwise a valid
+ * signature from a cheap paid order can be replayed to mark any order
+ * paid. Appended (not edited) per append-only rule.
+ */
+async function getOrder(razorpayOrderId) {
+  return rzCall('GET', `/v1/orders/${encodeURIComponent(razorpayOrderId)}`);
+}
+module.exports.getOrder = getOrder;
