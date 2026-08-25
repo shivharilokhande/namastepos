@@ -68,6 +68,21 @@ function _fmtDue(d) {
  *   (b) acknowledgement to the complainant/requester when we have an email
  * Never throws.
  */
+// Fire-and-forget wrapper (2026-08-25 fix): the privacy screen hung because
+// callers AWAITED the two SMTP sends below — a slow/unreachable recipient
+// domain (Brevo retrying) blocked the whole HTTP response until the client
+// timed out. DPDP only requires the request be RECORDED synchronously; the
+// ack/notify emails are best-effort, so we detach them from the request
+// lifecycle. Callers invoke this (non-awaited) and return immediately.
+function _dispatchComplianceEmails(opts) {
+  // Deliberately not awaited by callers; swallow any rejection here too so
+  // an unhandledRejection can never crash the process.
+  _sendComplianceEmails(opts).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[compliance] email dispatch failed (${opts.kind} ${opts.refId}): ${err.message}`);
+  });
+}
+
 async function _sendComplianceEmails({
   kind,            // 'grievance' | 'request'
   refId,
@@ -281,7 +296,7 @@ async function fileDataSubjectRequest({
   );
   // Founder bug #15 (2026-08-25): DPDP acknowledgement duty — notify the
   // owner + ack the requester. Best-effort, never fails the insert above.
-  await _sendComplianceEmails({
+  _dispatchComplianceEmails({
     kind: 'request',
     refId: r.rows[0].id,
     businessId,
@@ -409,7 +424,7 @@ async function fileGrievance({
   );
   // Founder bug #15 (2026-08-25): DPDP acknowledgement duty — notify the
   // owner + ack the complainant. Best-effort, never fails the insert above.
-  await _sendComplianceEmails({
+  _dispatchComplianceEmails({
     kind: 'grievance',
     refId: r.rows[0].id,
     businessId,
