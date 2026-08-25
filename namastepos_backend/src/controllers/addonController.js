@@ -108,7 +108,16 @@ const adminActivationsForCustomer = asyncHandler(async (req, res) => {
 // Wraps the owner-side subscribe()/cancel() flow with explicit super-admin
 // scope. Used by the Customer detail page's add-ons tab.
 const adminAttachToCustomer = asyncHandler(async (req, res) => {
-  const r = await addons.subscribe(req.params.businessId, req.params.slug);
+  // Founder bug fix (2026-08-25): an admin attaching an addon is a deliberate
+  // FREE grant (comp), so it must force-activate regardless of price. This
+  // used to call subscribe(), but a 2026-08-25 change made subscribe() return
+  // { requiresPayment: true } for PAID addons whenever Razorpay is configured
+  // (i.e. production) and write NO business_addons row — so admin comps never
+  // activated (showed attached but stayed cancelled), and re-attach after a
+  // detach kept hitting the paid branch. forceActivate() writes/updates the
+  // row directly and resets the period, so detach→attach cycles work. The
+  // customer-facing marketplace subscribe() (payment-required) is unchanged.
+  const r = await addons.forceActivate(req.params.businessId, req.params.slug);
   res.json(r);
 });
 const adminDetachFromCustomer = asyncHandler(async (req, res) => {

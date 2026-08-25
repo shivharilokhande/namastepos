@@ -377,6 +377,39 @@ async function confirmPayment(businessId, slug,
   return { activated: true, activation: serializeActivation(ins.rows[0], addon) };
 }
 
+/**
+ * Admin comp / force-activate (2026-08-25 founder bug fix).
+ *
+ * WHY this exists separately from subscribe(): subscribe() is the
+ * customer-facing marketplace path — for PAID addons in production
+ * (Razorpay configured) it returns { requiresPayment: true } and
+ * deliberately writes NO business_addons row until confirmPayment(). When a
+ * super-admin attaches an addon to a customer they are making a DELIBERATE
+ * FREE grant (a comp), so payment must be bypassed regardless of price.
+ *
+ * This runs the same direct activation write the free branch of subscribe()
+ * uses, but ALSO resets current_period_end in the ON CONFLICT clause. The
+ * free branch omitted that reset, so a detach (which sets
+ * current_period_end = NOW()) followed by a re-attach left the period in the
+ * past and hasAddon() (which requires current_period_end > NOW()) kept the
+ * addon dark. Resetting it here makes detach→attach→detach→attach cycles work.
+ */
+async function forceActivate(businessId, slug) {
+  const addon = await getBySlug(slug);
+  const ins = await query(
+    `INSERT INTO business_addons
+       (business_id, addon_id, status, trial_ends_at, current_period_end)
+     VALUES ($1, $2, 'active', NULL, NOW() + INTERVAL '100 years')
+     ON CONFLICT (business_id, addon_id) DO UPDATE
+       SET status = 'active', cancelled_at = NULL, cancel_at_period_end = FALSE,
+           current_period_end = NOW() + INTERVAL '100 years'
+     RETURNING *`,
+    [businessId, addon.id]
+  );
+  try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
+  return { activated: true, activation: serializeActivation(ins.rows[0], addon) };
+}
+
 async function cancel(businessId, slug) {
   const addon = await getBySlug(slug);
   // Fix (2026-08-24): cancel used to only set cancel_at_period_end=TRUE while
@@ -496,7 +529,7 @@ module.exports = {
   listCatalog, getBySlug, getById,
   createAddon, updateAddon, syncRazorpayPlans,
   listActiveForBusiness, listAllForBusiness, hasAddon,
-  subscribe, confirmPayment, cancel, detach, resume, updateSettings,
+  subscribe, forceActivate, confirmPayment, cancel, detach, resume, updateSettings,
   handleRazorpayEvent,
   serializeAddon, serializeActivation,
 };

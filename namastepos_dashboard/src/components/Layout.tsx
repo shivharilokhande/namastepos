@@ -91,7 +91,17 @@ const navGroups: { name: string; items: NavItem[] }[] = [
   {
     name: 'Customers',
     items: [
-      { to: '/customers',   icon: Heart,           label: 'Customers',        feature: 'customers_basic', addon: 'loyalty' },
+      // Sync-fix (2026-08-25 founder bug): the backend customer-list route
+      // (customers.routes.js) gates ONLY on requireAddon('loyalty') — it does
+      // NOT require the customers_basic plan feature (featureGate has no
+      // /customers rule). The nav previously required customers_basic AND the
+      // addon, an extra gate the API doesn't enforce: a business with the
+      // loyalty addon but a plan lacking customers_basic would see this locked
+      // while the API returned 200 (nav-locked-but-API-works mismatch). Gate on
+      // the loyalty addon alone so nav === backend exactly. The addon is still
+      // required (paid or admin-comped via forceActivate), so the CRM stays
+      // behind the loyalty addon business model.
+      { to: '/customers',   icon: Heart,           label: 'Customers',        feature: null, addon: 'loyalty' },
       // Sync-fix (2026-08-22): were both gated on `customers_basic`, which
       // meant Starter plans (which include customers_basic) saw them
       // unlocked and got a 402 on click because backend middleware gates
