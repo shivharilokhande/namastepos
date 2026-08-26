@@ -1032,14 +1032,39 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
               <div className="flex justify-between">
                 <span>Subtotal</span><span>{formatINR(session.subtotalInr || 0)}</span>
               </div>
-              {(session.taxInr || 0) > 0 && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>Tax</span><span>+ {formatINR(session.taxInr)}</span>
-                </div>
-              )}
               {(session.discountInr || 0) > 0 && (
                 <div className="flex justify-between text-emerald-700">
-                  <span>Discount</span><span>− {formatINR(session.discountInr)}</span>
+                  <span>Discount (incl. coupon)</span><span>− {formatINR(session.discountInr)}</span>
+                </div>
+              )}
+              {(session.loyaltyInr || 0) > 0 && (
+                <div className="flex justify-between text-emerald-700">
+                  <span>Loyalty{(session.pointsRedeemed || 0) > 0 ? ` (${session.pointsRedeemed} pts)` : ''}</span>
+                  <span>− {formatINR(session.loyaltyInr)}</span>
+                </div>
+              )}
+              {(session.serviceChargeInr || 0) > 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Service charge</span><span>+ {formatINR(session.serviceChargeInr)}</span>
+                </div>
+              )}
+              {((session.cgstInr || 0) > 0 || (session.sgstInr || 0) > 0) ? (
+                <>
+                  {(session.cgstInr || 0) > 0 && (
+                    <div className="flex justify-between text-muted-foreground"><span>CGST</span><span>+ {formatINR(session.cgstInr)}</span></div>
+                  )}
+                  {(session.sgstInr || 0) > 0 && (
+                    <div className="flex justify-between text-muted-foreground"><span>SGST</span><span>+ {formatINR(session.sgstInr)}</span></div>
+                  )}
+                </>
+              ) : (session.igstInr || 0) > 0 ? (
+                <div className="flex justify-between text-muted-foreground"><span>IGST</span><span>+ {formatINR(session.igstInr)}</span></div>
+              ) : (session.taxInr || 0) > 0 ? (
+                <div className="flex justify-between text-muted-foreground"><span>Tax (GST)</span><span>+ {formatINR(session.taxInr)}</span></div>
+              ) : null}
+              {(session.roundOffInr || 0) !== 0 && (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Round-off</span><span>{formatINR(session.roundOffInr)}</span>
                 </div>
               )}
               <div className="flex justify-between font-bold text-lg border-t pt-2 mt-1">

@@ -86,6 +86,17 @@ function serializeSession(s, orders = [], itemsByOrder = new Map(), joinedTables
   const liveTotal = orders
     .filter((o) => o.status !== 'cancelled')
     .reduce((sum, o) => sum + parseFloat(o.total || 0), 0);
+  // Bill breakup sums (2026-08-26) so the web/mobile session bill can show
+  // the full breakdown (loyalty, service charge, round-off, CGST/SGST/IGST).
+  const live = orders.filter((o) => o.status !== 'cancelled');
+  const sumOf = (k) => live.reduce((s, o) => s + parseFloat(o[k] || 0), 0);
+  const loyaltyInr = sumOf('loyaltyDiscountInr');
+  const serviceChargeInr = sumOf('serviceChargeInr');
+  const roundOffInr = sumOf('roundOffInr');
+  const cgstInr = sumOf('cgst');
+  const sgstInr = sumOf('sgst');
+  const igstInr = sumOf('igst');
+  const pointsRedeemed = live.reduce((s, o) => s + (parseInt(o.pointsRedeemed, 10) || 0), 0);
 
   return {
     id: s.id, businessId: s.business_id, tableId: s.table_id,
@@ -105,6 +116,8 @@ function serializeSession(s, orders = [], itemsByOrder = new Map(), joinedTables
     subtotalInr: subtotal,
     taxInr: tax,
     discountInr: discount,
+    loyaltyInr, serviceChargeInr, roundOffInr,
+    cgstInr, sgstInr, igstInr, pointsRedeemed,
     // Per-KOT summary (kept so the timeline view still works)
     orders: orders.map((o) => ({
       id: o.id, orderNo: o.order_no,
