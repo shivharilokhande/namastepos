@@ -70,14 +70,23 @@ function buildApp() {
     res.set('Cache-Control', 'public, max-age=300');
     try {
       const sub = require('./services/subscriptionService');
+      const feat = require('./services/featureService');
       const plans = await sub.listPlans();
-      res.json({
-        plans: plans.map((p) => ({
+      // Attach the exact per-plan feature-key list the app enforces, so the
+      // marketing site's plan comparison is always in sync with what the
+      // super-admin has granted each tier (no hardcoded feature lists).
+      const out = await Promise.all(plans.map(async (p) => {
+        let featureKeys = [];
+        try { featureKeys = await feat.listTierFeatures(p.tier, p.tierKind); }
+        catch (_) { featureKeys = []; }
+        return {
           tier: p.tier, tierKind: p.tierKind, name: p.name,
           priceInr: p.priceInr, priceYearlyInr: p.priceYearlyInr,
           limits: p.limits || {}, features: p.features || {},
-        })),
-      });
+          featureKeys,
+        };
+      }));
+      res.json({ plans: out });
     } catch (e) {
       res.json({ plans: [] });
     }

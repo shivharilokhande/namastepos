@@ -25,6 +25,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400..600,0..1,0" rel="stylesheet"/>
 <!-- Structured data: Organization + SoftwareApplication + FAQ (AEO/SEO) -->
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
@@ -55,9 +56,11 @@ h1,h2,h3,.font-head{font-family:'Sora','Inter',sans-serif;letter-spacing:-.02em;
 a{color:inherit;text-decoration:none}
 img{max-width:100%;display:block}
 .wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 500,'GRAD' 0,'opsz' 24;line-height:1}
 .eyebrow{display:inline-flex;align-items:center;gap:8px;background:var(--soft);color:var(--green-d);font-weight:600;font-size:13px;padding:7px 14px;border-radius:999px;border:1px solid #cfe6d8}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:15px;padding:13px 22px;border-radius:12px;cursor:pointer;border:1px solid transparent;transition:transform .12s ease,box-shadow .2s,background .2s;white-space:nowrap}
 .btn:active{transform:scale(.97)}
+.btn .material-symbols-outlined{font-size:19px}
 .btn-primary{background:var(--green);color:#fff;box-shadow:var(--shadow-sm)}
 .btn-primary:hover{background:var(--green-d)}
 .btn-amber{background:var(--amber);color:#3a2400;box-shadow:0 8px 20px -8px rgba(245,158,11,.5)}
@@ -95,7 +98,7 @@ img{max-width:100%;display:block}
 .hero-cta{display:flex;gap:14px;flex-wrap:wrap}
 .hero-trust{display:flex;gap:22px;margin-top:26px;flex-wrap:wrap}
 .hero-trust span{display:inline-flex;align-items:center;gap:7px;color:#41504a;font-size:14px;font-weight:500}
-.check{color:var(--green);font-weight:800}
+.check{color:var(--green);font-weight:800;font-size:18px}
 
 /* PHONE MOCKUP */
 .phone-stage{position:relative;display:flex;justify-content:center;align-items:center;min-height:560px}
@@ -104,14 +107,16 @@ img{max-width:100%;display:block}
 .phone .screen{width:100%;height:100%;border-radius:33px;overflow:hidden;background:#fff;display:flex;flex-direction:column}
 .ph-status{background:var(--green);color:#fff;padding:10px 16px 8px;display:flex;justify-content:space-between;font-size:12px;font-weight:600}
 .ph-head{background:var(--green);color:#fff;padding:2px 16px 14px;display:flex;align-items:center;justify-content:space-between}
-.ph-head .t{font-family:'Sora';font-weight:700;font-size:17px}
+.ph-head .t{font-family:'Sora';font-weight:700;font-size:17px;display:inline-flex;align-items:center;gap:6px}
+.ph-head .material-symbols-outlined{font-size:20px}
 .ph-chips{display:flex;gap:8px;padding:12px 14px;overflow:hidden}
 .ph-chip{font-size:12px;font-weight:600;padding:6px 12px;border-radius:999px;background:var(--soft);color:var(--green-d);white-space:nowrap}
 .ph-chip.on{background:var(--green);color:#fff}
 .ph-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:4px 14px 10px;flex:1;overflow:hidden}
 .ph-card{border:1px solid var(--line);border-radius:14px;padding:10px;position:relative}
 .ph-card.sel{border-color:var(--green);box-shadow:0 0 0 2px rgba(14,124,74,.15)}
-.ph-emoji{width:34px;height:34px;border-radius:50%;background:var(--soft);display:flex;align-items:center;justify-content:center;font-size:17px;margin-bottom:8px}
+.ph-emoji{width:34px;height:34px;border-radius:50%;background:var(--soft);display:flex;align-items:center;justify-content:center;color:var(--green);margin-bottom:8px}
+.ph-emoji .material-symbols-outlined{font-size:19px}
 .ph-card .n{font-size:12px;font-weight:600;color:#26332c}
 .ph-card .p{font-size:13px;font-weight:800;color:var(--green)}
 .ph-badge{position:absolute;top:-6px;right:-6px;width:20px;height:20px;background:var(--green);color:#fff;border-radius:50%;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:700}
@@ -127,25 +132,56 @@ img{max-width:100%;display:block}
 
 /* TRUST STRIP */
 .strip{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface)}
-.strip-in{display:flex;flex-wrap:wrap;gap:26px;justify-content:space-between;align-items:center;padding:22px 0}
-.stat{text-align:center;flex:1;min-width:130px}
-.stat .n{font-family:'Sora';font-weight:800;font-size:26px;color:var(--green)}
-.stat .l{color:var(--muted);font-size:13px}
+.strip-in{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;align-items:start;padding:24px 0}
+.stat{text-align:center}
+.stat .n{font-family:'Sora';font-weight:800;font-size:24px;color:var(--green);white-space:nowrap}
+.stat.wide .n{font-size:16px;letter-spacing:0}
+.stat .l{color:var(--muted);font-size:13px;margin-top:2px}
 
-/* FEATURES */
+/* GENERIC CARD GRIDS */
 .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:22px}
 .card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:26px;transition:transform .15s,box-shadow .2s}
 .card:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
-.ic{width:48px;height:48px;border-radius:13px;background:var(--soft);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:24px;margin-bottom:16px}
+.ic{width:50px;height:50px;border-radius:14px;background:var(--soft);color:var(--green);display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+.ic .material-symbols-outlined{font-size:27px}
 .card h3{font-size:19px;font-weight:700;margin-bottom:7px}
 .card p{color:var(--muted);font-size:15px}
+
+/* PRODUCT — alternating feature rows */
+.prow{display:grid;grid-template-columns:1fr 1fr;gap:48px;align-items:center;margin-top:56px}
+.prow:first-of-type{margin-top:8px}
+.prow.rev .ptext{order:2}
+.ptext .tag{display:block;margin-bottom:10px}
+.ptext h3{font-size:28px;font-weight:800;margin-bottom:12px}
+.ptext p{color:var(--muted);font-size:16.5px;margin-bottom:16px}
+.ptext ul{list-style:none;display:flex;flex-direction:column;gap:10px}
+.ptext li{display:flex;gap:10px;align-items:flex-start;font-size:15.5px;color:#2b382f}
+.ptext li .material-symbols-outlined{color:var(--green);font-size:20px;margin-top:1px}
+.pvisual{background:linear-gradient(160deg,var(--soft),#fff);border:1px solid var(--line);border-radius:22px;padding:30px;min-height:250px;display:flex;flex-direction:column;justify-content:center;gap:14px}
+.pv-row{display:flex;align-items:center;gap:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--shadow-sm)}
+.pv-row .ico{width:42px;height:42px;border-radius:11px;background:var(--soft);color:var(--green);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.pv-row .ico .material-symbols-outlined{font-size:23px}
+.pv-row .txt b{font-size:15px}
+.pv-row .txt span{display:block;color:var(--muted);font-size:13px}
+.pv-row .amt{margin-left:auto;font-family:'Sora';font-weight:800;color:var(--green)}
+
+/* FEATURES */
+.feat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.feat{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:24px;display:flex;gap:16px;transition:transform .15s,box-shadow .2s}
+.feat:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.feat .fic{width:46px;height:46px;border-radius:12px;background:var(--soft);color:var(--green);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.feat .fic .material-symbols-outlined{font-size:25px}
+.feat h3{font-size:17px;font-weight:700;margin-bottom:5px}
+.feat p{color:var(--muted);font-size:14px}
 
 /* SOLUTIONS */
 .sol{background:var(--surface)}
 .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
-.sol-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:24px;text-align:center}
-.sol-card .e{font-size:34px}
-.sol-card h3{font-size:17px;font-weight:700;margin:12px 0 6px}
+.sol-card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:26px 22px;text-align:center;transition:transform .15s,box-shadow .2s}
+.sol-card:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.sol-card .e{width:56px;height:56px;margin:0 auto;border-radius:16px;background:var(--soft);color:var(--green);display:flex;align-items:center;justify-content:center}
+.sol-card .e .material-symbols-outlined{font-size:30px}
+.sol-card h3{font-size:17px;font-weight:700;margin:14px 0 6px}
 .sol-card p{color:var(--muted);font-size:14px}
 
 /* PRICING */
@@ -157,9 +193,11 @@ img{max-width:100%;display:block}
 .plan .price{font-family:'Sora';font-weight:800;font-size:40px;margin:12px 0 2px}
 .plan .price small{font-size:15px;color:var(--muted);font-weight:500}
 .plan .note{color:var(--muted);font-size:13px;min-height:18px}
-.plan ul{list-style:none;margin:20px 0 24px;display:flex;flex-direction:column;gap:11px}
-.plan li{display:flex;gap:10px;font-size:14.5px;color:#2b382f}
-.plan li::before{content:"✓";color:var(--green);font-weight:800}
+.plan .limits{display:flex;flex-wrap:wrap;gap:7px;margin:16px 0 4px}
+.plan .limits span{font-size:12px;font-weight:600;color:var(--green-d);background:var(--soft);border:1px solid #cfe6d8;border-radius:999px;padding:5px 11px}
+.plan ul{list-style:none;margin:16px 0 24px;display:flex;flex-direction:column;gap:11px}
+.plan li{display:flex;gap:10px;font-size:14.5px;color:#2b382f;align-items:flex-start}
+.plan li .material-symbols-outlined{color:var(--green);font-size:19px;margin-top:1px}
 .plan .btn{margin-top:auto;width:100%}
 .pill-toggle{display:flex;justify-content:center;gap:6px;margin:-16px auto 30px;background:var(--soft);border-radius:999px;padding:5px;width:max-content}
 .pill-toggle button{border:0;background:none;font-weight:600;font-size:14px;padding:8px 18px;border-radius:999px;cursor:pointer;color:var(--green-d)}
@@ -169,11 +207,14 @@ img{max-width:100%;display:block}
 /* COMPARE */
 .compare{margin-top:44px;border:1px solid var(--line);border-radius:20px;overflow:hidden}
 table{width:100%;border-collapse:collapse}
-th,td{padding:15px 20px;text-align:left;font-size:14.5px;border-bottom:1px solid var(--line)}
+th,td{padding:14px 20px;text-align:left;font-size:14.5px;border-bottom:1px solid var(--line)}
 thead th{background:var(--green);color:#fff;font-weight:700}
 tbody td:not(:first-child){text-align:center}
 tbody tr:nth-child(even){background:var(--surface)}
+tbody tr:last-child td{border-bottom:0}
 .yes{color:var(--green);font-weight:800}
+.no{color:#c3cec8}
+td .material-symbols-outlined{font-size:20px;vertical-align:middle}
 
 /* DARK BAND */
 .band{background:linear-gradient(135deg,var(--green-x),var(--green-d));color:#fff;border-radius:26px;padding:54px;text-align:center;position:relative;overflow:hidden}
@@ -213,12 +254,16 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
   .hero-in{grid-template-columns:1fr;padding:34px 0 44px}
   .hero h1{font-size:42px}
   .phone-stage{min-height:520px;margin-top:20px}
-  .grid3,.grid4,.price-grid{grid-template-columns:1fr}
+  .grid3,.grid4,.feat-grid,.price-grid{grid-template-columns:1fr}
+  .strip-in{grid-template-columns:repeat(2,1fr);gap:20px 14px}
+  .prow,.prow.rev .ptext{grid-template-columns:1fr;order:0;gap:26px}
+  .prow.rev .pvisual{order:-1}
   .sec-head h2{font-size:30px}
   .band{padding:38px 22px}
   .foot{grid-template-columns:1fr 1fr}
   .compare{overflow-x:auto}
 }
+@media(min-width:601px) and (max-width:900px){.feat-grid{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body class="no-js">
@@ -258,12 +303,12 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <p class="sub">NamastePOS is the mobile-first billing &amp; POS that just works — lightning-fast KOTs, GST-ready invoices, QR ordering and instant WhatsApp receipts. Online or offline.</p>
       <div class="hero-cta">
         <a href="https://app.namastepos.in" class="btn btn-primary">Start free — ₹0</a>
-        <a href="https://pub-b587dcaedebf4ce59386af9fa20fac8c.r2.dev/NamastePOS.apk" class="btn btn-ghost" download>Download Android app ↓</a>
+        <a href="https://pub-b587dcaedebf4ce59386af9fa20fac8c.r2.dev/NamastePOS.apk" class="btn btn-ghost" download><span class="material-symbols-outlined">android</span> Download app</a>
       </div>
       <div class="hero-trust">
-        <span><span class="check">✓</span> No credit card</span>
-        <span><span class="check">✓</span> 5-minute setup</span>
-        <span><span class="check">✓</span> Works offline</span>
+        <span><span class="material-symbols-outlined check">check_circle</span> No credit card</span>
+        <span><span class="material-symbols-outlined check">check_circle</span> 5-minute setup</span>
+        <span><span class="material-symbols-outlined check">check_circle</span> Works offline</span>
       </div>
     </div>
     <!-- Phone mockup (app screen) -->
@@ -274,13 +319,13 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <div class="phone" role="img" aria-label="NamastePOS app taking a dine-in order on a phone">
         <div class="screen">
           <div class="ph-status"><span>9:41</span><span>NamastePOS</span></div>
-          <div class="ph-head"><span class="t">≡ Table 4</span><span>🔍</span></div>
+          <div class="ph-head"><span class="t"><span class="material-symbols-outlined">table_restaurant</span> Table 4</span><span class="material-symbols-outlined">search</span></div>
           <div class="ph-chips"><span class="ph-chip on">Starters</span><span class="ph-chip">Mains</span><span class="ph-chip">Breads</span><span class="ph-chip">Drinks</span></div>
           <div class="ph-grid">
-            <div class="ph-card"><div class="ph-emoji">🍢</div><div class="n">Paneer Tikka</div><div class="p">₹240</div></div>
-            <div class="ph-card sel"><div class="ph-badge">1</div><div class="ph-emoji">🫓</div><div class="n">Garlic Naan</div><div class="p">₹60</div></div>
-            <div class="ph-card"><div class="ph-emoji">🍛</div><div class="n">Dal Makhani</div><div class="p">₹210</div></div>
-            <div class="ph-card"><div class="ph-emoji">🍹</div><div class="n">Mango Lassi</div><div class="p">₹90</div></div>
+            <div class="ph-card"><div class="ph-emoji"><span class="material-symbols-outlined">skillet</span></div><div class="n">Paneer Tikka</div><div class="p">₹240</div></div>
+            <div class="ph-card sel"><div class="ph-badge">1</div><div class="ph-emoji"><span class="material-symbols-outlined">bakery_dining</span></div><div class="n">Garlic Naan</div><div class="p">₹60</div></div>
+            <div class="ph-card"><div class="ph-emoji"><span class="material-symbols-outlined">ramen_dining</span></div><div class="n">Dal Makhani</div><div class="p">₹210</div></div>
+            <div class="ph-card"><div class="ph-emoji"><span class="material-symbols-outlined">local_bar</span></div><div class="n">Mango Lassi</div><div class="p">₹90</div></div>
           </div>
           <div class="ph-bar"><div><div class="lbl">1 item</div><div class="tot">₹60</div></div><div class="go">View cart</div></div>
         </div>
@@ -295,7 +340,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     <div class="stat rv"><div class="n">₹0</div><div class="l">to get started</div></div>
     <div class="stat rv"><div class="n">GST-ready</div><div class="l">compliant invoices</div></div>
     <div class="stat rv"><div class="n">Offline-first</div><div class="l">never stop billing</div></div>
-    <div class="stat rv"><div class="n">Android · iOS · Web</div><div class="l">one login, any device</div></div>
+    <div class="stat wide rv"><div class="n">Android · iOS · Web</div><div class="l">one login, any device</div></div>
     <div class="stat rv"><div class="n">5 min</div><div class="l">average setup</div></div>
   </div>
 </div>
@@ -304,10 +349,43 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
 <section class="sec" id="product">
   <div class="wrap">
     <div class="sec-head rv"><span class="tag">The product</span><h2>One app for the counter, kitchen &amp; books</h2><p>From the first KOT to the day's closing report — NamastePOS runs your front-of-house and back-office without the clutter.</p></div>
-    <div class="grid3">
-      <div class="card rv"><div class="ic">🧾</div><h3>Bill in seconds</h3><p>Fast touch billing, table &amp; captain modes, and a kitchen display that keeps every order moving.</p></div>
-      <div class="card rv"><div class="ic">📶</div><h3>Offline-first</h3><p>The internet drops mid-rush? Orders and KOTs keep flowing and sync the moment you reconnect.</p></div>
-      <div class="card rv"><div class="ic">📊</div><h3>Know your numbers</h3><p>Live sales, item performance, P&amp;L and GST reports — no spreadsheets, no guesswork.</p></div>
+
+    <div class="prow rv">
+      <div class="ptext">
+        <span class="tag">Front of house</span>
+        <h3>Bill in seconds, seat every table</h3>
+        <p>Touch billing that keeps pace with a full house. Run dine-in, takeaway and delivery from one screen, send KOTs straight to the kitchen, and hand captains their own ordering view.</p>
+        <ul>
+          <li><span class="material-symbols-outlined">check</span> Table, captain &amp; quick-billing modes</li>
+          <li><span class="material-symbols-outlined">check</span> Live kitchen display (KDS) &amp; token screens</li>
+          <li><span class="material-symbols-outlined">check</span> Variants, modifiers, combos &amp; wastage</li>
+          <li><span class="material-symbols-outlined">check</span> Split, merge &amp; join tables mid-service</li>
+        </ul>
+      </div>
+      <div class="pvisual">
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">point_of_sale</span></div><div class="txt"><b>New KOT · Table 7</b><span>Fired to kitchen · 0.4s</span></div><div class="amt">₹640</div></div>
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">soup_kitchen</span></div><div class="txt"><b>Kitchen display</b><span>3 tickets cooking</span></div><div class="amt">KDS</div></div>
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">call_split</span></div><div class="txt"><b>Split bill</b><span>2 guests · UPI + cash</span></div><div class="amt">✓</div></div>
+      </div>
+    </div>
+
+    <div class="prow rev rv">
+      <div class="ptext">
+        <span class="tag">Back office</span>
+        <h3>Know your numbers, close with confidence</h3>
+        <p>Every sale rolls up into live dashboards, GST-ready invoices and a one-tap day-end closing. See item performance, P&amp;L and taxes without touching a spreadsheet.</p>
+        <ul>
+          <li><span class="material-symbols-outlined">check</span> Live sales, top items &amp; P&amp;L reports</li>
+          <li><span class="material-symbols-outlined">check</span> GST invoices &amp; e-invoice ready formats</li>
+          <li><span class="material-symbols-outlined">check</span> Inventory, recipe costing &amp; expenses</li>
+          <li><span class="material-symbols-outlined">check</span> Day-end closing &amp; cash registers</li>
+        </ul>
+      </div>
+      <div class="pvisual">
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">insights</span></div><div class="txt"><b>Today's sales</b><span>128 orders · 4 tables open</span></div><div class="amt">₹42,180</div></div>
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">receipt_long</span></div><div class="txt"><b>GST invoice</b><span>CGST + SGST · e-invoice ready</span></div><div class="amt">✓</div></div>
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">inventory_2</span></div><div class="txt"><b>Low stock alert</b><span>Paneer · 1.2 kg left</span></div><div class="amt">!</div></div>
+      </div>
     </div>
   </div>
 </section>
@@ -316,13 +394,19 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
 <section class="sec" id="features" style="background:var(--surface)">
   <div class="wrap">
     <div class="sec-head rv"><span class="tag">Features</span><h2>Everything a modern restaurant needs</h2><p>All included — no per-feature paywalls, no lock-in.</p></div>
-    <div class="grid3">
-      <div class="card rv"><div class="ic">🧾</div><h3>Billing &amp; KOT</h3><p>Touch POS, tables, captain ordering and a live kitchen display screen.</p></div>
-      <div class="card rv"><div class="ic">🇮🇳</div><h3>GST invoicing</h3><p>Compliant CGST/SGST tax invoices, e-invoice ready, correct formats.</p></div>
-      <div class="card rv"><div class="ic">📱</div><h3>QR ordering</h3><p>Guests scan, browse the menu and order from the table — you just serve.</p></div>
-      <div class="card rv"><div class="ic">🎁</div><h3>Loyalty &amp; wallet</h3><p>Points, memberships and a gift-card wallet that bring diners back.</p></div>
-      <div class="card rv"><div class="ic">💳</div><h3>Every payment</h3><p>Cash, UPI, card and split payments — settle a bill any way guests pay.</p></div>
-      <div class="card rv"><div class="ic">💬</div><h3>WhatsApp receipts</h3><p>Send bills and updates on WhatsApp — the channel your customers actually use.</p></div>
+    <div class="feat-grid">
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">point_of_sale</span></div><div><h3>Billing &amp; KOT</h3><p>Touch POS, tables, captain ordering and a live kitchen display screen.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">receipt_long</span></div><div><h3>GST invoicing</h3><p>Compliant CGST/SGST tax invoices, e-invoice ready, correct formats.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">qr_code_2</span></div><div><h3>QR ordering</h3><p>Guests scan, browse the menu and order from the table — you just serve.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">wifi_off</span></div><div><h3>Offline-first</h3><p>Bills and KOTs keep flowing with no internet, then sync when you reconnect.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">loyalty</span></div><div><h3>Loyalty &amp; wallet</h3><p>Points, memberships and a gift-card wallet that bring diners back.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">payments</span></div><div><h3>Every payment</h3><p>Cash, UPI, card and split payments — settle a bill any way guests pay.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">chat</span></div><div><h3>WhatsApp receipts</h3><p>Send bills, offers and updates on the channel your customers actually use.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">inventory_2</span></div><div><h3>Inventory &amp; costing</h3><p>Track stock, recipe costing, wastage and low-stock alerts in real time.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">monitoring</span></div><div><h3>Live reports</h3><p>Sales, item performance, P&amp;L and GST — no spreadsheets, no guesswork.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">event_seat</span></div><div><h3>Reservations</h3><p>Take table bookings, manage guest counts and seat parties smoothly.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">delivery_dining</span></div><div><h3>Aggregators</h3><p>Zomato &amp; Swiggy orders flow into the same kitchen and reports.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">storefront</span></div><div><h3>Multi-outlet</h3><p>Run multiple outlets with consolidated, one-login reporting.</p></div></div>
     </div>
   </div>
 </section>
@@ -332,10 +416,10 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
   <div class="wrap">
     <div class="sec-head rv"><span class="tag">Solutions</span><h2>Made for every kind of outlet</h2><p>One platform that flexes to how you serve.</p></div>
     <div class="grid4">
-      <div class="sol-card rv"><div class="e">🍽️</div><h3>Restaurants</h3><p>Dine-in, tables, captain &amp; KOT flows built for full-service.</p></div>
-      <div class="sol-card rv"><div class="e">☕</div><h3>Cafés</h3><p>Quick counter billing, combos and loyalty for repeat regulars.</p></div>
-      <div class="sol-card rv"><div class="e">🛵</div><h3>Cloud kitchens</h3><p>Multi-brand orders, QR &amp; delivery-ready workflows.</p></div>
-      <div class="sol-card rv"><div class="e">🍔</div><h3>QSR</h3><p>Lightning-fast token billing for high-volume, fast-moving counters.</p></div>
+      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined">restaurant</span></div><h3>Restaurants</h3><p>Dine-in, tables, captain &amp; KOT flows built for full-service.</p></div>
+      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined">local_cafe</span></div><h3>Cafés</h3><p>Quick counter billing, combos and loyalty for repeat regulars.</p></div>
+      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined">delivery_dining</span></div><h3>Cloud kitchens</h3><p>Multi-brand orders, QR &amp; delivery-ready workflows.</p></div>
+      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined">lunch_dining</span></div><h3>QSR</h3><p>Lightning-fast token billing for high-volume counters.</p></div>
     </div>
   </div>
 </section>
@@ -343,50 +427,50 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
 <!-- PRICING -->
 <section class="sec" id="pricing">
   <div class="wrap">
-    <div class="sec-head rv"><span class="tag">Pricing</span><h2>Simple, transparent pricing</h2><p>All-inclusive plans. No lock-in, no report paywall. Prices update live from our system.</p></div>
+    <div class="sec-head rv"><span class="tag">Pricing</span><h2>Simple, transparent pricing</h2><p>All-inclusive plans. No lock-in, no report paywall. Plans, prices &amp; features update live from our system.</p></div>
     <div class="pill-toggle rv"><button id="tg-month" class="on">Monthly</button><button id="tg-year">Yearly <span class="save">2 months free</span></button></div>
     <div class="price-grid" id="price-grid">
-      <!-- Starter -->
+      <!-- Rendered live from /v1/public/plans; static fallback below for no-JS/SEO -->
       <div class="plan rv">
         <h3>Starter</h3>
-        <div class="price" data-price="starter">₹0<small>/mo</small></div>
-        <div class="note" data-note="starter">Free forever for a single counter</div>
-        <ul><li>All core POS &amp; KOT</li><li>GST invoices</li><li>QR ordering</li><li>Offline mode</li><li>1 register</li></ul>
+        <div class="price">₹0<small>/mo</small></div>
+        <div class="note">Free forever for a single counter</div>
+        <ul><li><span class="material-symbols-outlined">check</span> All core POS &amp; KOT</li><li><span class="material-symbols-outlined">check</span> GST invoices</li><li><span class="material-symbols-outlined">check</span> QR ordering</li><li><span class="material-symbols-outlined">check</span> Offline mode</li></ul>
         <a href="https://app.namastepos.in" class="btn btn-ghost">Get started free</a>
       </div>
-      <!-- Pro -->
       <div class="plan pop rv">
         <span class="badge">Most popular</span>
-        <h3>Pro</h3>
-        <div class="price" data-price="pro">₹799<small>/mo</small></div>
-        <div class="note" data-note="pro">per register · billed monthly</div>
-        <ul><li>Everything in Starter</li><li>Loyalty, wallet &amp; memberships</li><li>WhatsApp receipts</li><li>Advanced reports &amp; exports</li><li>Priority support</li></ul>
-        <a href="https://app.namastepos.in" class="btn btn-primary">Start 14-day free trial</a>
+        <h3>Growth</h3>
+        <div class="price">₹299<small>/mo</small></div>
+        <div class="note">per register · billed monthly</div>
+        <ul><li><span class="material-symbols-outlined">check</span> Everything in Starter</li><li><span class="material-symbols-outlined">check</span> Loyalty, wallet &amp; memberships</li><li><span class="material-symbols-outlined">check</span> WhatsApp receipts</li><li><span class="material-symbols-outlined">check</span> Advanced reports &amp; exports</li></ul>
+        <a href="https://app.namastepos.in" class="btn btn-primary">Start free trial</a>
       </div>
-      <!-- Enterprise -->
       <div class="plan rv">
         <h3>Enterprise</h3>
-        <div class="price" data-price="enterprise">Custom</div>
-        <div class="note" data-note="enterprise">multi-outlet &amp; chains</div>
-        <ul><li>Multiple outlets</li><li>Consolidated reporting</li><li>Aggregator integrations</li><li>Onboarding &amp; training</li><li>Dedicated support</li></ul>
-        <a href="https://app.namastepos.in" class="btn btn-ghost">Contact sales</a>
+        <div class="price">₹799<small>/mo</small></div>
+        <div class="note">multi-outlet &amp; chains</div>
+        <ul><li><span class="material-symbols-outlined">check</span> Everything in Growth</li><li><span class="material-symbols-outlined">check</span> Multiple outlets</li><li><span class="material-symbols-outlined">check</span> Aggregator integrations</li><li><span class="material-symbols-outlined">check</span> Priority support</li></ul>
+        <a href="https://app.namastepos.in" class="btn btn-ghost">Start free trial</a>
       </div>
     </div>
 
     <div class="compare rv">
       <table>
-        <thead><tr><th>Compare features</th><th>Starter</th><th>Pro</th><th>Enterprise</th></tr></thead>
-        <tbody>
-          <tr><td>Point of Sale (POS)</td><td>1 register</td><td>Unlimited*</td><td>Unlimited</td></tr>
-          <tr><td>Menu items</td><td>Up to 100</td><td>Unlimited</td><td>Unlimited</td></tr>
-          <tr><td>GST compliance</td><td>✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>WhatsApp receipts</td><td>—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>Advanced reports</td><td>—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>Multi-outlet</td><td>—</td><td>—</td><td class="yes">✓</td></tr>
+        <thead><tr><th>Compare features</th><th id="cmp-h0">Starter</th><th id="cmp-h1">Growth</th><th id="cmp-h2">Enterprise</th></tr></thead>
+        <tbody id="compare-body">
+          <tr><td>Menu items</td><td>30</td><td>Unlimited</td><td>Unlimited</td></tr>
+          <tr><td>Staff logins</td><td>1</td><td>3</td><td>Unlimited</td></tr>
+          <tr><td>Outlets</td><td>1</td><td>1</td><td>Up to 3</td></tr>
+          <tr><td>GST invoicing</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>WhatsApp receipts</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Advanced reports</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Aggregators</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
+          <tr><td>Multi-outlet</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
         </tbody>
       </table>
     </div>
-    <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:14px">*Billed per register. 30-day free trial · no credit card required.</p>
+    <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:14px">Billed per register · 14-day free trial · no credit card required.</p>
   </div>
 </section>
 
@@ -421,7 +505,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <div>
         <div class="brand" style="font-size:22px">Namaste<span style="color:var(--amber)">POS</span></div>
         <p class="desc">Restaurant billing that just works — mobile-first, offline-ready and made in India.</p>
-        <a href="https://pub-b587dcaedebf4ce59386af9fa20fac8c.r2.dev/NamastePOS.apk" class="btn btn-primary" style="margin-top:14px;display:inline-flex" download>Download Android app</a>
+        <a href="https://pub-b587dcaedebf4ce59386af9fa20fac8c.r2.dev/NamastePOS.apk" class="btn btn-primary" style="margin-top:14px;display:inline-flex" download><span class="material-symbols-outlined">android</span> Download Android app</a>
       </div>
       <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#solutions">Solutions</a><a href="https://app.namastepos.in">Sign in</a></div>
       <div><h4>Company</h4><a href="#faq">FAQ</a><a href="mailto:support@namastepos.in">Contact</a><a href="#product">How it works</a></div>
@@ -438,37 +522,137 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
   if(b&&m){b.addEventListener('click',function(){m.style.display=m.style.display==='flex'?'none':'flex';});
     m.querySelectorAll('a').forEach(function(a){a.addEventListener('click',function(){m.style.display='none';});});}
 })();
-// Reveal on scroll
-(function(){
-  var els=document.querySelectorAll('.rv');
-  if(!('IntersectionObserver'in window)){els.forEach(function(e){e.classList.add('in');});return;}
-  var io=new IntersectionObserver(function(en){en.forEach(function(x){if(x.isIntersecting){x.target.classList.add('in');io.unobserve(x.target);}});},{threshold:.12});
-  els.forEach(function(e){io.observe(e);});
-})();
-// Live pricing from backend (falls back to the static defaults on any error)
+
+// Live plans, prices, feature lists & comparison — all rendered from the
+// backend so the marketing site is always in sync with what the super-admin
+// grants each tier. Falls back silently to the static markup on any error.
 (function(){
   var money=function(n){return '₹'+Math.round(n).toLocaleString('en-IN');};
-  var state={billing:'month',plans:null};
-  function apply(){
-    if(!state.plans)return;
-    state.plans.forEach(function(p){
-      var kind=(p.tierKind||p.tier||'').toLowerCase();
-      var key=kind.indexOf('start')>-1||kind==='free'?'starter':kind.indexOf('pro')>-1?'pro':kind.indexOf('enter')>-1?'enterprise':null;
-      if(!key)return;
-      var el=document.querySelector('[data-price="'+key+'"]');var note=document.querySelector('[data-note="'+key+'"]');
-      if(!el)return;
-      if(key==='enterprise'){el.innerHTML='Custom';return;}
-      var monthly=p.priceInr||0, yearly=p.priceYearlyInr!=null?p.priceYearlyInr:monthly*10;
-      if(monthly<=0){el.innerHTML='₹0<small>/mo</small>';if(note)note.textContent='Free forever for a single counter';return;}
-      if(state.billing==='year'){el.innerHTML=money(yearly)+'<small>/yr</small>';if(note)note.textContent='per register · 2 months free';}
-      else{el.innerHTML=money(monthly)+'<small>/mo</small>';if(note)note.textContent='per register · billed monthly';}
-    });
+  var lim=function(v,one,many){return v<0?('Unlimited '+many):(v+' '+(v===1?one:many));};
+
+  // feature_key -> friendly label (mirrors the app's feature catalog).
+  var LBL={
+    pos:'Billing & POS',orders:'Order management',token_generation:'Token billing',
+    tables_single_floor:'Table management',tables_multi_floor:'Multi-floor tables',
+    menu_basic:'Menu management',menu_variants_modifiers:'Variants & modifiers',
+    kds:'Kitchen display (KDS)',captain_mode:'Captain ordering',driver_mode:'Delivery / driver mode',
+    loyalty:'Loyalty & points',customers_basic:'Customer directory',customers_crm:'Customer CRM',
+    aggregators:'Zomato / Swiggy',reservations:'Table reservations',wastage:'Dish wastage',
+    daily_closing:'Day-end closing',b2b_invoice:'B2B invoicing',qr_ordering:'QR self-ordering',
+    whatsapp_marketing:'WhatsApp marketing',auto_whatsapp_order:'Auto WhatsApp orders',
+    recipe_costing:'Recipe costing',bill_split:'Split payments',staff_lite:'Staff logins',
+    staff_unlimited:'Unlimited staff',voice_pos:'Voice billing',inventory_tracking:'Inventory tracking',
+    tax_invoices:'GST tax invoices',pnl_statement:'P&L statement',registers:'Cash registers',
+    reports_basic:'Basic reports',multi_outlet:'Multi-outlet',accounting_pnl_bs:'Accounting (P&L / BS)',
+    einvoice_gst:'E-invoice (GST)',recurring_invoices:'Recurring invoices',bank_reconcile:'Bank reconciliation',
+    surge_pricing:'Surge pricing',heat_map:'Sales heat-map',forecast:'Sales forecasting',
+    dead_stock:'Dead-stock alerts',bulk_import:'Bulk import',api_access:'API access',
+    white_label:'White-label',tds_tcs:'TDS / TCS',multi_currency_fx:'Multi-currency',
+    memberships:'Memberships & wallet',reviews:'Google reviews',marketplace_addons:'Add-on marketplace',
+    dashboard_access:'Web dashboard',invoice_basic:'Invoicing',expenses:'Expense tracking',
+    reports_advanced:'Advanced reports'
+  };
+  // Highlight ordering for the plan cards (first matches shown).
+  var HL=['pos','qr_ordering','tax_invoices','loyalty','memberships','whatsapp_marketing',
+    'reports_advanced','inventory_tracking','captain_mode','kds','aggregators','multi_outlet',
+    'einvoice_gst','api_access','recipe_costing','bill_split'];
+  // Rows for the comparison table (limits first, then key features).
+  var CMP=['tax_invoices','whatsapp_marketing','loyalty','memberships','qr_ordering',
+    'kds','captain_mode','inventory_tracking','reports_advanced','aggregators',
+    'einvoice_gst','multi_outlet'];
+
+  var YES='<span class="material-symbols-outlined yes">check</span>';
+  var NO='<span class="no">—</span>';
+
+  function has(p,k){
+    var fk=p.featureKeys||[];
+    if(k==='reports_advanced'){return (p.features&&p.features.reports==='advanced')||fk.indexOf('reports_advanced')>-1;}
+    if(k==='aggregators'){return (p.features&&p.features.aggregators===true)||fk.indexOf('aggregators')>-1;}
+    if(k==='multi_outlet'){return fk.indexOf('multi_outlet')>-1||((p.limits&&p.limits.businesses)>1)||((p.limits&&p.limits.businesses)<0);}
+    return fk.indexOf(k)>-1;
   }
+
+  var state={billing:'month',plans:null};
+
+  function priceHTML(p){
+    if((p.priceInr||0)<=0)return '₹0<small>/mo</small>';
+    if(state.billing==='year'){
+      var y=p.priceYearlyInr!=null?p.priceYearlyInr:(p.priceInr*10);
+      return money(y)+'<small>/yr</small>';
+    }
+    return money(p.priceInr)+'<small>/mo</small>';
+  }
+  function noteHTML(p){
+    if((p.priceInr||0)<=0)return 'Free forever for a single counter';
+    return state.billing==='year'?'per register · 2 months free':'per register · billed monthly';
+  }
+  function limitsHTML(p){
+    var L=p.limits||{},out=[];
+    out.push('<span>'+lim(L.menu_items!=null?L.menu_items:-1,'menu item','menu items')+'</span>');
+    out.push('<span>'+lim(L.staff!=null?L.staff:-1,'staff login','staff logins')+'</span>');
+    var b=L.businesses!=null?L.businesses:1;
+    out.push('<span>'+(b<0?'Unlimited outlets':(b<=1?'1 outlet':(b+' outlets')))+'</span>');
+    return out.join('');
+  }
+  function cardHTML(p,i,total){
+    var pop=(total>=3&&i===1);
+    var hl=[];
+    if(i>0)hl.push((i===1?'Everything in Starter':'Everything in Growth'));
+    var fk=p.featureKeys||[];
+    for(var j=0;j<HL.length&&hl.length<6;j++){
+      var k=HL[j];
+      if(fk.indexOf(k)>-1&&LBL[k]&&hl.indexOf(LBL[k])<0)hl.push(LBL[k]);
+    }
+    // Fallbacks if backend hasn't shipped featureKeys yet.
+    if(hl.length<3){
+      if(has(p,'reports_advanced')&&hl.indexOf('Advanced reports')<0)hl.push('Advanced reports');
+      if(has(p,'aggregators')&&hl.indexOf(LBL.aggregators)<0)hl.push(LBL.aggregators);
+      if(hl.indexOf('GST tax invoices')<0)hl.push('GST tax invoices');
+    }
+    var lis=hl.map(function(t){return '<li><span class="material-symbols-outlined">check</span> '+t+'</li>';}).join('');
+    var btn=pop?'btn-primary':'btn-ghost';
+    var cta=(p.priceInr||0)<=0?'Get started free':'Start free trial';
+    return '<div class="plan rv'+(pop?' pop':'')+'">'+
+      (pop?'<span class="badge">Most popular</span>':'')+
+      '<h3>'+(p.name||p.tierKind||'Plan')+'</h3>'+
+      '<div class="price">'+priceHTML(p)+'</div>'+
+      '<div class="note">'+noteHTML(p)+'</div>'+
+      '<div class="limits">'+limitsHTML(p)+'</div>'+
+      '<ul>'+lis+'</ul>'+
+      '<a href="https://app.namastepos.in" class="btn '+btn+'">'+cta+'</a></div>';
+  }
+  function renderCards(){
+    var grid=document.getElementById('price-grid');
+    if(!grid||!state.plans)return;
+    grid.innerHTML=state.plans.map(function(p,i){return cardHTML(p,i,state.plans.length);}).join('');
+  }
+  function renderCompare(){
+    var body=document.getElementById('compare-body');
+    if(!body||!state.plans)return;
+    var ps=state.plans;
+    for(var i=0;i<ps.length&&i<3;i++){
+      var h=document.getElementById('cmp-h'+i);if(h)h.textContent=ps[i].name||ps[i].tierKind;
+    }
+    var rows='';
+    // Limits rows
+    rows+='<tr><td>Menu items</td>'+ps.map(function(p){var v=(p.limits&&p.limits.menu_items);return '<td>'+(v<0?'Unlimited':v)+'</td>';}).join('')+'</tr>';
+    rows+='<tr><td>Staff logins</td>'+ps.map(function(p){var v=(p.limits&&p.limits.staff);return '<td>'+(v<0?'Unlimited':v)+'</td>';}).join('')+'</tr>';
+    rows+='<tr><td>Outlets</td>'+ps.map(function(p){var v=(p.limits&&p.limits.businesses);return '<td>'+(v<0?'Unlimited':v)+'</td>';}).join('')+'</tr>';
+    // Feature rows
+    CMP.forEach(function(k){
+      if(!LBL[k])return;
+      rows+='<tr><td>'+LBL[k]+'</td>'+ps.map(function(p){return '<td>'+(has(p,k)?YES:NO)+'</td>';}).join('')+'</tr>';
+    });
+    body.innerHTML=rows;
+  }
+  function renderAll(){renderCards();renderCompare();}
+
   var mo=document.getElementById('tg-month'),yr=document.getElementById('tg-year');
-  if(mo&&yr){mo.addEventListener('click',function(){state.billing='month';mo.classList.add('on');yr.classList.remove('on');apply();});
-    yr.addEventListener('click',function(){state.billing='year';yr.classList.add('on');mo.classList.remove('on');apply();});}
+  if(mo&&yr){mo.addEventListener('click',function(){state.billing='month';mo.classList.add('on');yr.classList.remove('on');renderCards();});
+    yr.addEventListener('click',function(){state.billing='year';yr.classList.add('on');mo.classList.remove('on');renderCards();});}
+
   fetch('https://api.namastepos.in/v1/public/plans').then(function(r){return r.json();}).then(function(d){
-    if(d&&d.plans&&d.plans.length){state.plans=d.plans;apply();}
+    if(d&&d.plans&&d.plans.length){state.plans=d.plans;renderAll();}
   }).catch(function(){});
 })();
 </script>
