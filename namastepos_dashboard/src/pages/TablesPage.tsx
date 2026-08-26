@@ -1079,6 +1079,20 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                   </div>
                 ) : (
                   <div className="space-y-1.5">
+                    {walletAvailable && walletBalance > 0 && (
+                      <button type="button"
+                        onClick={() => {
+                          const apply = Math.min(walletBalance, session.totalInr || 0);
+                          const rem = +((session.totalInr || 0) - apply).toFixed(2);
+                          const next: SettleLeg[] = [{ method: 'wallet', amountInr: apply.toFixed(2) }];
+                          if (rem > 0.001) next.push({ method: 'cash', amountInr: rem.toFixed(2) });
+                          setSettleLegs(next);
+                        }}
+                        className="text-xs text-primary font-semibold hover:underline">
+                        Use wallet {formatINR(Math.min(walletBalance, session.totalInr || 0))}
+                        {walletBalance < (session.totalInr || 0) ? ` + ${formatINR((session.totalInr || 0) - walletBalance)} on another tender` : ''}
+                      </button>
+                    )}
                     {settleLegs.map((leg, i) => (
                       <div key={i} className="flex items-center gap-1.5">
                         <select value={leg.method}
