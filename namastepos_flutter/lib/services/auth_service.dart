@@ -29,12 +29,19 @@ class AuthService {
   final _secure = const FlutterSecureStorage();
   static const _kBusiness = 'ff_business';
 
-  // Web Client ID from Google Cloud Console (the SAME id you set on the
-  // backend as GOOGLE_CLIENT_IDS). It can be overridden at build time:
-  //   flutter run --dart-define=GOOGLE_WEB_CLIENT_ID=xxx.apps.googleusercontent.com
+  // Web Client ID from Google Cloud Console (the SAME id the backend lists in
+  // GOOGLE_CLIENT_IDS). Passing it as serverClientId makes Google issue an
+  // idToken whose audience is THIS web client — which the backend allow-list
+  // definitely accepts (it's the same client the dashboard logs in with). We
+  // default to it so RELEASE builds (which don't pass --dart-define) still get
+  // an accepted-audience token on iOS AND Android, instead of falling back to
+  // the platform client and depending on the exact server allow-list. Override
+  // at build time if ever needed:
+  //   flutter build ios --dart-define=GOOGLE_WEB_CLIENT_ID=xxx.apps.googleusercontent.com
   static const String _webClientId = String.fromEnvironment(
     'GOOGLE_WEB_CLIENT_ID',
-    defaultValue: '',
+    defaultValue:
+        '971798684721-apiucda0kik6dhd5dmpr8ne4lkdthr13.apps.googleusercontent.com',
   );
 
   // Hardcode-audit fix (2026-08-24): DEMO_MODE is now physically unable
