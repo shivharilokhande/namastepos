@@ -3,3 +3,16 @@
 # can share a first-party URL. 302 (not 200 proxy) because Cloudflare Pages
 # can't rewrite cross-origin.
 /site/* https://api.namastepos.in/site/:splat 302
+
+# Single-scroll landing (2026-08-26): the old standalone pages now redirect to
+# the matching section anchor on the home page.
+/product      /#product    301
+/product.html /#product    301
+/features      /#features   301
+/features.html /#features   301
+/solutions      /#solutions 301
+/solutions.html /#solutions 301
+/pricing      /#pricing    301
+/pricing.html /#pricing    301
+/resources      /#resources 301
+/resources.html /#resources 301
