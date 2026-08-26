@@ -1,0 +1,7 @@
+name = "namastepos-keepalive"
+main = "worker.js"
+compatibility_date = "2025-08-01"
+
+# Ping every 5 minutes — under Render's ~15-min idle spin-down window.
+[triggers]
+crons = ["*/5 * * * *"]
