@@ -3,6 +3,14 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<!-- Google tag (gtag.js) — GA4 property "NamastePOS" web stream -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-YLK80GL4VY"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-YLK80GL4VY');
+</script>
 <title>NamastePOS — Restaurant Billing &amp; POS Software for India (GST, QR, Offline)</title>
 <meta name="description" content="NamastePOS is India's mobile-first restaurant POS &amp; billing software — GST invoicing, QR ordering, KOT, offline mode, loyalty, split payments and live reports. No lock-in. Start free."/>
 <meta name="keywords" content="restaurant POS India, billing software, GST invoice, restaurant billing app, KOT, QR ordering, Petpooja alternative, cafe POS, cloud kitchen POS"/>
@@ -621,6 +629,21 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
 </footer>
 
 <script>
+// GA4 conversion events — fire when a visitor clicks a "Start free / Sign in"
+// CTA (demo intent) or downloads the Android APK. Mark both as key events in
+// GA4 → Admin → Events to measure demo→paid.
+(function(){
+  if (typeof gtag !== 'function') return;
+  document.addEventListener('click', function(e){
+    var a = e.target.closest && e.target.closest('a');
+    if (!a || !a.href) return;
+    if (a.href.indexOf('app.namastepos.in') > -1) {
+      gtag('event', 'sign_up_click', { link_url: a.href });
+    } else if (/NamastePOS\.apk/i.test(a.href)) {
+      gtag('event', 'app_download', { link_url: a.href });
+    }
+  }, true);
+})();
 // Mobile menu
 (function(){
   var b=document.getElementById('burger'),m=document.getElementById('mmenu');
