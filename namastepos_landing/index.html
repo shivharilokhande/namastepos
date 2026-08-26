@@ -174,6 +174,16 @@ img{max-width:100%;display:block}
 .feat h3{font-size:17px;font-weight:700;margin-bottom:5px}
 .feat p{color:var(--muted);font-size:14px}
 
+/* ALL FEATURES */
+.allfeat{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:8px}
+.afcol{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:22px 24px}
+.afcol h3{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:800;color:var(--green-d);margin-bottom:14px;text-transform:uppercase;letter-spacing:.04em}
+.afcol h3 .material-symbols-outlined{font-size:20px;color:var(--green)}
+.afcol ul{list-style:none;display:flex;flex-direction:column;gap:9px}
+.afcol li{display:flex;gap:9px;align-items:flex-start;font-size:14.5px;color:#2b382f}
+.afcol li .material-symbols-outlined{color:var(--green);font-size:18px;margin-top:1px;flex-shrink:0}
+.afcount{display:inline-flex;align-items:center;gap:8px;background:var(--soft);color:var(--green-d);font-weight:700;font-size:13px;padding:7px 16px;border-radius:999px;border:1px solid #cfe6d8;margin:0 auto 30px}
+
 /* SOLUTIONS */
 .sol{background:var(--surface)}
 .grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
@@ -254,7 +264,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
   .hero-in{grid-template-columns:1fr;padding:34px 0 44px}
   .hero h1{font-size:42px}
   .phone-stage{min-height:520px;margin-top:20px}
-  .grid3,.grid4,.feat-grid,.price-grid{grid-template-columns:1fr}
+  .grid3,.grid4,.feat-grid,.price-grid,.allfeat{grid-template-columns:1fr}
   .strip-in{grid-template-columns:repeat(2,1fr);gap:20px 14px}
   .prow,.prow.rev .ptext{grid-template-columns:1fr;order:0;gap:26px}
   .prow.rev .pvisual{order:-1}
@@ -263,7 +273,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
   .foot{grid-template-columns:1fr 1fr}
   .compare{overflow-x:auto}
 }
-@media(min-width:601px) and (max-width:900px){.feat-grid{grid-template-columns:1fr 1fr}}
+@media(min-width:601px) and (max-width:900px){.feat-grid,.allfeat{grid-template-columns:1fr 1fr}}
 </style>
 </head>
 <body class="no-js">
@@ -407,6 +417,101 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">event_seat</span></div><div><h3>Reservations</h3><p>Take table bookings, manage guest counts and seat parties smoothly.</p></div></div>
       <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">delivery_dining</span></div><div><h3>Aggregators</h3><p>Zomato &amp; Swiggy orders flow into the same kitchen and reports.</p></div></div>
       <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">storefront</span></div><div><h3>Multi-outlet</h3><p>Run multiple outlets with consolidated, one-login reporting.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ALL FEATURES -->
+<section class="sec" id="all-features">
+  <div class="wrap">
+    <div class="sec-head rv" style="max-width:760px">
+      <span class="tag">Complete feature list</span>
+      <h2>51 features. One all-inclusive platform.</h2>
+      <p>Everything below runs your restaurant end to end — no per-feature paywalls. See the pricing table for what each plan unlocks.</p>
+    </div>
+    <div style="text-align:center"><span class="afcount rv"><span class="material-symbols-outlined">verified</span> 51 features included across plans</span></div>
+    <div class="allfeat">
+      <div class="afcol rv">
+        <h3><span class="material-symbols-outlined">point_of_sale</span> Billing &amp; orders</h3>
+        <ul>
+          <li><span class="material-symbols-outlined">check</span> Billing &amp; POS</li>
+          <li><span class="material-symbols-outlined">check</span> Order management</li>
+          <li><span class="material-symbols-outlined">check</span> Token billing</li>
+          <li><span class="material-symbols-outlined">check</span> Table management</li>
+          <li><span class="material-symbols-outlined">check</span> Multi-floor tables</li>
+          <li><span class="material-symbols-outlined">check</span> Menu management</li>
+          <li><span class="material-symbols-outlined">check</span> Variants &amp; modifiers</li>
+          <li><span class="material-symbols-outlined">check</span> Captain ordering</li>
+          <li><span class="material-symbols-outlined">check</span> Kitchen display (KDS)</li>
+          <li><span class="material-symbols-outlined">check</span> QR self-ordering</li>
+          <li><span class="material-symbols-outlined">check</span> Voice billing</li>
+        </ul>
+      </div>
+      <div class="afcol rv">
+        <h3><span class="material-symbols-outlined">payments</span> Payments &amp; invoicing</h3>
+        <ul>
+          <li><span class="material-symbols-outlined">check</span> Split payments</li>
+          <li><span class="material-symbols-outlined">check</span> Invoicing</li>
+          <li><span class="material-symbols-outlined">check</span> GST tax invoices</li>
+          <li><span class="material-symbols-outlined">check</span> B2B invoicing</li>
+          <li><span class="material-symbols-outlined">check</span> E-invoice (GST)</li>
+          <li><span class="material-symbols-outlined">check</span> Recurring invoices</li>
+          <li><span class="material-symbols-outlined">check</span> Cash registers</li>
+          <li><span class="material-symbols-outlined">check</span> Day-end closing</li>
+        </ul>
+      </div>
+      <div class="afcol rv">
+        <h3><span class="material-symbols-outlined">loyalty</span> Customers &amp; marketing</h3>
+        <ul>
+          <li><span class="material-symbols-outlined">check</span> Customer directory</li>
+          <li><span class="material-symbols-outlined">check</span> Customer CRM</li>
+          <li><span class="material-symbols-outlined">check</span> Loyalty &amp; points</li>
+          <li><span class="material-symbols-outlined">check</span> Memberships &amp; wallet</li>
+          <li><span class="material-symbols-outlined">check</span> Google reviews</li>
+          <li><span class="material-symbols-outlined">check</span> WhatsApp marketing</li>
+          <li><span class="material-symbols-outlined">check</span> Auto WhatsApp orders</li>
+          <li><span class="material-symbols-outlined">check</span> Add-on marketplace</li>
+        </ul>
+      </div>
+      <div class="afcol rv">
+        <h3><span class="material-symbols-outlined">inventory_2</span> Inventory &amp; kitchen</h3>
+        <ul>
+          <li><span class="material-symbols-outlined">check</span> Inventory tracking</li>
+          <li><span class="material-symbols-outlined">check</span> Recipe costing</li>
+          <li><span class="material-symbols-outlined">check</span> Dish wastage</li>
+          <li><span class="material-symbols-outlined">check</span> Dead-stock alerts</li>
+          <li><span class="material-symbols-outlined">check</span> Bulk import</li>
+          <li><span class="material-symbols-outlined">check</span> Expense tracking</li>
+        </ul>
+      </div>
+      <div class="afcol rv">
+        <h3><span class="material-symbols-outlined">monitoring</span> Reports &amp; accounting</h3>
+        <ul>
+          <li><span class="material-symbols-outlined">check</span> Reports &amp; dashboards</li>
+          <li><span class="material-symbols-outlined">check</span> P&amp;L statement</li>
+          <li><span class="material-symbols-outlined">check</span> Accounting (P&amp;L / BS)</li>
+          <li><span class="material-symbols-outlined">check</span> Bank reconciliation</li>
+          <li><span class="material-symbols-outlined">check</span> TDS / TCS</li>
+          <li><span class="material-symbols-outlined">check</span> Sales forecasting</li>
+          <li><span class="material-symbols-outlined">check</span> Sales heat-map</li>
+          <li><span class="material-symbols-outlined">check</span> Surge pricing</li>
+        </ul>
+      </div>
+      <div class="afcol rv">
+        <h3><span class="material-symbols-outlined">storefront</span> Operations &amp; scale</h3>
+        <ul>
+          <li><span class="material-symbols-outlined">check</span> Table reservations</li>
+          <li><span class="material-symbols-outlined">check</span> Delivery / driver mode</li>
+          <li><span class="material-symbols-outlined">check</span> Zomato / Swiggy aggregators</li>
+          <li><span class="material-symbols-outlined">check</span> Multi-outlet</li>
+          <li><span class="material-symbols-outlined">check</span> API access</li>
+          <li><span class="material-symbols-outlined">check</span> White-label</li>
+          <li><span class="material-symbols-outlined">check</span> Multi-currency</li>
+          <li><span class="material-symbols-outlined">check</span> Staff logins</li>
+          <li><span class="material-symbols-outlined">check</span> Unlimited staff</li>
+          <li><span class="material-symbols-outlined">check</span> Web dashboard</li>
+        </ul>
+      </div>
     </div>
   </div>
 </section>
