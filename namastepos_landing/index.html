@@ -211,12 +211,13 @@ img{max-width:100%;display:block}
 .sol-card p{color:var(--muted);font-size:14px}
 
 /* PRICING */
-.price-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;align-items:stretch}
-.plan{background:#fff;border:1px solid var(--line);border-radius:20px;padding:30px;display:flex;flex-direction:column}
+.price-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;align-items:stretch}
+@media(min-width:901px) and (max-width:1200px){.price-grid{grid-template-columns:repeat(3,1fr)}}
+.plan{background:#fff;border:1px solid var(--line);border-radius:20px;padding:22px 18px;display:flex;flex-direction:column}
 .plan.pop{border:2px solid var(--green);box-shadow:var(--shadow);position:relative}
 .plan .badge{position:absolute;top:-13px;left:50%;transform:translateX(-50%);background:var(--amber);color:#3a2400;font-weight:700;font-size:12px;padding:5px 14px;border-radius:999px}
-.plan h3{font-size:22px;font-weight:800;color:var(--green-d)}
-.plan .price{font-family:'Sora';font-weight:800;font-size:40px;margin:12px 0 2px}
+.plan h3{font-size:20px;font-weight:800;color:var(--green-d)}
+.plan .price{font-family:'Sora';font-weight:800;font-size:30px;margin:10px 0 2px}
 .plan .price small{font-size:15px;color:var(--muted);font-weight:500}
 .plan .note{color:var(--muted);font-size:13px;min-height:18px}
 .plan .limits{display:flex;flex-wrap:wrap;gap:7px;margin:16px 0 4px}
@@ -579,7 +580,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
 
     <div class="compare rv">
       <table>
-        <thead><tr><th>Compare features</th><th id="cmp-h0">Starter</th><th id="cmp-h1">Growth</th><th id="cmp-h2">Enterprise</th></tr></thead>
+        <thead><tr><th>Compare features</th><th id="cmp-h0">Starter</th><th id="cmp-h1">Growth</th><th id="cmp-h2">Pro</th><th id="cmp-h3">Advanced</th><th id="cmp-h4">Enterprise</th></tr></thead>
         <tbody id="compare-body">
           <tr><td>Menu items</td><td>30</td><td>Unlimited</td><td>Unlimited</td></tr>
           <tr><td>Staff logins</td><td>1</td><td>3</td><td>Unlimited</td></tr>
@@ -736,7 +737,9 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     return out.join('');
   }
   function cardHTML(p,i,total){
-    var pop=(total>=3&&i===1);
+    // "Most popular" = Pro when the full 5-tier lineup is present, else the
+    // second card (the paid entry tier).
+    var pop=(total>=4 ? (p.name==='Pro') : (total>=3&&i===1));
     var fk=p.featureKeys||[];
     var hl=[];
     if(i===0){
@@ -745,7 +748,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
         if(fk.length===0||fk.indexOf(FREE_HL[f][0])>-1)hl.push(FREE_HL[f][1]);
       }
     }else{
-      hl.push(i===1?'Everything in Starter':'Everything in Growth');
+      var prev=state.plans[i-1];hl.push('Everything in '+((prev&&prev.name)||'Starter'));
       if(has(p,'reports_advanced'))hl.push('Advanced reports');
       for(var j=0;j<HL.length&&hl.length<6;j++){
         var k=HL[j];
@@ -774,7 +777,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     var body=document.getElementById('compare-body');
     if(!body||!state.plans)return;
     var ps=state.plans;
-    for(var i=0;i<ps.length&&i<3;i++){
+    for(var i=0;i<ps.length&&i<5;i++){
       var h=document.getElementById('cmp-h'+i);if(h)h.textContent=ps[i].name||ps[i].tierKind;
     }
     var rows='';
