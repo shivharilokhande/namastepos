@@ -557,7 +557,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <div class="plan rv">
         <h3>Starter</h3>
         <div class="price">₹0<small>/mo</small></div>
-        <div class="note">Free forever for a single counter</div>
+        <div class="note">7-day free trial · no card</div>
         <ul><li><span class="material-symbols-outlined">check</span> All core POS &amp; KOT</li><li><span class="material-symbols-outlined">check</span> GST invoices</li><li><span class="material-symbols-outlined">check</span> QR ordering</li><li><span class="material-symbols-outlined">check</span> Offline mode</li></ul>
         <a href="https://app.namastepos.in" class="btn btn-ghost">Get started free</a>
       </div>
@@ -593,7 +593,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
         </tbody>
       </table>
     </div>
-    <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:14px">Billed per register · 14-day free trial · no credit card required.</p>
+    <p style="text-align:center;color:var(--muted);font-size:13px;margin-top:14px">Billed per register · 7-day free trial · no credit card required.</p>
   </div>
 </section>
 
@@ -725,7 +725,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     return money(p.priceInr)+'<small>/mo</small>';
   }
   function noteHTML(p){
-    if((p.priceInr||0)<=0)return 'Free forever for a single counter';
+    if((p.priceInr||0)<=0)return '7-day free trial · no card';
     return state.billing==='year'?'per register · 2 months free':'per register · billed monthly';
   }
   function limitsHTML(p){

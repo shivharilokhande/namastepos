@@ -147,7 +147,7 @@ const env = {
   // Hardcode-audit fix (2026-08-24): trial length was hardcoded as
   // "14 days" in three places (authService inline SQL, customerAdmin
   // default, migration 002). Single source of truth now lives here.
-  TRIAL_DAYS: parseInt(required('TRIAL_DAYS', '14'), 10),
+  TRIAL_DAYS: parseInt(required('TRIAL_DAYS', '7'), 10),
 
   // Aggregator partner API hosts — env-driven so staging can point at
   // sandbox endpoints instead of live partner APIs.
