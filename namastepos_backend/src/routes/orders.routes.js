@@ -25,6 +25,7 @@ router.post  ('/', createOrderLimiter,    sub.enforceLimit('monthly_orders'), ..
 router.get   ('/',                       ...c.list);
 router.get   ('/:orderId',               c.get);
 router.put   ('/:orderId/status',        ...c.updateStatus);
+router.put   ('/:orderId/customer',      ...c.assignCustomer);
 router.post  ('/:orderId/print',         c.print);
 
 module.exports = router;

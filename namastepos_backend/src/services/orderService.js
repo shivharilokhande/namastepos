@@ -475,14 +475,19 @@ async function create(businessId, body) {
     let orderRow;
     try {
       const ins = await client.query(
+        // Offline sync fix (2026-08-26): adopt the client-supplied UUID as the
+        // order's PRIMARY KEY so that status/customer mutations queued offline
+        // (which reference the device-generated id) resolve on replay instead
+        // of 404-ing. Falls back to a server UUID when no clientId is sent.
+        // Idempotency is still guarded by client_id (unique) above.
         `INSERT INTO orders
-         (business_id, order_no, source, table_no, customer_phone, customer_name,
+         (id, business_id, order_no, source, table_no, customer_phone, customer_name,
           subtotal, tax, discount, total, payment_method, client_id,
           customer_id, points_redeemed, loyalty_discount_paise,
           table_session_id, table_id,
           service_charge_paise, round_off_paise, discount_is_pre_tax, token_no,
           cgst, sgst, igst, gst_breakdown, channel)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
+         VALUES (COALESCE($12::uuid, gen_random_uuid()),$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26)
          RETURNING *`,
         [businessId, orderNo, source, tableNo, customerPhone, customerName,
           subtotal, tax, discountEff, total, paymentMethod, clientId,
@@ -1391,11 +1396,33 @@ function resolveServiceMode(row) {
   return 'dine_in'; // hybrid + no table hint → assume table service
 }
 
+// Offline sync fix (2026-08-26): link/update the customer on an existing order.
+// Needed so a customer attached to an order OFFLINE can be synced on reconnect
+// (previously there was no endpoint, so the link was lost). Tenant-scoped and
+// idempotent — safe to replay from the outbox.
+async function assignCustomer(businessId, orderId, { customerName, customerPhone } = {}) {
+  const patch = [];
+  const values = [];
+  if (customerName !== undefined) { values.push(customerName || null); patch.push(`customer_name = $${values.length}`); }
+  if (customerPhone !== undefined) { values.push(customerPhone || null); patch.push(`customer_phone = $${values.length}`); }
+  if (patch.length === 0) return byId(businessId, orderId);
+  values.push(businessId); const bIdx = values.length;
+  values.push(orderId); const oIdx = values.length;
+  const r = await query(
+    `UPDATE orders SET ${patch.join(', ')}
+      WHERE business_id = $${bIdx} AND id = $${oIdx} RETURNING id`,
+    values,
+  );
+  if (r.rowCount === 0) throw new NotFound('Order not found');
+  return byId(businessId, orderId);
+}
+
 module.exports = {
   create,
   list,
   byId,
   updateStatus,
+  assignCustomer,
   markPrinted,
   markReprint,
   serializeOrder,

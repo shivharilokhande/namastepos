@@ -152,4 +152,15 @@ module.exports = {
     await order.markPrinted(req.params.businessId, req.params.orderId);
     res.json({ order: o, receipt });
   }),
+  // Offline sync fix (2026-08-26): attach/update a customer on an order.
+  assignCustomer: [
+    validate({ body: Joi.object({
+      customerName: Joi.string().max(120).allow('', null),
+      customerPhone: Joi.string().pattern(/^\d{10}$/).allow('', null),
+    }).min(1) }),
+    asyncHandler(async (req, res) => {
+      const o = await order.assignCustomer(req.params.businessId, req.params.orderId, req.body);
+      res.json({ order: o });
+    }),
+  ],
 };
