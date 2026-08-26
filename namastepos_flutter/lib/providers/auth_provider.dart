@@ -8,12 +8,27 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 
-enum AuthStatus { unknown, authenticated, unauthenticated }
+enum AuthStatus { unknown, authenticated, unauthenticated, locked }
 
 class AuthProvider extends ChangeNotifier {
   AuthProvider() {
+    // When any request 401s and the refresh token is dead, fall straight to
+    // the login screen instead of letting an "authentication" error surface
+    // on an inner screen.
+    ApiService.instance.onAuthExpired = _onAuthExpired;
     _bootstrap();
   }
+
+  void _onAuthExpired() {
+    if (_status == AuthStatus.unauthenticated) return;
+    _status = AuthStatus.unauthenticated;
+    notifyListeners();
+  }
+
+  bool _mpinSet = false;
+  /// Whether an owner MPIN is configured on this device.
+  bool get mpinEnabled => _mpinSet;
+  bool get isOwner => role == 'business_owner';
 
   AuthStatus _status = AuthStatus.unknown;
   Business? _business;
@@ -79,15 +94,97 @@ class AuthProvider extends ChangeNotifier {
     } catch (_) { /* swallow — non-fatal */ }
   }
 
-  Future<void> _bootstrap() async {
-    final cached = await AuthService.instance.cachedBusiness();
-    _business = cached;
-    _status = cached == null ? AuthStatus.unauthenticated : AuthStatus.authenticated;
-    // Also restore the cached plan so feature gates work offline / on first paint.
+  Future<void> _restoreCached() async {
     final p = await AuthService.instance.cachedPlan();
     if (p != null) _plan = PlanInfo.fromMap(p);
     _role = await AuthService.instance.cachedRole();
     _permissions = await AuthService.instance.cachedPermissions() ?? const [];
+  }
+
+  /// Launch/resume gate. CRITICAL: never declare `authenticated` just because
+  /// a business is cached — that let inner screens load with a stale token and
+  /// then 401 ("header authentication" error). We validate the session first:
+  ///   • no cached business / no refresh token → login screen
+  ///   • owner MPIN set → locked (show MPIN screen, unlock silently)
+  ///   • otherwise → silently mint a fresh token; authenticated only if it works
+  /// Status stays `unknown` (splash) until this resolves, so no inner-screen flash.
+  Future<void> _bootstrap() async {
+    final cached = await AuthService.instance.cachedBusiness();
+    if (cached == null) {
+      _status = AuthStatus.unauthenticated;
+      notifyListeners();
+      return;
+    }
+    _business = cached;
+    await _restoreCached();
+    _mpinSet = await AuthService.instance.hasMpin();
+
+    final refresh = await ApiService.instance.refreshToken;
+    final hasRefresh = refresh != null && refresh.isNotEmpty;
+    if (!hasRefresh) {
+      // Session fully gone (owner signed out, or first run) — require a login.
+      _status = AuthStatus.unauthenticated;
+      notifyListeners();
+      return;
+    }
+    if (_mpinSet) {
+      // Session recoverable, but gated behind the owner's MPIN.
+      _status = AuthStatus.locked;
+      notifyListeners();
+      return;
+    }
+    // Silently confirm the session is still valid before showing the app.
+    final ok = await AuthService.instance.ensureValidSession();
+    _status = ok ? AuthStatus.authenticated : AuthStatus.unauthenticated;
+    if (ok) _postLogin();
+    notifyListeners();
+  }
+
+  /// Owner MPIN quick-unlock (PhonePe-style). Returns false on a wrong PIN
+  /// (caller counts attempts). On a correct PIN we refresh the session: if the
+  /// server session is still alive → authenticated; if it died → back to login.
+  Future<bool> unlockWithMpin(String pin) async {
+    final ok = await AuthService.instance.verifyMpin(pin);
+    if (!ok) return false;
+    final valid = await AuthService.instance.ensureValidSession();
+    if (valid) {
+      _status = AuthStatus.authenticated;
+      _postLogin();
+    } else {
+      _status = AuthStatus.unauthenticated;
+    }
+    notifyListeners();
+    return true;
+  }
+
+  /// Owner sets/updates their MPIN for faster login next time.
+  Future<void> setMpin(String pin) async {
+    await AuthService.instance.setMpin(pin);
+    _mpinSet = true;
+    notifyListeners();
+  }
+
+  Future<void> disableMpin() async {
+    await AuthService.instance.clearMpin();
+    _mpinSet = false;
+    notifyListeners();
+  }
+
+  /// Whether to show the one-time "set an MPIN?" prompt (owner, no MPIN yet,
+  /// hasn't dismissed it before).
+  Future<bool> shouldPromptMpin() async {
+    if (!isOwner || _mpinSet) return false;
+    return !(await AuthService.instance.mpinPromptDismissed());
+  }
+
+  Future<void> dismissMpinPrompt() => AuthService.instance.dismissMpinPrompt();
+
+  /// Sign out from the MPIN lock screen ("Use another account").
+  Future<void> signOutFromLock() async {
+    await AuthService.instance.logoutFull();
+    _business = null; _role = null; _permissions = const [];
+    _mpinSet = false;
+    _status = AuthStatus.unauthenticated;
     notifyListeners();
   }
 
@@ -289,6 +386,7 @@ class AuthProvider extends ChangeNotifier {
     _business = null;
     _role = null;
     _permissions = const [];
+    _mpinSet = false;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
   }

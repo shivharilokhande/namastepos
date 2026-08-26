@@ -92,6 +92,7 @@ dependencies:
   # Utilities
   intl: ^0.20.3
   uuid: ^4.2.1
+  crypto: ^3.0.3
   collection: ^1.18.0
   equatable: ^2.0.5
   logger: ^2.0.2+1

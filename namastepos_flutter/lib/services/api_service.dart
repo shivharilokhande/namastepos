@@ -52,6 +52,15 @@ class ApiService {
   static const _tokenKey = 'ff_jwt';
   static const _refreshKey = 'ff_refresh';
 
+  /// Called when a request 401s AND the refresh token is dead (can't recover).
+  /// AuthProvider sets this to route the app to the login screen instead of
+  /// letting a raw "authentication" error surface on an inner screen.
+  void Function()? onAuthExpired;
+
+  /// Public session check used on app launch/resume: returns true if we hold
+  /// (or can mint) a valid access token. Never throws.
+  Future<bool> ensureFreshToken() => _refresh();
+
   Future<void> setTokens({required String jwt, required String refresh}) async {
     await _secure.write(key: _tokenKey, value: jwt);
     await _secure.write(key: _refreshKey, value: refresh);
@@ -89,6 +98,11 @@ class ApiService {
               final resp = await _dio.fetch(req);
               return handler.resolve(resp);
             } catch (_) {/* fall through */}
+          } else {
+            // Refresh token is dead — the session can't be recovered. Signal
+            // the app to fall back to the login screen instead of bubbling a
+            // raw "authentication" error up to whatever inner screen is open.
+            try { onAuthExpired?.call(); } catch (_) {}
           }
         }
         handler.next(e);

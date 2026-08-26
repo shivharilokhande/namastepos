@@ -14,6 +14,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:uuid/uuid.dart';
@@ -311,6 +312,9 @@ class AuthService {
     // plan are cleared (security); only the business identifier stays.
     await _secure.delete(key: _kRole);
     await _secure.delete(key: _kPerms);
+    // Owner MPIN is a per-user unlock — drop it on sign-out so the next
+    // person can't be locked behind (or unlock with) the previous PIN.
+    await clearMpin();
     // _kPlan stays cached so the next user's plan check works offline;
     // it gets overwritten on the next successful login anyway.
   }
@@ -326,4 +330,54 @@ class AuthService {
   Future<void> _persistBusiness(Business b) async {
     await _secure.write(key: _kBusiness, value: jsonEncode(b.toMap()));
   }
+
+  // ── Session validation ────────────────────────────────────────────────
+  /// Silently confirms we still have a usable session by minting a fresh
+  /// access token from the stored refresh token. Returns false if the
+  /// refresh token is missing/expired (→ the app should show login).
+  Future<bool> ensureValidSession() => _api.ensureFreshToken();
+
+  // ── Owner MPIN (PhonePe-style quick unlock) ───────────────────────────
+  // The MPIN is a convenience lock on top of the real credential (the
+  // refresh token). We store only a salted SHA-256 of it in the OS-encrypted
+  // keychain — never the PIN itself.
+  static const _kMpin = 'ff_mpin_hash';
+  static const _kMpinSalt = 'ff_mpin_salt';
+
+  String _hashMpin(String pin, String salt) =>
+      sha256.convert(utf8.encode('$salt::$pin')).toString();
+
+  Future<bool> hasMpin() async {
+    final h = await _secure.read(key: _kMpin);
+    return h != null && h.isNotEmpty;
+  }
+
+  Future<void> setMpin(String pin) async {
+    var salt = await _secure.read(key: _kMpinSalt);
+    if (salt == null || salt.isEmpty) {
+      salt = const Uuid().v4();
+      await _secure.write(key: _kMpinSalt, value: salt);
+    }
+    await _secure.write(key: _kMpin, value: _hashMpin(pin, salt));
+  }
+
+  Future<bool> verifyMpin(String pin) async {
+    final stored = await _secure.read(key: _kMpin);
+    final salt = await _secure.read(key: _kMpinSalt);
+    if (stored == null || salt == null) return false;
+    return _hashMpin(pin, salt) == stored;
+  }
+
+  Future<void> clearMpin() async {
+    await _secure.delete(key: _kMpin);
+    await _secure.delete(key: _kMpinSalt);
+    await _secure.delete(key: _kMpinPromptOff);
+  }
+
+  // One-time "set an MPIN?" prompt suppression so we don't nag every launch.
+  static const _kMpinPromptOff = 'ff_mpin_prompt_off';
+  Future<bool> mpinPromptDismissed() async =>
+      (await _secure.read(key: _kMpinPromptOff)) == '1';
+  Future<void> dismissMpinPrompt() async =>
+      _secure.write(key: _kMpinPromptOff, value: '1');
 }

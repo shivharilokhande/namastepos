@@ -84,6 +84,52 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (mounted) setState(() {});
     };
     homeTabIndex.addListener(_tabListener!);
+    // One-time offer to set an MPIN for faster login next time (owner only).
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final auth = context.read<AuthProvider>();
+      if (await auth.shouldPromptMpin() && mounted) _showMpinSetup(auth);
+    });
+  }
+
+  Future<void> _showMpinSetup(AuthProvider auth) async {
+    await auth.dismissMpinPrompt(); // ask at most once
+    if (!mounted) return;
+    final pin = TextEditingController();
+    final confirm = TextEditingController();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Set a login MPIN'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text('Skip signing in every time — unlock with a 4-digit MPIN, '
+              'like PhonePe.', style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+          const SizedBox(height: 14),
+          TextField(controller: pin, keyboardType: TextInputType.number, obscureText: true,
+            maxLength: 4, decoration: const InputDecoration(labelText: 'New 4-digit MPIN', counterText: '')),
+          TextField(controller: confirm, keyboardType: TextInputType.number, obscureText: true,
+            maxLength: 4, decoration: const InputDecoration(labelText: 'Confirm MPIN', counterText: '')),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Not now')),
+          FilledButton(onPressed: () {
+            if (pin.text.length != 4 || pin.text != confirm.text) {
+              ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                content: Text('Enter the same 4 digits in both fields')));
+              return;
+            }
+            Navigator.pop(ctx, true);
+          }, child: const Text('Set MPIN')),
+        ],
+      ),
+    );
+    if (result == true && pin.text.length == 4) {
+      await auth.setMpin(pin.text);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('MPIN set — next time just enter your PIN to log in')));
+      }
+    }
+    pin.dispose(); confirm.dispose();
   }
 
   @override

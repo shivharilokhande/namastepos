@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'constants/theme.dart';
 import 'providers/auth_provider.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/mpin_lock_screen.dart';
 import 'screens/auth/onboarding_screen.dart';
 import 'screens/home/home_screen.dart';
 import 'screens/onboarding/setup_wizard_screen.dart';
@@ -52,6 +53,9 @@ class _RootGate extends StatelessWidget {
       builder: (context, auth, _) {
         if (auth.status == AuthStatus.unknown) {
           return const SplashScreen();
+        }
+        if (auth.status == AuthStatus.locked) {
+          return const MpinLockScreen();
         }
         if (auth.status == AuthStatus.authenticated) {
           // FF-217b + FF-217c: newly-registered owners land in the
