@@ -177,6 +177,7 @@ export const ffApi = {
   createMembership: (body: any) => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/memberships`, body).then((r) => r.data.membership); },
   updateMembership: (id: string, body: any) => { const b = getBusinessCache(); return api.put(`/businesses/${b.id}/memberships/${id}`, body).then((r) => r.data.membership); },
   deleteMembership: (id: string) => { const b = getBusinessCache(); return api.delete(`/businesses/${b.id}/memberships/${id}`).then((r) => r.data); },
+  membershipSubscribers: () => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/memberships/subscribers`).then((r) => r.data.subscribers); },
   listGiftCards: () => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/gift-cards`).then((r) => r.data.giftCards); },
   issueGiftCard: (body: any) => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/gift-cards`, body).then((r) => r.data.giftCard); },
   redeemGiftCard: (code: string, body: any) => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/gift-cards/${code}/redeem`, body).then((r) => r.data); },

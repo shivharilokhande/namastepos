@@ -13,11 +13,12 @@ import { formatINR } from '@/lib/utils';
 
 export function MembershipsPage() {
   const qc = useQueryClient();
-  const [tab, setTab] = useState<'plans' | 'gifts'>('plans');
+  const [tab, setTab] = useState<'plans' | 'members' | 'gifts'>('plans');
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<any | null>(null); // plan being edited
   const { data: plans = [] } = useQuery({ queryKey: ['memberships'], queryFn: ffApi.listMemberships });
   const { data: cards = [] } = useQuery({ queryKey: ['gift-cards'], queryFn: ffApi.listGiftCards });
+  const { data: members = [] } = useQuery({ queryKey: ['membership-subscribers'], queryFn: ffApi.membershipSubscribers });
 
   const del = useMutation({
     mutationFn: (id: string) => ffApi.deleteMembership(id),
@@ -34,17 +35,19 @@ export function MembershipsPage() {
           </h1>
           <p className="text-muted-foreground text-sm">Sell pre-paid value and recurring perks.</p>
         </div>
-        <Button onClick={() => setAdding(true)}>
-          <Plus className="mr-1 h-4 w-4" />
-          {tab === 'plans' ? 'New plan' : 'Issue gift card'}
-        </Button>
+        {tab !== 'members' && (
+          <Button onClick={() => setAdding(true)}>
+            <Plus className="mr-1 h-4 w-4" />
+            {tab === 'plans' ? 'New plan' : 'Issue gift card'}
+          </Button>
+        )}
       </div>
 
       <div className="flex gap-2 border-b">
-        {(['plans','gifts'] as const).map((t) => (
+        {(['plans','members','gifts'] as const).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium border-b-2 ${tab===t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground'}`}>
-            {t === 'plans' ? 'Membership plans' : 'Gift cards'}
+            {t === 'plans' ? 'Membership plans' : t === 'members' ? `Members${members.length ? ` (${members.length})` : ''}` : 'Gift cards'}
           </button>
         ))}
       </div>
@@ -77,6 +80,33 @@ export function MembershipsPage() {
             );
           })}
         </div>
+      )}
+
+      {tab === 'members' && (
+        <Card>
+          <CardContent className="p-0">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-muted-foreground border-b">
+                <tr><th className="p-3">Customer</th><th>Phone</th><th>Plan</th><th>Paid</th><th>Status</th><th>Expires</th></tr>
+              </thead>
+              <tbody>
+                {members.length === 0 && (
+                  <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No members yet — sell a plan from a customer's profile.</td></tr>
+                )}
+                {members.map((m: any) => (
+                  <tr key={m.id} className="border-b">
+                    <td className="p-3 font-medium">{m.customerName || '—'}</td>
+                    <td>{m.customerPhone || '—'}</td>
+                    <td>{m.planName}</td>
+                    <td className="font-bold">{formatINR(m.amountPaidInr)}</td>
+                    <td><span className={`text-xs px-2 py-0.5 rounded ${m.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'}`}>{m.status}</span></td>
+                    <td className="text-xs text-muted-foreground">{m.expiresAt ? new Date(m.expiresAt).toLocaleDateString('en-IN') : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
       )}
 
       {tab === 'gifts' && (
