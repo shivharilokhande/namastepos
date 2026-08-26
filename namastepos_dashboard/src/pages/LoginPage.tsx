@@ -73,7 +73,7 @@ export function LoginPage() {
   const onResolvePhone = async (e: React.FormEvent) => {
     e.preventDefault();
     const phone = staffPhone.trim();
-    if (phone.length < 8) { toast.error('Enter your mobile number'); return; }
+    if (!/^\d{10}$/.test(phone)) { toast.error('Enter a valid 10-digit mobile number'); return; }
     setResolving(true);
     try {
       // POST /auth/staff-resolve { phone } -> { outlets: Outlet[] }
@@ -204,11 +204,12 @@ export function LoginPage() {
                     </p>
                     <Input
                       type="tel"
-                      inputMode="tel"
+                      inputMode="numeric"
                       autoComplete="off"
-                      placeholder="Mobile number"
+                      maxLength={10}
+                      placeholder="10-digit mobile number"
                       value={staffPhone}
-                      onChange={(e) => setStaffPhone(e.target.value.replace(/[^\d+\-\s]/g, ''))}
+                      onChange={(e) => setStaffPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
                     />
                     <Button type="submit" disabled={resolving} className="w-full h-11 text-base font-bold">
                       {resolving ? 'Checking…' : 'Continue'}

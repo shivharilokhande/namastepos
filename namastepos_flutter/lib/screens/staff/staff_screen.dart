@@ -8,6 +8,7 @@
 // Backend enforces; we surface a tooltip when cap is reached.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
@@ -581,10 +582,15 @@ class _StaffEditSheetState extends State<_StaffEditSheet> {
           const SizedBox(height: 12),
           TextField(
             controller: _phone,
-            keyboardType: TextInputType.phone,
+            keyboardType: TextInputType.number,
+            inputFormatters: [
+              FilteringTextInputFormatter.digitsOnly,
+              LengthLimitingTextInputFormatter(10),
+            ],
             decoration: const InputDecoration(
-              labelText: 'Phone * (used to identify staff uniquely)',
+              labelText: 'Phone * (10-digit — used to identify staff uniquely)',
               helperText: 'Adding the same phone reactivates a removed staff',
+              counterText: '',
               border: OutlineInputBorder(),
             ),
           ),

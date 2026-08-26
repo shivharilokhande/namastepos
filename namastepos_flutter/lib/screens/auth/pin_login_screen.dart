@@ -108,8 +108,8 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
   // ── Phone-first: resolve outlets for a mobile number ───────────────────
   Future<void> _resolvePhone() async {
     final phone = _phone.text.trim();
-    if (phone.length < 8) {
-      setState(() => _error = 'Enter your mobile number');
+    if (phone.length != 10) {
+      setState(() => _error = 'Enter a valid 10-digit mobile number');
       return;
     }
     setState(() { _loading = true; _error = null; });
@@ -235,15 +235,16 @@ class _PinLoginScreenState extends State<PinLoginScreen> {
         TextField(
           controller: _phone,
           autofocus: true,
-          keyboardType: TextInputType.phone,
+          keyboardType: TextInputType.number,
           inputFormatters: [
-            FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-\s]')),
-            LengthLimitingTextInputFormatter(20),
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(10),
           ],
           onSubmitted: (_) => _resolvePhone(),
           decoration: const InputDecoration(
             prefixIcon: Icon(Icons.phone_outlined),
-            hintText: '98765 43210',
+            hintText: '10-digit mobile number',
+            counterText: '',
             border: OutlineInputBorder(),
           ),
         ),

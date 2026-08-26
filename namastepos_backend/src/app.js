@@ -133,7 +133,15 @@ function buildApp() {
       req.path === `${authPath}/dev-login` ||
       req.path === `${authPath}/refresh` ||
       req.path === `${authPath}/request-otp` ||
-      req.path === `${authPath}/verify-otp`
+      req.path === `${authPath}/verify-otp` ||
+      // Staff phone+PIN sign-in is a PRE-LOGIN flow (no authenticated session
+      // yet), same category as /auth/login. Without these exemptions a stale
+      // ff_refresh cookie from a previous owner session on a shared PC makes
+      // the double-submit check 403 ("CSRF token missing or invalid") even
+      // though the staffer is just logging in. 2026-08-26.
+      req.path === `${authPath}/staff-resolve` ||
+      req.path === `${authPath}/staff-picker` ||
+      req.path === `${authPath}/pin-login`
     ) {
       return next();
     }

@@ -12,7 +12,8 @@
 import 'dart:async';
 import 'package:dio/dio.dart' show DioException;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show FilteringTextInputFormatter;
+import 'package:flutter/services.dart'
+    show FilteringTextInputFormatter, LengthLimitingTextInputFormatter;
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
@@ -153,10 +154,15 @@ class _CaptainScreenState extends State<CaptainScreen> {
             const SizedBox(height: 10),
             TextField(
               controller: phoneCtrl,
-              keyboardType: TextInputType.phone,
+              keyboardType: TextInputType.number,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(10),
+              ],
               decoration: const InputDecoration(
                 labelText: 'Customer phone (optional)',
                 hintText: '9876543210',
+                counterText: '',
               ),
             ),
             const SizedBox(height: 10),

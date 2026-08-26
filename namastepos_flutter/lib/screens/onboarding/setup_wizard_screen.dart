@@ -10,6 +10,7 @@
 // we push HomeScreen with a fresh AuthProvider refresh.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
@@ -250,8 +251,12 @@ class _SetupWizardScreenState extends State<SetupWizardScreen> {
           decoration: const InputDecoration(labelText: 'Business name', hintText: 'Cafe Sugar & Spice')),
         const SizedBox(height: 12),
         TextField(controller: _phone,
-          keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'Phone', hintText: '9876543210')),
+          keyboardType: TextInputType.number,
+          inputFormatters: [
+            FilteringTextInputFormatter.digitsOnly,
+            LengthLimitingTextInputFormatter(10),
+          ],
+          decoration: const InputDecoration(labelText: 'Phone', hintText: '9876543210', counterText: '')),
         const SizedBox(height: 12),
         TextField(controller: _city,
           decoration: const InputDecoration(labelText: 'City')),

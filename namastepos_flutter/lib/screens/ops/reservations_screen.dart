@@ -4,6 +4,7 @@
 // at what time, mark seated/cancelled, or create a new reservation.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
@@ -57,7 +58,15 @@ class _ReservationsScreenState extends State<ReservationsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               TextField(controller: name, decoration: const InputDecoration(labelText: 'Guest name')),
-              TextField(controller: phone, decoration: const InputDecoration(labelText: 'Phone')),
+              TextField(
+                controller: phone,
+                keyboardType: TextInputType.number,
+                inputFormatters: [
+                  FilteringTextInputFormatter.digitsOnly,
+                  LengthLimitingTextInputFormatter(10),
+                ],
+                decoration: const InputDecoration(labelText: 'Phone', counterText: ''),
+              ),
               TextField(
                 controller: party,
                 keyboardType: TextInputType.number,
