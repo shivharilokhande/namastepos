@@ -552,10 +552,14 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     dashboard_access:'Web dashboard',invoice_basic:'Invoicing',expenses:'Expense tracking',
     reports_advanced:'Advanced reports'
   };
-  // Highlight ordering for the plan cards (first matches shown).
-  var HL=['pos','qr_ordering','tax_invoices','loyalty','memberships','whatsapp_marketing',
-    'reports_advanced','inventory_tracking','captain_mode','kds','aggregators','multi_outlet',
-    'einvoice_gst','api_access','recipe_costing','bill_split'];
+  // Free-plan card highlights (core, always-true product traits first).
+  var FREE_HL=[['pos','Billing & POS'],['invoice_basic','GST invoices'],
+    ['menu_basic','Menu management'],['captain_mode','Captain ordering'],
+    ['reports_basic','Daily reports'],['token_generation','Token billing']];
+  // Paid-plan differentiators (shown after "Everything in ...").
+  var HL=['qr_ordering','loyalty','memberships','whatsapp_marketing','kds',
+    'reservations','inventory_tracking','aggregators','einvoice_gst','multi_outlet',
+    'api_access','recipe_costing','bill_split','tax_invoices','captain_mode'];
   // Rows for the comparison table (limits first, then key features).
   var CMP=['tax_invoices','whatsapp_marketing','loyalty','memberships','qr_ordering',
     'kds','captain_mode','inventory_tracking','reports_advanced','aggregators',
@@ -596,19 +600,22 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
   }
   function cardHTML(p,i,total){
     var pop=(total>=3&&i===1);
-    var hl=[];
-    if(i>0)hl.push((i===1?'Everything in Starter':'Everything in Growth'));
     var fk=p.featureKeys||[];
-    for(var j=0;j<HL.length&&hl.length<6;j++){
-      var k=HL[j];
-      if(fk.indexOf(k)>-1&&LBL[k]&&hl.indexOf(LBL[k])<0)hl.push(LBL[k]);
+    var hl=[];
+    if(i===0){
+      // Free plan: show its real core inclusions.
+      for(var f=0;f<FREE_HL.length&&hl.length<6;f++){
+        if(fk.length===0||fk.indexOf(FREE_HL[f][0])>-1)hl.push(FREE_HL[f][1]);
+      }
+    }else{
+      hl.push(i===1?'Everything in Starter':'Everything in Growth');
+      if(has(p,'reports_advanced'))hl.push('Advanced reports');
+      for(var j=0;j<HL.length&&hl.length<6;j++){
+        var k=HL[j];
+        if(fk.indexOf(k)>-1&&LBL[k]&&hl.indexOf(LBL[k])<0)hl.push(LBL[k]);
+      }
     }
-    // Fallbacks if backend hasn't shipped featureKeys yet.
-    if(hl.length<3){
-      if(has(p,'reports_advanced')&&hl.indexOf('Advanced reports')<0)hl.push('Advanced reports');
-      if(has(p,'aggregators')&&hl.indexOf(LBL.aggregators)<0)hl.push(LBL.aggregators);
-      if(hl.indexOf('GST tax invoices')<0)hl.push('GST tax invoices');
-    }
+    if(hl.length===0)hl.push('Billing & POS','GST invoices','Live reports');
     var lis=hl.map(function(t){return '<li><span class="material-symbols-outlined">check</span> '+t+'</li>';}).join('');
     var btn=pop?'btn-primary':'btn-ghost';
     var cta=(p.priceInr||0)<=0?'Get started free':'Start free trial';
