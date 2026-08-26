@@ -32,14 +32,23 @@ async function ping() {
       cf: { cacheTtl: 0 },
     });
     const ms = Date.now() - started;
-    const body = await res.json().catch(() => ({}));
-    const ok = res.ok && body.status === 'ok' && body.db === 'ok';
-    if (!ok) {
-      console.warn(`[keepalive] UNHEALTHY status=${res.status} db=${body.db} in ${ms}ms`);
+    // Keep-alive success = we got a real HTTP response (Render is awake).
+    // Reaching the origin at all is what prevents the cold-start.
+    const alive = res.ok;
+    // DB health is a secondary signal parsed from the body (parse defensively
+    // in case the body is ever non-JSON, so a quirk never masks "alive").
+    const text = await res.text().catch(() => '');
+    let db = null;
+    try { db = JSON.parse(text).db ?? null; } catch { /* non-JSON body */ }
+
+    if (!alive) {
+      console.warn(`[keepalive] API not alive — status=${res.status} in ${ms}ms`);
+    } else if (db && db !== 'ok') {
+      console.warn(`[keepalive] API up but DB=${db} in ${ms}ms`);
     } else {
-      console.log(`[keepalive] ok in ${ms}ms`);
+      console.log(`[keepalive] ok (db=${db ?? 'n/a'}) in ${ms}ms`);
     }
-    return { ok, httpStatus: res.status, db: body.db ?? null, ms };
+    return { ok: alive, httpStatus: res.status, db, ms };
   } catch (err) {
     console.error(`[keepalive] FAILED after ${Date.now() - started}ms — ${err}`);
     return { ok: false, error: String(err) };
