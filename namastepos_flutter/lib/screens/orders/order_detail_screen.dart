@@ -338,23 +338,50 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         )).toList(),
       );
 
-  Widget _totals(Order o, [double refundedInr = 0]) => Column(
-        children: [
-          _row('Subtotal', AppFmt.money(o.subtotal, decimals: true)),
-          if (o.discount > 0) _row('Discount', '-${AppFmt.money(o.discount, decimals: true)}'),
-          if (o.tax > 0) _row('Tax', AppFmt.money(o.tax, decimals: true)),
-          const Divider(),
-          _row('Total', AppFmt.money(o.total, decimals: true), bold: true, big: true),
-          // Refunds against this order (2026-08-23, founder request)
-          if (refundedInr > 0) ...[
-            _row('Refunded', '-${AppFmt.money(refundedInr, decimals: true)}',
-                color: AppColors.error),
-            _row('Net after refund',
-                AppFmt.money(o.total - refundedInr, decimals: true),
-                bold: true),
-          ],
+  Widget _totals(Order o, [double refundedInr = 0]) {
+    // Full bill breakup (2026-08-26). Coupon is included within Discount.
+    final hasSplitGst = o.cgst > 0 || o.sgst > 0;
+    final tenders = o.paymentBreakdown ?? const [];
+    return Column(
+      children: [
+        _row('Subtotal', AppFmt.money(o.subtotal, decimals: true)),
+        if (o.discount > 0)
+          _row('Discount (incl. coupon)', '-${AppFmt.money(o.discount, decimals: true)}'),
+        if (o.loyaltyDiscountInr > 0)
+          _row('Loyalty${o.pointsRedeemed > 0 ? ' (${o.pointsRedeemed} pts)' : ''}',
+              '-${AppFmt.money(o.loyaltyDiscountInr, decimals: true)}'),
+        if (o.serviceChargeInr > 0)
+          _row('Service charge', AppFmt.money(o.serviceChargeInr, decimals: true)),
+        if (hasSplitGst) ...[
+          if (o.cgst > 0) _row('CGST', AppFmt.money(o.cgst, decimals: true)),
+          if (o.sgst > 0) _row('SGST', AppFmt.money(o.sgst, decimals: true)),
+        ] else if (o.igst > 0)
+          _row('IGST', AppFmt.money(o.igst, decimals: true))
+        else if (o.tax > 0)
+          _row('Tax (GST)', AppFmt.money(o.tax, decimals: true)),
+        if (o.roundOffInr != 0)
+          _row('Round-off', AppFmt.money(o.roundOffInr, decimals: true)),
+        const Divider(),
+        _row('Total', AppFmt.money(o.total, decimals: true), bold: true, big: true),
+        // Payment tenders (split / wallet / points), when present.
+        if (tenders.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          ...tenders.map((t) => _row(
+                'Paid · ${(t['method'] ?? '').toString().toUpperCase()}',
+                AppFmt.money((t['amountInr'] as num?)?.toDouble() ?? 0, decimals: true),
+              )),
         ],
-      );
+        // Refunds against this order (2026-08-23, founder request)
+        if (refundedInr > 0) ...[
+          _row('Refunded', '-${AppFmt.money(refundedInr, decimals: true)}',
+              color: AppColors.error),
+          _row('Net after refund',
+              AppFmt.money(o.total - refundedInr, decimals: true),
+              bold: true),
+        ],
+      ],
+    );
+  }
 
   Widget _details(Order o) => Column(
         children: [

@@ -105,6 +105,16 @@ class Order {
   final DateTime? collectedAt;
   // Total refunded so far (2026-08-23) — populated by GET /orders/:id.
   final double refundedInr;
+  // Bill breakup (2026-08-26) — for the order receipt/detail. All ₹.
+  final double cgst;
+  final double sgst;
+  final double igst;
+  final double loyaltyDiscountInr;
+  final double serviceChargeInr;
+  final double roundOffInr;
+  final int pointsRedeemed;
+  // Split-payment tenders: [{method, amountInr}] or null (single tender).
+  final List<Map<String, dynamic>>? paymentBreakdown;
 
   // ── Bill-mode fields (set when backend was called with groupBy=session) ──
   // The order represents an entire table session's bill, not a single KOT.
@@ -138,6 +148,14 @@ class Order {
     this.readyAt,
     this.collectedAt,
     this.refundedInr = 0,
+    this.cgst = 0,
+    this.sgst = 0,
+    this.igst = 0,
+    this.loyaltyDiscountInr = 0,
+    this.serviceChargeInr = 0,
+    this.roundOffInr = 0,
+    this.pointsRedeemed = 0,
+    this.paymentBreakdown,
     this.isBill = false,
     this.tableSessionId,
     this.displayNo,
@@ -216,6 +234,15 @@ class Order {
       readyAt: m['readyAt'] != null ? DateTime.tryParse(m['readyAt'].toString()) : null,
       collectedAt: m['collectedAt'] != null ? DateTime.tryParse(m['collectedAt'].toString()) : null,
       refundedInr: (m['refundedInr'] as num?)?.toDouble() ?? 0,
+      cgst: (m['cgst'] as num?)?.toDouble() ?? 0,
+      sgst: (m['sgst'] as num?)?.toDouble() ?? 0,
+      igst: (m['igst'] as num?)?.toDouble() ?? 0,
+      loyaltyDiscountInr: (m['loyaltyDiscountInr'] as num?)?.toDouble() ?? 0,
+      serviceChargeInr: (m['serviceChargeInr'] as num?)?.toDouble() ?? 0,
+      roundOffInr: (m['roundOffInr'] as num?)?.toDouble() ?? 0,
+      pointsRedeemed: (m['pointsRedeemed'] as num?)?.toInt() ?? 0,
+      paymentBreakdown: (m['paymentBreakdown'] as List?)
+          ?.cast<Map>().map((e) => e.cast<String, dynamic>()).toList(),
       isBill: (m['isBill'] as bool?) ?? false,
       tableSessionId: m['tableSessionId'] as String?,
       displayNo: (m['displayNo'] as num?)?.toInt(),

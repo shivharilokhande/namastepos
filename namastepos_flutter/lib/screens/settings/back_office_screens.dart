@@ -13,6 +13,8 @@ import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'members_screen.dart';
+
 import '../../constants/colors.dart';
 import '../../utils/error_humanizer.dart';
 import '../../providers/auth_provider.dart';
@@ -317,7 +319,15 @@ class _MembershipsScreenState extends State<MembershipsScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: (ModalRoute.of(context)?.isFirst ?? true) ? const HomeDrawerButton() : null,
-        title: const Text('Memberships')),
+        title: const Text('Memberships'),
+        actions: [
+          IconButton(
+            tooltip: 'Members',
+            icon: const Icon(Icons.people_alt_outlined),
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const MembersScreen())),
+          ),
+        ]),
       // 2026-08-23: plans (incl. item bundles) can be created right here.
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {

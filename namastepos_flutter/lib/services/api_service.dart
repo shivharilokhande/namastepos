@@ -1020,6 +1020,13 @@ class ApiService {
     return (r as Map)['memberships'] as List? ?? const [];
   }
 
+  // 2026-08-26: roster of customers who hold a membership (name/phone/plan/
+  // amount/status/expiry).
+  Future<List<dynamic>> membershipSubscribers(String businessId) async {
+    final r = await _wrap(() => _dio.get('/businesses/$businessId/memberships/subscribers'));
+    return (r as Map)['subscribers'] as List? ?? const [];
+  }
+
   // Membership plan update + delete (2026-08-24): screen was create+read only.
   Future<Map<String, dynamic>> updateMembership(
       String businessId, String id, Map<String, dynamic> body) async {

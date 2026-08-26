@@ -1017,9 +1017,26 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
   bool get _valid =>
       _balance.abs() <= 0.01 &&
       !_walletOver &&
-      _legs.length >= 2 &&
-      // Backend Joi requires every paymentBreakdown leg to be POSITIVE.
+      // ≥1 leg (a lone full-wallet tender is valid); backend requires each
+      // paymentBreakdown leg to be POSITIVE.
+      _legs.isNotEmpty &&
       _legs.every((l) => (double.tryParse(l.ctl.text.trim()) ?? 0) > 0);
+
+  // One-tap: apply wallet balance (up to the bill), put any remainder on cash.
+  // e.g. bill ₹300, wallet ₹290 → wallet ₹290 + cash ₹10.
+  void _applyWallet() {
+    final apply = widget.walletBalance >= widget.total ? widget.total : widget.walletBalance;
+    final rem = widget.total - apply;
+    setState(() {
+      for (final l in _legs) l.ctl.dispose();
+      _legs
+        ..clear()
+        ..add(_SplitLeg(method: 'wallet', ctl: TextEditingController(text: apply.toStringAsFixed(2))));
+      if (rem > 0.001) {
+        _legs.add(_SplitLeg(method: 'cash', ctl: TextEditingController(text: rem.toStringAsFixed(2))));
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1046,6 +1063,20 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
                           fontWeight: FontWeight.w700, color: AppColors.textSecondary)),
                 ],
               ),
+              if (widget.walletAvailable && widget.walletBalance > 0) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _applyWallet,
+                    icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
+                    label: Text(
+                      'Use wallet ${AppFmt.money(widget.walletBalance >= widget.total ? widget.total : widget.walletBalance)}'
+                      '${widget.walletBalance < widget.total ? ' + ${AppFmt.money(widget.total - widget.walletBalance)} balance' : ''}',
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 12),
               for (var i = 0; i < _legs.length; i++)
                 Padding(
