@@ -40,3 +40,7 @@ coverage/
 # ── Misc ────────────────────────────────────────────────────────────
 testsprite_tests/tmp/
 nohup.out
+
+# Large build artifacts (served from R2, not git)
+namastepos_flutter/NamastePOS.apk
+namastepos_flutter/.wrangler/
