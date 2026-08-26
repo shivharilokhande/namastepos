@@ -17,5 +17,6 @@ router.post ('/change',        requireRole('business_owner'), ...c.changePlan);
 router.post ('/cancel',        requireRole('business_owner'), c.cancel);
 router.post ('/resume',        requireRole('business_owner'), c.resume);
 router.get  ('/invoices',      c.invoices);
+router.get  ('/invoices/:invoiceId/pdf', c.invoicePdf);
 
 module.exports = router;

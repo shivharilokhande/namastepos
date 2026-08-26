@@ -48,6 +48,9 @@ export function SettingsPage() {
       city: me.business.city || '',
       category: me.business.category || '',
       gstin: me.business.gstin || '',
+      legal_name: me.business.legalName || '',
+      fssai: me.business.fssai || '',
+      pan: me.business.pan || '',
       address: me.business.address || '',
       upi_id: me.business.upiId || '',
       bank_account: me.business.bankAccount || '',
@@ -271,10 +274,33 @@ export function SettingsPage() {
           <div><Label>City</Label><Input value={form.city || ''} onChange={(e) => set('city', e.target.value)} /></div>
           <div><Label>Category</Label><Input value={form.category || ''} onChange={(e) => set('category', e.target.value)} /></div>
           <div className="md:col-span-2"><Label>Address</Label><Input value={form.address || ''} onChange={(e) => set('address', e.target.value)} /></div>
-          <div><Label>GSTIN</Label><Input value={form.gstin || ''} onChange={(e) => set('gstin', e.target.value)} /></div>
           <div><Label>UPI ID</Label><Input value={form.upi_id || ''} onChange={(e) => set('upi_id', e.target.value)} placeholder="yourbusiness@upi" /></div>
           <div><Label>Bank account</Label><Input value={form.bank_account || ''} onChange={(e) => set('bank_account', e.target.value)} /></div>
           <div><Label>IFSC</Label><Input value={form.bank_ifsc || ''} onChange={(e) => set('bank_ifsc', e.target.value)} /></div>
+          <div className="md:col-span-2 flex justify-end">
+            <Button onClick={() => save.mutate()} disabled={save.isPending}>
+              {save.isPending ? 'Saving…' : 'Save changes'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Billing & tax identity ──────────────────────────────────────────
+          2026-08-26: these details appear on the GST-compliant invoice
+          NamastePOS issues you for your subscription. Provide your GSTIN to
+          claim input tax credit; FSSAI/PAN are optional. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Billing &amp; tax identity</CardTitle>
+          <p className="text-sm text-muted-foreground mt-1">
+            Used on the GST invoice we issue for your subscription. Add your GSTIN to claim input tax credit. FSSAI and PAN are optional.
+          </p>
+        </CardHeader>
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="md:col-span-2"><Label>Registered legal name</Label><Input value={form.legal_name || ''} onChange={(e) => set('legal_name', e.target.value)} placeholder="As printed on your GST certificate (optional)" /></div>
+          <div><Label>GSTIN</Label><Input value={form.gstin || ''} onChange={(e) => set('gstin', e.target.value.toUpperCase())} placeholder="15-character GSTIN" maxLength={15} /></div>
+          <div><Label>PAN</Label><Input value={form.pan || ''} onChange={(e) => set('pan', e.target.value.toUpperCase())} placeholder="10-character PAN (optional)" maxLength={10} /></div>
+          <div className="md:col-span-2"><Label>FSSAI licence no.</Label><Input value={form.fssai || ''} onChange={(e) => set('fssai', e.target.value)} placeholder="14-digit FSSAI number (optional)" maxLength={20} /></div>
           <div className="md:col-span-2 flex justify-end">
             <Button onClick={() => save.mutate()} disabled={save.isPending}>
               {save.isPending ? 'Saving…' : 'Save changes'}

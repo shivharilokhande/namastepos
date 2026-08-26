@@ -145,7 +145,7 @@ export function CustomerDetailPage() {
       {tab === 'menu' && <MenuTab menu={menu} businessId={id!} />}
       {tab === 'orders' && <OrdersTab orders={orders} />}
       {tab === 'staff' && <StaffTab staff={staff} />}
-      {tab === 'invoices' && <InvoicesTab invoices={invoices} />}
+      {tab === 'invoices' && <InvoicesTab invoices={invoices} businessId={id!} />}
       {tab === 'notes' && <NotesTab notes={notes} businessId={id!} />}
 
       <ExtendTrialDialog open={extending} onClose={() => setExtending(false)} businessId={id!} />
@@ -796,15 +796,18 @@ function StaffTab({ staff }: any) {
   );
 }
 
-function InvoicesTab({ invoices }: any) {
-  // Push 19b — open the hosted PDF (if uploaded to S3) in a new tab.
-  // Falls back to a toast when the invoice doesn't have a stored PDF
-  // yet (early lifecycle / failed Razorpay push).
-  const openPdf = (inv: any) => {
-    if (inv.pdf_url) {
-      window.open(inv.pdf_url, '_blank');
-    } else {
-      toast.error('No PDF on this invoice yet — Razorpay may still be processing it.');
+function InvoicesTab({ invoices, businessId }: any) {
+  // 2026-08-26 — we now generate our OWN GST-compliant invoice PDF on demand
+  // (no dependence on Razorpay hosting one). Fetch it as an authenticated blob
+  // and open it in a new tab.
+  const openPdf = async (inv: any) => {
+    try {
+      const blob = await adminApi.invoicePdf(businessId, inv.id);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      toast.error(apiError(e));
     }
   };
   // Push 20c — CSV export of the invoice ledger for the customer.

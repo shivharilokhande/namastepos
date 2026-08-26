@@ -128,6 +128,13 @@ export const adminApi = {
     api.get<{ customer: any }>(`/admin/customers/${id}`).then((r) => r.data.customer),
   drilldown: (id: string) =>
     api.get<any>(`/admin/customers/${id}/drilldown`).then((r) => r.data),
+
+  // GST-compliant subscription invoice PDF — generated on demand by the
+  // backend and returned as a blob so we can open it with the admin's auth.
+  invoicePdf: (businessId: string, invoiceId: string) =>
+    api.get(`/admin/customers/${businessId}/invoices/${invoiceId}/pdf`, {
+      responseType: 'blob',
+    }).then((r) => r.data as Blob),
   createCustomer: (body: any) =>
     api.post<{ business: any }>('/admin/customers', body).then((r) => r.data.business),
   updateCustomer: (id: string, body: any) =>

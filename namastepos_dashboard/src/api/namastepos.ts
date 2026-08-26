@@ -425,6 +425,12 @@ export const ffApi = {
     const b = getBusinessCache();
     return api.get(`/businesses/${b.id}/billing/invoices`).then((r) => r.data.invoices);
   },
+  // 2026-08-26 — GST-compliant subscription invoice PDF, generated on demand.
+  subscriptionInvoicePdf: (invoiceId: string) => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/billing/invoices/${invoiceId}/pdf`,
+      { responseType: 'blob' }).then((r) => r.data as Blob);
+  },
 
   // Add-on marketplace
   catalogAddons: () => api.get('/addons').then((r) => r.data.addons),

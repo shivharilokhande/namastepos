@@ -6,6 +6,7 @@ const validate = require('../middleware/validate');
 const sub = require('../services/subscriptionService');
 const razorpay = require('../services/razorpayService');
 const features = require('../services/featureService');
+const subInvoice = require('../services/subscriptionInvoiceService');
 const { query } = require('../config/db');
 
 const changeBody = Joi.object({
@@ -133,6 +134,15 @@ module.exports = {
         pdfUrl: i.pdf_url,
         createdAt: i.created_at,
       })),
+    });
+  }),
+
+  // GST-compliant subscription invoice PDF — generated on demand and scoped
+  // to the owner's own business so one tenant can't pull another's invoice.
+  invoicePdf: asyncHandler(async (req, res) => {
+    await subInvoice.renderPdf(res, {
+      invoiceId: req.params.invoiceId,
+      businessId: req.params.businessId,
     });
   }),
 

@@ -51,6 +51,7 @@ router.get   ('/health/db',         requirePermission('reports.read'), c.dbHealt
 router.get   ('/customers',                     requirePermission('customers.read'), c.listCustomers);
 router.get   ('/customers/:businessId',         requirePermission('customers.read'), c.getCustomer);
 router.get   ('/customers/:businessId/drilldown', requirePermission('customers.read'), c.drilldown);
+router.get   ('/customers/:businessId/invoices/:invoiceId/pdf', requirePermission('customers.read'), c.invoicePdf);
 router.post  ('/customers',                     requirePermission('customers.write'),
               audit.middlewareLog('customers', 'create', (req, b) => ({ type: 'business', id: b.business?.id })),
               ...c.createCustomer);

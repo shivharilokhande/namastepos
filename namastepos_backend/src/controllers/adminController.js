@@ -129,6 +129,17 @@ const drilldown = asyncHandler(async (req, res) => {
   res.json(await adminCust.drilldown(req.params.businessId));
 });
 
+// GST-compliant subscription invoice PDF for a customer's invoice — generated
+// on demand (no dependency on Razorpay hosting a PDF). Scoped to the business
+// so the id in the path must belong to that customer.
+const subInvoice = require('../services/subscriptionInvoiceService');
+const invoicePdf = asyncHandler(async (req, res) => {
+  await subInvoice.renderPdf(res, {
+    invoiceId: req.params.invoiceId,
+    businessId: req.params.businessId,
+  });
+});
+
 const createCustomerBody = Joi.object({
   email: Joi.string().email().required(),
   name: Joi.string().min(1).max(255).required(),
@@ -571,7 +582,7 @@ module.exports = {
   login, me,
   twoFaVerify, twoFaEnrolStart, twoFaEnrolConfirm, twoFaDisable,
   teamList, teamCreate, teamUpdate, teamDeactivate,
-  listCustomers, getCustomer, drilldown,
+  listCustomers, getCustomer, drilldown, invoicePdf,
   createCustomer, updateCustomer,
   extendTrial, setPlanManually,
   suspend, restore, impersonate, deleteCustomer,

@@ -696,17 +696,23 @@ export function BillingPage() {
                       test data) we render a printable HTML receipt
                       from the row itself so the user can print or
                       "Save as PDF" from their browser. */}
+                  {/* 2026-08-26 — download our own GST-compliant invoice PDF
+                      (generated on demand). Falls back to the printable HTML
+                      receipt if the PDF endpoint errors. */}
                   <button
-                    onClick={() => openInvoicePreview(i, sub, biz)}
+                    onClick={async () => {
+                      try {
+                        const blob = await ffApi.subscriptionInvoicePdf(i.id);
+                        const url = URL.createObjectURL(blob);
+                        window.open(url, '_blank');
+                        setTimeout(() => URL.revokeObjectURL(url), 60000);
+                      } catch {
+                        openInvoicePreview(i, sub, biz);
+                      }
+                    }}
                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                    <FileText className="w-3.5 h-3.5" /> View
+                    <Download className="w-3.5 h-3.5" /> GST invoice
                   </button>
-                  {i.pdfUrl && (
-                    <a href={i.pdfUrl} target="_blank" rel="noopener noreferrer"
-                       className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                      <Download className="w-3.5 h-3.5" /> PDF
-                    </a>
-                  )}
                 </div>
               </div>
             );

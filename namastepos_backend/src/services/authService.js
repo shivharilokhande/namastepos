@@ -330,6 +330,8 @@ async function updateBusiness(id, patch) {
     // businesses, NOT platform_settings: that table is platform-global KV
     // with no business_id column, so per-business rows can't exist there.
     'google_maps_url', 'google_place_id',
+    // 2026-08-26 — tax identity for GST-compliant subscription invoices (062).
+    'legal_name', 'fssai', 'pan',
   ];
   const updates = [];
   const values = [];
@@ -376,6 +378,10 @@ function serializeBusiness(b) {
     category: b.category,
     gstin: b.gstin,
     address: b.address,
+    // Tax identity for GST-compliant subscription invoices (migration 062).
+    legalName: b.legal_name || null,
+    fssai: b.fssai || null,
+    pan: b.pan || null,
     upiId: b.upi_id,
     bankAccount: b.bank_account,
     bankIfsc: b.bank_ifsc,

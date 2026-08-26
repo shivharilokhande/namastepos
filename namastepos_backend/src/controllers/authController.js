@@ -58,6 +58,12 @@ const updateBusinessSchema = {
     // only affects review fetching, not payouts.
     google_maps_url: Joi.string().uri().max(2048).allow('', null),
     google_place_id: Joi.string().max(100).allow('', null),
+    // 2026-08-26 (founder: GST-compliant subscription invoices) — tax identity
+    // used when NamastePOS bills the owner. Owner-only (see OWNER_ONLY_FIELDS)
+    // because it appears on financial documents. All optional.
+    legal_name: Joi.string().max(255).allow('', null),
+    fssai: Joi.string().max(20).allow('', null),
+    pan: Joi.string().max(10).allow('', null),
   }).min(1),
 };
 
@@ -514,6 +520,8 @@ const me = asyncHandler(async (req, res) => {
 // would let an internal user redirect Razorpay payouts to their own account.
 const OWNER_ONLY_FIELDS = new Set([
   'upi_id', 'bank_account', 'bank_ifsc', 'gstin',
+  // Tax identity shown on the subscription invoice we bill the owner for.
+  'legal_name', 'fssai', 'pan',
 ]);
 
 const patchMe = asyncHandler(async (req, res) => {
