@@ -34,6 +34,13 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
   final _table = TextEditingController(text: '1');
   final _phone = TextEditingController();
   final _discount = TextEditingController(text: '0');
+  // Coupon-at-checkout (2026-08-26): cashier types a promo code; the server
+  // validates + prices it (percent/flat, rupee cap, expiry, redemption cap)
+  // and returns the discount, which stacks on top of the manual discount.
+  final _coupon = TextEditingController();
+  double _couponDiscount = 0;
+  String? _appliedCoupon;
+  bool _applyingCoupon = false;
   bool _saving = false;
   // FF-322 mobile split-tender. When non-null the order is submitted
   // as a multi-leg payment. Each entry is {method, amountInr}. Sum
@@ -109,6 +116,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
     _table.dispose();
     _phone.dispose();
     _discount.dispose();
+    _coupon.dispose();
     // Don't clear pendingCaptainSession here — captain_screen clears it
     // when its post-push .then() callback fires, so we don't double-clear
     // and break a sibling confirm screen mid-flow.
@@ -221,7 +229,9 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
     bool printed = false;
     String? _printError; // P1 fix: surface printer failures to the owner
     try {
-      final discount = double.tryParse(_discount.text.trim()) ?? 0;
+      // Coupon discount stacks onto the manual discount — the backend order
+      // stores a single discount amount, so send the combined figure.
+      final discount = (double.tryParse(_discount.text.trim()) ?? 0) + _couponDiscount;
       final biz = auth.business!;
       order = await orders.createOrderFromCart(
         businessId: biz.id,
@@ -362,6 +372,54 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
     );
   }
 
+  Future<void> _applyCoupon() async {
+    final code = _coupon.text.trim();
+    if (code.isEmpty) return;
+    final orders = context.read<OrdersProvider>();
+    final subtotal = orders.cartSubtotal * _surgeMultiplier;
+    final messenger = ScaffoldMessenger.of(context);
+    if (subtotal <= 0) {
+      messenger.showSnackBar(const SnackBar(content: Text('Add items first')));
+      return;
+    }
+    setState(() => _applyingCoupon = true);
+    try {
+      final biz = context.read<AuthProvider>().business!;
+      final r = await ApiService.instance.applyFoodCoupon(
+        businessId: biz.id,
+        code: code,
+        subtotal: subtotal,
+        customerId: _customer?.id,
+      );
+      final disc = (r['discountInr'] as num?)?.toDouble() ?? 0;
+      if (!mounted) return;
+      setState(() {
+        _couponDiscount = disc;
+        _appliedCoupon = code.toUpperCase();
+        _splits = null; // total changed → any saved split is now stale
+      });
+      messenger.showSnackBar(SnackBar(
+        content: Text('Coupon $_appliedCoupon applied — ${AppFmt.money(disc, decimals: true)} off')));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() { _couponDiscount = 0; _appliedCoupon = null; });
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _couponDiscount = 0; _appliedCoupon = null; });
+      messenger.showSnackBar(SnackBar(content: Text('$e')));
+    } finally {
+      if (mounted) setState(() => _applyingCoupon = false);
+    }
+  }
+
+  void _removeCoupon() => setState(() {
+        _appliedCoupon = null;
+        _couponDiscount = 0;
+        _coupon.clear();
+        _splits = null;
+      });
+
   @override
   Widget build(BuildContext context) {
     final orders = context.watch<OrdersProvider>();
@@ -370,7 +428,8 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
     final loyaltyDiscount = _loyaltySettings != null
         ? (_pointsToRedeem * _loyaltySettings!.redemptionValuePaise) / 100
         : 0.0;
-    final total = (subtotal - discount - loyaltyDiscount).clamp(0, double.infinity);
+    final total = (subtotal - discount - loyaltyDiscount - _couponDiscount)
+        .clamp(0, double.infinity);
 
     return Scaffold(
       // Bug fix (2026-08-20): make the back-arrow explicit + always pop
@@ -578,7 +637,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                             context: context,
                             isScrollControlled: true,
                             builder: (_) => _SplitTenderSheet(
-                              total: (subtotalNow - discountNow - loyaltyNow)
+                              total: (subtotalNow - discountNow - loyaltyNow - _couponDiscount)
                                   .clamp(0, double.infinity)
                                   .toDouble(),
                               // Wallet-as-tender (2026-08-25): option only
@@ -614,6 +673,64 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                     onChanged: (_) => setState(() => _splits = null),
                     decoration: const InputDecoration(hintText: '0'),
                   ),
+                  const SizedBox(height: 16),
+
+                  // Coupon code
+                  const Text('Coupon code', style: _labelStyle),
+                  const SizedBox(height: 8),
+                  if (_appliedCoupon == null)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _coupon,
+                            textCapitalization: TextCapitalization.characters,
+                            enabled: !_applyingCoupon,
+                            onSubmitted: (_) => _applyCoupon(),
+                            decoration: const InputDecoration(hintText: 'e.g. SAVE10'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          height: 48,
+                          child: OutlinedButton(
+                            onPressed: _applyingCoupon ? null : _applyCoupon,
+                            child: _applyingCoupon
+                                ? const SizedBox(
+                                    width: 18, height: 18,
+                                    child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Text('Apply'),
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: AppColors.success.withValues(alpha: 0.4)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.local_offer_outlined,
+                              size: 18, color: AppColors.success),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '$_appliedCoupon · ${AppFmt.money(_couponDiscount, decimals: true)} off',
+                              style: const TextStyle(
+                                  color: AppColors.success, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _removeCoupon,
+                            child: const Text('Remove'),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -662,6 +779,18 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                       Text('-${AppFmt.money(discount, decimals: true)}'),
                     ],
                   ),
+                  if (_couponDiscount > 0) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text('Coupon ($_appliedCoupon)',
+                            style: const TextStyle(color: AppColors.success)),
+                        const Spacer(),
+                        Text('-${AppFmt.money(_couponDiscount, decimals: true)}',
+                            style: const TextStyle(color: AppColors.success)),
+                      ],
+                    ),
+                  ],
                   if (loyaltyDiscount > 0) ...[
                     const SizedBox(height: 4),
                     Row(

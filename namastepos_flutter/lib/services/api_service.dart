@@ -1038,6 +1038,28 @@ class ApiService {
     return (r as Map)['coupon'] as Map<String, dynamic>;
   }
 
+  /// Validate + price a coupon code against the current cart subtotal.
+  /// Returns {coupon, discountInr}. Throws ApiException with a friendly
+  /// message (not found / inactive / expired / fully redeemed) that the POS
+  /// pay screen surfaces in a snackbar. The server owns all the rules — the
+  /// app just displays the resulting discount.
+  Future<Map<String, dynamic>> applyFoodCoupon({
+    required String businessId,
+    required String code,
+    required double subtotal,
+    String? customerId,
+  }) async {
+    final r = await _wrap(() => _dio.post(
+          '/businesses/$businessId/food-coupons/apply',
+          data: {
+            'code': code,
+            'subtotal': subtotal,
+            if (customerId != null) 'customerId': customerId,
+          },
+        ));
+    return r as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> updateFoodCoupon(
       String businessId, String id, Map<String, dynamic> body) async {
     final r = await _wrap(() =>
