@@ -162,9 +162,19 @@ async function profitAndLoss(businessId, { startDate, endDate }) {
   // Income: net revenue (gross order totals minus GST collected — GST is a
   // pass-through, never the restaurant's income), then refunds as a
   // contra-revenue line so the founder can see why revenue shrank.
+  // 2026-08-26: itemize membership / other income as its own P&L line so net
+  // revenue is transparent (it was already inside netRevenue, just folded into
+  // the sales line). Sales line = net revenue minus other income; each other-
+  // income row (e.g. "Membership sales") is shown separately.
+  const otherIncome = stmt.revenue.otherIncome || [];
+  const otherIncomeTotal = otherIncome.reduce((s, r) => s + (r.amount || 0), 0);
   const income = [
-    { code: '4000', name: 'Sales revenue (net of GST)', kind: 'income', amount_inr: stmt.revenue.netRevenue },
+    { code: '4000', name: 'Sales revenue (net of GST)', kind: 'income', amount_inr: stmt.revenue.netRevenue - otherIncomeTotal },
   ];
+  let oiCode = 4010;
+  for (const oi of otherIncome) {
+    income.push({ code: String(oiCode++), name: oi.label || 'Other income', kind: 'income', amount_inr: oi.amount });
+  }
   if (refundsInr > 0) {
     income.push({ code: '4090', name: 'Less: customer refunds', kind: 'income', amount_inr: -refundsInr });
   }

@@ -428,8 +428,42 @@ async function tipReport(businessId, { startDate, endDate } = {}) {
   return r.rows;
 }
 
+// 2026-08-26 (founder): list all customers who hold a membership, with detail.
+// Joined roster for the "Members" screen on mobile + web.
+async function listSubscribers(businessId) {
+  const r = await query(
+    `SELECT ms.id, ms.status, ms.started_at, ms.expires_at,
+            ms.amount_paid_paise, ms.payment_method, ms.created_at,
+            c.id AS customer_id, c.name AS customer_name, c.phone AS customer_phone,
+            m.name AS plan_name
+       FROM membership_subscriptions ms
+       JOIN customers   c ON c.id = ms.customer_id
+       JOIN memberships m ON m.id = ms.membership_id
+      WHERE ms.business_id = $1
+      ORDER BY ms.created_at DESC
+      LIMIT 500`,
+    [businessId],
+  );
+  const now = Date.now();
+  return r.rows.map((x) => ({
+    id: x.id,
+    customerId: x.customer_id,
+    customerName: x.customer_name,
+    customerPhone: x.customer_phone,
+    planName: x.plan_name,
+    amountPaidInr: (x.amount_paid_paise || 0) / 100,
+    paymentMethod: x.payment_method,
+    // Effective status: an 'active' row past expiry reads as expired.
+    status: (x.status === 'active' && x.expires_at && new Date(x.expires_at).getTime() < now)
+      ? 'expired' : x.status,
+    startedAt: x.started_at,
+    expiresAt: x.expires_at,
+  }));
+}
+
 module.exports = {
   listMemberships, createMembership, updateMembership, deleteMembership, subscribe,
+  listSubscribers,
   cancelSubscription,
   activeForCustomer, lastExpiredForCustomer,
   issueGiftCard, listGiftCards, redeemGiftCard,

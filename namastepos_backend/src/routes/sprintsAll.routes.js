@@ -494,6 +494,10 @@ router.get ('/customers/:id/reorder-last', asyncHandler(async (req, res) => {
 // ── Membership / gift card / tip ─────────────────────────────────────────
 router.get ('/memberships', asyncHandler(async (req, res) =>
   res.json({ memberships: await membership.listMemberships(req.params.businessId) })));
+// 2026-08-26: roster of customers who hold a membership (name/phone/plan/
+// amount/status/expiry) for the Members list on mobile + web.
+router.get ('/memberships/subscribers', asyncHandler(async (req, res) =>
+  res.json({ subscribers: await membership.listSubscribers(req.params.businessId) })));
 router.post('/memberships',
   requireRole(['business_owner']),
   validate({ body: Joi.object({

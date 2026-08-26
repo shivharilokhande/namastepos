@@ -36,6 +36,12 @@ function serializeOrder(row, items = []) {
     customerName: row.customer_name,
     subtotal: parseFloat(row.subtotal),
     tax: parseFloat(row.tax),
+    // GST split (2026-08-26): stored but previously not returned — needed so
+    // the order/receipt can show a CGST/SGST (or IGST) breakup on both apps.
+    cgst: parseFloat(row.cgst || 0),
+    sgst: parseFloat(row.sgst || 0),
+    igst: parseFloat(row.igst || 0),
+    gstBreakdown: row.gst_breakdown || null,
     discount: parseFloat(row.discount),
     total: parseFloat(row.total),
     paymentMethod: row.payment_method,
