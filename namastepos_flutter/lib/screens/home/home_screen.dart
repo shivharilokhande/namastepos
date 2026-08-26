@@ -781,19 +781,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ));
                   },
                 ),
-              // FF-402 restore-orphans: upload logo/image (owner-only).
-              if (role == 'business_owner')
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.image_outlined),
-                  title: const Text('Upload image / logo'),
-                  onTap: () {
-                    _closeDrawer();
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const ImageUploadScreen(),
-                    ));
-                  },
-                ),
               // Marketplace + Plans & billing: owner-only (money decisions).
               // Marketplace lets the owner buy/cancel addons that grant
               // individual feature keys on top of their base plan.

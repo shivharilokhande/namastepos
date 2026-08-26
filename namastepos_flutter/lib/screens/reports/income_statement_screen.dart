@@ -22,7 +22,12 @@ import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
 
 class IncomeStatementScreen extends StatefulWidget {
-  const IncomeStatementScreen({super.key});
+  // 2026-08-26 (founder): when opened from a home KPI card we want the
+  // P&L scoped to TODAY (start == end == today), with the date filter
+  // still at the top so it can be widened. The Reports tab keeps the
+  // month-to-date default.
+  final bool todayDefault;
+  const IncomeStatementScreen({super.key, this.todayDefault = false});
 
   @override
   State<IncomeStatementScreen> createState() => _IncomeStatementScreenState();
@@ -32,7 +37,9 @@ class _IncomeStatementScreenState extends State<IncomeStatementScreen> {
   bool _loading = false;
   String? _error;
   Map<String, dynamic>? _report;
-  DateTime _startDate = DateTime(DateTime.now().year, DateTime.now().month, 1);
+  late DateTime _startDate = widget.todayDefault
+      ? DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day)
+      : DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _endDate = DateTime.now();
   String? _exporting;
 
@@ -239,6 +246,7 @@ class _PnlBody extends StatelessWidget {
     final cogs = (report['cogs'] as Map?) ?? const {};
     final opex = ((report['operatingExpenses'] as List?) ?? const []).cast<Map>();
     final fromOps = ((revenue['fromOperations'] as List?) ?? const []).cast<Map>();
+    final otherIncome = ((revenue['otherIncome'] as List?) ?? const []).cast<Map>();
     final period = (meta['period'] as Map?) ?? const {};
 
     return Column(
@@ -277,6 +285,13 @@ class _PnlBody extends StatelessWidget {
           _Row(label: r['label'] as String, amount: (r['grossValue'] as num?)?.toDouble() ?? 0, fmt: fmt, indent: true),
         _Row(label: 'Gross revenue', amount: (revenue['grossRevenue'] as num?)?.toDouble() ?? 0, fmt: fmt, bold: true),
         _Row(label: 'Less: GST collected (pass-through)', amount: (taxes['total'] as num?)?.toDouble() ?? 0, fmt: fmt),
+        // Other income — membership sales/refunds (2026-08-26, founder:
+        // membership plan purchases must be visible as their own P&L line).
+        if (otherIncome.isNotEmpty) ...[
+          _Section(title: 'I(b). Other income'),
+          for (final r in otherIncome)
+            _Row(label: r['label'] as String, amount: (r['amount'] as num?)?.toDouble() ?? 0, fmt: fmt, indent: true),
+        ],
         _Row(label: 'II. Net revenue', amount: (revenue['netRevenue'] as num?)?.toDouble() ?? 0, fmt: fmt, bold: true, highlight: true),
         const SizedBox(height: 8),
         _Section(title: 'III. Cost of goods sold'),

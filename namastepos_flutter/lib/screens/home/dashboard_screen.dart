@@ -138,7 +138,9 @@ class DashboardScreen extends StatelessWidget {
                         icon: Icons.trending_up_rounded,
                         color: AppColors.success,
                         onTap: () => Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => const MonthlyReportScreen())),
+                            builder: (_) => auth.has('pnl_statement')
+                                ? const IncomeStatementScreen(todayDefault: true)
+                                : const MonthlyReportScreen())),
                       ),
                       KpiCard(
                         label: 'Expenses',
@@ -155,7 +157,7 @@ class DashboardScreen extends StatelessWidget {
                         color: profit >= 0 ? AppColors.success : AppColors.error,
                         onTap: () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => auth.has('pnl_statement')
-                                ? const IncomeStatementScreen()
+                                ? const IncomeStatementScreen(todayDefault: true)
                                 : const MonthlyReportScreen())),
                       ),
                       KpiCard(
@@ -165,7 +167,7 @@ class DashboardScreen extends StatelessWidget {
                         color: AppColors.info,
                         onTap: () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => auth.has('pnl_statement')
-                                ? const IncomeStatementScreen()
+                                ? const IncomeStatementScreen(todayDefault: true)
                                 : const MonthlyReportScreen())),
                       ),
                     ],

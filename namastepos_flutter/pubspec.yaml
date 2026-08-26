@@ -123,6 +123,18 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   build_runner: ^2.4.7
   mockito: ^5.4.4
+  flutter_launcher_icons: ^0.14.1
+
+# Launcher icon generation (2026-08-26): regenerate Android + iOS launcher
+# icons from the master NamastePOS brand logo. iOS requires no alpha, so we
+# flatten onto white. Run: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  remove_alpha_ios: true
+  background_color_ios: "#FFFFFF"
+  min_sdk_android: 21
 
 flutter:
   uses-material-design: true
