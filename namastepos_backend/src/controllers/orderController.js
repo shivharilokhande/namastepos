@@ -49,6 +49,10 @@ const createBody = Joi.object({
   discountIsPreTax: Joi.boolean().allow(null),
   serviceChargePct: Joi.number().min(0).max(100).allow(null),
   roundOffEnabled: Joi.boolean().allow(null),
+  // GST place-of-supply (2026-08-26). Optional; defaults to intra-state
+  // (CGST+SGST), which is correct for on-premise restaurant food. Set true
+  // only for a genuine inter-state supply (out-of-state B2B catering) → IGST.
+  isInterState: Joi.boolean().allow(null),
   // H4 fix (2026-08-23): these service features were unreachable — the
   // validator (allowUnknown:false) 400'd any client that sent them.
   // FF-312 split-tender:

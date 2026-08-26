@@ -66,15 +66,31 @@ module.exports = {
       // plan immediately (no charge) instead of throwing a Razorpay error.
       const razorpayReady = !!(env.RAZORPAY_KEY_ID
         && env.RAZORPAY_KEY_SECRET
-        && env.RAZORPAY_KEY_ID.startsWith('rzp_live_'));
+        && env.RAZORPAY_KEY_ID.startsWith('rzp_live_')
+        // A live charge is worthless without the webhook secret that
+        // completes charge→webhook→activate, so require it too.
+        && env.RAZORPAY_WEBHOOK_SECRET);
       if (!razorpayReady) {
+        // SECURITY (2026-08-26): the free "manual activation" fallback is a
+        // BETA-only convenience. In production a missing/mis-set/rotated key
+        // must NEVER silently hand out a paid plan for free — fail loudly so
+        // the misconfig is caught instead of leaking revenue. The fallback is
+        // therefore gated to non-production environments only.
+        if (env.isProd()) {
+          const { HttpError } = require('../utils/errors');
+          throw new HttpError(
+            503,
+            'Payments are temporarily unavailable. Please try again shortly.',
+            'PAYMENTS_UNAVAILABLE'
+          );
+        }
         const subscription = await sub.changePlan(
           req.params.businessId, tier, { billingPeriod: billingPeriod || 'monthly' }
         );
         return res.json({
           subscription,
           manual: true,
-          message: 'Plan activated (payments not configured — no charge collected).',
+          message: 'Plan activated (payments not configured — no charge collected). [non-production]',
         });
       }
       // FF-402c — pass the cadence through so Razorpay picks the right

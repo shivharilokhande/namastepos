@@ -14,6 +14,13 @@ const kot = require('./kotService');
 const recipes = require('./recipeService');
 const { computeGstBreakdown } = require('./gstService2');
 
+// Money hygiene (2026-08-26): bill amounts are held in INR as JS numbers, so
+// every arithmetic step must be snapped back to 2 decimals (paise) or float
+// error accumulates (e.g. 0.1 + 0.2 = 0.30000000000000004) and the persisted
+// total can drift a sub-paise off subtotal+tax−discount. round2() rounds to the
+// nearest paise; the +EPSILON nudges exact .5-at-paise cases up deterministically.
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
 function serializeOrder(row, items = []) {
   if (!row) return null;
   return {
@@ -142,6 +149,13 @@ async function create(businessId, body) {
     walletRedeem = null,
     // Aggregator channel ('zomato'|'swiggy'|...) — set by aggregatorService.
     channel = null,
+    // GST place-of-supply (2026-08-26). For restaurant food service the place
+    // of supply is the RESTAURANT's state, so dine-in/takeaway is intra-state
+    // (CGST+SGST) — that is the correct default and stays false. Set true only
+    // for a genuine inter-state supply (e.g. B2B catering billed to an
+    // out-of-state GSTIN) so the invoice uses IGST. Never flip this on customer
+    // state alone for on-premise food, or you'll issue non-compliant invoices.
+    isInterState = false,
   } = body;
   // P0: `tax` is mutable — item-GST branch below may replace it.
   let tax = body.tax || 0;
@@ -271,6 +285,7 @@ async function create(businessId, body) {
       }
       subtotal += Number(it.price) * Number(it.qty);
     }
+    subtotal = round2(subtotal);
 
     // ── Membership bundle auto-redeem (2026-08-23, founder) ─────────────
     // If the customer holds an active membership with an item bundle
@@ -360,23 +375,23 @@ async function create(businessId, body) {
     }
     const serviceCharge = Math.max(
       0,
-      Math.round((subtotal * Number(serviceChargePctEff || 0)) / 100 * 100) / 100,
+      round2((subtotal * Number(serviceChargePctEff || 0)) / 100),
     );
 
     // Discount math: pre-tax shrinks subtotal before tax; post-tax shrinks
     // the final total. Membership-covered items fold in as a pre-tax
     // discount (customer already paid for them via the bundle).
-    const discountEff = Number(discount) + membershipDiscount;
+    const discountEff = round2(Number(discount) + membershipDiscount);
     // null/undefined = default pre-tax (only an explicit false means
     // post-tax "instant cashback" mode).
     const preTax = discountIsPreTax !== false;
-    let taxableBase = subtotal + serviceCharge;
+    let taxableBase = round2(subtotal + serviceCharge);
     let total;
     if (preTax || membershipDiscount > 0) {
-      taxableBase = Math.max(0, taxableBase - discountEff);
-      total = Math.max(0, taxableBase + Number(tax));
+      taxableBase = Math.max(0, round2(taxableBase - discountEff));
+      total = Math.max(0, round2(taxableBase + Number(tax)));
     } else {
-      total = Math.max(0, subtotal + serviceCharge + Number(tax) - discountEff);
+      total = Math.max(0, round2(subtotal + serviceCharge + Number(tax) - discountEff));
     }
 
     // Item-level GST breakdown (FF-901). If any item carries a gst_pct, we
@@ -391,9 +406,11 @@ async function create(businessId, body) {
       const normalised = items.map((it) => ({
         price: it.price, qty: it.qty, gst_pct: it.gst_pct || it.gstPct || 0,
       }));
-      // For now treat all as intra-state (CGST+SGST). Inter-state would need
-      // the customer's state code; default is safe & matches restaurant case.
-      const r = computeGstBreakdown({ orderItems: normalised, isInterState: false });
+      // Intra-state (CGST+SGST) by default — correct for on-premise food, whose
+      // place of supply is the restaurant's own state. `isInterState` opts into
+      // IGST for the rare genuine inter-state supply (e.g. out-of-state B2B
+      // catering). See the destructure comment above.
+      const r = computeGstBreakdown({ orderItems: normalised, isInterState: isInterState === true });
       gstBreakdown = r.breakdown;
       cgst = r.cgst; sgst = r.sgst; igst = r.igst;
       // If body.tax was 0 and item-GST was passed, replace it
