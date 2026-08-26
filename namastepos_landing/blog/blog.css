@@ -1,0 +1,94 @@
+/* NamastePOS blog — shared design system (mirrors the landing page) */
+:root{
+  --green:#0E7C4A; --green-d:#0A5A36; --green-x:#06341F;
+  --amber:#F59E0B; --amber-d:#D97706;
+  --ink:#0F1F17; --muted:#5B6B63; --line:#E4EBE6;
+  --surface:#F6F9F6; --soft:#E8F4ED; --white:#fff;
+  --radius:18px; --shadow:0 12px 40px -12px rgba(9,50,32,.18); --shadow-sm:0 6px 20px -8px rgba(9,50,32,.14);
+  --maxw:1180px; --readw:760px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,sans-serif;color:var(--ink);background:var(--white);line-height:1.65;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,.font-head{font-family:'Sora','Inter',sans-serif;letter-spacing:-.02em;line-height:1.15}
+a{color:var(--green-d);text-decoration:none}
+a:hover{text-decoration:underline}
+img{max-width:100%;display:block}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+.material-symbols-outlined{font-variation-settings:'FILL' 0,'wght' 500,'GRAD' 0,'opsz' 24;line-height:1;vertical-align:middle}
+
+/* NAV */
+.nav{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.85);backdrop-filter:blur(12px);border-bottom:1px solid var(--line)}
+.nav-in{display:flex;align-items:center;justify-content:space-between;height:64px}
+.brand{font-family:'Sora';font-weight:800;font-size:22px;color:var(--green)}
+.brand span{color:var(--amber)}
+.nav-links{display:flex;gap:26px}
+.nav-links a{color:#3b463f;font-weight:500;font-size:15px}
+.nav-links a:hover{color:var(--green);text-decoration:none}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:15px;padding:12px 20px;border-radius:12px;cursor:pointer;border:1px solid transparent;transition:transform .12s ease,box-shadow .2s,background .2s;white-space:nowrap}
+.btn:hover{text-decoration:none}
+.btn-amber{background:var(--amber);color:#3a2400;box-shadow:0 8px 20px -8px rgba(245,158,11,.5)}
+.btn-amber:hover{background:var(--amber-d);color:#fff}
+.btn-primary{background:var(--green);color:#fff;box-shadow:var(--shadow-sm)}
+.btn-primary:hover{background:var(--green-d);color:#fff}
+.btn-ghost{background:#fff;color:var(--green-d);border-color:var(--line)}
+.btn-ghost:hover{border-color:var(--green);background:var(--soft)}
+
+/* BLOG INDEX */
+.blog-hero{background:radial-gradient(1000px 420px at 80% -10%,#E8F4ED 0,rgba(232,244,237,0) 60%),#fff;padding:56px 0 30px;text-align:center}
+.blog-hero .tag{color:var(--green);font-weight:700;font-size:13px;text-transform:uppercase;letter-spacing:.08em}
+.blog-hero h1{font-size:44px;font-weight:800;margin:12px 0 10px}
+.blog-hero p{color:var(--muted);font-size:18px;max-width:620px;margin:0 auto}
+.posts{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;padding:30px 0 76px}
+.post-card{display:flex;flex-direction:column;background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;transition:transform .15s,box-shadow .2s}
+.post-card:hover{transform:translateY(-3px);box-shadow:var(--shadow);text-decoration:none}
+.post-card .thumb{height:110px;background:linear-gradient(135deg,var(--green),var(--green-d));display:flex;align-items:center;justify-content:center;color:#fff}
+.post-card .thumb .material-symbols-outlined{font-size:44px;opacity:.9}
+.post-card .body{padding:22px;display:flex;flex-direction:column;gap:8px}
+.post-card .k{color:var(--green);font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.06em}
+.post-card h2{font-size:19px;font-weight:800;color:var(--ink)}
+.post-card p{color:var(--muted);font-size:14.5px}
+.post-card .more{margin-top:6px;color:var(--green-d);font-weight:700;font-size:14px}
+
+/* ARTICLE */
+.article{padding:44px 0 20px}
+.crumbs{max-width:var(--readw);margin:0 auto 18px;color:var(--muted);font-size:13.5px}
+.crumbs a{color:var(--muted)}
+.article h1{max-width:var(--readw);margin:0 auto;font-size:38px;font-weight:800}
+.article .meta{max-width:var(--readw);margin:14px auto 0;color:var(--muted);font-size:14px;display:flex;gap:14px;flex-wrap:wrap}
+.article .lede{max-width:var(--readw);margin:22px auto 0;font-size:19px;color:#33413a}
+.prose{max-width:var(--readw);margin:0 auto;padding:10px 0 40px}
+.prose h2{font-size:26px;font-weight:800;margin:34px 0 12px}
+.prose h3{font-size:20px;font-weight:700;margin:24px 0 8px}
+.prose p{margin:0 0 16px;font-size:17px}
+.prose ul,.prose ol{margin:0 0 18px 22px}
+.prose li{margin:0 0 9px;font-size:17px}
+.prose strong{color:var(--ink)}
+.prose blockquote{margin:22px 0;padding:14px 20px;background:var(--soft);border-left:4px solid var(--green);border-radius:0 10px 10px 0;color:#2b382f}
+.prose table{width:100%;border-collapse:collapse;margin:18px 0;font-size:15.5px}
+.prose th,.prose td{border:1px solid var(--line);padding:11px 14px;text-align:left}
+.prose thead th{background:var(--green);color:#fff}
+.prose tbody tr:nth-child(even){background:var(--surface)}
+.callout{max-width:var(--readw);margin:26px auto;background:linear-gradient(135deg,var(--green-x),var(--green-d));color:#fff;border-radius:20px;padding:30px}
+.callout h3{color:#fff;font-size:22px;margin-bottom:8px}
+.callout p{color:#cfe6d8;margin-bottom:16px}
+.faq{max-width:var(--readw);margin:0 auto}
+.faq h2{font-size:26px;font-weight:800;margin:34px 0 14px}
+.q{border:1px solid var(--line);border-radius:14px;margin-bottom:12px;background:#fff;overflow:hidden}
+.q summary{cursor:pointer;list-style:none;padding:16px 20px;font-weight:600;font-size:16px;display:flex;justify-content:space-between;align-items:center}
+.q summary::-webkit-details-marker{display:none}
+.q summary::after{content:"+";color:var(--green);font-size:22px}
+.q[open] summary::after{content:"\2013"}
+.q .a{padding:0 20px 18px;color:var(--muted);font-size:15.5px}
+
+/* FOOTER */
+footer{background:var(--surface);border-top:1px solid var(--line);padding:40px 0;margin-top:20px}
+.foot-in{display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;align-items:center;color:var(--muted);font-size:14px}
+.foot-in a{color:#3b463f}
+
+@media(max-width:900px){
+  .nav-links{display:none}
+  .posts{grid-template-columns:1fr}
+  .blog-hero h1{font-size:32px}
+  .article h1{font-size:30px}
+}
