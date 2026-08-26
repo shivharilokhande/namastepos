@@ -8,7 +8,10 @@
 // Deploy with the sibling wrangler.toml:  npx wrangler deploy
 // (Free plan includes cron triggers. No secrets required.)
 
-const HEALTH_URL = 'https://api.namastepos.in/health';
+// /v1/health returns {status, service, db, ...} so this ping both keeps
+// Render warm AND surfaces DB health. (/health is a lighter liveness route
+// without the db field.)
+const HEALTH_URL = 'https://api.namastepos.in/v1/health';
 
 export default {
   async scheduled(_event, _env, ctx) {
@@ -48,7 +51,7 @@ async function ping() {
     } else {
       console.log(`[keepalive] ok (db=${db ?? 'n/a'}) in ${ms}ms`);
     }
-    return { ok: alive, httpStatus: res.status, db, ms };
+    return { ok: alive, httpStatus: res.status, db, ms, sample: text.slice(0, 160) };
   } catch (err) {
     console.error(`[keepalive] FAILED after ${Date.now() - started}ms — ${err}`);
     return { ok: false, error: String(err) };
