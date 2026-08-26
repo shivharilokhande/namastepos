@@ -122,6 +122,34 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
               const SizedBox(height: 28),
 
+              // Quick unlock — shown only when an owner MPIN is set on this
+              // device. Jumps to the MPIN lock screen (no full login needed).
+              if (auth.mpinEnabled) ...[
+                SizedBox(
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.lock_open_outlined, size: 18),
+                    label: const Text('Log in with MPIN',
+                        style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                    onPressed: auth.loading
+                        ? null
+                        : () => context.read<AuthProvider>().lockSession(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(children: const [
+                  Expanded(child: Divider()),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10),
+                    child: Text('OR USE ANOTHER ACCOUNT',
+                        style: TextStyle(color: AppColors.textHint,
+                            fontWeight: FontWeight.w800, fontSize: 11, letterSpacing: 1)),
+                  ),
+                  Expanded(child: Divider()),
+                ]),
+                const SizedBox(height: 16),
+              ],
+
               // Email
               TextField(
                 controller: _email,

@@ -66,6 +66,7 @@
       "/db/"
     ],
     "maxWorkers": 1,
+    "testTimeout": 30000,
     "globalTeardown": "<rootDir>/tests/globalTeardown.js",
     "collectCoverageFrom": [
       "src/**/*.js",

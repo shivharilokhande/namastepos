@@ -312,9 +312,10 @@ class AuthService {
     // plan are cleared (security); only the business identifier stays.
     await _secure.delete(key: _kRole);
     await _secure.delete(key: _kPerms);
-    // Owner MPIN is a per-user unlock — drop it on sign-out so the next
-    // person can't be locked behind (or unlock with) the previous PIN.
-    await clearMpin();
+    // NOTE: MPIN is intentionally NOT cleared here. Normal sign-out keeps the
+    // MPIN + refresh token so the owner can quick-login again (AuthProvider
+    // routes a MPIN-enabled sign-out to the lock screen). Only a full
+    // account switch (logoutFull → "Use another account") wipes the MPIN.
     // _kPlan stays cached so the next user's plan check works offline;
     // it gets overwritten on the next successful login anyway.
   }
@@ -325,6 +326,8 @@ class AuthService {
     await logout();
     await _secure.delete(key: _kBusiness);
     await _secure.delete(key: _kPlan);
+    // Full account switch — now wipe the MPIN too.
+    await clearMpin();
   }
 
   Future<void> _persistBusiness(Business b) async {

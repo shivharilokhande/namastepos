@@ -382,13 +382,30 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // PhonePe-style: if an MPIN is set, "sign out" LOCKS to the MPIN screen
+    // (keeps the refresh token + MPIN) so the owner can quick-login again.
+    // A true account switch happens via "Use another account" on the lock
+    // screen (signOutFromLock → logoutFull).
+    if (_mpinSet) {
+      _status = AuthStatus.locked;
+      notifyListeners();
+      return;
+    }
     await AuthService.instance.logout();
     _business = null;
     _role = null;
     _permissions = const [];
-    _mpinSet = false;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
+  }
+
+  /// Login-screen "Log in with MPIN" — jump to the lock screen if an MPIN is
+  /// configured on this device.
+  void lockSession() {
+    if (_mpinSet) {
+      _status = AuthStatus.locked;
+      notifyListeners();
+    }
   }
 
   String _humanize(String raw) {
