@@ -781,6 +781,20 @@ export function NewOrderDialog({
                   </div>
                 ) : (
                   <div className="mt-1 space-y-1.5">
+                    {walletAvailable && walletBalance > 0 && (
+                      <button type="button"
+                        onClick={() => {
+                          const apply = Math.min(walletBalance, payableTotal);
+                          const rem = +(payableTotal - apply).toFixed(2);
+                          const next: PayLeg[] = [{ method: 'wallet', amountInr: apply.toFixed(2) }];
+                          if (rem > 0.001) next.push({ method: 'cash', amountInr: rem.toFixed(2) });
+                          setLegs(next);
+                        }}
+                        className="text-xs text-primary font-semibold hover:underline">
+                        Use wallet {formatINR(Math.min(walletBalance, payableTotal))}
+                        {walletBalance < payableTotal ? ` + ${formatINR(payableTotal - walletBalance)} on another tender` : ''}
+                      </button>
+                    )}
                     {legs.map((leg, i) => (
                       <div key={i} className="flex items-center gap-1.5">
                         <select value={leg.method}
