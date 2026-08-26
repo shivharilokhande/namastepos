@@ -65,6 +65,10 @@ Future<void> main() async {
     // Init local database & notifications
     await DatabaseService.instance.init();
     await NotificationService.instance.init();
+    // Firebase Cloud Messaging (2026-08-26). Android-only: iOS push needs a
+    // paid Apple Developer APNs key, so this is a guarded no-op on iOS and
+    // never blocks boot. Token registration itself happens post-login.
+    await NotificationService.instance.initPush();
     // Restore the owner's language choice (en/hi) before the first
     // frame so all runtime strings render in the right language on
     // relaunch. Non-blocking failure — if prefs aren't ready, we fall

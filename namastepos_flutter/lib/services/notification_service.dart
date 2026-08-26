@@ -1,54 +1,96 @@
-// NamastePOS - Local notifications (low-stock, order ready, daily summary)
+// NamastePOS - Notifications: local (low-stock, order ready) + FCM push.
 //
-// P0 fix (2026-08-22): FCM push (FF-330 server-side) had zero client
-// wiring — no `firebase_messaging` package, no token registration,
-// so `sendToBusinessOwners` on the backend always logged `0 devices`.
-// The `registerFcmToken` hook below calls the backend endpoint once
-// we have a token. To activate real push:
-//   1. Add to pubspec.yaml (dev owner responsibility):
-//        firebase_core: ^2.24.0
-//        firebase_messaging: ^14.7.0
-//   2. Add android/app/google-services.json from Firebase console
-//   3. Uncomment the FirebaseMessaging.instance.getToken() line below
-//   4. Call `NotificationService.instance.registerFcmToken(businessId)`
-//      from AuthProvider.signInWithGoogle / loginWithPassword / pinLogin
-//      after the token is issued
-// Until then, `registerFcmToken` is a no-op and the app still builds
-// without the Firebase config.
+// FCM (wired 2026-08-26): real firebase_messaging integration. Android uses
+// android/app/google-services.json (Firebase project "namastepos"). iOS push
+// needs a paid Apple Developer APNs key, so ALL Firebase calls are gated to
+// Android — on iOS every FCM method is a safe no-op and the app builds/runs
+// normally without a GoogleService-Info.plist.
+//
+// Flow: main() → initPush() (Firebase.initializeApp + foreground listener,
+// Android only). After login AuthProvider calls registerFcmToken(businessId),
+// which fetches the token and POSTs it to /businesses/:id/device-tokens so the
+// backend's pushService can target this device.
 
+import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'api_service.dart';
+
+/// Top-level background handler (required by firebase_messaging to be a
+/// top-level or static function). Data-only messages arriving while the app
+/// is backgrounded land here; notification-payload messages are shown by the
+/// OS automatically, so we just log.
+@pragma('vm:entry-point')
+Future<void> _fcmBackgroundHandler(RemoteMessage message) async {
+  debugPrint('[fcm] background message: ${message.messageId}');
+}
 
 class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
 
   final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
+  bool _pushReady = false;
 
-  /// Registers this device's FCM token with the backend so the owner
-  /// receives real-time push (anomaly alerts, order-ready pings). Call
-  /// after login. Idempotent server-side (INSERT ON CONFLICT).
-  ///
-  /// This function is intentionally soft — if `firebase_messaging` is
-  /// not yet on the classpath (owner hasn't run through step 1-3
-  /// above), it logs and returns without throwing so the app boot
-  /// path stays intact.
-  Future<void> registerFcmToken(String businessId) async {
+  /// Android-only: only Android has a Firebase config in this build. Keeps the
+  /// iOS build/runtime clean until a paid APNs key is provisioned.
+  bool get _pushSupported => Platform.isAndroid;
+
+  /// Initialise Firebase + FCM foreground handling. Called from main().
+  /// Best-effort — any failure logs and leaves the app fully functional.
+  Future<void> initPush() async {
+    if (!_pushSupported) return;
     try {
-      // Placeholder for the FCM call. Once firebase_messaging is
-      // added, replace this block with:
-      //   final token = await FirebaseMessaging.instance.getToken();
-      //   if (token == null) return;
-      //   await ApiService.instance.registerFcmToken(
-      //     businessId: businessId, token: token,
-      //   );
-      // For now: no-op that clearly signals the wire-up.
-      debugPrint('[fcm] firebase_messaging not configured — token registration skipped');
-      // Reference kept so the linter doesn't drop the import.
-      // ignore: unused_local_variable
-      final _api = ApiService.instance;
-      return;
+      await Firebase.initializeApp();
+      FirebaseMessaging.onBackgroundMessage(_fcmBackgroundHandler);
+      // Foreground messages don't show a system notification by default —
+      // surface them through the local-notifications plugin.
+      FirebaseMessaging.onMessage.listen((msg) {
+        final n = msg.notification;
+        if (n != null) {
+          show(
+            id: msg.hashCode,
+            title: n.title ?? 'NamastePOS',
+            body: n.body ?? '',
+          );
+        }
+      });
+      _pushReady = true;
+      debugPrint('[fcm] initialised');
+    } catch (e) {
+      debugPrint('[fcm] init failed (push disabled this run): $e');
+    }
+  }
+
+  /// Registers this device's FCM token with the backend so the owner receives
+  /// real-time push (anomaly alerts, order-ready pings). Called after login.
+  /// Idempotent server-side (upsert by user+token). No-op on iOS / if init
+  /// failed, and never throws into the caller's login path.
+  Future<void> registerFcmToken(String businessId) async {
+    if (!_pushSupported) return;
+    try {
+      if (!_pushReady) await initPush();
+      if (!_pushReady) return;
+      // Ask permission (Android 13+ needs the runtime POST_NOTIFICATIONS grant).
+      await FirebaseMessaging.instance.requestPermission();
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token == null || token.isEmpty) {
+        debugPrint('[fcm] no token yet — skipping registration');
+        return;
+      }
+      await ApiService.instance.registerFcmToken(
+        businessId: businessId,
+        token: token,
+        platform: 'android',
+      );
+      debugPrint('[fcm] token registered for business $businessId');
+      // Re-register if FCM rotates the token mid-session.
+      FirebaseMessaging.instance.onTokenRefresh.listen((t) {
+        ApiService.instance.registerFcmToken(
+          businessId: businessId, token: t, platform: 'android');
+      });
     } catch (e) {
       debugPrint('[fcm] token registration failed: $e');
     }

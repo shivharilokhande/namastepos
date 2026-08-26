@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "971798684721",
+    "project_id": "namastepos",
+    "storage_bucket": "namastepos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:971798684721:android:8437fc4d95a32884ac2110",
+        "android_client_info": {
+          "package_name": "in.namastepos.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "971798684721-apiucda0kik6dhd5dmpr8ne4lkdthr13.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB8IKGQYX8xm9ndpsvsv_6Y-4p0ibW1Ac0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "971798684721-apiucda0kik6dhd5dmpr8ne4lkdthr13.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "971798684721-750jfvtf56ace7hmjp67k8enoa7slh5q.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "in.namastepos.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

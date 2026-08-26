@@ -2,6 +2,8 @@ plugins {
     id "com.android.application"
     id "kotlin-android"
     id "dev.flutter.flutter-gradle-plugin"
+    // FCM (2026-08-26): reads google-services.json to generate Firebase config.
+    id "com.google.gms.google-services"
 }
 
 def localProperties = new Properties()

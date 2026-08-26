@@ -109,10 +109,12 @@ dependencies:
   # absent — the SDK becomes a no-op. Wired from lib/services/telemetry.dart.
   sentry_flutter: ^9.9.0
 
-  # Firebase push messaging (FF-330). Uncomment when the Firebase project
-  # is provisioned and android/app/google-services.json is committed.
-  # firebase_core: ^2.24.0
-  # firebase_messaging: ^14.7.0
+  # Firebase push messaging (FF-330, wired 2026-08-26). Android uses
+  # android/app/google-services.json (project "namastepos"). iOS pods build
+  # but Firebase is only initialised on Android — iOS push needs a paid
+  # Apple Developer APNs key, deferred, so all Firebase calls are Android-gated.
+  firebase_core: ^3.8.0
+  firebase_messaging: ^15.1.5
 
 dev_dependencies:
   flutter_test:
