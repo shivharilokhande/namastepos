@@ -58,6 +58,31 @@ function buildApp() {
     crossOriginEmbedderPolicy: false,
   }));
 
+  // Public pricing feed for the marketing site (namastepos.in is a separate
+  // origin and isn't in the credentialed CORS allowlist below). This one
+  // read-only route opts into open CORS with a plain GET (no preflight), so
+  // the landing page always shows live plan prices straight from the DB —
+  // whatever the super-admin sets. Mounted BEFORE the allowlist cors() so it
+  // isn't blocked. Never throws: an error returns an empty list so the page
+  // falls back gracefully instead of breaking.
+  app.get(`${env.API_PREFIX}/public/plans`, async (req, res) => {
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Cache-Control', 'public, max-age=300');
+    try {
+      const sub = require('./services/subscriptionService');
+      const plans = await sub.listPlans();
+      res.json({
+        plans: plans.map((p) => ({
+          tier: p.tier, tierKind: p.tierKind, name: p.name,
+          priceInr: p.priceInr, priceYearlyInr: p.priceYearlyInr,
+          limits: p.limits || {}, features: p.features || {},
+        })),
+      });
+    } catch (e) {
+      res.json({ plans: [] });
+    }
+  });
+
   // P1 (Lakshmi #4): in prod the wildcard is rejected at startup — see env.js.
   // Here we additionally fail-loudly if a request from an unknown origin
   // arrives, so leaks show up in logs instead of being silently allowed.
