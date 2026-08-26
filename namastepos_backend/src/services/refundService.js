@@ -90,6 +90,21 @@ async function initiate({ paymentId, amountPaise, reason, adminId }) {
     throw new BadRequest('Refund amount exceeds payment amount');
   }
 
+  // Security review 2026-08-26: guard against aggregate over-refund. A single
+  // refund is capped above, but multiple partial refunds could together
+  // exceed the original payment and drift our ledger. Sum prior non-failed
+  // refunds for this payment and reject if this one would push over.
+  const prior = await query(
+    `SELECT COALESCE(SUM(amount_paise), 0)::bigint AS refunded
+       FROM refunds
+      WHERE payment_id = $1 AND status IN ('processed', 'pending')`,
+    [paymentId],
+  );
+  const alreadyRefunded = Number(prior.rows[0].refunded) || 0;
+  if (alreadyRefunded + refundAmount > p.amount_paise) {
+    throw new BadRequest('Refund would exceed the remaining refundable amount');
+  }
+
   // Create our row first (status pending)
   const ins = await query(
     `INSERT INTO refunds (business_id, payment_id, invoice_id, amount_paise,

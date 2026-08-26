@@ -91,7 +91,10 @@ router.post('/:groupId/outlets', requireOwner, requireGroupMembership,
   })
 );
 
-router.get ('/:groupId/rollup', requireGroupMembership,
+// Security review 2026-08-26: consolidated cross-outlet revenue (rollup) and
+// stock transfers are owner-level actions — previously any group-member staff
+// (incl. cashiers) could read group-wide revenue or move stock. Require owner.
+router.get ('/:groupId/rollup', requireOwner, requireGroupMembership,
   validate({ query: Joi.object({
     startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional(),
     endDate:   Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -100,13 +103,13 @@ router.get ('/:groupId/rollup', requireGroupMembership,
     res.json({ rollup: await multiOutlet.groupRollup(req.params.groupId, req.query) }))
 );
 
-router.post('/:groupId/transfers', requireGroupMembership,
+router.post('/:groupId/transfers', requireOwner, requireGroupMembership,
   asyncHandler(async (req, res) =>
     res.status(201).json({ transfer: await multiOutlet.transferStock(req.params.groupId, req.body, req.user?.id) })
   )
 );
 
-router.post('/:groupId/transfers/:id/receive', requireGroupMembership,
+router.post('/:groupId/transfers/:id/receive', requireOwner, requireGroupMembership,
   asyncHandler(async (req, res) =>
     // C1 fix: pass the groupId so the transfer must belong to THIS group.
     res.json({ transfer: await multiOutlet.receiveTransfer(req.params.id, req.user?.id, req.params.groupId) })
