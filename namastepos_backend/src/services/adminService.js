@@ -1,95 +1,18 @@
-// NamastePOS backend - super admin service
+// NamastePOS backend - super admin service (customers / metrics / impersonation)
+//
+// NOTE (2026-08-27): admin authentication does NOT live here. All admin
+// login / 2FA / bootstrap runs through adminTeamService against the
+// `admin_users` table, which is what auth.js `requireSuperAdmin` and
+// adminRbac.js check. The old `super_admins`-table login/bootstrap that
+// used to live in this file was dead code (no route called it) and, worse,
+// a footgun: a token minted from a `super_admins.id` would be rejected by
+// requireSuperAdmin's live `admin_users` check. It has been removed so the
+// two paths can never diverge. The `super_admins` table is now an unused
+// orphan (safe to drop in a future migration).
 
-const bcrypt = require('../utils/bcrypt');
 const { query } = require('../config/db');
-const env = require('../config/env');
-const {
-  issueAccessToken, generateRefreshToken, hashRefreshToken, refreshTokenExpiry,
-} = require('../utils/jwt');
-const { Unauthorized, NotFound } = require('../utils/errors');
-
-const SALT_ROUNDS = 10;
-const twoFactor = require('./twoFactorService');
-
-// ── Admin login ──────────────────────────────────────────────────────────
-
-async function ensureBootstrapAdmin() {
-  // Hardcode-audit fix (2026-08-24): both halves of the credential must
-  // be explicitly configured — SUPER_ADMIN_EMAIL no longer has a
-  // predictable default.
-  if (!env.SUPER_ADMIN_PASSWORD || !env.SUPER_ADMIN_EMAIL) return null;
-  const r = await query(
-    `SELECT id FROM super_admins WHERE email = $1`, [env.SUPER_ADMIN_EMAIL]
-  );
-  if (r.rowCount > 0) return r.rows[0];
-  const hash = await bcrypt.hash(env.SUPER_ADMIN_PASSWORD, SALT_ROUNDS);
-  const ins = await query(
-    `INSERT INTO super_admins (email, password_hash, display_name)
-     VALUES ($1, $2, 'Founding Admin') RETURNING *`,
-    [env.SUPER_ADMIN_EMAIL, hash]
-  );
-  return ins.rows[0];
-}
-
-async function login(email, password, { userAgent, ip } = {}) {
-  await ensureBootstrapAdmin();
-  const r = await query(
-    `SELECT * FROM super_admins WHERE email = $1 AND is_active = TRUE LIMIT 1`,
-    [email]
-  );
-  if (r.rowCount === 0) throw new Unauthorized('Invalid credentials');
-  const admin = r.rows[0];
-  const ok = await bcrypt.compare(password, admin.password_hash);
-  if (!ok) throw new Unauthorized('Invalid credentials');
-
-  // QA-8 P1 (Lakshmi #7): if 2FA is enrolled on the corresponding admin_users
-  // row, return a challenge instead of an access token. (Note: super_admins
-  // is the legacy table; admin_users is the new RBAC team table — we look up
-  // by email so this works for both.)
-  const ar = await query(
-    `SELECT id FROM admin_users WHERE email = $1 AND is_active = TRUE LIMIT 1`,
-    [email]
-  );
-  if (ar.rowCount > 0 && await twoFactor.isEnrolled(ar.rows[0].id)) {
-    const { challengeId } = await twoFactor.startChallenge(ar.rows[0].id);
-    return { requires2fa: true, challengeId };
-  }
-
-  await query(`UPDATE super_admins SET last_login_at = NOW() WHERE id = $1`, [admin.id]);
-  const accessToken = issueAccessToken({
-    sub: admin.id, sid: admin.id, isSuperAdmin: true, email: admin.email,
-  });
-  return { accessToken, admin: serialize(admin) };
-}
-
-// QA-8 P1: second step of the 2FA login — exchange a verified challenge for
-// a real access token.
-async function complete2faLogin(challengeId, code) {
-  const { adminId } = await twoFactor.verifyChallenge(challengeId, code);
-  const ar = await query(
-    `SELECT au.email, sa.id AS sa_id
-       FROM admin_users au
-  LEFT JOIN super_admins sa ON sa.email = au.email
-      WHERE au.id = $1`,
-    [adminId]
-  );
-  if (ar.rowCount === 0) throw new Unauthorized('Admin not found');
-  const adminEmail = ar.rows[0].email;
-  const sid = ar.rows[0].sa_id || adminId;
-
-  await query(`UPDATE super_admins SET last_login_at = NOW() WHERE id = $1`, [sid]);
-  const accessToken = issueAccessToken({
-    sub: sid, sid, isSuperAdmin: true, email: adminEmail,
-  });
-  return { accessToken };
-}
-
-function serialize(a) {
-  return {
-    id: a.id, email: a.email, displayName: a.display_name,
-    lastLoginAt: a.last_login_at, createdAt: a.created_at,
-  };
-}
+const { issueAccessToken } = require('../utils/jwt');
+const { NotFound } = require('../utils/errors');
 
 // ── Customers (businesses) ───────────────────────────────────────────────
 
@@ -249,7 +172,6 @@ async function impersonate(businessId) {
 }
 
 module.exports = {
-  ensureBootstrapAdmin, login, complete2faLogin,
   listCustomers, getCustomer, suspend, restore,
   metrics, impersonate,
 };
