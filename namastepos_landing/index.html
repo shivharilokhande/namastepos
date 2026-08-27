@@ -46,7 +46,7 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
 {"@type":"Organization","name":"NamastePOS","url":"https://namastepos.in/","logo":"https://namastepos.in/apple-touch-icon.png","sameAs":[],"contactPoint":{"@type":"ContactPoint","email":"support@namastepos.in","contactType":"customer support","areaServed":"IN"}},
-{"@type":"SoftwareApplication","name":"NamastePOS","operatingSystem":"Android, iOS, Web","applicationCategory":"BusinessApplication","description":"Mobile-first restaurant POS and billing software for India with GST invoicing, QR ordering, KOT, offline mode, loyalty and reports.","offers":{"@type":"Offer","price":"0","priceCurrency":"INR"},"aggregateRating":{"@type":"AggregateRating","ratingValue":"4.8","ratingCount":"126"}},
+{"@type":"SoftwareApplication","name":"NamastePOS","operatingSystem":"Android, iOS, Web","applicationCategory":"BusinessApplication","description":"Mobile-first restaurant POS and billing software for India with GST invoicing, QR ordering, KOT, offline mode, loyalty and reports.","offers":{"@type":"AggregateOffer","lowPrice":"0","highPrice":"799","priceCurrency":"INR","offerCount":"3"}},
 {"@type":"FAQPage","mainEntity":[
 {"@type":"Question","name":"Is NamastePOS GST compliant?","acceptedAnswer":{"@type":"Answer","text":"Yes. NamastePOS generates GST-compliant tax invoices (CGST/SGST) and is e-invoice ready, so your billing stays compliant out of the box."}},
 {"@type":"Question","name":"Does NamastePOS work offline?","acceptedAnswer":{"@type":"Answer","text":"Yes. Billing and KOTs keep working with no internet and sync automatically when you're back online — so service never stops during a rush."}},
@@ -343,7 +343,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     <div class="phone-stage rv">
       <div class="blob"></div>
       <div class="floaty f1"><div class="k">Today's sales</div><div class="v">₹14,820</div></div>
-      <div class="floaty f2"><div class="k">Avg. rating</div><div class="v">★ 4.9</div></div>
+      <div class="floaty f2"><div class="k">GST invoice</div><div class="v">✓ ready</div></div>
       <div class="phone" role="img" aria-label="NamastePOS app taking a dine-in order on a phone">
         <div class="screen">
           <div class="ph-status"><span>9:41</span><span>NamastePOS</span></div>
@@ -580,7 +580,11 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
 
     <div class="compare rv">
       <table>
-        <thead><tr><th>Compare features</th><th id="cmp-h0">Starter</th><th id="cmp-h1">Growth</th><th id="cmp-h2">Pro</th><th id="cmp-h3">Advanced</th><th id="cmp-h4">Enterprise</th></tr></thead>
+        <!-- Header + body are re-rendered live from /v1/public/plans by JS
+             (renderCompare). This static fallback mirrors the current live
+             lineup for no-JS / SEO and MUST match the number of pricing
+             cards above. -->
+        <thead id="compare-head"><tr><th>Compare features</th><th>Starter</th><th>Growth</th><th>Enterprise</th></tr></thead>
         <tbody id="compare-body">
           <tr><td>Menu items</td><td>30</td><td>Unlimited</td><td>Unlimited</td></tr>
           <tr><td>Staff logins</td><td>1</td><td>3</td><td>Unlimited</td></tr>
@@ -777,8 +781,14 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     var body=document.getElementById('compare-body');
     if(!body||!state.plans)return;
     var ps=state.plans;
-    for(var i=0;i<ps.length&&i<5;i++){
-      var h=document.getElementById('cmp-h'+i);if(h)h.textContent=ps[i].name||ps[i].tierKind;
+    // Rebuild the WHOLE header row so the column count always matches the
+    // number of plans (fixes phantom Pro/Advanced columns when the live
+    // lineup has fewer tiers than the static fallback).
+    var head=document.getElementById('compare-head');
+    if(head){
+      head.innerHTML='<tr><th>Compare features</th>'+ps.map(function(p){
+        return '<th>'+(p.name||p.tierKind||'Plan')+'</th>';
+      }).join('')+'</tr>';
     }
     var rows='';
     // Limits rows
