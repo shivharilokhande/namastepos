@@ -176,6 +176,14 @@ async function _runOnce() {
       } catch (e) {
         logger.warn(`[crm nightly] ${e.message}`);
       }
+      // DPDP data-retention sweep (2026-08-28). All windows are opt-in and
+      // default to disabled, so this is a no-op until a super-admin configures
+      // retention.* in the admin Compliance → Retention tab.
+      try {
+        await require('./retentionService').sweep();
+      } catch (e) {
+        logger.warn(`[retention] nightly sweep failed: ${e.message}`);
+      }
     }
   } catch (err) {
     logger.error(`Cron worker run failed: ${err.message}`);

@@ -288,6 +288,17 @@ router.patch ('/compliance/breaches/:id',requirePermission('settings.write'),
                 (req) => ({ type: 'breach', id: req.params.id })),
               ...compliance.adminUpdateBreach);
 
+// Data retention (2026-08-28) — config read by compliance.read; changing
+// windows or running a manual sweep is a destructive control → settings.write
+// (super-admin only).
+router.get   ('/compliance/retention',   requirePermission('compliance.read'),  compliance.adminGetRetention);
+router.put   ('/compliance/retention',   requirePermission('settings.write'),
+              audit.middlewareLog('compliance', 'retention-update', () => ({ type: 'compliance', id: 'retention' })),
+              ...compliance.adminUpdateRetention);
+router.post  ('/compliance/retention/run', requirePermission('settings.write'),
+              audit.middlewareLog('compliance', 'retention-run', () => ({ type: 'compliance', id: 'retention' })),
+              compliance.adminRunRetention);
+
 // ── Admin team ─────────────────────────────────────────────────────────
 const onlySuper = (req, _res, next) => {
   // Only super_admin can manage admins (not finance / support / sales)

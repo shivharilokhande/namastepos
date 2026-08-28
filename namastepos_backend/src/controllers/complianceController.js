@@ -395,6 +395,31 @@ const adminUpdateBreach = [
   }),
 ];
 
+// ── Data retention (2026-08-28) ───────────────────────────────────────
+const retention = require('../services/retentionService');
+
+const adminGetRetention = asyncHandler(async (_req, res) => {
+  res.json(await retention.getConfig());
+});
+
+const adminUpdateRetentionSchema = {
+  body: Joi.object({
+    deletedBusinessDays: Joi.number().integer().min(0).max(3650),
+    auditLogDays:        Joi.number().integer().min(0).max(3650),
+    cookieConsentDays:   Joi.number().integer().min(0).max(3650),
+  }).min(1),
+};
+const adminUpdateRetention = [
+  validate(adminUpdateRetentionSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await retention.saveConfig(req.body, { adminId: req.user.id }));
+  }),
+];
+
+const adminRunRetention = asyncHandler(async (req, res) => {
+  res.json(await retention.sweep({ adminId: req.user.id }));
+});
+
 const adminGetSettings = asyncHandler(async (_req, res) => {
   res.json(await svc.getSettings());
 });
@@ -448,4 +473,7 @@ module.exports = {
   adminUpdateBreach,
   adminGetSettings,
   adminUpdateSettings,
+  adminGetRetention,
+  adminUpdateRetention,
+  adminRunRetention,
 };

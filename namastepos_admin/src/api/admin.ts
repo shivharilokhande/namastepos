@@ -291,6 +291,12 @@ export const adminApi = {
     api.get<ComplianceSettings>('/admin/compliance/settings').then((r) => r.data),
   saveComplianceSettings: (body: Record<string, any>) =>
     api.put<ComplianceSettings>('/admin/compliance/settings', body).then((r) => r.data),
+  retentionConfig: () =>
+    api.get<RetentionConfig>('/admin/compliance/retention').then((r) => r.data),
+  saveRetention: (body: Partial<Pick<RetentionConfig, 'deletedBusinessDays' | 'auditLogDays' | 'cookieConsentDays'>>) =>
+    api.put<RetentionConfig>('/admin/compliance/retention', body).then((r) => r.data),
+  runRetention: () =>
+    api.post<RetentionRun>('/admin/compliance/retention/run').then((r) => r.data),
 
   // Audit + ops
   auditLog: (params: any = {}) =>
@@ -376,6 +382,13 @@ export interface ComplianceSettings {
   dataProtectionOfficer: { name?: string; email?: string };
   legalEntity: { name?: string; address?: string; cin?: string; gstin?: string };
   privacyPolicyVersion?: string; termsOfServiceVersion?: string; updatedAt?: string;
+}
+export interface RetentionRun {
+  businessesPurged: number; auditRowsPruned: number; consentRowsPruned: number; ranAt: string;
+}
+export interface RetentionConfig {
+  deletedBusinessDays: number; auditLogDays: number; cookieConsentDays: number;
+  lastRun: RetentionRun | null;
 }
 
 export interface Addon {

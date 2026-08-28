@@ -11,16 +11,17 @@ import { adminApi, Dsr, Grievance, Breach } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatDateTime } from '@/lib/utils';
 
+type Tab = 'dsr' | 'grievances' | 'breaches' | 'retention' | 'settings';
+
 // DPDP compliance console (2026-08-28). Wires the pre-existing backend
 // (/admin/compliance/*) that had no admin UI: DSR queue, grievance queue,
 // breach register, and grievance-officer/DPO settings.
-
-type Tab = 'dsr' | 'grievances' | 'breaches' | 'settings';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'dsr', label: 'Data requests' },
   { key: 'grievances', label: 'Grievances' },
   { key: 'breaches', label: 'Breach register' },
+  { key: 'retention', label: 'Retention' },
   { key: 'settings', label: 'Officer & settings' },
 ];
 
@@ -52,6 +53,7 @@ export function CompliancePage() {
       {tab === 'dsr' && <DsrTab />}
       {tab === 'grievances' && <GrievanceTab />}
       {tab === 'breaches' && <BreachTab />}
+      {tab === 'retention' && <RetentionTab />}
       {tab === 'settings' && <SettingsTab />}
     </div>
   );
@@ -487,6 +489,90 @@ function NewBreachDialog({ onClose }: { onClose: () => void }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ── Data retention ──────────────────────────────────────────────────────
+function RetentionTab() {
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ['compliance-retention'], queryFn: () => adminApi.retentionConfig() });
+  const [form, setForm] = useState<Record<string, number>>({});
+  const num = (k: 'deletedBusinessDays' | 'auditLogDays' | 'cookieConsentDays', fallback: number) =>
+    (form[k] !== undefined ? form[k] : fallback);
+  const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: Math.max(0, parseInt(v || '0', 10) || 0) }));
+
+  const save = useMutation({
+    mutationFn: () => adminApi.saveRetention(form),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['compliance-retention'] }); setForm({}); toast.success('Retention windows saved'); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const run = useMutation({
+    mutationFn: () => adminApi.runRetention(),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['compliance-retention'] });
+      toast.success(`Sweep done — ${r.businessesPurged} tenants, ${r.auditRowsPruned} audit, ${r.consentRowsPruned} consent rows`);
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  if (!data) return <Card><CardContent className="py-10 text-center text-muted-foreground">Loading…</CardContent></Card>;
+
+  const ROWS: { key: 'deletedBusinessDays' | 'auditLogDays' | 'cookieConsentDays'; label: string; hint: string }[] = [
+    { key: 'deletedBusinessDays', label: 'Purge deleted tenants after', hint: 'Permanently delete a business (and all its data) this many days after it was soft-deleted.' },
+    { key: 'auditLogDays', label: 'Prune audit log after', hint: 'Delete platform admin audit-log entries older than this.' },
+    { key: 'cookieConsentDays', label: 'Prune anonymous cookie consents after', hint: 'Delete anonymous cookie-banner consent records (no user/phone) older than this. User & guest consent evidence is kept.' },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardContent className="p-5 space-y-4">
+          <div>
+            <h3 className="font-semibold">Data-retention windows</h3>
+            <p className="text-sm text-muted-foreground">
+              DPDP data minimisation. Set a number of days, or 0 to disable. The sweep runs automatically each night (02:00 IST); disabled windows are skipped. <span className="font-medium text-amber-600">Deletions are permanent.</span>
+            </p>
+          </div>
+          {ROWS.map((r) => (
+            <div key={r.key} className="flex items-start justify-between gap-4 border-t pt-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium">{r.label}</div>
+                <div className="text-xs text-muted-foreground">{r.hint}</div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Input type="number" min={0} className="w-24 text-right"
+                  value={String(num(r.key, data[r.key]))}
+                  onChange={(e) => set(r.key, e.target.value)} />
+                <span className="text-sm text-muted-foreground w-16">
+                  {num(r.key, data[r.key]) === 0 ? 'off' : 'days'}
+                </span>
+              </div>
+            </div>
+          ))}
+          <div className="flex justify-end">
+            <Button onClick={() => save.mutate()} disabled={Object.keys(form).length === 0 || save.isPending}>
+              {save.isPending ? 'Saving…' : 'Save windows'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="p-5 flex items-center justify-between gap-4">
+          <div>
+            <div className="text-sm font-medium">Run sweep now</div>
+            <div className="text-xs text-muted-foreground">
+              {data.lastRun
+                ? `Last run ${formatDateTime(data.lastRun.ranAt)} — ${data.lastRun.businessesPurged} tenants, ${data.lastRun.auditRowsPruned} audit, ${data.lastRun.consentRowsPruned} consent rows.`
+                : 'Never run yet.'}
+            </div>
+          </div>
+          <Button variant="outline" onClick={() => run.mutate()} disabled={run.isPending}>
+            {run.isPending ? 'Running…' : 'Run now'}
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
