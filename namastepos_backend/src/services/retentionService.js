@@ -58,15 +58,45 @@ async function saveConfig(input, { adminId } = {}) {
   return getConfig();
 }
 
+// ── Dry-run preview ───────────────────────────────────────────────────
+// Counts exactly what a sweep WOULD delete, without touching anything, so the
+// admin can review before running an irreversible purge. Mirrors the sweep's
+// predicates exactly.
+async function preview() {
+  const cfg = await getConfig();
+  const [biz, audit, consent] = await Promise.all([
+    cfg.deletedBusinessDays
+      ? query(`SELECT COUNT(*)::int AS c FROM businesses WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - make_interval(days => $1::int)`, [cfg.deletedBusinessDays])
+      : Promise.resolve({ rows: [{ c: 0 }] }),
+    cfg.auditLogDays
+      ? query(`SELECT COUNT(*)::int AS c FROM audit_log WHERE created_at < NOW() - make_interval(days => $1::int)`, [cfg.auditLogDays])
+      : Promise.resolve({ rows: [{ c: 0 }] }),
+    cfg.cookieConsentDays
+      ? query(`SELECT COUNT(*)::int AS c FROM consent_events WHERE user_id IS NULL AND guest_phone IS NULL AND session_id IS NOT NULL AND created_at < NOW() - make_interval(days => $1::int)`, [cfg.cookieConsentDays])
+      : Promise.resolve({ rows: [{ c: 0 }] }),
+  ]);
+  return {
+    config: cfg,
+    businessesEligible: biz.rows[0].c,
+    auditRowsEligible: audit.rows[0].c,
+    consentRowsEligible: consent.rows[0].c,
+  };
+}
+
 // Hard-delete tenants soft-deleted longer ago than `days`.
+// NOTE: this permanently removes the business and (via cascade) all of its data,
+// plus its audit_log rows. Operators are responsible for meeting statutory
+// record-retention duties (e.g. GST/financial records) BEFORE enabling this —
+// keep an external export if you must retain financials beyond a diner's
+// erasure window. The window is opt-in and defaults to disabled.
 async function _purgeDeletedBusinesses(days) {
   if (!days) return 0;
   const due = await query(
     `SELECT id FROM businesses
       WHERE deleted_at IS NOT NULL
-        AND deleted_at < NOW() - ($1 || ' days')::interval
+        AND deleted_at < NOW() - make_interval(days => $1::int)
       LIMIT 200`,
-    [String(days)]
+    [days]
   );
   let purged = 0;
   for (const row of due.rows) {
@@ -88,8 +118,8 @@ async function _purgeDeletedBusinesses(days) {
 async function _pruneAuditLog(days) {
   if (!days) return 0;
   const r = await query(
-    `DELETE FROM audit_log WHERE created_at < NOW() - ($1 || ' days')::interval`,
-    [String(days)]
+    `DELETE FROM audit_log WHERE created_at < NOW() - make_interval(days => $1::int)`,
+    [days]
   );
   return r.rowCount || 0;
 }
@@ -99,8 +129,8 @@ async function _pruneCookieConsents(days) {
   const r = await query(
     `DELETE FROM consent_events
       WHERE user_id IS NULL AND guest_phone IS NULL AND session_id IS NOT NULL
-        AND created_at < NOW() - ($1 || ' days')::interval`,
-    [String(days)]
+        AND created_at < NOW() - make_interval(days => $1::int)`,
+    [days]
   );
   return r.rowCount || 0;
 }
@@ -125,4 +155,4 @@ async function sweep({ adminId = null } = {}) {
   return result;
 }
 
-module.exports = { getConfig, saveConfig, sweep, KEYS };
+module.exports = { getConfig, saveConfig, preview, sweep, KEYS };

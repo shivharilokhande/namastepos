@@ -295,6 +295,8 @@ export const adminApi = {
     api.get<RetentionConfig>('/admin/compliance/retention').then((r) => r.data),
   saveRetention: (body: Partial<Pick<RetentionConfig, 'deletedBusinessDays' | 'auditLogDays' | 'cookieConsentDays'>>) =>
     api.put<RetentionConfig>('/admin/compliance/retention', body).then((r) => r.data),
+  previewRetention: () =>
+    api.get<RetentionPreview>('/admin/compliance/retention/preview').then((r) => r.data),
   runRetention: () =>
     api.post<RetentionRun>('/admin/compliance/retention/run').then((r) => r.data),
 
@@ -389,6 +391,10 @@ export interface RetentionRun {
 export interface RetentionConfig {
   deletedBusinessDays: number; auditLogDays: number; cookieConsentDays: number;
   lastRun: RetentionRun | null;
+}
+export interface RetentionPreview {
+  config: RetentionConfig;
+  businessesEligible: number; auditRowsEligible: number; consentRowsEligible: number;
 }
 
 export interface Addon {

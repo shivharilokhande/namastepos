@@ -416,6 +416,10 @@ const adminUpdateRetention = [
   }),
 ];
 
+const adminPreviewRetention = asyncHandler(async (_req, res) => {
+  res.json(await retention.preview());
+});
+
 const adminRunRetention = asyncHandler(async (req, res) => {
   res.json(await retention.sweep({ adminId: req.user.id }));
 });
@@ -475,5 +479,6 @@ module.exports = {
   adminUpdateSettings,
   adminGetRetention,
   adminUpdateRetention,
+  adminPreviewRetention,
   adminRunRetention,
 };

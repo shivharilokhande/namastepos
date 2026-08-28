@@ -53,6 +53,11 @@ export async function establishSession(token: string): Promise<void> {
     localStorage.removeItem(TOKEN_KEY); // credential lives in the cookie
   } catch {
     // Cookie didn't round-trip — keep working via Bearer (legacy path).
+    // TODO (post cookie-auth prod verification): once we've confirmed the
+    // httpOnly ff_admin cookie round-trips in production, REMOVE this fallback.
+    // It re-introduces the XSS token-exposure the cookie redesign removed by
+    // persisting the JWT in localStorage. Kept only as a zero-lockout safety net
+    // during rollout. See reference_namastepos_compliance_console memory.
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(FLAG_KEY, '1');
   }

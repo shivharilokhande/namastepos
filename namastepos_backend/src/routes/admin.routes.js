@@ -298,6 +298,7 @@ router.get   ('/compliance/retention',   requirePermission('compliance.read'),  
 router.put   ('/compliance/retention',   requirePermission('settings.write'),
               audit.middlewareLog('compliance', 'retention-update', () => ({ type: 'compliance', id: 'retention' })),
               ...compliance.adminUpdateRetention);
+router.get   ('/compliance/retention/preview', requirePermission('compliance.read'), compliance.adminPreviewRetention);
 router.post  ('/compliance/retention/run', requirePermission('settings.write'),
               audit.middlewareLog('compliance', 'retention-run', () => ({ type: 'compliance', id: 'retention' })),
               compliance.adminRunRetention);

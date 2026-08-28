@@ -506,14 +506,27 @@ function RetentionTab() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['compliance-retention'] }); setForm({}); toast.success('Retention windows saved'); },
     onError: (e) => toast.error(apiError(e)),
   });
+  const [preview, setPreview] = useState<{ businessesEligible: number; auditRowsEligible: number; consentRowsEligible: number } | null>(null);
+  const doPreview = useMutation({
+    mutationFn: () => adminApi.previewRetention(),
+    onSuccess: (r) => setPreview({ businessesEligible: r.businessesEligible, auditRowsEligible: r.auditRowsEligible, consentRowsEligible: r.consentRowsEligible }),
+    onError: (e) => toast.error(apiError(e)),
+  });
   const run = useMutation({
     mutationFn: () => adminApi.runRetention(),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['compliance-retention'] });
+      setPreview(null);
       toast.success(`Sweep done — ${r.businessesPurged} tenants, ${r.auditRowsPruned} audit, ${r.consentRowsPruned} consent rows`);
     },
     onError: (e) => toast.error(apiError(e)),
   });
+  const confirmRun = () => {
+    const msg = preview
+      ? `This will PERMANENTLY delete ${preview.businessesEligible} tenant(s) and prune ${preview.auditRowsEligible} audit + ${preview.consentRowsEligible} consent rows. This cannot be undone. Continue?`
+      : 'This runs the retention sweep and permanently deletes eligible data. This cannot be undone. Continue?';
+    if (window.confirm(msg)) run.mutate();
+  };
 
   if (!data) return <Card><CardContent className="py-10 text-center text-muted-foreground">Loading…</CardContent></Card>;
 
@@ -558,18 +571,35 @@ function RetentionTab() {
       </Card>
 
       <Card>
-        <CardContent className="p-5 flex items-center justify-between gap-4">
-          <div>
-            <div className="text-sm font-medium">Run sweep now</div>
-            <div className="text-xs text-muted-foreground">
-              {data.lastRun
-                ? `Last run ${formatDateTime(data.lastRun.ranAt)} — ${data.lastRun.businessesPurged} tenants, ${data.lastRun.auditRowsPruned} audit, ${data.lastRun.consentRowsPruned} consent rows.`
-                : 'Never run yet.'}
+        <CardContent className="p-5 space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Preview &amp; run sweep</div>
+              <div className="text-xs text-muted-foreground">
+                {data.lastRun
+                  ? `Last run ${formatDateTime(data.lastRun.ranAt)} — ${data.lastRun.businessesPurged} tenants, ${data.lastRun.auditRowsPruned} audit, ${data.lastRun.consentRowsPruned} consent rows.`
+                  : 'Never run yet.'}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button variant="outline" onClick={() => doPreview.mutate()} disabled={doPreview.isPending}>
+                {doPreview.isPending ? 'Checking…' : 'Preview'}
+              </Button>
+              <Button variant="outline" onClick={confirmRun} disabled={run.isPending}>
+                {run.isPending ? 'Running…' : 'Run now'}
+              </Button>
             </div>
           </div>
-          <Button variant="outline" onClick={() => run.mutate()} disabled={run.isPending}>
-            {run.isPending ? 'Running…' : 'Run now'}
-          </Button>
+          {preview && (
+            <div className="rounded-md border bg-amber-50 border-amber-200 p-3 text-sm">
+              <span className="font-medium text-amber-700">Dry run:</span> this would permanently delete{' '}
+              <strong>{preview.businessesEligible}</strong> tenant(s), prune <strong>{preview.auditRowsEligible}</strong> audit and{' '}
+              <strong>{preview.consentRowsEligible}</strong> consent rows. Nothing has been deleted yet — click <em>Run now</em> to proceed.
+            </div>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Deletions are permanent and cannot be undone. Ensure you meet any statutory record-retention duties (e.g. GST/financial records) before enabling tenant purges.
+          </p>
         </CardContent>
       </Card>
     </div>
