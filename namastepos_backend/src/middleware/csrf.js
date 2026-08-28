@@ -51,9 +51,16 @@ function verify(req, _res, next) {
   if (hasBearer) return next();
 
   // No Bearer token. If there's also no session cookie, the request is
-  // a pre-login or public call — nothing to protect. `ff_admin` (2026-08-28
-  // admin cookie-auth) counts as a session cookie too.
-  const hasSessionCookie = !!req.cookies?.ff_refresh || !!req.cookies?.ff_admin;
+  // a pre-login or public call — nothing to protect.
+  //
+  // NOTE (2026-08-28): the admin `ff_admin` cookie is deliberately NOT treated
+  // as a CSRF-relevant session cookie. It is set SameSite=Strict, so the
+  // browser never attaches it to any cross-site request — that alone forecloses
+  // CSRF. The double-submit token can't work for admin anyway: `ff_csrf` is set
+  // on the API host and the admin SPA runs on a different subdomain, so its JS
+  // can't read the cookie to echo it back. Requiring it here 403'd every
+  // cookie-mode admin mutation ("CSRF token missing or invalid").
+  const hasSessionCookie = !!req.cookies?.ff_refresh;
   if (!hasSessionCookie) return next();
 
   // Cookie-only authenticated request → must include the matching CSRF token.
