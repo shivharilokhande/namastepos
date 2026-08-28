@@ -15,6 +15,7 @@ import { RefundsPage } from './pages/RefundsPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { SupportPage } from './pages/SupportPage';
 import { BroadcastPage } from './pages/BroadcastPage';
+import { ReferralsPage } from './pages/ReferralsPage';
 import { GstPage } from './pages/GstPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AuditPage } from './pages/AuditPage';
@@ -51,6 +52,7 @@ export default function App() {
         <Route path="crm"           element={<CrmPage />} />
         <Route path="support"       element={<SupportPage />} />
         <Route path="broadcast"     element={<BroadcastPage />} />
+        <Route path="referrals"     element={<ReferralsPage />} />
         <Route path="team"          element={<AdminTeamPage />} />
         <Route path="settings"      element={<SettingsPage />} />
       </Route>

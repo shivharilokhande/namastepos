@@ -465,6 +465,16 @@ const supportReply = asyncHandler(async (req, res) => res.json({
 const supportSetStatus = asyncHandler(async (req, res) =>
   res.json({ ticket: await support.setStatus(req.params.ticketId, req.body.status) }));
 
+// L5 (2026-08-28) — add-on marketplace revenue-share payout report
+const reportAddonPayouts = asyncHandler(async (_req, res) => res.json(await reports.addonPayouts()));
+
+// L2 (2026-08-28) — referral program (admin view + reward)
+const referral = require('../services/referralService');
+const referralList = asyncHandler(async (req, res) =>
+  res.json({ referrals: await referral.listAll({ status: req.query.status }) }));
+const referralReward = asyncHandler(async (req, res) =>
+  res.json({ referral: await referral.markAwarded(req.params.referralId) }));
+
 // X4 (2026-08-28) — in-console tenant broadcast (email a segment via Brevo)
 const broadcast = require('../services/broadcastService');
 const broadcastPreview = asyncHandler(async (req, res) =>
@@ -636,6 +646,7 @@ module.exports = {
   reportPnl, reportCustomersKpi, reportRevenueBreakdown,
   supportList, supportGet, supportCreate, supportReply, supportSetStatus,
   broadcastPreview, broadcastSend,
+  referralList, referralReward, reportAddonPayouts,
   customerMenuBulkImport,
   auditLog, webhookEvents, dbHealth, metrics,
   // FF-402

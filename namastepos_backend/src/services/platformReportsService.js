@@ -552,9 +552,39 @@ async function subscriptionLedger({ status, billingMode } = {}) {
   return { rows, summary };
 }
 
+// L5 (2026-08-28) — add-on marketplace revenue-share payout report. For each
+// add-on with a partner, gross = monthly price × active activations; payout =
+// gross × revenue_share_pct. Gives finance a partner-payout view.
+async function addonPayouts() {
+  const { query } = require('../config/db');
+  const r = await query(
+    `SELECT a.slug, a.name, a.partner_name, a.revenue_share_pct,
+            a.price_inr_paise,
+            COUNT(ba.id) FILTER (WHERE ba.status = 'active')::int AS active_count
+       FROM addons a
+       LEFT JOIN business_addons ba ON ba.addon_id = a.id
+      WHERE COALESCE(a.revenue_share_pct,0) > 0 OR a.partner_name IS NOT NULL
+      GROUP BY a.id
+      ORDER BY a.partner_name NULLS LAST, a.name`
+  );
+  const rows = r.rows.map((x) => {
+    const grossInr = (x.price_inr_paise / 100) * x.active_count;
+    const pct = x.revenue_share_pct != null ? Number(x.revenue_share_pct) : 0;
+    return {
+      slug: x.slug, name: x.name, partner: x.partner_name || '—',
+      revenueSharePct: pct, activeCount: x.active_count,
+      grossInr, payoutInr: Math.round(grossInr * pct) / 100,
+    };
+  });
+  const totals = rows.reduce((acc, r0) => {
+    acc.grossInr += r0.grossInr; acc.payoutInr += r0.payoutInr; return acc;
+  }, { grossInr: 0, payoutInr: 0 });
+  return { rows, totals };
+}
+
 module.exports = {
   cohortRetention, signupFunnel, ltv, churnRate,
   topItems, topCities, mrrTrend,
-  outstandingInvoices, subscriptionLedger,
+  outstandingInvoices, subscriptionLedger, addonPayouts,
   consolidatedPnl, customersKpi, revenueBreakdown,
 };

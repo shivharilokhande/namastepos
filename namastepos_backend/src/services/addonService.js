@@ -57,6 +57,9 @@ function serializeAddon(a) {
     razorpayPlanId: a.razorpay_plan_id,
     isActive: a.is_active,
     displayOrder: a.display_order,
+    // L5 — marketplace revenue share
+    partnerName: a.partner_name || null,
+    revenueSharePct: a.revenue_share_pct != null ? Number(a.revenue_share_pct) : 0,
     createdAt: a.created_at,
   };
 }
@@ -105,15 +108,17 @@ async function createAddon(body) {
       `INSERT INTO addons
          (slug, name, tagline, description, icon, category,
           price_inr_paise, billing_period, required_plan_tier,
-          trial_days, features, is_active, display_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
+          trial_days, features, is_active, display_order,
+          partner_name, revenue_share_pct)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
       [body.slug, body.name, body.tagline || null, body.description || null,
        body.icon || 'box', body.category || 'operations',
        body.price_inr_paise, body.billing_period || 'monthly',
        body.required_plan_tier || null, body.trial_days || 0,
        JSON.stringify(body.features || {}),
        body.is_active !== false,
-       body.display_order || 100]
+       body.display_order || 100,
+       body.partner_name || null, body.revenue_share_pct || 0]
     );
     return serializeAddon(r.rows[0]);
   } catch (err) {
@@ -126,7 +131,7 @@ async function updateAddon(slug, patch) {
   const fields = ['name', 'tagline', 'description', 'icon', 'category',
                   'price_inr_paise', 'billing_period', 'required_plan_tier',
                   'trial_days', 'features', 'is_active', 'display_order',
-                  'razorpay_plan_id'];
+                  'razorpay_plan_id', 'partner_name', 'revenue_share_pct'];
   const sets = []; const values = []; let idx = 1;
   for (const f of fields) {
     if (patch[f] !== undefined) {

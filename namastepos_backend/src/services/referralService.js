@@ -101,4 +101,48 @@ async function stats(businessId) {
   return r.rows.reduce((acc, row) => { acc[row.status] = row.n; return acc; }, {});
 }
 
-module.exports = { myCode, associate, awardEligible, stats };
+// L2 (2026-08-28) — admin view of all referrals + a manual "award now" action
+// (the cron `awardEligible` handles the automatic path after 30 active days).
+async function listAll({ status } = {}) {
+  const where = ['1=1']; const vals = []; let i = 1;
+  if (status) { where.push(`r.status = $${i++}`); vals.push(status); }
+  const r = await query(
+    `SELECT r.id, r.code, r.status, r.created_at, r.awarded_at,
+            rb.name AS referrer_name, db.name AS referred_name
+       FROM referrals r
+       JOIN businesses rb ON rb.id = r.referrer_biz_id
+       LEFT JOIN businesses db ON db.id = r.referred_biz_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY r.created_at DESC`,
+    vals
+  );
+  return r.rows.map((x) => ({
+    id: x.id, code: x.code, status: x.status,
+    referrerName: x.referrer_name, referredName: x.referred_name || '—',
+    createdAt: x.created_at, awardedAt: x.awarded_at,
+  }));
+}
+
+// Manually award a signed-up referral now: extend both subscriptions by 30
+// days and flag it awarded. No-op if already awarded or not yet signed up.
+async function markAwarded(id) {
+  const r = await query(
+    `SELECT id, referrer_biz_id, referred_biz_id, status FROM referrals WHERE id = $1`, [id]
+  );
+  if (r.rowCount === 0) throw new NotFound('Referral not found');
+  const row = r.rows[0];
+  if (row.status === 'awarded') return row;
+  if (!row.referred_biz_id) throw new BadRequest('Referral has no signed-up business yet');
+  await query(
+    `UPDATE subscriptions
+        SET current_period_end = current_period_end + INTERVAL '30 days'
+      WHERE business_id IN ($1, $2)`,
+    [row.referrer_biz_id, row.referred_biz_id]
+  );
+  const upd = await query(
+    `UPDATE referrals SET status = 'awarded', awarded_at = NOW() WHERE id = $1 RETURNING *`, [id]
+  );
+  return upd.rows[0];
+}
+
+module.exports = { myCode, associate, awardEligible, stats, listAll, markAwarded };

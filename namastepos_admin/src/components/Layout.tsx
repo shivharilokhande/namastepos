@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CreditCard, BarChart3, LogOut, Utensils,
   Tag, Receipt, FileText, Shield, Settings, ScrollText, UsersRound,
-  TrendingUp, Package, LifeBuoy, Send,
+  TrendingUp, Package, LifeBuoy, Send, Gift,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
@@ -26,6 +26,7 @@ const SECTIONS: Section[] = [
     { to: '/crm',       icon: TrendingUp,      label: 'CRM' },
     { to: '/support',   icon: LifeBuoy,        label: 'Support' },
     { to: '/broadcast', icon: Send,            label: 'Broadcast' },
+    { to: '/referrals', icon: Gift,            label: 'Referrals' },
   ]},
   { label: 'Revenue', items: [
     { to: '/subscriptions', icon: CreditCard,  label: 'Subscriptions' },

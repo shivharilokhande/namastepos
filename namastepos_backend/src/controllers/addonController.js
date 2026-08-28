@@ -64,6 +64,8 @@ const adminCreateBody = Joi.object({
   features: Joi.object().default({}),
   is_active: Joi.boolean().default(true),
   display_order: Joi.number().integer().default(100),
+  partner_name: Joi.string().max(120).allow('', null),
+  revenue_share_pct: Joi.number().min(0).max(100).default(0),
 });
 const adminCreate = [
   validate({ body: adminCreateBody }),
@@ -86,6 +88,8 @@ const adminUpdateBody = Joi.object({
   features: Joi.object(),
   is_active: Joi.boolean(),
   display_order: Joi.number().integer(),
+  partner_name: Joi.string().max(120).allow('', null),
+  revenue_share_pct: Joi.number().min(0).max(100),
 }).min(1);
 
 const adminUpdate = [

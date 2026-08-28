@@ -216,6 +216,13 @@ router.patch ('/support/tickets/:ticketId/status',   requirePermission('customer
 // X4 — tenant broadcast (email a segment). Preview is read; send is a write.
 router.get   ('/broadcast/preview', requirePermission('customers.read'),  c.broadcastPreview);
 router.post  ('/broadcast/send',    requirePermission('customers.write'), c.broadcastSend);
+
+// L2 — referral program (admin view + mark rewarded)
+router.get   ('/referrals',                  requirePermission('customers.read'),  c.referralList);
+router.post  ('/referrals/:referralId/reward', requirePermission('customers.write'), c.referralReward);
+
+// L5 — add-on marketplace revenue-share payout report
+router.get   ('/reports/addon-payouts', requirePermission('reports.read'), c.reportAddonPayouts);
 // Push 20d — platform consolidated P&L + customer KPIs + revenue split
 router.get   ('/reports/pnl',                requirePermission('reports.read'), c.reportPnl);
 router.get   ('/reports/customers-kpi',      requirePermission('reports.read'), c.reportCustomersKpi);

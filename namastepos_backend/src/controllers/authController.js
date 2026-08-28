@@ -96,6 +96,7 @@ const registerSchema = {
     password: Joi.string().min(8).max(128).required(),
     name: Joi.string().max(255).allow('', null),
     businessName: Joi.string().max(255).allow('', null),
+    referralCode: Joi.string().max(16).allow('', null),
   }),
 };
 
@@ -216,11 +217,21 @@ async function _sessionPayload(user, { req, name }) {
 }
 
 const register = asyncHandler(async (req, res) => {
-  const { email, password, name, businessName } = req.body;
+  const { email, password, name, businessName, referralCode } = req.body;
   const { user } = await auth.registerWithPassword({ email, password, name });
   // D0 welcome email is fired inside _sessionPayload when it creates
   // the first business — same path for password + Google registrations.
   const raw = await _sessionPayload(user, { req, name: businessName || name });
+  // L2 referral — if they signed up with a referral code, associate the new
+  // business with it (FF-333: award happens later via cron after 30 active
+  // days). Best-effort; never blocks registration.
+  if (referralCode) {
+    const newBizId = raw?.business?.id || raw?.memberships?.[0]?.businessId;
+    if (newBizId) {
+      try { await require('../services/referralService').associate(referralCode, newBizId); }
+      catch (_) { /* non-fatal — stale/invalid code */ }
+    }
+  }
   const payload = _applyRefreshCookie(req, res, raw);
   res.status(201).json({ ...payload, isNewUser: true });
 });

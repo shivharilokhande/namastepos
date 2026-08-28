@@ -249,6 +249,14 @@ export const adminApi = {
     api.get('/admin/broadcast/preview', { params: { segment } }).then((r) => r.data),
   broadcastSend: (body: { segment: string; subject: string; body: string }) =>
     api.post('/admin/broadcast/send', body).then((r) => r.data),
+
+  // L2 — referrals
+  referrals: (params: { status?: string } = {}) =>
+    api.get('/admin/referrals', { params }).then((r) => r.data.referrals),
+  referralReward: (id: string, note?: string) =>
+    api.post(`/admin/referrals/${id}/reward`, { note }).then((r) => r.data.referral),
+  // L5 — add-on partner payouts
+  addonPayouts: () => api.get('/admin/reports/addon-payouts').then((r) => r.data),
   // Push 20d — platform consolidated P&L, customer KPIs, revenue breakdown
   pnl: (params: { from?: string; to?: string } = {}) =>
     api.get('/admin/reports/pnl', { params }).then((r) => r.data),
