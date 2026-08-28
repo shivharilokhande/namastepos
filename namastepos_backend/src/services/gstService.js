@@ -53,7 +53,12 @@ async function gstrSummary(month) {
     const subtotal = inv.subtotal_paise ?? Math.round(inv.amount_paise / 1.18);
     const tax     = inv.tax_paise ?? (inv.amount_paise - subtotal);
     const custState = (inv.customer_gstin || '').slice(0, 2);
-    const intraState = custState && custState === platformState;
+    // Place of supply: a registered recipient in a different state = inter-state
+    // (IGST); same state = intra (CGST+SGST). An UNREGISTERED recipient (no
+    // GSTIN) defaults to intra-state for a services supply — treating a blank
+    // GSTIN as inter-state was mis-booking every B2C subscription invoice as
+    // IGST in GSTR-1/3B. Confirm edge cases with your CA.
+    const intraState = !custState || custState === platformState;
     // Round the CGST/SGST halves to whole paise so GSTR output ties out
     // exactly (tax/2 can leave sub-paise fractions on odd tax amounts).
     const igst = intraState ? 0 : tax;

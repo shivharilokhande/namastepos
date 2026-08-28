@@ -982,6 +982,13 @@ async function list(businessId, { date, status, source, channel, groupBy, limit 
   const serialized = r.rows.map((o) => serializeOrder(o, byOrder.get(o.id) || []));
   if (groupBy === 'session') {
     const grouped = collapseBySession(serialized);
+    // `_total` is the count of underlying ORDER rows (the unit we LIMIT/OFFSET
+    // on), NOT the number of sessions. The client paginates in order-space —
+    // each page fetches `limit` orders and collapses them — so page boundaries
+    // and page count are correct against `_total`. The visible card count per
+    // page can be < limit after collapsing multi-order sessions; that is
+    // expected, not a bug. (Do NOT swap in a session DISTINCT count here — it
+    // would desync from the order-based offset stride.)
     grouped.total = _total;
     return grouped;
   }

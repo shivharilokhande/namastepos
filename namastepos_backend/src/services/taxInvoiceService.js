@@ -78,7 +78,11 @@ function _buildItemsAndHsn(orderItemRows, isInterstate) {
   for (const row of orderItemRows) {
     const qty = parseFloat(row.qty);
     const unitPaise = Math.round(parseFloat(row.price) * 100);
-    const linePaise = qty * unitPaise;
+    // qty is NUMERIC(10,2) — fractional quantities (e.g. 0.5 kg) are valid, so
+    // round the line to whole paise. Without this, a fractional qty at an odd
+    // unit price yields a non-integer that Postgres rejects for the bigint
+    // paise columns, 500-ing the whole invoice transaction.
+    const linePaise = Math.round(qty * unitPaise);
     const gstPct = parseFloat(row.gst_pct || 0);
     const gstPaise = Math.round(parseFloat(row.gst_amount || 0) * 100);
     // Split CGST/SGST equally; or assign full to IGST for interstate

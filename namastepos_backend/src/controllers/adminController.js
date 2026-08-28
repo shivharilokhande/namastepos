@@ -251,7 +251,7 @@ const setPlanManually = [
       title: `Plan set to ${req.body.tier}${req.body.billingPeriod ? ` (${req.body.billingPeriod})` : ''}`,
       meta: { toTier: req.body.tier, billingPeriod: req.body.billingPeriod,
               subscriptionStatus: sub2?.status },
-      actorType: 'admin', actorEmail: req.admin?.email,
+      actorType: 'admin', actorEmail: req.user?.email,
     });
     res.json({ subscription: sub2 });
   }),
@@ -429,7 +429,7 @@ const refundsInitiate = [
         businessId: req.body.businessId, kind: 'refund',
         title: `Refund initiated ₹${((req.body.amountPaise || 0) / 100).toFixed(2)}`,
         meta: { refundId: r?.id, orderId: req.body.orderId, reason: req.body.reason },
-        actorType: 'admin', actorEmail: req.admin?.email,
+        actorType: 'admin', actorEmail: req.user?.email,
       });
     }
     res.status(201).json({ refund: r });
@@ -634,7 +634,7 @@ const addActivityCtrl = [
       businessId: req.params.businessId,
       kind: req.body.kind, title: req.body.title, body: req.body.body,
       meta: req.body.meta || {},
-      actorType: 'admin', actorEmail: req.admin?.email,
+      actorType: 'admin', actorEmail: req.user?.email,
     });
     res.status(201).json({ id });
   }),
@@ -660,14 +660,14 @@ const createTaskCtrl = [
   asyncHandler(async (req, res) => {
     const task = await crm.createTask({
       ...req.body,
-      createdBy: req.admin?.email,
+      createdBy: req.user?.email,
     });
     res.status(201).json({ task });
   }),
 ];
 
 const completeTaskCtrl = asyncHandler(async (req, res) => {
-  const t = await crm.completeTask(req.params.taskId, req.admin?.email);
+  const t = await crm.completeTask(req.params.taskId, req.user?.email);
   if (!t) return res.status(404).json({ message: 'Task not found or already done' });
   res.json({ task: t });
 });
