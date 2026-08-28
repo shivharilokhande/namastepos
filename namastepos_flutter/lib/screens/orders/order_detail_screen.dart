@@ -31,6 +31,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   // by id from the backend when the local list doesn't have it.
   Order? _fetched;
   bool _fetching = false;
+  bool _refunding = false; // guard against double-tap double refund
 
   @override
   void initState() {
@@ -239,6 +240,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
     if (result == null) return;
     if (!context.mounted) return;
+    // Review 2026-08-28: guard against a double refund (double payout). A
+    // second confirmation while the first POST is in flight is ignored.
+    if (_refunding) return;
+    _refunding = true;
     final messenger = ScaffoldMessenger.of(context);
     try {
       await ApiService.instance.refundOrder(businessId, order.id, {
@@ -265,6 +270,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         content: Text('Refund failed: ${humanizeError(e)}'),
         backgroundColor: AppColors.error,
       ));
+    } finally {
+      _refunding = false;
     }
   }
 

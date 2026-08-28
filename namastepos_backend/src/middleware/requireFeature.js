@@ -22,7 +22,10 @@ module.exports = function requireFeature(featureKey) {
       const ok = await features.hasFeature(businessId, featureKey);
       if (ok) return next();
 
-      const currentTier = await features.resolveTierKind(businessId);
+      // resolveTierKind returns { tier, tier_kind }; nextTierUp expects the
+      // tier_kind STRING.
+      const resolved = await features.resolveTierKind(businessId);
+      const currentTier = resolved.tier_kind;
       const requiredTier = features.nextTierUp(currentTier);
       return res.status(402).json({
         error: 'FEATURE_LOCKED',

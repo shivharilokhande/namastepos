@@ -47,8 +47,13 @@ export function setBusinessCache(b: any) {
   else localStorage.removeItem(BUSINESS_KEY);
 }
 export function getBusinessCache(): any | null {
+  // Review 2026-08-28: guard the parse — a corrupt/partial cache value used to
+  // throw a raw SyntaxError deep in ~40 api methods instead of degrading to a
+  // clean logged-out state.
   const raw = localStorage.getItem(BUSINESS_KEY);
-  return raw ? JSON.parse(raw) : null;
+  if (!raw) return null;
+  try { return JSON.parse(raw); }
+  catch { localStorage.removeItem(BUSINESS_KEY); return null; }
 }
 
 /**

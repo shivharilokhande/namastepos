@@ -207,6 +207,12 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
   /// `kotOnly = true` → send to kitchen without taking payment (postpaid).
   /// Common for dine-in: send food prep, settle later when guests are done.
   Future<void> _submit({bool kotOnly = false}) async {
+    // Review 2026-08-28: re-entrancy guard MUST be the first synchronous
+    // statement. Previously `_saving` was set only after `_maybeOfferMembership`
+    // (an await), so a double-tap re-entered and placed the order twice
+    // (double wallet debit + double loyalty burn). Guard first, then await.
+    if (_saving) return;
+    setState(() => _saving = true);
     // Membership upsell fires exactly when payment happens (not on KOT
     // saves — those get the offer at settle).
     if (!kotOnly) {

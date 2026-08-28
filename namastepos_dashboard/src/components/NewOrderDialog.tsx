@@ -680,7 +680,7 @@ export function NewOrderDialog({
             <div className="border-t bg-card p-4 space-y-3">
               <div className="grid grid-cols-2 gap-2">
                 <div><Label className="text-xs">Tax (₹)</Label>
-                  <Input type="number" value={tax} onChange={(e) => setTax(+e.target.value || 0)} className="h-8 mt-1" /></div>
+                  <Input type="number" min={0} value={tax} onChange={(e) => setTax(Math.max(0, +e.target.value || 0))} className="h-8 mt-1" /></div>
                 <div><Label className="text-xs">Discount (₹)</Label>
                   {/* 2026-08-25 (founder): capped at the subtotal so a fat-
                       fingered discount can't zero-out tax or go negative —

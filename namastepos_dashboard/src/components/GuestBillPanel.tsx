@@ -13,6 +13,7 @@
 //   5. Show "Payment received" + hide the tab (Panel refetches +
 //      backend returns {session: null}).
 
+import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Receipt, IndianRupee, CheckCircle2 } from 'lucide-react';
@@ -36,6 +37,7 @@ function loadCheckoutJs(): Promise<void> {
 }
 
 export function GuestBillPanel({ token, brand }: Props) {
+  const [finalizing, setFinalizing] = useState(false);
   const q = useQuery({
     queryKey: ['guest-session', token],
     queryFn: () => guest.currentSession(token),
@@ -70,14 +72,36 @@ export function GuestBillPanel({ token, brand }: Props) {
       );
     },
     onSuccess: async (r) => {
-      await guest.confirmSessionPayment(token, {
+      // Review 2026-08-28: the money is ALREADY captured by Razorpay here. If
+      // the confirm POST fails, the bill still shows unpaid and the guest could
+      // tap Pay again → double charge. So: block re-pay immediately, retry the
+      // confirm a few times, and if it still fails show a clear "finalizing"
+      // message telling them not to pay again (staff can settle on the POS).
+      setFinalizing(true);
+      const body = {
         sessionId: r.sessionId,
         razorpayOrderId: r.orderId,
         razorpayPaymentId: r.paymentId,
         razorpaySignature: r.signature,
-      });
-      toast.success('Payment received. Thank you!');
-      q.refetch();
+      };
+      let ok = false;
+      for (let attempt = 0; attempt < 4 && !ok; attempt += 1) {
+        try {
+          await guest.confirmSessionPayment(token, body);
+          ok = true;
+        } catch {
+          await new Promise((res) => setTimeout(res, 1500 * (attempt + 1)));
+        }
+      }
+      if (ok) {
+        toast.success('Payment received. Thank you!');
+        setFinalizing(false);
+        q.refetch();
+      } else {
+        toast.success('Payment received — finalizing. Please do NOT pay again.');
+        // Keep `finalizing` true so the Pay button stays disabled; a later poll
+        // (session becomes paid server-side) will flip the panel to "Bill paid".
+      }
     },
     onError: (e: any) => {
       if (e.message !== 'Cancelled') toast.error(e.message || 'Payment failed');
@@ -128,13 +152,18 @@ export function GuestBillPanel({ token, brand }: Props) {
           <span>Total</span><span>{formatINR(s.totals.total, { decimals: true })}</span>
         </div>
       </div>
+      {finalizing && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 text-center">
+          Payment received — finalizing your bill. Please do <strong>not</strong> pay again.
+        </div>
+      )}
       <button
-        disabled={pay.isPending || s.totals.total <= 0}
+        disabled={pay.isPending || finalizing || s.totals.total <= 0}
         onClick={() => pay.mutate()}
-        className="w-full h-12 rounded-lg text-white font-semibold flex items-center justify-center gap-2"
+        className="w-full h-12 rounded-lg text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
         style={{ background: brand?.color || '#FF6B35' }}>
         <IndianRupee className="w-4 h-4" />
-        {pay.isPending ? 'Opening payment…' : `Pay ${formatINR(s.totals.total, { decimals: true })}`}
+        {finalizing ? 'Finalizing…' : pay.isPending ? 'Opening payment…' : `Pay ${formatINR(s.totals.total, { decimals: true })}`}
       </button>
       <p className="text-[11px] text-center text-muted-foreground">
         Secure UPI / card / netbanking via Razorpay. No NamastePOS account needed.

@@ -89,7 +89,11 @@ module.exports = function featureGate() {
     try {
       const ok = await features.hasFeature(businessId, key);
       if (ok) return next();
-      const currentTier = await features.resolveTierKind(businessId);
+      // resolveTierKind returns { tier, tier_kind }; nextTierUp expects the
+      // tier_kind STRING (passing the object made requiredTier always 'pro'
+      // and serialised currentTier as an object).
+      const resolved = await features.resolveTierKind(businessId);
+      const currentTier = resolved.tier_kind;
       const requiredTier = features.nextTierUp(currentTier);
       return res.status(402).json({
         error: 'FEATURE_LOCKED',

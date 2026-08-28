@@ -1,6 +1,6 @@
 // NamastePOS backend - coupons & promotions
 
-const { query } = require('../config/db');
+const { query, withTransaction } = require('../config/db');
 const { NotFound, BadRequest, Conflict } = require('../utils/errors');
 
 function serialize(c) {
@@ -146,15 +146,29 @@ async function validate(code, { businessId, tier, basePaise }) {
 }
 
 async function markRedeemed(couponId, businessId, invoiceId = null) {
-  await query(
-    `INSERT INTO coupon_redemptions (coupon_id, business_id, invoice_id)
-     VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-    [couponId, businessId, invoiceId]
-  );
-  await query(
-    `UPDATE coupons SET redemption_count = redemption_count + 1 WHERE id = $1`,
-    [couponId]
-  );
+  // Review 2026-08-28: make this atomic. Previously the increment ran
+  // unconditionally (even on a duplicate ON CONFLICT insert → count drift) and
+  // had no max_redemptions guard, so concurrent redemptions could blow past the
+  // cap (TOCTOU vs validate()). Now: only increment when THIS call actually
+  // recorded the redemption, and only while under the cap — both in one txn.
+  await withTransaction(async (client) => {
+    const ins = await client.query(
+      `INSERT INTO coupon_redemptions (coupon_id, business_id, invoice_id)
+       VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id`,
+      [couponId, businessId, invoiceId]
+    );
+    if (ins.rowCount === 0) return; // already redeemed by this business — no double count
+    const upd = await client.query(
+      `UPDATE coupons SET redemption_count = redemption_count + 1
+        WHERE id = $1 AND (max_redemptions IS NULL OR redemption_count < max_redemptions)
+        RETURNING id`,
+      [couponId]
+    );
+    if (upd.rowCount === 0) {
+      // Cap reached between validate() and now — undo the redemption row.
+      throw new BadRequest('Coupon redeemed to maximum');
+    }
+  });
 }
 
 module.exports = {

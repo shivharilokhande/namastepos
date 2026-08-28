@@ -247,14 +247,14 @@ router.put   ('/compliance/settings',
               audit.middlewareLog('compliance', 'settings-update', () => ({ type: 'compliance', id: 'settings' })),
               ...compliance.adminUpdateSettings);
 
-router.get   ('/compliance/dsr',         requirePermission('audit.read'),  compliance.adminListDSRs);
-router.patch ('/compliance/dsr/:id',     requirePermission('audit.read'),
+router.get   ('/compliance/dsr',         requirePermission('compliance.read'),  compliance.adminListDSRs);
+router.patch ('/compliance/dsr/:id',     requirePermission('compliance.write'),
               audit.middlewareLog('compliance', 'dsr-update',
                 (req) => ({ type: 'dsr', id: req.params.id })),
               ...compliance.adminUpdateDSR);
 
-router.get   ('/compliance/grievances',  requirePermission('audit.read'),  compliance.adminListGrievances);
-router.patch ('/compliance/grievances/:id', requirePermission('audit.read'),
+router.get   ('/compliance/grievances',  requirePermission('compliance.read'),  compliance.adminListGrievances);
+router.patch ('/compliance/grievances/:id', requirePermission('compliance.write'),
               audit.middlewareLog('compliance', 'grievance-update',
                 (req) => ({ type: 'grievance', id: req.params.id })),
               ...compliance.adminUpdateGrievance);

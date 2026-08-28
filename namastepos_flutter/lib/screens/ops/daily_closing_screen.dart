@@ -87,7 +87,7 @@ class _DailyClosingScreenState extends State<DailyClosingScreen> {
       // Also the field is `notes` (matches schema's optional string).
       final cashRupees = double.tryParse(_cash.text) ?? 0;
       final r = await ApiService.instance.dailyClosing(biz.id, {
-        'date': DateTime.now().toIso8601String().substring(0, 10),
+        'date': DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30)).toIso8601String().substring(0, 10),
         'cashCounted': (cashRupees * 100).round(),
         if (_notes.text.isNotEmpty) 'notes': _notes.text,
       });
@@ -118,7 +118,7 @@ class _DailyClosingScreenState extends State<DailyClosingScreen> {
               const Text('End-of-day cash count',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
               const SizedBox(height: 8),
-              Text(DateTime.now().toIso8601String().substring(0, 10),
+              Text(DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30)).toIso8601String().substring(0, 10),
                   style: const TextStyle(color: AppColors.textSecondary)),
               const SizedBox(height: 12),
               // ── Today so far + yesterday's cash ─────────────────────

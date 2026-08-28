@@ -120,18 +120,32 @@ class OfflineOutbox {
   /// Stops 404s for deleted businesses from retrying every 30s forever.
   static const int _maxAttempts = 50;
 
+  // Review 2026-08-28: prevent overlapping drains. drainOnce is triggered by
+  // BOTH the 30s timer AND the connectivity listener; concurrent runs re-POST
+  // the same rows. This mutex serialises them.
+  bool _draining = false;
+
+  /// Entries that have exhausted retries are kept (not deleted) so a create
+  /// lost during a long outage isn't silently purged — surfaced to the UI.
+  Future<int> deadLetterCount() async {
+    if (_db == null) return 0;
+    final r = await _db!.rawQuery(
+      'SELECT COUNT(*) AS n FROM outbox WHERE attempts > ?', [_maxAttempts]);
+    return Sqflite.firstIntValue(r) ?? 0;
+  }
+
   Future<int> drainOnce() async {
     if (_db == null) return 0;
-    // First, purge anything that's been failing forever — usually 4xx
-    // responses (404 because business no longer exists, 400 because the
-    // payload schema has changed). Beyond _maxAttempts these are dead.
-    final purged = await _db!.delete(
-      'outbox', where: 'attempts > ?', whereArgs: [_maxAttempts]);
-    if (purged > 0) {
-      // ignore: avoid_print
-      print('OUTBOX: purged $purged entries that exceeded $_maxAttempts attempts');
-    }
-    final rows = await _db!.query('outbox', orderBy: 'created_at', limit: 20);
+    if (_draining) return 0;
+    _draining = true;
+    try {
+    // Review 2026-08-28: DO NOT delete exhausted entries — a create that fails
+    // through a long outage would vanish while the cashier thinks it saved.
+    // Instead we leave them (surfaced via deadLetterCount) and simply skip them
+    // in the drain query below (attempts <= _maxAttempts).
+    final rows = await _db!.query(
+      'outbox', where: 'attempts <= ?', whereArgs: [_maxAttempts],
+      orderBy: 'created_at', limit: 20);
     int sent = 0;
     for (final row in rows) {
       try {
@@ -166,6 +180,9 @@ class OfflineOutbox {
       }
     }
     return sent;
+    } finally {
+      _draining = false;
+    }
   }
 
   Future<int> pendingCount() async {

@@ -116,6 +116,11 @@ function _buildItemsAndHsn(orderItemRows, isInterstate) {
 
 /** Pull the next FY-sequence number atomically. */
 async function _nextSeq(client, businessId, fyShort) {
+  // Review 2026-08-28: MAX(fy_seq)+1 under READ COMMITTED is NOT gap-free —
+  // two concurrent invoices in the same business+FY can both read the same MAX
+  // and mint duplicate statutory numbers. A transaction-scoped advisory lock
+  // keyed on business+FY serialises sequence allocation (released at COMMIT).
+  await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`taxinv:${businessId}:${fyShort}`]);
   const r = await client.query(
     `SELECT COALESCE(MAX(fy_seq), 0) AS m
        FROM tax_invoices

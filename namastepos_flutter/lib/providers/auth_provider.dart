@@ -20,7 +20,11 @@ class AuthProvider extends ChangeNotifier {
   }
 
   void _onAuthExpired() {
-    if (_status == AuthStatus.unauthenticated) return;
+    // Review 2026-08-28: only drop a fully-authenticated session. Previously
+    // ANY non-unauthenticated status (including `locked`, the MPIN lock screen)
+    // was flipped to unauthenticated, so a stray 401 while locked destroyed a
+    // recoverable session and forced a full re-login.
+    if (_status != AuthStatus.authenticated) return;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
   }

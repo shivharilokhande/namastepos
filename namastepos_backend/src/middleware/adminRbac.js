@@ -21,6 +21,7 @@ const PERMISSIONS = {
     'invoices.read', 'invoices.write',
     'customers.read', 'plans.read', 'coupons.read',
     'audit.read', 'reports.read', 'settings.read',
+    'compliance.read',
   ],
   support: [
     'customers.read', 'customers.write', 'customers.impersonate',
@@ -28,6 +29,8 @@ const PERMISSIONS = {
     'staff.read', 'menu.read', 'orders.read',
     'reports.read', 'audit.read',
     'plans.read', 'coupons.read', 'invoices.read', 'refunds.read', 'gst.read',
+    // DPDP DSR + grievance handling is a support function.
+    'compliance.read', 'compliance.write',
   ],
   sales: [
     'customers.read', 'customers.write',

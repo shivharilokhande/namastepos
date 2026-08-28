@@ -9,6 +9,10 @@ process.env.GOOGLE_CLIENT_IDS = 'test-client.apps.googleusercontent.com';
 process.env.LOG_LEVEL = 'error';
 process.env.DATABASE_URL = process.env.DATABASE_URL
   || 'postgresql://namastepos:namastepos@localhost:5432/namastepos_test';
+// Review 2026-08-28: cap the pool in tests. The default DB_POOL_MAX=30 × N jest
+// workers blows past Postgres max_connections ("too many clients"). Must be set
+// BEFORE requiring src/config/db (which builds the pool at import time).
+process.env.DB_POOL_MAX = process.env.DB_POOL_MAX || '2';
 
 const fs = require('fs');
 const path = require('path');

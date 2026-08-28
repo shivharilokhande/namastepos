@@ -708,12 +708,23 @@ async function create(businessId, body) {
     // back, exactly like the paymentBreakdown 'wallet' leg below.
     if (walletRedeem && (walletRedeem.giftCardCode || walletRedeem.customerId)
         && walletRedeem.amountInr > 0) {
+      // Review 2026-08-28: (a) walletRedeem and paymentBreakdown are two ways to
+      // pay — allowing both double-collects (wallet debited AND full tender
+      // legs). Reject the combination. (b) Cap the redemption at the order
+      // total so a bad client can't over-debit the customer's wallet beyond
+      // the bill.
+      if (Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0) {
+        throw new BadRequest(
+          'Send either walletRedeem or a paymentBreakdown wallet leg — not both.',
+        );
+      }
+      const cappedInr = Math.min(Number(walletRedeem.amountInr), Number(total));
       const gc = require('./giftCardService');
       orderRow._redeemResult = await gc.redeemTx(client, businessId, {
         giftCardCode: walletRedeem.giftCardCode,
         customerId: walletRedeem.customerId,
         orderId: orderRow.id,
-        amountInr: walletRedeem.amountInr,
+        amountInr: cappedInr,
       });
     }
 

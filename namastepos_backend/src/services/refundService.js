@@ -79,7 +79,7 @@ async function list({ businessId, status, limit = 100 } = {}) {
 }
 
 async function initiate({ paymentId, amountPaise, reason, adminId }) {
-  // Fetch payment
+  // Fetch payment (unlocked read just to validate + fail fast).
   const pay = await query('SELECT * FROM payments WHERE id = $1', [paymentId]);
   if (pay.rowCount === 0) throw new NotFound('Payment not found');
   const p = pay.rows[0];
@@ -90,29 +90,31 @@ async function initiate({ paymentId, amountPaise, reason, adminId }) {
     throw new BadRequest('Refund amount exceeds payment amount');
   }
 
-  // Security review 2026-08-26: guard against aggregate over-refund. A single
-  // refund is capped above, but multiple partial refunds could together
-  // exceed the original payment and drift our ledger. Sum prior non-failed
-  // refunds for this payment and reject if this one would push over.
-  const prior = await query(
-    `SELECT COALESCE(SUM(amount_paise), 0)::bigint AS refunded
-       FROM refunds
-      WHERE payment_id = $1 AND status IN ('processed', 'pending')`,
-    [paymentId],
-  );
-  const alreadyRefunded = Number(prior.rows[0].refunded) || 0;
-  if (alreadyRefunded + refundAmount > p.amount_paise) {
-    throw new BadRequest('Refund would exceed the remaining refundable amount');
-  }
-
-  // Create our row first (status pending)
-  const ins = await query(
-    `INSERT INTO refunds (business_id, payment_id, invoice_id, amount_paise,
-                          reason, initiated_by)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [p.business_id, paymentId, p.invoice_id, refundAmount, reason, adminId],
-  );
-  const ourRefund = ins.rows[0];
+  // Review 2026-08-28: the aggregate over-refund guard must be ATOMIC — the
+  // earlier version summed prior refunds and inserted in two separate
+  // statements, so two concurrent partial refunds could both pass the cap and
+  // together exceed the original payment (real money out at the gateway). Lock
+  // the payment row, re-sum, check, and insert the pending row — all in one txn.
+  const ourRefund = await withTransaction(async (client) => {
+    await client.query('SELECT id FROM payments WHERE id = $1 FOR UPDATE', [paymentId]);
+    const prior = await client.query(
+      `SELECT COALESCE(SUM(amount_paise), 0)::bigint AS refunded
+         FROM refunds
+        WHERE payment_id = $1 AND status IN ('processed', 'pending')`,
+      [paymentId],
+    );
+    const alreadyRefunded = Number(prior.rows[0].refunded) || 0;
+    if (alreadyRefunded + refundAmount > p.amount_paise) {
+      throw new BadRequest('Refund would exceed the remaining refundable amount');
+    }
+    const ins = await client.query(
+      `INSERT INTO refunds (business_id, payment_id, invoice_id, amount_paise,
+                            reason, initiated_by)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [p.business_id, paymentId, p.invoice_id, refundAmount, reason, adminId],
+    );
+    return ins.rows[0];
+  });
 
   // Call Razorpay
   try {

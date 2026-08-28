@@ -237,6 +237,7 @@ export function BillSplitDialog({
             <SplitInvoiceRow
               key={iv.id}
               invoice={iv}
+              busy={pay.isPending}
               onPay={(method) => pay.mutate({ id: iv.id, method })}
             />
           ))}
@@ -252,7 +253,7 @@ export function BillSplitDialog({
   );
 }
 
-function SplitInvoiceRow({ invoice, onPay }: { invoice: any; onPay: (method: string) => void }) {
+function SplitInvoiceRow({ invoice, onPay, busy }: { invoice: any; onPay: (method: string) => void; busy?: boolean }) {
   const [picking, setPicking] = useState(false);
   const paid = invoice.status === 'paid';
   return (
@@ -282,7 +283,8 @@ function SplitInvoiceRow({ invoice, onPay }: { invoice: any; onPay: (method: str
           ) : (
             <div className="grid grid-cols-3 gap-1 mt-2">
               {(['cash', 'upi', 'card'] as const).map((m) => (
-                <Button key={m} size="sm" variant="outline" onClick={() => { onPay(m); setPicking(false); }}>
+                <Button key={m} size="sm" variant="outline" disabled={busy}
+                  onClick={() => { if (busy) return; onPay(m); setPicking(false); }}>
                   {m.toUpperCase()}
                 </Button>
               ))}

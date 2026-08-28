@@ -54,9 +54,11 @@ async function gstrSummary(month) {
     const tax     = inv.tax_paise ?? (inv.amount_paise - subtotal);
     const custState = (inv.customer_gstin || '').slice(0, 2);
     const intraState = custState && custState === platformState;
+    // Round the CGST/SGST halves to whole paise so GSTR output ties out
+    // exactly (tax/2 can leave sub-paise fractions on odd tax amounts).
     const igst = intraState ? 0 : tax;
-    const cgst = intraState ? tax / 2 : 0;
-    const sgst = intraState ? tax / 2 : 0;
+    const cgst = intraState ? Math.round(tax / 2) : 0;
+    const sgst = intraState ? tax - cgst : 0;
     return {
       invoice_number: inv.number || inv.id.slice(0, 8),
       invoice_date: inv.paid_at?.toISOString?.().slice(0, 10) || '',

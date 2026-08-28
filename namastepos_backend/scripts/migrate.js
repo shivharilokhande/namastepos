@@ -5,7 +5,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { pool, query } = require('../src/config/db');
+const { pool, query, withTransaction } = require('../src/config/db');
 const logger = require('../src/config/logger');
 
 async function ensureMigrationsTable() {
@@ -37,11 +37,19 @@ async function run() {
     const sql = fs.readFileSync(path.join(dir, f), 'utf8');
     logger.info(`→ applying ${f}`);
     try {
-      await query(sql);
-      await query('INSERT INTO _migrations(name) VALUES ($1)', [f]);
+      // Review 2026-08-28: run each migration + its _migrations bookkeeping in
+      // ONE transaction. Previously a multi-statement file failing partway left
+      // the DB half-migrated AND unrecorded — a re-run then re-applied from the
+      // top and errored on already-created objects, wedging the deploy. Now a
+      // failure rolls the whole file back cleanly. (No migration uses
+      // CREATE ... CONCURRENTLY, so wrapping in a txn is safe.)
+      await withTransaction(async (client) => {
+        await client.query(sql);
+        await client.query('INSERT INTO _migrations(name) VALUES ($1)', [f]);
+      });
       logger.info(`✓ ${f} applied`);
     } catch (err) {
-      logger.error(`✗ ${f} failed: ${err.message}`);
+      logger.error(`✗ ${f} failed (rolled back): ${err.message}`);
       throw err;
     }
   }

@@ -64,7 +64,14 @@ class _BillSplitScreenState extends State<BillSplitScreen> {
     }
   }
 
+  // Review 2026-08-28: guard against a double-tap paying the same split
+  // invoice twice (duplicate payment record).
+  final Set<String> _payingIds = {};
+
   Future<void> _payInvoice(Map<String, dynamic> inv, String method) async {
+    final id = inv['id'].toString();
+    if (_payingIds.contains(id)) return;
+    setState(() => _payingIds.add(id));
     try {
       final updated = await ApiService.instance
           .paySplitInvoice(widget.businessId, inv['id'], method);
@@ -78,6 +85,8 @@ class _BillSplitScreenState extends State<BillSplitScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(humanizeError(e))),
       );
+    } finally {
+      if (mounted) setState(() => _payingIds.remove(id));
     }
   }
 

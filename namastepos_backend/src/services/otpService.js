@@ -155,31 +155,42 @@ async function requestOtp({ phone, purpose = 'signin', meta = {} }) {
 
 async function verifyOtp({ requestId, code }) {
   if (!requestId || !code) throw new BadRequest('requestId and code required');
-  const r = await query(
-    `SELECT * FROM otp_requests WHERE id = $1 LIMIT 1`, [requestId]
+  // Review 2026-08-28: atomically CLAIM an attempt before comparing. The old
+  // read-check-increment was a TOCTOU — concurrent submissions could each pass
+  // the `attempts < max` check and brute-force the 6-digit code within the TTL.
+  // This guarded UPDATE increments only while unused, unexpired and under the
+  // cap, so each in-flight guess consumes exactly one slot.
+  const claim = await query(
+    `UPDATE otp_requests
+        SET attempts = attempts + 1
+      WHERE id = $1 AND verified_at IS NULL
+        AND expires_at > NOW() AND attempts < $2
+      RETURNING *`,
+    [requestId, OTP_MAX_ATTEMPTS]
   );
-  if (r.rowCount === 0) throw new NotFound('OTP request not found');
-  const row = r.rows[0];
-  if (row.verified_at) throw new BadRequest('OTP already used');
-  if (new Date(row.expires_at) < new Date()) throw new BadRequest('OTP expired — request a new one');
-  if (row.attempts >= OTP_MAX_ATTEMPTS) {
+  if (claim.rowCount === 0) {
+    // Figure out the precise reason for a helpful error.
+    const r = await query(`SELECT verified_at, expires_at, attempts FROM otp_requests WHERE id = $1`, [requestId]);
+    if (r.rowCount === 0) throw new NotFound('OTP request not found');
+    const row = r.rows[0];
+    if (row.verified_at) throw new BadRequest('OTP already used');
+    if (new Date(row.expires_at) < new Date()) throw new BadRequest('OTP expired — request a new one');
     throw new TooManyRequests('Too many wrong attempts. Request a new OTP.');
   }
+  const row = claim.rows[0];
   const ok = await bcrypt.compare(String(code).trim(), row.code_hash);
   if (!ok) {
-    await query(
-      'UPDATE otp_requests SET attempts = attempts + 1 WHERE id = $1',
-      [requestId]
-    );
-    const remaining = OTP_MAX_ATTEMPTS - (row.attempts + 1);
+    const remaining = OTP_MAX_ATTEMPTS - row.attempts;
     throw new BadRequest(
       remaining > 0 ? `Wrong OTP — ${remaining} tries left` : 'Wrong OTP — request a new one'
     );
   }
-  await query(
-    'UPDATE otp_requests SET verified_at = NOW() WHERE id = $1',
+  // Single-winner verification — only the first correct submission flips it.
+  const done = await query(
+    'UPDATE otp_requests SET verified_at = NOW() WHERE id = $1 AND verified_at IS NULL RETURNING id',
     [requestId]
   );
+  if (done.rowCount === 0) throw new BadRequest('OTP already used');
   return { verified: true, phone: row.phone, purpose: row.purpose, meta: row.meta };
 }
 
