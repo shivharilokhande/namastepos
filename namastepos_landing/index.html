@@ -46,7 +46,7 @@
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
 {"@type":"Organization","name":"NamastePOS","url":"https://namastepos.in/","logo":"https://namastepos.in/apple-touch-icon.png","sameAs":[],"contactPoint":{"@type":"ContactPoint","email":"support@namastepos.in","contactType":"customer support","areaServed":"IN"}},
-{"@type":"SoftwareApplication","name":"NamastePOS","operatingSystem":"Android, iOS, Web","applicationCategory":"BusinessApplication","description":"Mobile-first restaurant POS and billing software for India with GST invoicing, QR ordering, KOT, offline mode, loyalty and reports.","offers":{"@type":"AggregateOffer","lowPrice":"0","highPrice":"799","priceCurrency":"INR","offerCount":"3"}},
+{"@type":"SoftwareApplication","name":"NamastePOS","operatingSystem":"Android, iOS, Web","applicationCategory":"BusinessApplication","description":"Mobile-first restaurant POS and billing software for India with GST invoicing, QR ordering, KOT, offline mode, loyalty and reports.","offers":{"@type":"AggregateOffer","lowPrice":"0","highPrice":"1999","priceCurrency":"INR","offerCount":"5"}},
 {"@type":"FAQPage","mainEntity":[
 {"@type":"Question","name":"Is NamastePOS GST compliant?","acceptedAnswer":{"@type":"Answer","text":"Yes. NamastePOS generates GST-compliant tax invoices (CGST/SGST) and is e-invoice ready, so your billing stays compliant out of the box."}},
 {"@type":"Question","name":"Does NamastePOS work offline?","acceptedAnswer":{"@type":"Answer","text":"Yes. Billing and KOTs keep working with no internet and sync automatically when you're back online — so service never stops during a rush."}},
@@ -553,7 +553,9 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     <div class="sec-head rv"><span class="tag">Pricing</span><h2>Simple, transparent pricing</h2><p>All-inclusive plans. No lock-in, no report paywall. Plans, prices &amp; features update live from our system.</p></div>
     <div class="pill-toggle rv"><button id="tg-month" class="on">Monthly</button><button id="tg-year">Yearly <span class="save">2 months free</span></button></div>
     <div class="price-grid" id="price-grid">
-      <!-- Rendered live from /v1/public/plans; static fallback below for no-JS/SEO -->
+      <!-- Rendered live from /v1/public/plans by JS (renderCards). This
+           static fallback mirrors the current live 5-plan lineup for
+           no-JS / SEO and MUST match the compare table below. -->
       <div class="plan rv">
         <h3>Starter</h3>
         <div class="price">₹0<small>/mo</small></div>
@@ -561,19 +563,33 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
         <ul><li><span class="material-symbols-outlined">check</span> All core POS &amp; KOT</li><li><span class="material-symbols-outlined">check</span> GST invoices</li><li><span class="material-symbols-outlined">check</span> QR ordering</li><li><span class="material-symbols-outlined">check</span> Offline mode</li></ul>
         <a href="https://app.namastepos.in" class="btn btn-ghost">Get started free</a>
       </div>
-      <div class="plan pop rv">
-        <span class="badge">Most popular</span>
+      <div class="plan rv">
         <h3>Growth</h3>
         <div class="price">₹299<small>/mo</small></div>
         <div class="note">per register · billed monthly</div>
-        <ul><li><span class="material-symbols-outlined">check</span> Everything in Starter</li><li><span class="material-symbols-outlined">check</span> Loyalty, wallet &amp; memberships</li><li><span class="material-symbols-outlined">check</span> WhatsApp receipts</li><li><span class="material-symbols-outlined">check</span> Advanced reports &amp; exports</li></ul>
+        <ul><li><span class="material-symbols-outlined">check</span> Everything in Starter</li><li><span class="material-symbols-outlined">check</span> Loyalty, wallet &amp; memberships</li><li><span class="material-symbols-outlined">check</span> WhatsApp marketing</li><li><span class="material-symbols-outlined">check</span> Advanced reports &amp; exports</li></ul>
+        <a href="https://app.namastepos.in" class="btn btn-ghost">Start free trial</a>
+      </div>
+      <div class="plan pop rv">
+        <span class="badge">Most popular</span>
+        <h3>Pro</h3>
+        <div class="price">₹799<small>/mo</small></div>
+        <div class="note">full-service restaurants</div>
+        <ul><li><span class="material-symbols-outlined">check</span> Everything in Growth</li><li><span class="material-symbols-outlined">check</span> Zomato &amp; Swiggy aggregators</li><li><span class="material-symbols-outlined">check</span> Inventory &amp; recipe costing</li><li><span class="material-symbols-outlined">check</span> Unlimited staff</li></ul>
         <a href="https://app.namastepos.in" class="btn btn-primary">Start free trial</a>
       </div>
       <div class="plan rv">
+        <h3>Advanced</h3>
+        <div class="price">₹999<small>/mo</small></div>
+        <div class="note">inventory &amp; accounting heavy</div>
+        <ul><li><span class="material-symbols-outlined">check</span> Everything in Pro</li><li><span class="material-symbols-outlined">check</span> Accounting (P&amp;L / balance sheet)</li><li><span class="material-symbols-outlined">check</span> e-invoice, TDS / TCS</li><li><span class="material-symbols-outlined">check</span> Up to 3 outlets</li></ul>
+        <a href="https://app.namastepos.in" class="btn btn-ghost">Start free trial</a>
+      </div>
+      <div class="plan rv">
         <h3>Enterprise</h3>
-        <div class="price">₹799<small>/mo</small></div>
+        <div class="price">₹1999<small>/mo</small></div>
         <div class="note">multi-outlet &amp; chains</div>
-        <ul><li><span class="material-symbols-outlined">check</span> Everything in Growth</li><li><span class="material-symbols-outlined">check</span> Multiple outlets</li><li><span class="material-symbols-outlined">check</span> Aggregator integrations</li><li><span class="material-symbols-outlined">check</span> Priority support</li></ul>
+        <ul><li><span class="material-symbols-outlined">check</span> Everything in Advanced</li><li><span class="material-symbols-outlined">check</span> Multi-outlet &amp; multi-currency</li><li><span class="material-symbols-outlined">check</span> API access &amp; white-label</li><li><span class="material-symbols-outlined">check</span> Priority support</li></ul>
         <a href="https://app.namastepos.in" class="btn btn-ghost">Start free trial</a>
       </div>
     </div>
@@ -582,18 +598,17 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <table>
         <!-- Header + body are re-rendered live from /v1/public/plans by JS
              (renderCompare). This static fallback mirrors the current live
-             lineup for no-JS / SEO and MUST match the number of pricing
-             cards above. -->
-        <thead id="compare-head"><tr><th>Compare features</th><th>Starter</th><th>Growth</th><th>Enterprise</th></tr></thead>
+             5-plan lineup for no-JS / SEO and MUST match the pricing cards. -->
+        <thead id="compare-head"><tr><th>Compare features</th><th>Starter</th><th>Growth</th><th>Pro</th><th>Advanced</th><th>Enterprise</th></tr></thead>
         <tbody id="compare-body">
-          <tr><td>Menu items</td><td>30</td><td>Unlimited</td><td>Unlimited</td></tr>
-          <tr><td>Staff logins</td><td>1</td><td>3</td><td>Unlimited</td></tr>
-          <tr><td>Outlets</td><td>1</td><td>1</td><td>Up to 3</td></tr>
-          <tr><td>GST invoicing</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>WhatsApp receipts</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>Advanced reports</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>Aggregators</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
-          <tr><td>Multi-outlet</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
+          <tr><td>Menu items</td><td>10</td><td>25</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
+          <tr><td>Staff logins</td><td>1</td><td>3</td><td>10</td><td>Unlimited</td><td>Unlimited</td></tr>
+          <tr><td>Outlets</td><td>1</td><td>1</td><td>1</td><td>Up to 3</td><td>Up to 3</td></tr>
+          <tr><td>GST invoicing</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>WhatsApp marketing</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Aggregators</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Accounting (P&amp;L / BS)</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
+          <tr><td>Multi-outlet</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
         </tbody>
       </table>
     </div>
