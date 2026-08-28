@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CreditCard, BarChart3, LogOut, Utensils,
   Tag, Receipt, FileText, Shield, Settings, ScrollText, UsersRound,
-  TrendingUp, Package, LifeBuoy, Send, Gift,
+  TrendingUp, Package, LifeBuoy, Send, Gift, ShieldCheck,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
@@ -38,6 +38,7 @@ const SECTIONS: Section[] = [
     { to: '/gst',       icon: FileText,        label: 'GST & Tax' },
   ]},
   { label: 'Operations', items: [
+    { to: '/compliance', icon: ShieldCheck,    label: 'Compliance' },
     { to: '/audit',     icon: ScrollText,      label: 'Audit log' },
     { to: '/webhooks',  icon: BarChart3,       label: 'Webhooks' },
     { to: '/team',      icon: UsersRound,      label: 'Admin team' },

@@ -269,6 +269,29 @@ export const adminApi = {
   revenueBreakdown: (months = 12) =>
     api.get('/admin/reports/revenue-breakdown', { params: { months } }).then((r) => r.data.series),
 
+  // ── DPDP / Compliance (super-admin console) ──────────────────────────
+  complianceDsr: (params: { status?: string; limit?: number } = {}) =>
+    api.get<{ requests: Dsr[] }>('/admin/compliance/dsr', { params }).then((r) => r.data.requests),
+  updateDsr: (id: string, body: { status: string; note?: string; proofHash?: string }) =>
+    api.patch<Dsr>(`/admin/compliance/dsr/${id}`, body).then((r) => r.data),
+  complianceGrievances: (params: { status?: string; businessId?: string; limit?: number } = {}) =>
+    api.get<{ grievances: Grievance[] }>('/admin/compliance/grievances', { params }).then((r) => r.data.grievances),
+  updateGrievance: (id: string, body: { status: string; resolutionNote?: string }) =>
+    api.patch<{ id: string; status: string }>(`/admin/compliance/grievances/${id}`, body).then((r) => r.data),
+  complianceBreaches: (params: { status?: string; limit?: number } = {}) =>
+    api.get<{ breaches: Breach[] }>('/admin/compliance/breaches', { params }).then((r) => r.data.breaches),
+  logBreach: (body: {
+    scope?: string; businessId?: string | null; occurredAt?: string | null;
+    category: string; severity: string; affectedCount?: number | null;
+    dataCategories?: string[]; summary: string; rootCause?: string; remediation?: string;
+  }) => api.post('/admin/compliance/breaches', body).then((r) => r.data),
+  updateBreach: (id: string, body: { status?: string; fields?: Record<string, any> }) =>
+    api.patch(`/admin/compliance/breaches/${id}`, body).then((r) => r.data),
+  complianceSettings: () =>
+    api.get<ComplianceSettings>('/admin/compliance/settings').then((r) => r.data),
+  saveComplianceSettings: (body: Record<string, any>) =>
+    api.put<ComplianceSettings>('/admin/compliance/settings', body).then((r) => r.data),
+
   // Audit + ops
   auditLog: (params: any = {}) =>
     api.get<{ events: AuditEvent[] }>('/admin/audit', { params }).then((r) => r.data.events),
@@ -317,6 +340,43 @@ export const adminApi = {
       `/admin/customers/${businessId}/menu/bulk`, { items }
     ).then((r) => r.data),
 };
+
+// ── DPDP / Compliance ──────────────────────────────────────────────────
+export interface Dsr {
+  id: string; userId: string | null; businessId: string | null;
+  guestPhone: string | null; contactEmail: string | null;
+  requestType: 'access' | 'correction' | 'erasure' | 'portability' | 'withdraw_consent';
+  status: 'pending' | 'in_review' | 'completed' | 'rejected' | 'partial';
+  details: any; source: string;
+  slaDueAt: string | null; respondedAt: string | null; closedAt: string | null;
+  handledBy: string | null; proofHash: string | null;
+  createdAt: string; updatedAt: string;
+}
+export interface Grievance {
+  id: string; businessId: string | null; userId: string | null;
+  complainantName: string | null; complainantEmail: string | null; complainantPhone: string | null;
+  category: string; subject: string; body: string;
+  status: 'received' | 'acknowledged' | 'resolved' | 'rejected' | 'escalated';
+  acknowledgedAt: string | null; resolvedAt: string | null; resolutionNote: string | null;
+  handledBy: string | null; ackDueAt: string | null; resolveDueAt: string | null;
+  createdAt: string; updatedAt: string;
+}
+export interface Breach {
+  id: string; scope: string; business_id: string | null; occurred_at: string | null;
+  category: string; severity: 'low' | 'medium' | 'high' | 'critical';
+  affected_count: number | null; data_categories: string[]; summary: string;
+  root_cause: string | null; remediation: string | null;
+  status: 'detected' | 'triaging' | 'contained' | 'notified' | 'closed';
+  detected_at: string; dpb_notified_at: string | null; cert_in_notified_at: string | null;
+  users_notified_at: string | null; ack_ref: string | null;
+  created_by: string | null; created_at: string; updated_at: string;
+}
+export interface ComplianceSettings {
+  grievanceOfficer: { name?: string; email?: string; phone?: string; address?: string };
+  dataProtectionOfficer: { name?: string; email?: string };
+  legalEntity: { name?: string; address?: string; cin?: string; gstin?: string };
+  privacyPolicyVersion?: string; termsOfServiceVersion?: string; updatedAt?: string;
+}
 
 export interface Addon {
   id: string; slug: string; name: string;

@@ -23,6 +23,7 @@ import { WebhooksPage } from './pages/WebhooksPage';
 import { AdminTeamPage } from './pages/AdminTeamPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CrmPage } from './pages/CrmPage';   // FF-402
+import { CompliancePage } from './pages/CompliancePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -47,6 +48,7 @@ export default function App() {
         <Route path="refunds"       element={<RefundsPage />} />
         <Route path="gst"           element={<GstPage />} />
         <Route path="reports"       element={<ReportsPage />} />
+        <Route path="compliance"    element={<CompliancePage />} />
         <Route path="audit"         element={<AuditPage />} />
         <Route path="webhooks"      element={<WebhooksPage />} />
         <Route path="crm"           element={<CrmPage />} />
