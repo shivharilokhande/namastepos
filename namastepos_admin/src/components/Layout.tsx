@@ -26,6 +26,7 @@ const SECTIONS: Section[] = [
     { to: '/crm',       icon: TrendingUp,      label: 'CRM' },
   ]},
   { label: 'Revenue', items: [
+    { to: '/subscriptions', icon: CreditCard,  label: 'Subscriptions' },
     { to: '/plans',     icon: CreditCard,      label: 'Plans' },
     { to: '/addons',    icon: Package,         label: 'Add-ons' },
     { to: '/coupons',   icon: Tag,             label: 'Coupons' },

@@ -286,6 +286,8 @@ async function handleWebhook(payload) {
         const sub = payload.payload.subscription.entity;
         const pay = payload.payload.payment.entity;
         await _onChargeSuccess(sub, pay);
+        // N1 dunning: a successful charge clears any past-due state.
+        await require('./dunningService').onRecovered(sub.id);
         break;
       }
       case 'subscription.activated': {
@@ -294,6 +296,7 @@ async function handleWebhook(payload) {
           `UPDATE subscriptions SET status = 'active' WHERE razorpay_subscription_id = $1`,
           [sub.id]
         );
+        await require('./dunningService').onRecovered(sub.id);
         break;
       }
       case 'subscription.completed':
@@ -307,13 +310,21 @@ async function handleWebhook(payload) {
         );
         break;
       }
-      case 'subscription.halted':
       case 'subscription.paused': {
+        // A deliberate pause (owner/admin action) — not a payment failure.
         const sub = payload.payload.subscription.entity;
         await query(
           `UPDATE subscriptions SET status = 'paused' WHERE razorpay_subscription_id = $1`,
           [sub.id]
         );
+        break;
+      }
+      case 'subscription.halted': {
+        // Razorpay halts a subscription after it exhausts charge retries —
+        // this is a terminal dunning state, not a deliberate pause. Mark it
+        // past_due and send a final recovery nudge.
+        const sub = payload.payload.subscription.entity;
+        await require('./dunningService').onPaymentFailed(sub.id, { halted: true });
         break;
       }
       case 'payment.failed': {
@@ -329,6 +340,12 @@ async function handleWebhook(payload) {
            pay.error_description || pay.error_reason, pay,
            pay.subscription_id]
         );
+        // N1 dunning: mark past_due + email the owner a recovery nudge.
+        if (pay.subscription_id) {
+          await require('./dunningService').onPaymentFailed(pay.subscription_id, {
+            reason: pay.error_description || pay.error_reason,
+          });
+        }
         break;
       }
       default:

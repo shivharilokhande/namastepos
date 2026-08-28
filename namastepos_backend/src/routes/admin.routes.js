@@ -204,6 +204,7 @@ router.get   ('/reports/top-cities',  requirePermission('reports.read'), c.repor
 router.get   ('/reports/mrr-trend',   requirePermission('reports.read'), c.reportMrr);
 // Push 19e — outstanding invoices + aging buckets
 router.get   ('/reports/outstanding', requirePermission('reports.read'), c.reportOutstanding);
+router.get   ('/reports/subscriptions', requirePermission('reports.read'), c.reportSubscriptions);
 // Push 20d — platform consolidated P&L + customer KPIs + revenue split
 router.get   ('/reports/pnl',                requirePermission('reports.read'), c.reportPnl);
 router.get   ('/reports/customers-kpi',      requirePermission('reports.read'), c.reportCustomersKpi);

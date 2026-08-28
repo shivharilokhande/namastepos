@@ -489,9 +489,72 @@ async function revenueBreakdown({ months = 12 } = {}) {
   return series;
 }
 
+// N4 (2026-08-27): consolidated subscription ledger — one row per tenant
+// subscription with plan, status, next-charge date, trial info, and a
+// billingMode that distinguishes PAID (Razorpay-backed) from COMPED
+// (manually granted, no Razorpay sub) from FREE (no price). Gives finance a
+// single operable view instead of drilling tenant-by-tenant.
+async function subscriptionLedger({ status, billingMode } = {}) {
+  const { query } = require('../config/db');
+  const r = await query(
+    `SELECT s.id, s.status, s.trial_ends_at, s.current_period_end,
+            s.cancel_at_period_end, s.cancelled_at, s.created_at,
+            s.razorpay_subscription_id,
+            s.dunning_attempts, s.last_dunning_at,
+            b.id AS business_id, b.name AS business_name,
+            p.tier, p.name AS plan_name, p.price_inr_paise,
+            CASE
+              WHEN COALESCE(p.price_inr_paise,0) = 0 THEN 'free'
+              WHEN s.razorpay_subscription_id IS NOT NULL THEN 'paid'
+              ELSE 'comped'
+            END AS billing_mode
+       FROM subscriptions s
+       JOIN businesses b ON b.id = s.business_id AND b.deleted_at IS NULL
+       LEFT JOIN plans p ON p.id = s.plan_id
+      ORDER BY s.current_period_end ASC NULLS LAST`
+  );
+  let rows = r.rows.map((x) => ({
+    id: x.id,
+    businessId: x.business_id,
+    businessName: x.business_name,
+    planTier: x.tier,
+    planName: x.plan_name,
+    priceInr: (x.price_inr_paise || 0) / 100,
+    status: x.status,
+    billingMode: x.billing_mode,
+    nextChargeAt: x.current_period_end,
+    trialEndsAt: x.trial_ends_at,
+    cancelAtPeriodEnd: x.cancel_at_period_end,
+    cancelledAt: x.cancelled_at,
+    createdAt: x.created_at,
+    razorpaySubscriptionId: x.razorpay_subscription_id,
+    dunningAttempts: x.dunning_attempts || 0,
+    lastDunningAt: x.last_dunning_at,
+  }));
+  if (status) rows = rows.filter((r0) => r0.status === status);
+  if (billingMode) rows = rows.filter((r0) => r0.billingMode === billingMode);
+
+  const summary = {
+    total: rows.length,
+    byStatus: {},
+    byBillingMode: { paid: 0, comped: 0, free: 0 },
+    // MRR from currently-active PAID subs only (matches metrics()).
+    mrrInr: 0,
+    pastDueCount: 0,
+  };
+  for (const r0 of rows) {
+    summary.byStatus[r0.status] = (summary.byStatus[r0.status] || 0) + 1;
+    summary.byBillingMode[r0.billingMode] =
+      (summary.byBillingMode[r0.billingMode] || 0) + 1;
+    if (r0.status === 'active' && r0.billingMode === 'paid') summary.mrrInr += r0.priceInr;
+    if (r0.status === 'past_due') summary.pastDueCount += 1;
+  }
+  return { rows, summary };
+}
+
 module.exports = {
   cohortRetention, signupFunnel, ltv, churnRate,
   topItems, topCities, mrrTrend,
-  outstandingInvoices,
+  outstandingInvoices, subscriptionLedger,
   consolidatedPnl, customersKpi, revenueBreakdown,
 };

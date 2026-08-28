@@ -12,6 +12,7 @@ import { AddonsPage } from './pages/AddonsPage';
 import { CouponsPage } from './pages/CouponsPage';
 import { FinancePage } from './pages/FinancePage';
 import { RefundsPage } from './pages/RefundsPage';
+import { SubscriptionsPage } from './pages/SubscriptionsPage';
 import { GstPage } from './pages/GstPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AuditPage } from './pages/AuditPage';
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="addons"        element={<AddonsPage />} />
         <Route path="coupons"       element={<CouponsPage />} />
         <Route path="finance"       element={<FinancePage />} />
+        <Route path="subscriptions" element={<SubscriptionsPage />} />
         <Route path="refunds"       element={<RefundsPage />} />
         <Route path="gst"           element={<GstPage />} />
         <Route path="reports"       element={<ReportsPage />} />

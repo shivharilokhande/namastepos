@@ -228,6 +228,9 @@ export const adminApi = {
   // Push 19e — outstanding invoices + aging buckets
   outstanding: () =>
     api.get('/admin/reports/outstanding').then((r) => r.data),
+  // N4 — consolidated subscription ledger (all tenants + summary)
+  subscriptions: (params: { status?: string; billingMode?: string } = {}) =>
+    api.get('/admin/reports/subscriptions', { params }).then((r) => r.data),
   // Push 20d — platform consolidated P&L, customer KPIs, revenue breakdown
   pnl: (params: { from?: string; to?: string } = {}) =>
     api.get('/admin/reports/pnl', { params }).then((r) => r.data),

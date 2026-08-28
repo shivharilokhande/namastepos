@@ -438,6 +438,12 @@ const reportMrr     = asyncHandler(async (req, res) => res.json({ series: await 
 // Push 19e — outstanding (unpaid) invoices + aging buckets
 const reportOutstanding = asyncHandler(async (_req, res) => res.json(await reports.outstandingInvoices()));
 
+// N4 (2026-08-27) — consolidated subscription ledger (all tenants: plan,
+// status, next-charge, trial, paid/comped/free) + summary.
+const reportSubscriptions = asyncHandler(async (req, res) => res.json(
+  await reports.subscriptionLedger({ status: req.query.status, billingMode: req.query.billingMode })
+));
+
 // Push 20d — platform consolidated P&L (income, refunds, expenses, net)
 const reportPnl = asyncHandler(async (req, res) => {
   res.json(await reports.consolidatedPnl({ from: req.query.from, to: req.query.to }));
@@ -594,7 +600,7 @@ module.exports = {
   settingsList, settingsBulkSet,
   gstSummary, gstr1Csv, gstr3b, gstHsnSummary, gstB2bB2c,
   reportCohorts, reportFunnel, reportLtv, reportChurn, reportItems, reportCities, reportMrr,
-  reportOutstanding,
+  reportOutstanding, reportSubscriptions,
   reportPnl, reportCustomersKpi, reportRevenueBreakdown,
   customerMenuBulkImport,
   auditLog, webhookEvents, dbHealth, metrics,
