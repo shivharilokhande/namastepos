@@ -95,7 +95,7 @@ export const adminApi = {
   // Login may return either a token (no 2FA) or a 2FA challenge for enrolled
   // admins. The caller must handle both shapes.
   login: (email: string, password: string) =>
-    api.post<{ token?: string; admin?: Admin; requires2fa?: boolean; challengeId?: string }>(
+    api.post<{ token?: string; admin?: Admin; requires2fa?: boolean; challengeId?: string; mustEnrol2fa?: boolean }>(
       '/admin/auth/login', { email, password }).then((r) => r.data),
   // Complete a 2FA-gated login → returns the real access token.
   verify2fa: (challengeId: string, code: string) =>
@@ -107,7 +107,7 @@ export const adminApi = {
     api.post<{ otpauth: string; secret: string; recoveryCodes: string[] }>('/admin/auth/2fa/enrol')
        .then((r) => r.data),
   enrol2faConfirm: (code: string) =>
-    api.post<{ enrolled: boolean }>('/admin/auth/2fa/enrol/confirm', { code }).then((r) => r.data),
+    api.post<{ enrolled: boolean; token?: string }>('/admin/auth/2fa/enrol/confirm', { code }).then((r) => r.data),
   disable2fa: (code: string) =>
     api.post<{ disabled: boolean }>('/admin/auth/2fa/disable', { code }).then((r) => r.data),
   me: () => api.get<{ admin: Admin }>('/admin/auth/me').then((r) => r.data.admin),

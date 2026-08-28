@@ -24,6 +24,9 @@ const FIELDS: SettingMeta[] = [
   // Features
   { key: 'feature.maintenance_mode', label: 'Maintenance mode (block customer logins)', group: 'Feature flags', type: 'boolean' },
   { key: 'feature.new_signups_open', label: 'New signups open',                          group: 'Feature flags', type: 'boolean' },
+  // Security
+  { key: 'security.enforce_admin_2fa', label: 'Require 2FA for all admins', group: 'Security', type: 'boolean',
+    description: 'When on, any admin who signs in without 2FA is forced to set it up before they can do anything.' },
 ];
 
 export function SettingsPage() {
@@ -73,7 +76,7 @@ export function SettingsPage() {
                 <Label className="text-sm">{f.label}</Label>
                 {f.description && <p className="text-xs text-muted-foreground mb-1">{f.description}</p>}
                 {f.type === 'boolean'
-                  ? <select value={String(draft[f.key])}
+                  ? <select value={String(draft[f.key] ?? false)}
                             onChange={(e) => set(f.key, e.target.value === 'true')}
                             className="h-10 rounded-md border border-input bg-background px-3 text-sm">
                       <option value="true">Yes</option>

@@ -77,6 +77,9 @@ async function requireSuperAdmin(req, _res, next) {
       isSuperAdmin: true,
       email: payload.email,
       role: payload.role || 'support',
+      // 2026-08-28: enrol-only session issued under org-wide 2FA enforcement.
+      // The admin.routes gate blocks everything but self + 2FA enrolment.
+      enrol2fa: payload.enrol2fa === true,
     };
     return next();
   } catch (err) {

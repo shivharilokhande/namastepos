@@ -51,6 +51,22 @@ async function login(email, password) {
     return { requires2fa: true, challengeId };
   }
 
+  // Org-wide 2FA enforcement (2026-08-28): when the platform requires 2FA for
+  // all admins but this admin hasn't enrolled yet, we can't lock them out (they
+  // need to be signed in to enrol). Instead we mint an ENROL-ONLY token — the
+  // `enrol2fa` claim makes the admin routes reject every action except viewing
+  // self + completing enrolment (see admin.routes gate). Once they confirm a
+  // TOTP code, the confirm endpoint swaps it for a full token.
+  const enforce = await require('./settingsService').get('security.enforce_admin_2fa');
+  if (enforce) {
+    await query(`UPDATE admin_users SET last_login_at = NOW() WHERE id = $1`, [admin.id]);
+    const token = issueAccessToken({
+      sub: admin.id, sid: admin.id, isSuperAdmin: true,
+      email: admin.email, role: admin.role, enrol2fa: true,
+    });
+    return { token, admin: serialize(admin), mustEnrol2fa: true };
+  }
+
   await query(`UPDATE admin_users SET last_login_at = NOW() WHERE id = $1`, [admin.id]);
   const token = issueAccessToken({
     sub: admin.id, sid: admin.id, isSuperAdmin: true,

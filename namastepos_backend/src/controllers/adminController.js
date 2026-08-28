@@ -62,6 +62,18 @@ const twoFaEnrolConfirm = [
   validate({ body: Joi.object({ code: Joi.string().length(6).required() })}),
   asyncHandler(async (req, res) => {
     const r = await twoFactor.confirmEnrolment(req.user.id, req.body.code);
+    // If this admin was in an enrol-only session (org-wide 2FA enforcement),
+    // they just proved possession of the authenticator by confirming a live
+    // code — swap the enrol-only token for a full access token so they don't
+    // have to sign in again.
+    if (req.user.enrol2fa) {
+      const { issueAccessToken } = require('../utils/jwt');
+      const token = issueAccessToken({
+        sub: req.user.id, sid: req.user.id, isSuperAdmin: true,
+        email: req.user.email, role: req.user.role,
+      });
+      return res.json({ ...r, token });
+    }
     res.json(r);
   }),
 ];

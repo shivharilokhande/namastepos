@@ -29,6 +29,25 @@ router.post('/auth/2fa/verify',  loginLimiter,
 // ── Protected ───────────────────────────────────────────────────────────
 router.use(requireSuperAdmin);
 
+// 2FA enforcement gate (2026-08-28): an admin who signed in while org-wide 2FA
+// enforcement is on, without having enrolled, holds an ENROL-ONLY token
+// (payload.enrol2fa). Until they finish enrolling, block every admin action
+// except viewing self + the enrolment endpoints. req.path inside this router is
+// relative to the mount, so it matches the route paths below.
+const ENROL_ONLY_ALLOWED = new Set([
+  'GET /auth/me',
+  'POST /auth/2fa/enrol',
+  'POST /auth/2fa/enrol/confirm',
+]);
+router.use((req, res, next) => {
+  if (!req.user?.enrol2fa) return next();
+  if (ENROL_ONLY_ALLOWED.has(`${req.method} ${req.path}`)) return next();
+  return res.status(403).json({ error: {
+    code: 'TWO_FA_ENROLMENT_REQUIRED',
+    message: 'Two-factor authentication is required for all admins. Finish 2FA setup to continue.',
+  }});
+});
+
 router.get   ('/auth/me', c.me);
 
 // 2FA enrolment (QA-8 P1) — current admin only. Audit enrol/confirm/disable
