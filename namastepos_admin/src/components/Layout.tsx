@@ -8,7 +8,7 @@ import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { adminApi, Admin } from '@/api/admin';
-import { setAdminToken } from '@/api/client';
+import { adminLogout } from '@/api/client';
 import { cn } from '@/lib/utils';
 
 interface NavItem { to: string; icon: any; label: string; needs?: string[]; }
@@ -52,7 +52,7 @@ export function Layout() {
 
   useEffect(() => { adminApi.me().then(setMe).catch(() => {}); }, []);
 
-  const logout = () => { setAdminToken(null); navigate('/login'); };
+  const logout = async () => { await adminLogout(); navigate('/login'); };
 
   const roleColor: Record<string, any> = {
     super_admin: 'default', finance: 'secondary', support: 'muted', sales: 'warning',

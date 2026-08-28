@@ -25,14 +25,53 @@ const loginBody = Joi.object({
   password: Joi.string().min(6).required(),
 });
 
+// ── httpOnly-cookie auth (2026-08-28) ────────────────────────────────────
+// Move the admin access token out of localStorage (XSS-readable) into an
+// httpOnly cookie. Mirrors the proven `ff_refresh` pattern used by the
+// dashboard — admin + api are subdomains of one site, so SameSite=strict
+// cookies round-trip cross-subdomain. Path is scoped to the admin API so the
+// cookie's blast radius is just /v1/admin/*. We STILL return the token in the
+// JSON body, so Bearer-mode clients keep working (dual-mode); the frontend
+// prefers the cookie and only falls back to Bearer if the cookie doesn't
+// round-trip. Auth acceptance (cookie OR Bearer) lives in middleware/auth.js.
+const env = require('../config/env');
+const csrf = require('../middleware/csrf');
+const ADMIN_COOKIE = 'ff_admin';
+const ADMIN_COOKIE_OPTS = {
+  httpOnly: true,
+  sameSite: 'strict',
+  secure: process.env.NODE_ENV === 'production',
+  path: `${env.API_PREFIX}/admin`,
+  maxAge: 24 * 60 * 60 * 1000, // 24h — a bit longer than the token; expiry → 401 → re-login
+};
+const ADMIN_COOKIE_CLEAR_OPTS = {
+  httpOnly: true,
+  sameSite: 'strict',
+  secure: process.env.NODE_ENV === 'production',
+  path: `${env.API_PREFIX}/admin`,
+};
+function _setAdminSession(res, token) {
+  if (!token) return;
+  res.cookie(ADMIN_COOKIE, token, ADMIN_COOKIE_OPTS);
+  // Issue the double-submit CSRF token so cookie-mode mutations pass the
+  // CSRF gate (the FE echoes ff_csrf back in X-CSRF-Token).
+  csrf.issue({ cookies: {} }, res);
+}
+
 // ── Auth ────────────────────────────────────────────────────────────────
 const login = [
   validate({ body: loginBody }),
   asyncHandler(async (req, res) => {
     const r = await adminTeam.login(req.body.email, req.body.password);
+    if (r.token) _setAdminSession(res, r.token);
     res.json(r);
   }),
 ];
+
+const logout = asyncHandler(async (_req, res) => {
+  res.clearCookie(ADMIN_COOKIE, ADMIN_COOKIE_CLEAR_OPTS);
+  res.json({ success: true });
+});
 
 const me = asyncHandler(async (req, res) => {
   const admin = await adminTeam.me(req.user.id);
@@ -49,6 +88,7 @@ const twoFaVerify = [
   })}),
   asyncHandler(async (req, res) => {
     const r = await adminTeam.complete2faLogin(req.body.challengeId, req.body.code);
+    if (r.token) _setAdminSession(res, r.token);
     res.json(r);
   }),
 ];
@@ -72,6 +112,7 @@ const twoFaEnrolConfirm = [
         sub: req.user.id, sid: req.user.id, isSuperAdmin: true,
         email: req.user.email, role: req.user.role,
       });
+      _setAdminSession(res, token);
       return res.json({ ...r, token });
     }
     res.json(r);
@@ -648,7 +689,7 @@ const renewalsCtrl = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
-  login, me,
+  login, logout, me,
   twoFaVerify, twoFaEnrolStart, twoFaEnrolConfirm, twoFaDisable,
   teamList, teamCreate, teamUpdate, teamDeactivate,
   listCustomers, getCustomer, drilldown, invoicePdf,

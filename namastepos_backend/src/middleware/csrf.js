@@ -51,8 +51,9 @@ function verify(req, _res, next) {
   if (hasBearer) return next();
 
   // No Bearer token. If there's also no session cookie, the request is
-  // a pre-login or public call — nothing to protect.
-  const hasSessionCookie = !!req.cookies?.ff_refresh;
+  // a pre-login or public call — nothing to protect. `ff_admin` (2026-08-28
+  // admin cookie-auth) counts as a session cookie too.
+  const hasSessionCookie = !!req.cookies?.ff_refresh || !!req.cookies?.ff_admin;
   if (!hasSessionCookie) return next();
 
   // Cookie-only authenticated request → must include the matching CSRF token.

@@ -20,6 +20,9 @@ const loginLimiter = env.isProd()
 
 // ── Public ──────────────────────────────────────────────────────────────
 router.post('/auth/login',       loginLimiter, ...c.login);
+// Logout just clears the httpOnly session cookie — safe to call unauthenticated
+// (e.g. after the token already expired), so it sits in the public block.
+router.post('/auth/logout',      c.logout);
 // 2FA login-completion is public (no token yet). Audit it so a burst of failed
 // verifies is visible; admin_id resolves once the challenge is validated.
 router.post('/auth/2fa/verify',  loginLimiter,

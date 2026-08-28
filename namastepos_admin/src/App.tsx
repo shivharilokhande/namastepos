@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { getAdminToken } from './api/client';
+import { isAuthed } from './api/client';
 import { Layout } from './components/Layout';
 
 import { LoginPage } from './pages/LoginPage';
@@ -27,7 +27,7 @@ import { CompliancePage } from './pages/CompliancePage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  if (!getAdminToken()) return <Navigate to="/login" replace />;
+  if (!isAuthed()) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 

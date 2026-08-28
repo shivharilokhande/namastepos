@@ -8,11 +8,19 @@ const { verifyAccessToken } = require('../utils/jwt');
 const { Unauthorized, Forbidden } = require('../utils/errors');
 
 function _decode(req) {
+  // Prefer the Authorization header (Bearer-mode clients). Fall back to the
+  // httpOnly `ff_admin` cookie (2026-08-28 admin cookie-auth) so the token no
+  // longer has to live in localStorage. Dual-mode: either source works.
   const header = req.headers.authorization || '';
-  if (!header.startsWith('Bearer ')) {
+  let token = null;
+  if (header.startsWith('Bearer ')) {
+    token = header.slice('Bearer '.length).trim();
+  } else if (req.cookies && req.cookies.ff_admin) {
+    token = req.cookies.ff_admin;
+  }
+  if (!token) {
     throw new Unauthorized('Missing or malformed Authorization header');
   }
-  const token = header.slice('Bearer '.length).trim();
   try {
     return verifyAccessToken(token);
   } catch (_) {
