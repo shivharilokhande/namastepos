@@ -231,6 +231,24 @@ export const adminApi = {
   // N4 — consolidated subscription ledger (all tenants + summary)
   subscriptions: (params: { status?: string; billingMode?: string } = {}) =>
     api.get('/admin/reports/subscriptions', { params }).then((r) => r.data),
+
+  // X7 — support / ticketing
+  supportTickets: (params: { status?: string } = {}) =>
+    api.get('/admin/support/tickets', { params }).then((r) => r.data.tickets),
+  supportTicket: (id: string) =>
+    api.get(`/admin/support/tickets/${id}`).then((r) => r.data.ticket),
+  supportCreateTicket: (body: { businessId: string; subject: string; priority?: string; body: string }) =>
+    api.post('/admin/support/tickets', body).then((r) => r.data.ticket),
+  supportReply: (id: string, body: string) =>
+    api.post(`/admin/support/tickets/${id}/messages`, { body }).then((r) => r.data.ticket),
+  supportSetStatus: (id: string, status: string) =>
+    api.patch(`/admin/support/tickets/${id}/status`, { status }).then((r) => r.data.ticket),
+
+  // X4 — tenant broadcast
+  broadcastPreview: (segment: string) =>
+    api.get('/admin/broadcast/preview', { params: { segment } }).then((r) => r.data),
+  broadcastSend: (body: { segment: string; subject: string; body: string }) =>
+    api.post('/admin/broadcast/send', body).then((r) => r.data),
   // Push 20d — platform consolidated P&L, customer KPIs, revenue breakdown
   pnl: (params: { from?: string; to?: string } = {}) =>
     api.get('/admin/reports/pnl', { params }).then((r) => r.data),

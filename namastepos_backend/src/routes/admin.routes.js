@@ -205,6 +205,17 @@ router.get   ('/reports/mrr-trend',   requirePermission('reports.read'), c.repor
 // Push 19e — outstanding invoices + aging buckets
 router.get   ('/reports/outstanding', requirePermission('reports.read'), c.reportOutstanding);
 router.get   ('/reports/subscriptions', requirePermission('reports.read'), c.reportSubscriptions);
+
+// X7 — support / ticketing (support + super_admin manage; both have customers.*)
+router.get   ('/support/tickets',              requirePermission('customers.read'),  c.supportList);
+router.post  ('/support/tickets',              requirePermission('customers.write'), c.supportCreate);
+router.get   ('/support/tickets/:ticketId',    requirePermission('customers.read'),  c.supportGet);
+router.post  ('/support/tickets/:ticketId/messages', requirePermission('customers.write'), c.supportReply);
+router.patch ('/support/tickets/:ticketId/status',   requirePermission('customers.write'), c.supportSetStatus);
+
+// X4 — tenant broadcast (email a segment). Preview is read; send is a write.
+router.get   ('/broadcast/preview', requirePermission('customers.read'),  c.broadcastPreview);
+router.post  ('/broadcast/send',    requirePermission('customers.write'), c.broadcastSend);
 // Push 20d — platform consolidated P&L + customer KPIs + revenue split
 router.get   ('/reports/pnl',                requirePermission('reports.read'), c.reportPnl);
 router.get   ('/reports/customers-kpi',      requirePermission('reports.read'), c.reportCustomersKpi);

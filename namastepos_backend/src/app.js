@@ -25,6 +25,7 @@ const invitationsRoutes = require('./routes/invitations.routes');
 const addonRoutes       = require('./routes/addons.routes');
 const customersRoutes   = require('./routes/customers.routes');
 const opsRoutes         = require('./routes/ops.routes');
+const supportRoutes     = require('./routes/support.routes');
 const guestRoutes       = require('./routes/guest.routes');
 const ingredientsRoutes = require('./routes/ingredients.routes');
 const sprint1ExtraRoutes = require('./routes/sprint1Extras.routes');
@@ -247,6 +248,7 @@ function buildApp() {
   app.use(`${env.API_PREFIX}/businesses/:businessId/addons`,    addonRoutes.businessRouter);
   app.use(`${env.API_PREFIX}/businesses/:businessId/customers`, customersRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId/ops`,        opsRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId/support`,    supportRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId/ingredients`, ingredientsRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId`,             sprint1ExtraRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId`,             sprintsAllRoutes);

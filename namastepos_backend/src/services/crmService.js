@@ -105,6 +105,30 @@ async function createTask({ businessId, title, notes, ownerEmail, dueAt, created
   return task;
 }
 
+// X3 (2026-08-28) — usage-based upsell signal. When a tenant hits a plan
+// limit, drop a single OPEN sales task per (business, metric) so the team
+// gets a warm upgrade prompt without spamming a task on every blocked
+// request. Best-effort + deduped; safe to call from a hot path.
+async function ensureUpsellTask(businessId, metric, { limit, current, planTier } = {}) {
+  if (!businessId || !metric) return null;
+  const marker = `[upsell:${metric}]`;
+  const dup = await query(
+    `SELECT id FROM admin_tasks
+      WHERE business_id = $1 AND done_at IS NULL AND title LIKE $2
+      LIMIT 1`,
+    [businessId, `%${marker}%`]
+  );
+  if (dup.rowCount > 0) return dup.rows[0];
+  const nice = { menu_items: 'menu items', staff: 'staff logins', tables: 'tables',
+    floors: 'floors', monthly_orders: 'monthly orders' }[metric] || metric;
+  return createTask({
+    businessId,
+    title: `Upsell: hit ${nice} limit ${marker}`,
+    notes: `Tenant reached ${current ?? '?'}/${limit ?? '?'} ${nice} on the ${planTier || 'current'} plan. Reach out about upgrading.`,
+    createdBy: null,
+  });
+}
+
 async function completeTask(taskId, actorEmail) {
   const r = await query(
     `UPDATE admin_tasks
@@ -213,6 +237,15 @@ async function computeHealth(businessId) {
     if (a.rowCount > 0) score -= 10;
   } catch (_) { /* table absent */ }
 
+  // X7 — open critical/high support ticket is a churn-risk signal.
+  try {
+    const t = await query(
+      `SELECT 1 FROM support_tickets
+        WHERE business_id = $1 AND status IN ('open','pending')
+          AND priority IN ('high','critical') LIMIT 1`, [businessId]);
+    if (t.rowCount > 0) score -= 15;
+  } catch (_) { /* table absent */ }
+
   score = Math.max(0, Math.min(100, Math.round(score)));
 
   let stage;
@@ -291,7 +324,7 @@ async function upcomingRenewals({ days = 7 } = {}) {
 
 module.exports = {
   logActivity, listActivities,
-  listTasks, createTask, completeTask,
+  listTasks, createTask, completeTask, ensureUpsellTask,
   computeHealth, recomputeAllHealth,
   upcomingRenewals,
 };

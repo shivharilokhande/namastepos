@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CreditCard, BarChart3, LogOut, Utensils,
   Tag, Receipt, FileText, Shield, Settings, ScrollText, UsersRound,
-  TrendingUp, Package,
+  TrendingUp, Package, LifeBuoy, Send,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
@@ -24,6 +24,8 @@ const SECTIONS: Section[] = [
     { to: '/customers', icon: Users,           label: 'Customers' },
     // FF-402 — CRM primitives: cross-tenant follow-up + renewal view
     { to: '/crm',       icon: TrendingUp,      label: 'CRM' },
+    { to: '/support',   icon: LifeBuoy,        label: 'Support' },
+    { to: '/broadcast', icon: Send,            label: 'Broadcast' },
   ]},
   { label: 'Revenue', items: [
     { to: '/subscriptions', icon: CreditCard,  label: 'Subscriptions' },

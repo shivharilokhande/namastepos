@@ -217,8 +217,43 @@ async function get(businessId) {
   return serializeSubscription(row, plan);
 }
 
+// X2 (2026-08-28) — proration on a mid-cycle UPGRADE. Returns the pro-rated
+// delta (in paise) the tenant owes now for the unused remainder of the
+// current period. Only for a genuine upgrade (new price > old, same cadence)
+// on an ACTIVE (non-trial) sub. Trials, downgrades, and same/lower price →
+// 0. This is the amount to capture via Razorpay when live; today it is
+// computed, surfaced and logged so billing shows the right figure.
+function computeProrationPaise(subRow, currentPlan, newPlan, cadence) {
+  if (!subRow || !currentPlan || !newPlan) return 0;
+  if (subRow.status !== 'active') return 0; // trials upgrade free until trial ends
+  const yearly = cadence === 'yearly';
+  const oldPrice = yearly ? (currentPlan.price_yearly_paise || 0) : (currentPlan.price_inr_paise || 0);
+  const newPrice = yearly ? (newPlan.price_yearly_paise || 0) : (newPlan.price_inr_paise || 0);
+  const delta = newPrice - oldPrice;
+  if (delta <= 0) return 0; // downgrade / same price → no immediate charge
+  const start = new Date(subRow.current_period_start).getTime();
+  const end = new Date(subRow.current_period_end).getTime();
+  const now = Date.now();
+  const totalMs = end - start;
+  const remainingMs = end - now;
+  if (!(totalMs > 0) || remainingMs <= 0) return 0;
+  return Math.round(delta * (remainingMs / totalMs));
+}
+
 async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
   const plan = await getPlanByTier(newTier);
+  // Load the CURRENT sub + plan first so we can price the upgrade delta.
+  const curQ = await query(
+    `SELECT s.*, p.price_inr_paise, p.price_yearly_paise, p.tier AS cur_tier
+       FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+      WHERE s.business_id = $1 LIMIT 1`,
+    [businessId]
+  );
+  const curRow = curQ.rows[0] || null;
+  const cadence = billingPeriod || curRow?.billing_period || 'monthly';
+  const prorationPaise = curRow
+    ? computeProrationPaise(curRow, curRow, plan, cadence)
+    : 0;
   // billingPeriod (2026-08-24): when set (manual/beta path with no Razorpay),
   // persist the cadence and roll the period forward so the UI doesn't show a
   // stale "renews on <past date>". Left NULL → cadence unchanged (e.g. 'free').
@@ -252,7 +287,21 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
     // eslint-disable-next-line no-console
     console.warn('[changePlan] complyStaffLimit failed:', e?.message);
   }
-  return serializeSubscription(r.rows[0], plan);
+  // X2 — log the pro-rated upgrade charge on the tenant timeline so it's
+  // auditable and the dashboard can show "₹X due now for the upgrade".
+  if (prorationPaise > 0) {
+    try {
+      await require('./crmService').logActivity({
+        businessId, kind: 'proration',
+        title: `Upgrade proration: ₹${(prorationPaise / 100).toFixed(2)}`,
+        meta: { fromTier: curRow?.cur_tier, toTier: newTier, cadence, prorationPaise },
+        actorType: 'system',
+      });
+    } catch (_) { /* non-fatal */ }
+  }
+  const out = serializeSubscription(r.rows[0], plan);
+  out.prorationInr = prorationPaise / 100;
+  return out;
 }
 
 async function cancelAtPeriodEnd(businessId) {
@@ -351,6 +400,13 @@ function enforceLimit(metric) {
       }
 
       if (current >= limit) {
+        // X3 (2026-08-28) — drop a deduped upsell task for the sales team.
+        // Fire-and-forget so it never delays or breaks the request.
+        try {
+          require('./crmService').ensureUpsellTask(businessId, metric, {
+            limit, current, planTier: sub.plan.tier,
+          }).catch(() => {});
+        } catch (_) { /* non-fatal */ }
         const err = new Forbidden(
           `Plan limit reached for ${metric}: ${current}/${limit}. Upgrade your plan.`
         );

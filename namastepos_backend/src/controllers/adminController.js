@@ -444,6 +444,38 @@ const reportSubscriptions = asyncHandler(async (req, res) => res.json(
   await reports.subscriptionLedger({ status: req.query.status, billingMode: req.query.billingMode })
 ));
 
+// X7 (2026-08-28) — support / ticketing (admin console side)
+const support = require('../services/supportService');
+const supportList = asyncHandler(async (req, res) =>
+  res.json({ tickets: await support.listTickets({ status: req.query.status, businessId: req.query.businessId }) }));
+const supportGet = asyncHandler(async (req, res) =>
+  res.json({ ticket: await support.getTicket(req.params.ticketId) }));
+const supportCreate = asyncHandler(async (req, res) => res.status(201).json({
+  ticket: await support.createTicket({
+    businessId: req.body.businessId, subject: req.body.subject,
+    priority: req.body.priority, body: req.body.body,
+    authorEmail: req.user?.email, byAdmin: true,
+  }),
+}));
+const supportReply = asyncHandler(async (req, res) => res.json({
+  ticket: await support.addMessage(req.params.ticketId, {
+    body: req.body.body, authorType: 'admin', authorId: req.user?.id, authorEmail: req.user?.email,
+  }),
+}));
+const supportSetStatus = asyncHandler(async (req, res) =>
+  res.json({ ticket: await support.setStatus(req.params.ticketId, req.body.status) }));
+
+// X4 (2026-08-28) — in-console tenant broadcast (email a segment via Brevo)
+const broadcast = require('../services/broadcastService');
+const broadcastPreview = asyncHandler(async (req, res) =>
+  res.json(await broadcast.preview(req.query.segment || 'all')));
+const broadcastSend = asyncHandler(async (req, res) => res.json(
+  await broadcast.send({
+    segment: req.body.segment || 'all', subject: req.body.subject,
+    body: req.body.body, actorEmail: req.user?.email,
+  })
+));
+
 // Push 20d — platform consolidated P&L (income, refunds, expenses, net)
 const reportPnl = asyncHandler(async (req, res) => {
   res.json(await reports.consolidatedPnl({ from: req.query.from, to: req.query.to }));
@@ -602,6 +634,8 @@ module.exports = {
   reportCohorts, reportFunnel, reportLtv, reportChurn, reportItems, reportCities, reportMrr,
   reportOutstanding, reportSubscriptions,
   reportPnl, reportCustomersKpi, reportRevenueBreakdown,
+  supportList, supportGet, supportCreate, supportReply, supportSetStatus,
+  broadcastPreview, broadcastSend,
   customerMenuBulkImport,
   auditLog, webhookEvents, dbHealth, metrics,
   // FF-402

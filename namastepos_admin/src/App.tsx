@@ -13,6 +13,8 @@ import { CouponsPage } from './pages/CouponsPage';
 import { FinancePage } from './pages/FinancePage';
 import { RefundsPage } from './pages/RefundsPage';
 import { SubscriptionsPage } from './pages/SubscriptionsPage';
+import { SupportPage } from './pages/SupportPage';
+import { BroadcastPage } from './pages/BroadcastPage';
 import { GstPage } from './pages/GstPage';
 import { ReportsPage } from './pages/ReportsPage';
 import { AuditPage } from './pages/AuditPage';
@@ -47,6 +49,8 @@ export default function App() {
         <Route path="audit"         element={<AuditPage />} />
         <Route path="webhooks"      element={<WebhooksPage />} />
         <Route path="crm"           element={<CrmPage />} />
+        <Route path="support"       element={<SupportPage />} />
+        <Route path="broadcast"     element={<BroadcastPage />} />
         <Route path="team"          element={<AdminTeamPage />} />
         <Route path="settings"      element={<SettingsPage />} />
       </Route>
