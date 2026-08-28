@@ -43,6 +43,8 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
 export function OrdersPage() {
   const [status, setStatus] = useState('pending');
   const [channel, setChannel] = useState<'all' | 'online' | 'offline'>('all');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
   const [newOrderOpen, setNewOrderOpen] = useState(false);
   const [cancelling, setCancelling] = useState<any | null>(null);
   // FF-304 code-review pass — full/partial refund workflow. Backend
@@ -164,19 +166,23 @@ export function OrdersPage() {
     return m;
   }, [irnList]);
 
-  const { data: orders = [], isLoading } = useQuery({
-    queryKey: ['orders', status, channel],
-    queryFn: () => ffApi.listOrders({
+  // Server-side pagination (2026-08-28): was an UNBOUNDED fetch re-rendering
+  // the whole table every 5s on a busy outlet. Now bounded to one page.
+  const { data: pageData, isLoading } = useQuery({
+    queryKey: ['orders', status, channel, page],
+    queryFn: () => ffApi.listOrdersPaged({
       status,
       ...(channel !== 'all' ? { channel } : {}),
-      // Collapse multi-KOT dine-in orders into one bill per session. The
-      // backend collapses by table_session_id; takeaway/QR/aggregator
-      // orders pass through unchanged. KOT/KDS views call this without
-      // groupBy so each ticket stays separate for the kitchen.
+      // Collapse multi-KOT dine-in orders into one bill per session.
       groupBy: 'session',
+      limit: PAGE_SIZE,
+      offset: page * PAGE_SIZE,
     }),
-    refetchInterval: 5000, // live queue — auto-refresh every 5s
+    refetchInterval: 5000, // live queue — auto-refresh the current page
   });
+  const orders = pageData?.orders ?? [];
+  const total = pageData?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const update = useMutation({
     mutationFn: ({ id, s }: { id: string; s: string }) => ffApi.updateOrderStatus(id, s),
@@ -233,7 +239,7 @@ export function OrdersPage() {
         {CHANNEL_TABS.map((t) => (
           <button
             key={t.key}
-            onClick={() => setChannel(t.key as any)}
+            onClick={() => { setChannel(t.key as any); setPage(0); }}
             className={`flex items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors ${
               channel === t.key
                 ? 'border-primary bg-primary/5 text-primary'
@@ -258,7 +264,7 @@ export function OrdersPage() {
         {STATUS_TABS.map((t) => (
           <button
             key={t.key}
-            onClick={() => setStatus(t.key)}
+            onClick={() => { setStatus(t.key); setPage(0); }}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
               status === t.key
                 ? 'border-primary text-primary'
@@ -460,6 +466,30 @@ export function OrdersPage() {
           );
         })}
       </div>
+
+      {/* Pagination (2026-08-28): bounded fetch, one page at a time. */}
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between border-t pt-3">
+          <div className="text-xs text-muted-foreground">
+            {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline"
+              disabled={page === 0}
+              onClick={() => setPage((p) => Math.max(0, p - 1))}>
+              Previous
+            </Button>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              Page {page + 1} / {pageCount}
+            </span>
+            <Button size="sm" variant="outline"
+              disabled={page + 1 >= pageCount}
+              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}>
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* FF-503: Cancel with structured reason picker */}
       {cancelling && (

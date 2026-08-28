@@ -89,6 +89,11 @@ export const ffApi = {
     const b = getBusinessCache();
     return api.get(`/businesses/${b.id}/orders`, { params }).then((r) => r.data.orders);
   },
+  // Paged variant: returns { orders, total, count } for server-side pagination.
+  listOrdersPaged: (params: any = {}) => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/orders`, { params }).then((r) => r.data);
+  },
   // Walk-in / counter order from the web dashboard (mirrors the mobile POS).
   createOrder: (body: any) => {
     const b = getBusinessCache();

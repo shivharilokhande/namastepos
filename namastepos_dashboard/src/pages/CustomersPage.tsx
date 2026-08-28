@@ -33,12 +33,22 @@ export function CustomersPage() {
   // Bug #7 (2026-08-25): selected row → detail drawer (parity with mobile
   // customer_detail_screen.dart).
   const [selected, setSelected] = useState<CustomerListRow | null>(null);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
+
+  // Reset to first page whenever the filter/sort changes.
+  useEffect(() => { setPage(0); }, [search, sort]);
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ['customers-crm', search, sort],
-    queryFn: () => ffApi.listCustomers({ search: search || undefined, sort }),
+    queryKey: ['customers-crm', search, sort, page],
+    queryFn: () => ffApi.listCustomers({
+      search: search || undefined, sort,
+      limit: PAGE_SIZE, offset: page * PAGE_SIZE,
+    }),
     retry: false,
   });
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // Detect "addon required" error so we can show the upsell
   const addonRequired = (() => {
@@ -148,6 +158,29 @@ export function CustomersPage() {
               })}
             </TableBody>
           </Table>
+          {/* Pagination (2026-08-28): server-side, 50/page. */}
+          {total > PAGE_SIZE && (
+            <div className="flex items-center justify-between border-t px-4 py-3">
+              <div className="text-xs text-muted-foreground">
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}>
+                  Previous
+                </Button>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  Page {page + 1} / {pageCount}
+                </span>
+                <Button size="sm" variant="outline"
+                  disabled={page + 1 >= pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}>
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

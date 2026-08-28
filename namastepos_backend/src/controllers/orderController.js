@@ -128,7 +128,7 @@ module.exports = {
     validate({ query: listQuery }),
     asyncHandler(async (req, res) => {
       const orders = await order.list(req.params.businessId, req.query);
-      res.json({ orders, count: orders.length });
+      res.json({ orders, count: orders.length, total: orders.total ?? orders.length });
     }),
   ],
   get: asyncHandler(async (req, res) => {

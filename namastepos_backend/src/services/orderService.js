@@ -961,11 +961,14 @@ async function list(businessId, { date, status, source, channel, groupBy, limit 
     where.push('source IN (\'dineIn\',\'takeaway\')');
   }
   const r = await query(
-    `SELECT * FROM orders WHERE ${where.join(' AND ')}
+    // _total = full match count (window fn) so the client can paginate without
+    // a second COUNT round-trip. Attached to the returned array as `.total`.
+    `SELECT *, COUNT(*) OVER ()::int AS _total FROM orders WHERE ${where.join(' AND ')}
      ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx}`,
     [...values, limit, offset],
   );
-  if (r.rowCount === 0) return [];
+  if (r.rowCount === 0) { const empty = []; empty.total = 0; return empty; }
+  const _total = r.rows[0]._total || 0;
   const ids = r.rows.map((o) => o.id);
   const its = await query(
     'SELECT * FROM order_items WHERE order_id = ANY($1::uuid[])',
@@ -978,8 +981,11 @@ async function list(businessId, { date, status, source, channel, groupBy, limit 
   }
   const serialized = r.rows.map((o) => serializeOrder(o, byOrder.get(o.id) || []));
   if (groupBy === 'session') {
-    return collapseBySession(serialized);
+    const grouped = collapseBySession(serialized);
+    grouped.total = _total;
+    return grouped;
   }
+  serialized.total = _total;
   return serialized;
 }
 
