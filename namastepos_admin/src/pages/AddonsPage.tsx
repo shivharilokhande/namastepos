@@ -136,11 +136,12 @@ function AddonDialog({ mode, addon, onClose, onSaved }:
     price_inr_paise: addon.priceInrPaise, billing_period: addon.billingPeriod,
     required_plan_tier: addon.requiredPlanTier || '', trial_days: addon.trialDays,
     features: addon.features, is_active: addon.isActive, display_order: addon.displayOrder,
+    partner_name: (addon as any).partnerName || '', revenue_share_pct: (addon as any).revenueSharePct || 0,
   } : {
     slug: '', name: '', tagline: '', description: '', icon: 'box',
     category: 'integrations', price_inr_paise: 9900, billing_period: 'monthly',
     required_plan_tier: '', trial_days: 0, features: { permissions: [] },
-    is_active: true, display_order: 100,
+    is_active: true, display_order: 100, partner_name: '', revenue_share_pct: 0,
   });
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
 
@@ -206,6 +207,9 @@ function AddonDialog({ mode, addon, onClose, onSaved }:
             </select>
           </div>
           <div><Label>Trial days</Label><Input type="number" value={f.trial_days} onChange={(e) => set('trial_days', +e.target.value)} /></div>
+          {/* L5 — marketplace revenue share (partner attribution + payout %) */}
+          <div><Label>Partner name (optional)</Label><Input value={f.partner_name} onChange={(e) => set('partner_name', e.target.value)} placeholder="3rd-party add-on partner" /></div>
+          <div><Label>Revenue share % (partner payout)</Label><Input type="number" min="0" max="100" step="0.5" value={f.revenue_share_pct} onChange={(e) => set('revenue_share_pct', +e.target.value)} /></div>
           <div className="col-span-2">
             <Label>Unlocked permissions (comma-separated)</Label>
             <Input value={(f.features.permissions || []).join(', ')}

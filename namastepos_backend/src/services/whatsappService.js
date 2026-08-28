@@ -36,12 +36,74 @@ async function _appendInbound(businessId, phone, body, providerMsgId, name) {
 // WhatsApp was connected at all. Expose a single source of truth the API
 // can surface to the dashboard. All three values are required for a real
 // Twilio send (see the guard in _sendOutbound below).
-function isProviderConfigured() {
+function isMetaConfigured() {
+  return !!(env.META_WA_PHONE_NUMBER_ID && env.META_WA_ACCESS_TOKEN);
+}
+function isTwilioConfigured() {
   return !!(env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_WA_FROM);
+}
+function isProviderConfigured() {
+  return isMetaConfigured() || isTwilioConfigured();
+}
+
+// Meta WhatsApp Cloud API — E.164 phone without the leading '+'.
+function _metaTo(phone) {
+  return String(phone).replace(/[^\d]/g, '');
+}
+
+async function _metaPost(payload) {
+  const url = `https://graph.facebook.com/${env.META_WA_API_VERSION}/${env.META_WA_PHONE_NUMBER_ID}/messages`;
+  const fetch = global.fetch || require('node-fetch');
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.META_WA_ACCESS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ messaging_product: 'whatsapp', ...payload }),
+  });
+  if (!r.ok) {
+    const text = await r.text();
+    logger.warn(`Meta WA send failed (${r.status}): ${text}`);
+    return null;
+  }
+  const j = await r.json();
+  return j.messages?.[0]?.id || null;
+}
+
+// Free-form text — only delivers inside the 24h customer-service window.
+async function _sendViaMeta(phone, body) {
+  return _metaPost({ to: _metaTo(phone), type: 'text', text: { preview_url: false, body } });
+}
+
+/**
+ * Send an approved template (required for business-initiated messages outside
+ * the 24h window — OTP, receipts, campaigns). `components` follows the Graph
+ * API shape, e.g. [{ type:'body', parameters:[{type:'text', text:'123456'}] }].
+ * Uses Meta when configured; otherwise soft no-op (returns null).
+ */
+async function sendTemplate({ to, templateName, languageCode, components }) {
+  if (!isMetaConfigured() || !to || !templateName) {
+    logger.info(`[WA template mock] → ${to}: ${templateName}`);
+    return null;
+  }
+  return _metaPost({
+    to: _metaTo(to),
+    type: 'template',
+    template: {
+      name: templateName,
+      language: { code: languageCode || env.META_WA_LANG || 'en' },
+      ...(components && components.length ? { components } : {}),
+    },
+  });
 }
 
 async function _sendOutbound(businessId, phone, body) {
-  // Real send (Twilio):
+  // Preferred provider: Meta WhatsApp Cloud API (direct, no BSP markup).
+  if (isMetaConfigured()) {
+    return _sendViaMeta(phone, body);
+  }
+  // Legacy fallback (Twilio):
   if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN && env.TWILIO_WA_FROM) {
     const url = `https://api.twilio.com/2010-04-01/Accounts/${env.TWILIO_ACCOUNT_SID}/Messages.json`;
     const params = new URLSearchParams({
@@ -226,6 +288,7 @@ async function sendRaw({ to, body }) {
 }
 
 module.exports = {
-  handleInbound, _sendOutbound, sendRaw, isProviderConfigured,
+  handleInbound, _sendOutbound, sendRaw, sendTemplate,
+  isProviderConfigured, isMetaConfigured, isTwilioConfigured,
   createCampaign, listCampaigns, runCampaign,
 };

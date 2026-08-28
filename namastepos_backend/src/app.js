@@ -34,6 +34,7 @@ const aggregatorWebhookRoutes = require('./routes/aggregatorWebhooks.routes');
 const multiOutletRoutes = require('./routes/multiOutlet.routes');
 const publicSiteRoutes = require('./routes/publicSite.routes');
 const whatsappWebhookRoutes = require('./routes/whatsappWebhook.routes');
+const metaWhatsappWebhookRoutes = require('./routes/metaWhatsappWebhook.routes');
 const finalSprintRoutes = require('./routes/finalSprint.routes');
 const meRoutes = require('./routes/me.routes');
 const complianceRoutes = require('./routes/compliance.routes');
@@ -127,6 +128,7 @@ function buildApp() {
     if (req.path.startsWith(`${env.API_PREFIX}/guest`)) return next();
     if (req.path.startsWith(`${env.API_PREFIX}/aggregator-webhooks`)) return next();
     if (req.path.startsWith(`${env.API_PREFIX}/wa-webhooks`)) return next();
+    if (req.path.startsWith(`${env.API_PREFIX}/meta-wa-webhooks`)) return next();
     // DPDP-mandated public endpoints (grievance filing + cookie consent)
     // must be reachable without a CSRF token because they can be hit by
     // unauthenticated principals from third-party privacy portals. Rate
@@ -255,6 +257,7 @@ function buildApp() {
   app.use(`${env.API_PREFIX}/businesses/:businessId`,             finalSprintRoutes);
   app.use(`${env.API_PREFIX}/aggregator-webhooks`,                aggregatorWebhookRoutes);
   app.use(`${env.API_PREFIX}/wa-webhooks`,                        whatsappWebhookRoutes);
+  app.use(`${env.API_PREFIX}/meta-wa-webhooks`,                   metaWhatsappWebhookRoutes);
   app.use(`${env.API_PREFIX}/outlet-groups`,                      multiOutletRoutes);
   app.use(`${env.API_PREFIX}/site`,                               publicSiteRoutes);
   // Founder bug #12 (2026-08-25): human-visible restaurant mini-site.

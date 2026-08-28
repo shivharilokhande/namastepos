@@ -102,10 +102,28 @@ const env = {
   R2_BUCKET: process.env.R2_BUCKET || '',
   R2_PUBLIC_URL: process.env.R2_PUBLIC_URL || '',
 
-  // Twilio (WhatsApp Business)
+  // Twilio (WhatsApp Business) — legacy fallback provider
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || '',
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || '',
   TWILIO_WA_FROM: process.env.TWILIO_WA_FROM || '',
+
+  // Meta WhatsApp Cloud API (preferred — direct from Meta, no BSP markup).
+  //   META_WA_PHONE_NUMBER_ID — the WABA phone number's id (Graph API)
+  //   META_WA_ACCESS_TOKEN    — permanent system-user token with whatsapp perms
+  //   META_WA_API_VERSION     — Graph API version (default v20.0)
+  //   META_WA_VERIFY_TOKEN    — arbitrary secret you also paste in the Meta
+  //                             webhook config (GET hub.verify_token check)
+  //   META_WA_APP_SECRET      — Meta app secret, to verify X-Hub-Signature-256
+  //   META_WA_OTP_TEMPLATE    — approved AUTHENTICATION template name for OTP
+  //   META_WA_LANG            — template language code (default en)
+  // When these are unset the service falls back to Twilio, then to mock-log.
+  META_WA_PHONE_NUMBER_ID: process.env.META_WA_PHONE_NUMBER_ID || '',
+  META_WA_ACCESS_TOKEN: process.env.META_WA_ACCESS_TOKEN || '',
+  META_WA_API_VERSION: process.env.META_WA_API_VERSION || 'v20.0',
+  META_WA_VERIFY_TOKEN: process.env.META_WA_VERIFY_TOKEN || '',
+  META_WA_APP_SECRET: process.env.META_WA_APP_SECRET || '',
+  META_WA_OTP_TEMPLATE: process.env.META_WA_OTP_TEMPLATE || '',
+  META_WA_LANG: process.env.META_WA_LANG || 'en',
 
   // NIC e-invoice (optional — falls back to deterministic IRN when blank)
   IRP_BASE_URL: process.env.IRP_BASE_URL || '',

@@ -91,6 +91,25 @@ async function _sendViaMsg91(phone, code, purpose) {
   return { provider: 'msg91', ok: true, requestId: j.request_id };
 }
 
+// Send the OTP over WhatsApp via Meta Cloud API using an approved
+// AUTHENTICATION template. Meta auth templates take the code as the body
+// parameter AND (if the template has a copy-code button) a URL-button param.
+async function _sendViaWhatsApp(phone, code) {
+  const whatsapp = require('./whatsappService');
+  if (!whatsapp.isMetaConfigured() || !env.META_WA_OTP_TEMPLATE) return null;
+  const id = await whatsapp.sendTemplate({
+    to: phone,
+    templateName: env.META_WA_OTP_TEMPLATE,
+    languageCode: env.META_WA_LANG,
+    components: [
+      { type: 'body', parameters: [{ type: 'text', text: code }] },
+      { type: 'button', sub_type: 'url', index: '0', parameters: [{ type: 'text', text: code }] },
+    ],
+  });
+  if (!id) throw new Error('WhatsApp OTP send failed');
+  return { provider: 'whatsapp', ok: true };
+}
+
 async function requestOtp({ phone, purpose = 'signin', meta = {} }) {
   const p = _normalizePhone(phone);
   // Rate-limit: at most N sends / hour / phone.
@@ -112,7 +131,16 @@ async function requestOtp({ phone, purpose = 'signin', meta = {} }) {
     [p, purpose, codeHash, String(OTP_TTL_MIN), JSON.stringify(meta || {})]
   );
   try {
-    await _sendViaMsg91(p, code, purpose);
+    // Prefer WhatsApp (free-er, Meta direct) when a WABA + OTP template is
+    // configured; otherwise fall back to MSG91 SMS (which itself dev-logs
+    // when unconfigured outside production).
+    let sent = null;
+    try {
+      sent = await _sendViaWhatsApp(p, code);
+    } catch (waErr) {
+      logger.warn(`[otp] WhatsApp send failed, falling back to SMS: ${waErr.message}`);
+    }
+    if (!sent) await _sendViaMsg91(p, code, purpose);
   } catch (e) {
     // Roll back the row so the user isn't rate-limited by a failed send.
     await query('DELETE FROM otp_requests WHERE id = $1', [ins.rows[0].id]);
