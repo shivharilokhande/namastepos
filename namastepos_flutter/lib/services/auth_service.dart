@@ -375,7 +375,21 @@ class AuthService {
     await _secure.delete(key: _kMpin);
     await _secure.delete(key: _kMpinSalt);
     await _secure.delete(key: _kMpinPromptOff);
+    await clearMpinFails();
   }
+
+  // Review 2026-08-28: persist the wrong-MPIN counter so relaunching the app
+  // can't reset it — otherwise the 4-digit lock is brute-forceable in batches
+  // of <5 across restarts.
+  static const _kMpinFails = 'ff_mpin_fails';
+  Future<int> mpinFails() async =>
+      int.tryParse(await _secure.read(key: _kMpinFails) ?? '0') ?? 0;
+  Future<int> bumpMpinFails() async {
+    final n = (await mpinFails()) + 1;
+    await _secure.write(key: _kMpinFails, value: '$n');
+    return n;
+  }
+  Future<void> clearMpinFails() async => _secure.delete(key: _kMpinFails);
 
   // One-time "set an MPIN?" prompt suppression so we don't nag every launch.
   static const _kMpinPromptOff = 'ff_mpin_prompt_off';

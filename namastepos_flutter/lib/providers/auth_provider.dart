@@ -150,6 +150,7 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> unlockWithMpin(String pin) async {
     final ok = await AuthService.instance.verifyMpin(pin);
     if (!ok) return false;
+    await AuthService.instance.clearMpinFails(); // reset the persistent counter on success
     final valid = await AuthService.instance.ensureValidSession();
     if (valid) {
       _status = AuthStatus.authenticated;
@@ -160,6 +161,10 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
     return true;
   }
+
+  /// Persistent wrong-MPIN counter (survives relaunch → not brute-forceable).
+  Future<int> mpinFails() => AuthService.instance.mpinFails();
+  Future<int> bumpMpinFails() => AuthService.instance.bumpMpinFails();
 
   /// Owner sets/updates their MPIN for faster login next time.
   Future<void> setMpin(String pin) async {

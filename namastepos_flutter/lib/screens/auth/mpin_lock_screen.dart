@@ -22,16 +22,28 @@ class _MpinLockScreenState extends State<MpinLockScreen> {
   int _fails = 0;
   static const _maxFails = 5;
 
+  @override
+  void initState() {
+    super.initState();
+    // Review 2026-08-28: load the PERSISTED fail count so relaunching the app
+    // can't reset it and brute-force the MPIN in batches of <5.
+    context.read<AuthProvider>().mpinFails().then((n) {
+      if (mounted) setState(() => _fails = n);
+    });
+  }
+
   Future<void> _submit() async {
     if (_pin.length != 4) return;
     setState(() => _busy = true);
-    final ok = await context.read<AuthProvider>().unlockWithMpin(_pin);
+    final auth = context.read<AuthProvider>();
+    final ok = await auth.unlockWithMpin(_pin);
     if (!mounted) return;
     if (ok) return; // provider flips status → root gate swaps the screen
-    _fails++;
+    _fails = await auth.bumpMpinFails(); // persistent, survives relaunch
+    if (!mounted) return;
     setState(() { _pin = ''; _busy = false; });
     if (_fails >= _maxFails) {
-      await context.read<AuthProvider>().signOutFromLock();
+      await auth.signOutFromLock();
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
