@@ -125,6 +125,11 @@ const env = {
   META_WA_OTP_TEMPLATE: process.env.META_WA_OTP_TEMPLATE || '',
   META_WA_LANG: process.env.META_WA_LANG || 'en',
 
+  // Redis (OPTIONAL) — only for cross-instance feature-cache invalidation when
+  // running >1 backend instance. Unset = single-instance in-process cache
+  // (fine today). Free options: Upstash, Render Key Value, Redis Cloud.
+  REDIS_URL: process.env.REDIS_URL || '',
+
   // NIC e-invoice (optional — falls back to deterministic IRN when blank)
   IRP_BASE_URL: process.env.IRP_BASE_URL || '',
   IRP_USERNAME: process.env.IRP_USERNAME || '',

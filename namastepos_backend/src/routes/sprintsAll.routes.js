@@ -41,6 +41,7 @@ router.use(requireAuth, requireBusinessOwnership);
 
 // ── Partial refund from an order (FF-304) ──────────────────────────────
 const refundSvc = require('../services/refundService');
+const auditSvc = require('../services/auditService');
 router.post('/orders/:orderId/refund',
   requireRole(['business_owner']),
   requireNotImpersonating,
@@ -55,6 +56,8 @@ router.post('/orders/:orderId/refund',
     amountInr: Joi.number().positive().precision(2),
     reason:   Joi.string().max(500).allow('', null),
   }).or('itemIds', 'items', 'amountInr') }),
+  auditSvc.tenantMiddlewareLog('refunds', 'refund_order',
+    (req) => ({ type: 'order', id: req.params.orderId })),
   asyncHandler(async (req, res) =>
     res.json(await refundSvc.refundOrder({
       businessId: req.params.businessId,

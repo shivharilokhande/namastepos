@@ -77,4 +77,69 @@ async function recent({ limit = 100, offset = 0, module, adminId, businessId } =
   }));
 }
 
-module.exports = { log, middlewareLog, recent };
+// ── Tenant (owner/staff) audit — money-sensitive actions ─────────────────
+// Review 2026-08-28: owner/staff mutations (refunds, voids, discounts, cash
+// drawer, plan changes) had no trail. Uses the existing `actor_id` column for
+// the business user; best-effort (never breaks the operation).
+async function logTenant({
+  businessId, userId, module, action, entityType, entityId, payload, ip, userAgent,
+}) {
+  try {
+    await query(
+      `INSERT INTO audit_log
+        (business_id, actor_id, action, entity_type, entity_id, payload,
+         module, ip_address, user_agent)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [businessId || null, userId || null, action, entityType || null,
+       entityId || null, payload ? _sanitizeBody(payload) : null,
+       module || null, ip || null, userAgent || null]
+    );
+  } catch (_) { /* audit must never break business ops */ }
+}
+
+/** Express middleware: log a tenant (owner/staff) mutation after a 2xx.
+ *  Mirrors middlewareLog but records actor_id = the business user. */
+function tenantMiddlewareLog(module, action, getEntity) {
+  return (req, res, next) => {
+    const oldJson = res.json.bind(res);
+    res.json = (body) => {
+      if (res.statusCode < 400) {
+        const entity = getEntity ? getEntity(req, body) : {};
+        logTenant({
+          businessId: req.params?.businessId,
+          userId: req.user?.id,
+          module, action,
+          entityType: entity.type, entityId: entity.id,
+          payload: { params: req.params, body: _sanitizeBody(req.body || {}) },
+          ip: req.ip, userAgent: req.headers['user-agent'],
+        });
+      }
+      return oldJson(body);
+    };
+    next();
+  };
+}
+
+/** Tenant-scoped audit feed (actor = business user). */
+async function recentTenant({ businessId, limit = 100, offset = 0 } = {}) {
+  const r = await query(
+    `SELECT a.*, u.email AS actor_email, u.display_name AS actor_name
+       FROM audit_log a
+  LEFT JOIN users u ON u.id = a.actor_id
+      WHERE a.business_id = $1 AND a.actor_id IS NOT NULL
+      ORDER BY a.created_at DESC
+      LIMIT $2 OFFSET $3`,
+    [businessId, Math.min(limit, 500), offset]
+  );
+  return r.rows.map((row) => ({
+    id: row.id, module: row.module, action: row.action,
+    entityType: row.entity_type, entityId: row.entity_id,
+    actorEmail: row.actor_email, actorName: row.actor_name,
+    payload: row.payload, ipAddress: row.ip_address, createdAt: row.created_at,
+  }));
+}
+
+module.exports = {
+  log, middlewareLog, recent,
+  logTenant, tenantMiddlewareLog, recentTenant,
+};

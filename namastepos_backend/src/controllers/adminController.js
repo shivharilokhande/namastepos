@@ -465,6 +465,15 @@ const supportReply = asyncHandler(async (req, res) => res.json({
 const supportSetStatus = asyncHandler(async (req, res) =>
   res.json({ ticket: await support.setStatus(req.params.ticketId, req.body.status) }));
 
+// Tenant audit trail (owner/staff money mutations) for a business.
+const tenantAudit = asyncHandler(async (req, res) => res.json({
+  events: await audit.recentTenant({
+    businessId: req.params.businessId,
+    limit: Math.min(parseInt(req.query.limit || '100', 10), 500),
+    offset: parseInt(req.query.offset || '0', 10),
+  }),
+}));
+
 // L5 (2026-08-28) — add-on marketplace revenue-share payout report
 const reportAddonPayouts = asyncHandler(async (_req, res) => res.json(await reports.addonPayouts()));
 
@@ -646,7 +655,7 @@ module.exports = {
   reportPnl, reportCustomersKpi, reportRevenueBreakdown,
   supportList, supportGet, supportCreate, supportReply, supportSetStatus,
   broadcastPreview, broadcastSend,
-  referralList, referralReward, reportAddonPayouts,
+  referralList, referralReward, reportAddonPayouts, tenantAudit,
   customerMenuBulkImport,
   auditLog, webhookEvents, dbHealth, metrics,
   // FF-402

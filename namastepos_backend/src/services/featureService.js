@@ -15,9 +15,44 @@
 // plan change by calling clearCache(businessId) from subscriptionService.
 
 const { query, withTransaction } = require('../config/db');
+const env = require('../config/env');
+const logger = require('../config/logger');
 
 const TTL_MS = 60_000;                       // 1-minute soft cache
 const cache = new Map();                     // bid → { expires, tierKind, features:Set }
+
+// ── Cross-instance cache invalidation (Review 2026-08-28) ────────────────
+// The in-process Map is fast but per-node: a super-admin plan/feature change
+// on one instance is invisible to others for up to TTL. When REDIS_URL is set
+// we publish invalidations over Redis pub/sub so every node drops the stale
+// entry immediately; the local Map stays the hot path. Fully OPTIONAL — with
+// no REDIS_URL this is a no-op and behaviour is exactly as before (fine for
+// single-instance). ioredis is lazy-required so it isn't needed until used.
+const CACHE_CHANNEL = 'namastepos:feature-cache:invalidate';
+let _redisPub = null;
+let _redisReady = false;
+(function initRedis() {
+  if (!env.REDIS_URL) return;
+  try {
+    const Redis = require('ioredis');
+    _redisPub = new Redis(env.REDIS_URL, { lazyConnect: false, maxRetriesPerRequest: 2 });
+    _redisPub.on('error', (e) => logger.warn(`[featureCache] redis pub error: ${e.message}`));
+    const sub = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 2 });
+    sub.on('error', (e) => logger.warn(`[featureCache] redis sub error: ${e.message}`));
+    sub.subscribe(CACHE_CHANNEL).then(() => { _redisReady = true; }).catch(() => {});
+    sub.on('message', (_ch, msg) => {
+      if (msg === '*') cache.clear();
+      else if (msg) cache.delete(msg);
+    });
+  } catch (e) {
+    logger.warn(`[featureCache] redis disabled (ioredis missing or bad REDIS_URL): ${e.message}`);
+  }
+}());
+function _publishInvalidate(payload) {
+  if (_redisPub && _redisReady) {
+    _redisPub.publish(CACHE_CHANNEL, payload).catch(() => {});
+  }
+}
 
 /**
  * Resolve the active plan tier + tier_kind for a business. Push 18b
@@ -123,6 +158,7 @@ async function planSummary(businessId) {
 
 function clearCache(businessId) {
   cache.delete(businessId);
+  _publishInvalidate(businessId); // tell other instances (no-op without REDIS_URL)
 }
 
 // Push 14d — when super-admin tweaks a plan's feature matrix we need
@@ -131,6 +167,7 @@ function clearCache(businessId) {
 // /auth/me call (≤30s polling interval on dashboard, ≤60s on mobile).
 function clearAllCaches() {
   cache.clear();
+  _publishInvalidate('*'); // tell other instances to clear too
 }
 
 function nextTierUp(tierKind) {

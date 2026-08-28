@@ -250,6 +250,10 @@ export const adminApi = {
   broadcastSend: (body: { segment: string; subject: string; body: string }) =>
     api.post('/admin/broadcast/send', body).then((r) => r.data),
 
+  // Tenant audit trail (owner/staff money mutations)
+  tenantAudit: (businessId: string) =>
+    api.get(`/admin/customers/${businessId}/audit`).then((r) => r.data.events),
+
   // L2 — referrals
   referrals: (params: { status?: string } = {}) =>
     api.get('/admin/referrals', { params }).then((r) => r.data.referrals),

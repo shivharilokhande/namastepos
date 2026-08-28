@@ -23,7 +23,7 @@ import { formatINR, formatDate, formatDateTime } from '@/lib/utils';
 import { HealthPill, LifecycleBadge } from './CrmPage';
 
 // FF-402 — 'crm' tab groups the activity feed + tenant tasks + health.
-const TABS = ['overview', 'crm', 'addons', 'menu', 'orders', 'staff', 'invoices', 'notes'] as const;
+const TABS = ['overview', 'crm', 'addons', 'menu', 'orders', 'staff', 'invoices', 'notes', 'audit'] as const;
 type Tab = typeof TABS[number];
 
 // Push 20c — CSV writer shared by orders/invoices/payments export buttons.
@@ -147,6 +147,7 @@ export function CustomerDetailPage() {
       {tab === 'staff' && <StaffTab staff={staff} />}
       {tab === 'invoices' && <InvoicesTab invoices={invoices} businessId={id!} />}
       {tab === 'notes' && <NotesTab notes={notes} businessId={id!} />}
+      {tab === 'audit' && <AuditTab businessId={id!} />}
 
       <ExtendTrialDialog open={extending} onClose={() => setExtending(false)} businessId={id!} />
       <ChangePlanDialog open={changingPlan} onClose={() => setChangingPlan(false)} businessId={id!}
@@ -1046,5 +1047,45 @@ function ChangePlanDialog({ open, onClose, businessId, current }: any) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// Tenant audit trail — owner/staff money mutations (refunds, plan changes …).
+function AuditTab({ businessId }: { businessId: string }) {
+  const { data: events = [], isLoading } = useQuery({
+    queryKey: ['tenant-audit', businessId],
+    queryFn: () => adminApi.tenantAudit(businessId),
+  });
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Audit trail</CardTitle>
+        <CardDescription>Owner/staff money actions on this tenant (refunds, plan changes, etc.).</CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        {isLoading ? (
+          <div className="p-6 text-muted-foreground text-sm">Loading…</div>
+        ) : events.length === 0 ? (
+          <div className="p-6 text-muted-foreground text-sm">No audited actions yet.</div>
+        ) : (
+          <div className="divide-y">
+            {events.map((e: any) => (
+              <div key={e.id} className="p-3 flex items-start justify-between gap-3 text-sm">
+                <div className="min-w-0">
+                  <div className="font-medium">
+                    {e.module}: {e.action}
+                    {e.entityId ? <span className="text-muted-foreground font-normal"> · {String(e.entityId).slice(0, 8)}</span> : null}
+                  </div>
+                  <div className="text-xs text-muted-foreground">
+                    {e.actorName || e.actorEmail || 'unknown'}{e.ipAddress ? ` · ${e.ipAddress}` : ''}
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground whitespace-nowrap">{formatDateTime(e.createdAt)}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
