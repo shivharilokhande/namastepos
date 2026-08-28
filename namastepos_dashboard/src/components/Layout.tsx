@@ -11,6 +11,7 @@ import {
   Activity, TrendingUp, Star, BookOpen, Ticket, Calendar as CalIcon,
   MessageSquare, Upload, Landmark, FileText, Repeat, Zap,
   ShieldCheck, Inbox, TrendingDown, HelpCircle, Undo2, ChevronDown,
+  LifeBuoy, Gift,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { ImpersonationBanner } from './ImpersonationBanner';
@@ -152,6 +153,8 @@ const navGroups: { name: string; items: NavItem[] }[] = [
 
 const navBottom: NavItem[] = [
   { to: '/billing',   icon: CreditCard,      label: 'Plans & Billing',  feature: null },
+  { to: '/refer',     icon: Gift,            label: 'Refer & earn',     feature: null },
+  { to: '/support',   icon: LifeBuoy,        label: 'Support',          feature: null },
 ];
 
 export function Layout() {

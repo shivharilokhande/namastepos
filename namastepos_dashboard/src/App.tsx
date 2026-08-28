@@ -64,6 +64,8 @@ const SetupWizardPage = lazy(() => import('./pages/SetupWizardPage').then(m => (
 const ActionCenterPage = lazy(() => import('./pages/ActionCenterPage').then(m => ({ default: m.ActionCenterPage })));
 const RevenueLeakagePage = lazy(() => import('./pages/RevenueLeakagePage').then(m => ({ default: m.RevenueLeakagePage })));
 const HelpCenterPage = lazy(() => import('./pages/HelpCenterPage').then(m => ({ default: m.HelpCenterPage })));
+const SupportPage = lazy(() => import('./pages/SupportPage').then(m => ({ default: m.SupportPage })));
+const ReferPage = lazy(() => import('./pages/ReferPage').then(m => ({ default: m.ReferPage })));
 const MembershipsPage = lazy(() => import('./pages/MembershipsPage').then(m => ({ default: m.MembershipsPage })));
 const ReviewsPage = lazy(() => import('./pages/ReviewsPage').then(m => ({ default: m.ReviewsPage })));
 const RefundsPage = lazy(() => import('./pages/RefundsPage').then(m => ({ default: m.RefundsPage })));
@@ -160,6 +162,8 @@ export default function App() {
         <Route path="action-center" element={<ActionCenterPage />} />
         <Route path="leakage"       element={<RevenueLeakagePage />} />
         <Route path="help"          element={<HelpCenterPage />} />
+        <Route path="support"       element={<SupportPage />} />
+        <Route path="refer"         element={<ReferPage />} />
       </Route>
       {/* Bug fix (2026-08-20): the old catch-all silently redirected to
           "/", turning any typo or stale bookmark into a fake Overview

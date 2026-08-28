@@ -29,6 +29,8 @@ import '../ops/wastage_screen.dart';
 import '../orders/refunds_screen.dart';
 import '../settings/back_office_screens.dart';
 import '../billing/billing_screen.dart';
+import '../settings/support_screen.dart';
+import '../settings/refer_screen.dart';
 import '../marketplace/marketplace_screen.dart';
 import '../../utils/role_permissions.dart';
 import '../../widgets/feature_tour.dart';
@@ -809,6 +811,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ));
                   },
                 ),
+              // L2 referral — owner-only (growth lever tied to their account).
+              if (role == 'business_owner')
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.card_giftcard, color: AppColors.primary),
+                  title: const Text('Refer & earn'),
+                  onTap: () {
+                    _closeDrawer();
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const ReferScreen(),
+                    ));
+                  },
+                ),
+              // X7 support — available to any signed-in user.
+              ListTile(
+                dense: true,
+                leading: const Icon(Icons.support_agent, color: AppColors.primary),
+                title: const Text('Support'),
+                onTap: () {
+                  _closeDrawer();
+                  Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => const SupportScreen(),
+                  ));
+                },
+              ),
               const Divider(),
               ListTile(
                 dense: true,

@@ -300,7 +300,17 @@ export function BillingPage() {
         rz.open();
       });
     },
-    onSuccess: () => { toast.success('Plan updated'); qc.invalidateQueries({ queryKey: ['sub'] }); },
+    onSuccess: (res: any) => {
+      // X2 proration — if the upgrade carries a pro-rated charge for the
+      // unused remainder of the current period, tell the owner.
+      const prorate = Number(res?.prorationInr || 0);
+      if (prorate > 0) {
+        toast.success(`Plan upgraded — ₹${prorate.toLocaleString('en-IN')} charged now for the rest of this cycle`);
+      } else {
+        toast.success('Plan updated');
+      }
+      qc.invalidateQueries({ queryKey: ['sub'] });
+    },
     onError: (e) => toast.error(apiError(e)),
   });
 
@@ -347,6 +357,23 @@ export function BillingPage() {
         <h1 className="text-2xl font-bold tracking-tight">Billing</h1>
         <p className="text-muted-foreground">Plan, invoices, payment method.</p>
       </div>
+
+      {/* N1 dunning — actionable past-due banner. When the subscription is
+          past_due (a charge failed), prompt the owner to fix payment now so
+          features/reports stay active. */}
+      {sub?.status === 'past_due' && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1">
+            <div className="font-semibold text-red-800">Payment failed — your plan is past due</div>
+            <div className="text-sm text-red-700">
+              Update your payment method to keep loyalty, reports and add-ons active. We retry automatically, but you can fix it now.
+            </div>
+          </div>
+          <Button variant="default" onClick={() => { const el = document.getElementById('choose-plan'); el?.scrollIntoView({ behavior: 'smooth' }); }}>
+            Update payment
+          </Button>
+        </div>
+      )}
 
       {sub && (() => {
         // Derive the cadence from the ACTUAL current period span rather than
@@ -459,7 +486,7 @@ export function BillingPage() {
             </button>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div id="choose-plan" className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {orderedPlans.map((p: any) => {
             const tierKind = (p.tierKind || 'starter') as keyof typeof TIER_COLORS;
             const color = TIER_COLORS[tierKind] || '#888';

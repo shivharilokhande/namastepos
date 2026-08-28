@@ -242,7 +242,12 @@ class _BillingScreenState extends State<BillingScreen> {
         await _load();
         if (mounted) {
           setState(() { _checkoutBusy = false; _pendingTier = null; });
-          _showSnack('You\'re on the ${_currentTierLabel()} plan now');
+          // X2 proration — surface the pro-rated charge for the unused
+          // remainder of the current cycle, if any.
+          final prorate = (res['prorationInr'] as num?)?.toDouble() ?? 0;
+          _showSnack(prorate > 0
+              ? 'Upgraded — ₹${prorate.toStringAsFixed(0)} charged now for the rest of this cycle'
+              : 'You\'re on the ${_currentTierLabel()} plan now');
         }
         return;
       }

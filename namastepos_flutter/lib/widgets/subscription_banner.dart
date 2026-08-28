@@ -12,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../config/app_config.dart';
 import '../constants/colors.dart';
 import '../providers/subscription_provider.dart';
+import '../screens/billing/billing_screen.dart';
 
 class SubscriptionBanner extends StatelessWidget {
   const SubscriptionBanner({super.key});
@@ -22,7 +23,21 @@ class SubscriptionBanner extends StatelessWidget {
     if (sub == null) return const SizedBox.shrink();
 
     Widget? banner;
-    if (sub.isPaused) {
+    if (sub.status == 'past_due') {
+      // N1 dunning — a charge failed. Give an actionable "update payment" CTA
+      // straight to the in-app billing screen.
+      banner = _build(
+        bg: AppColors.error.withValues(alpha: 0.10),
+        fg: AppColors.error,
+        icon: Icons.error_outline,
+        title: 'Payment failed — plan past due',
+        body: 'Update your payment to keep loyalty, reports & add-ons active.',
+        cta: 'Update',
+        onCta: () => Navigator.push(context, MaterialPageRoute(
+          builder: (_) => const BillingScreen(),
+        )),
+      );
+    } else if (sub.isPaused) {
       banner = _build(
         bg: AppColors.error.withValues(alpha: 0.10),
         fg: AppColors.error,

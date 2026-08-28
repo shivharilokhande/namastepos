@@ -430,6 +430,37 @@ class ApiService {
     return r as Map<String, dynamic>;
   }
 
+  // ── Support / ticketing (X7 tenant side) ────────────────────────────────
+  Future<List<dynamic>> listSupportTickets(String businessId) async {
+    final r = await _wrap(() => _dio.get('/businesses/$businessId/support'));
+    return ((r as Map)['tickets'] as List?) ?? const [];
+  }
+
+  Future<Map<String, dynamic>> getSupportTicket(String businessId, String id) async {
+    final r = await _wrap(() => _dio.get('/businesses/$businessId/support/$id'));
+    return ((r as Map)['ticket'] as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> createSupportTicket(
+      String businessId, {required String subject, required String body, String priority = 'normal'}) async {
+    final r = await _wrap(() => _dio.post('/businesses/$businessId/support',
+        data: {'subject': subject, 'body': body, 'priority': priority}));
+    return ((r as Map)['ticket'] as Map).cast<String, dynamic>();
+  }
+
+  Future<Map<String, dynamic>> replySupportTicket(
+      String businessId, String id, String body) async {
+    final r = await _wrap(() => _dio.post(
+        '/businesses/$businessId/support/$id/messages', data: {'body': body}));
+    return ((r as Map)['ticket'] as Map).cast<String, dynamic>();
+  }
+
+  // ── Referral (FF-333 tenant side) ───────────────────────────────────────
+  Future<Map<String, dynamic>> referral(String businessId) async {
+    final r = await _wrap(() => _dio.get('/businesses/$businessId/referral'));
+    return (r as Map).cast<String, dynamic>();
+  }
+
   // Push 15 — Income statement (Schedule III P&L) + tax invoices
   Future<Map<String, dynamic>> incomeStatement(String businessId,
       {required String startDate, required String endDate}) async {

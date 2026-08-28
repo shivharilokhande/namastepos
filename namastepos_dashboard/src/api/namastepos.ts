@@ -23,7 +23,7 @@ export const ffApi = {
     api.post('/auth/google', { idToken }).then((r) => r.data),
   passwordLogin: (email: string, password: string) =>
     api.post('/auth/login', { email, password }).then((r) => r.data),
-  register: (body: { email: string; password: string; name?: string; businessName?: string }) =>
+  register: (body: { email: string; password: string; name?: string; businessName?: string; referralCode?: string }) =>
     api.post('/auth/register', body).then((r) => r.data),
   me: () => api.get('/auth/me').then((r) => r.data),
   patchMe: (patch: any) => api.patch('/auth/me', patch).then((r) => r.data),
@@ -431,6 +431,30 @@ export const ffApi = {
     const b = getBusinessCache();
     return api.get(`/businesses/${b.id}/billing/invoices/${invoiceId}/pdf`,
       { responseType: 'blob' }).then((r) => r.data as Blob);
+  },
+
+  // Support / ticketing (X7 tenant side)
+  supportTickets: () => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/support`).then((r) => r.data.tickets);
+  },
+  supportTicket: (id: string) => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/support/${id}`).then((r) => r.data.ticket);
+  },
+  createSupportTicket: (body: { subject: string; priority?: string; body: string }) => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/support`, body).then((r) => r.data.ticket);
+  },
+  replySupportTicket: (id: string, body: string) => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/support/${id}/messages`, { body }).then((r) => r.data.ticket);
+  },
+
+  // Referral program (L2 / FF-333 tenant side)
+  referral: () => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/referral`).then((r) => r.data);
   },
 
   // Add-on marketplace

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { GoogleLogin, CredentialResponse } from '@react-oauth/google';
 import { Utensils, Mail, Lock, User, Store, Eye, EyeOff } from 'lucide-react';
@@ -18,6 +18,8 @@ const TERMS_OF_SERVICE_VERSION = 'tos-2026-05-26';
 
 export function RegisterPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const referralCode = searchParams.get('ref') || undefined; // L2 referral link
   const [name, setName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [email, setEmail] = useState('');
@@ -96,6 +98,7 @@ export function RegisterPage() {
     try {
       const { token, refreshToken, business } = await ffApi.register({
         email, password, name: name || undefined, businessName: businessName || undefined,
+        referralCode,
       });
       setSession(token, refreshToken);
       setBusinessCache(business);
