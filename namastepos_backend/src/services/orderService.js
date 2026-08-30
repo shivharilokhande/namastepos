@@ -123,6 +123,12 @@ async function create(businessId, body) {
     clientId = null, source = 'dineIn', tableNo = null, customerPhone = null,
     customerName = null, items, discount = 0,
     paymentMethod = 'cash',
+    // Security (2026-08-30): whether to auto-apply the phone's membership
+    // bundle. Trusted callers (staff POS, authenticated app) pass true; the
+    // unauthenticated guest QR path passes true ONLY after the phone has
+    // proven ownership via OTP — otherwise a guest who knows a member's number
+    // could spend that member's prepaid entitlement.
+    allowMemberBenefits = true,
     pointsToRedeem = 0, // ← Loyalty: redeem points at checkout
     // Dine-in running bill: when set, link this order (KOT) to an open
     // table session so the bill accumulates across multiple orders until
@@ -300,7 +306,7 @@ async function create(businessId, body) {
     // Runs inside the txn with the subscription row locked.
     let membershipDiscount = 0; // INR
     let _membershipRedeem = null; // { subId, lines: [{menuItemId, qty, valueInr}] }
-    if (customerPhone) {
+    if (customerPhone && allowMemberBenefits) {
       try {
         const custQ = await client.query(
           `SELECT id FROM customers

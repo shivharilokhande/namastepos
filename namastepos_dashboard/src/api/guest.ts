@@ -45,6 +45,19 @@ export const guest = {
   orderStatus: (token: string, orderId: string) =>
     guestApi.get(`/guest/orders/${token}/${orderId}`).then((r) => r.data),
 
+  // Guest membership-benefit OTP gate. Call before placing an order when a
+  // phone is entered: if the phone owns a membership benefit, the server
+  // sends an OTP and returns { otpRequired:true, requestId }. Verify returns
+  // a benefitToken to attach to placeOrder so the benefit is honored.
+  benefitCheck: (token: string, phone: string) =>
+    guestApi.post<{ otpRequired: boolean; requestId?: string }>(
+      `/guest/benefit/check/${token}`, { phone }
+    ).then((r) => r.data),
+  benefitVerify: (token: string, body: { requestId: string; code: string; phone: string }) =>
+    guestApi.post<{ benefitToken: string }>(
+      `/guest/benefit/verify/${token}`, body
+    ).then((r) => r.data),
+
   // FF-251 — running session bill + pay-all-in-one from same QR
   currentSession: (token: string) =>
     guestApi.get<{ session: any | null }>(`/guest/session/${token}/current`)

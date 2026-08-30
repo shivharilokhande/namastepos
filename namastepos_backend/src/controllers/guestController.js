@@ -3,11 +3,61 @@
 const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
+const crypto = require('crypto');
 const qr = require('../services/qrService');
 const orderService = require('../services/orderService');
+const otpService = require('../services/otpService');
+const env = require('../config/env');
 // FF-250 needs these for the guest Razorpay checkout endpoints.
 const { query } = require('../config/db');
 const { BadRequest } = require('../utils/errors');
+
+// ── Guest membership-benefit OTP gate (2026-08-30) ────────────────────────
+// A guest who typed a member's phone could spend that member's prepaid bundle.
+// So the guest path only applies membership benefits after the phone proves
+// ownership via OTP. On success we mint a short-lived HMAC token binding
+// (businessId, phone); placeOrder requires it before passing
+// allowMemberBenefits:true to orderService.create.
+const BENEFIT_TOKEN_TTL_MS = 15 * 60 * 1000;
+
+function _mintBenefitToken(businessId, phone) {
+  const norm = otpService._normalizePhone(phone);
+  const payload = `${businessId}:${norm}:${Date.now() + BENEFIT_TOKEN_TTL_MS}`;
+  const sig = crypto.createHmac('sha256', env.JWT_SECRET).update(payload).digest('hex');
+  return `${Buffer.from(payload).toString('base64url')}.${sig}`;
+}
+
+function _benefitTokenValid(token, businessId, phone) {
+  if (!token || typeof token !== 'string' || !token.includes('.')) return false;
+  const [b64, sig] = token.split('.');
+  let payload;
+  try { payload = Buffer.from(b64, 'base64url').toString('utf8'); } catch { return false; }
+  const expected = crypto.createHmac('sha256', env.JWT_SECRET).update(payload).digest('hex');
+  // constant-time compare
+  const a = Buffer.from(sig); const e = Buffer.from(expected);
+  if (a.length !== e.length || !crypto.timingSafeEqual(a, e)) return false;
+  const [bid, phn, expStr] = payload.split(':');
+  if (bid !== businessId) return false;
+  if (phn !== otpService._normalizePhone(phone || '')) return false;
+  if (Number(expStr) < Date.now()) return false;
+  return true;
+}
+
+// Does this phone hold an active membership bundle at this business?
+async function _hasMembershipBenefit(businessId, phone) {
+  if (!phone) return false;
+  const r = await query(
+    `SELECT 1
+       FROM membership_subscriptions ms
+       JOIN customers c ON c.id = ms.customer_id
+      WHERE ms.business_id = $1 AND c.phone = $2
+        AND ms.status = 'active' AND ms.expires_at > NOW()
+        AND ms.remaining IS NOT NULL
+      LIMIT 1`,
+    [businessId, phone]
+  );
+  return r.rowCount > 0;
+}
 
 // ── GET /v1/guest/menu/:token ──────────────────────────────────────────
 const menu = asyncHandler(async (req, res) => {
@@ -37,7 +87,42 @@ const orderBody = Joi.object({
   customerPhone: Joi.string().max(20).allow('', null),
   customerName: Joi.string().max(255).allow('', null),
   clientId: Joi.string().uuid().allow(null),
+  // Optional proof (from the OTP step) that the phone owns its membership.
+  benefitToken: Joi.string().max(500).allow('', null),
 });
+
+// POST /v1/guest/benefit/check/:token  { phone }
+// If the phone has an active membership benefit, send an OTP to it and ask
+// the guest to verify. If not, respond otpRequired:false (fast path — no
+// friction for normal guests).
+const benefitCheck = [
+  validate({ body: Joi.object({ phone: Joi.string().max(20).required() }) }),
+  asyncHandler(async (req, res) => {
+    const { businessId } = await qr.verifyToken(req.params.token);
+    const has = await _hasMembershipBenefit(businessId, req.body.phone);
+    if (!has) return res.json({ otpRequired: false });
+    const { requestId } = await otpService.requestOtp({
+      phone: req.body.phone, purpose: 'guest_benefit', meta: { businessId },
+    });
+    res.json({ otpRequired: true, requestId });
+  }),
+];
+
+// POST /v1/guest/benefit/verify/:token  { requestId, code, phone }
+// Verifies the OTP and returns a short-lived benefitToken to attach to the
+// order so its membership benefit is honored.
+const benefitVerify = [
+  validate({ body: Joi.object({
+    requestId: Joi.string().required(),
+    code: Joi.string().required(),
+    phone: Joi.string().max(20).required(),
+  }) }),
+  asyncHandler(async (req, res) => {
+    const { businessId } = await qr.verifyToken(req.params.token);
+    await otpService.verifyOtp({ requestId: req.body.requestId, code: req.body.code });
+    res.json({ benefitToken: _mintBenefitToken(businessId, req.body.phone) });
+  }),
+];
 
 const placeOrder = [
   validate({ body: orderBody }),
@@ -94,6 +179,12 @@ const placeOrder = [
     // Create the order — reuse our shared orderService.create so we get
     // KOT generation, stock deduction, loyalty (if enabled), etc.
     // We mark source = 'qr' and bind to the table_session_id we just got.
+    // Only honor the phone's membership benefit if a valid OTP-minted token
+    // for THIS business + phone accompanies the order (2026-08-30 security fix).
+    const allowMemberBenefits = _benefitTokenValid(
+      req.body.benefitToken, businessId, req.body.customerPhone
+    );
+
     const order = await orderService.create(businessId, {
       clientId: req.body.clientId,
       // Bug fix (B2): 'qr' is not a member of the order_source enum
@@ -107,6 +198,7 @@ const placeOrder = [
       customerName: req.body.customerName,
       items: req.body.items,
       paymentMethod: 'unpaid',  // settle later at the counter
+      allowMemberBenefits,
     });
 
     // Link the order to the session + table (orderService doesn't know about these)
@@ -415,6 +507,7 @@ const confirmSessionPayment = [
 
 module.exports = {
   menu, placeOrder, orderStatus,
+  benefitCheck, benefitVerify,                            // guest membership OTP
   createCheckoutOrder, confirmPayment,
   getRunningSession, paySession, confirmSessionPayment,   // FF-251
 };

@@ -16,6 +16,9 @@ const tokenLimiter = rateLimit({
 router.get ('/menu/:token',                   tokenLimiter, c.menu);
 router.post('/orders/:token',                 tokenLimiter, ...c.placeOrder);
 router.get ('/orders/:token/:orderId',        tokenLimiter, c.orderStatus);
+// Guest membership-benefit OTP gate (2026-08-30)
+router.post('/benefit/check/:token',          tokenLimiter, ...c.benefitCheck);
+router.post('/benefit/verify/:token',         tokenLimiter, ...c.benefitVerify);
 // FF-250 — guest can pay via Razorpay Checkout without any NamastePOS login
 router.post('/orders/:token/:orderId/pay',         tokenLimiter, c.createCheckoutOrder);
 router.post('/orders/:token/:orderId/confirm-pay', tokenLimiter, ...c.confirmPayment);

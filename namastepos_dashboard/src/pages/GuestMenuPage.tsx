@@ -270,6 +270,14 @@ export function GuestMenuPage() {
 function CartSheet({ cart, brand, setCart, requirePhone, requireName, token, onClose, onPlaced }: any) {
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
+  // Guest membership-benefit OTP gate: if the entered phone owns a membership
+  // benefit, we must verify ownership before honoring it (else a guest could
+  // spend a member's bundle by typing their number).
+  const [otpRequired, setOtpRequired] = useState(false);
+  const [otpRequestId, setOtpRequestId] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [benefitToken, setBenefitToken] = useState<string | undefined>(undefined);
+  const [checking, setChecking] = useState(false);
   const cartTotal = cart.reduce((s: number, c: CartItem) => s + c.price * c.qty, 0);
 
   const place = useMutation({
@@ -279,10 +287,42 @@ function CartSheet({ cart, brand, setCart, requirePhone, requireName, token, onC
       })),
       customerPhone: phone || undefined,
       customerName: name || undefined,
+      benefitToken,
     }),
     onSuccess: (r) => { toast.success('Order placed!'); onPlaced(r.order); },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Could not place order'),
   });
+
+  // Step 1: on submit, if a phone is present and we haven't yet resolved a
+  // benefit token, ask the server whether this phone needs OTP verification.
+  const submit = async () => {
+    if (phone.length >= 10 && !benefitToken && !otpRequired) {
+      try {
+        setChecking(true);
+        const r = await guest.benefitCheck(token, phone);
+        if (r.otpRequired && r.requestId) {
+          setOtpRequestId(r.requestId);
+          setOtpRequired(true);
+          toast.info('This number has a membership. Enter the OTP we sent to use it.');
+          return; // wait for OTP
+        }
+      } catch { /* non-fatal — fall through and place without a benefit */ }
+      finally { setChecking(false); }
+    }
+    place.mutate();
+  };
+
+  // Step 2: verify the OTP, capture the benefit token, then place the order.
+  const verifyOtp = async () => {
+    try {
+      const r = await guest.benefitVerify(token, { requestId: otpRequestId, code: otpCode, phone });
+      setBenefitToken(r.benefitToken);
+      setOtpRequired(false);
+      place.mutate();
+    } catch (e: any) {
+      toast.error(e.response?.data?.message || 'Invalid OTP');
+    }
+  };
 
   const canSubmit = cart.length > 0
     && (!requirePhone || phone.length >= 10)
@@ -346,11 +386,31 @@ function CartSheet({ cart, brand, setCart, requirePhone, requireName, token, onC
             </div>
           )}
 
-          <button onClick={() => place.mutate()} disabled={!canSubmit || place.isPending}
-            className="w-full h-14 rounded-xl text-white font-bold text-lg mt-4 disabled:opacity-50"
-            style={{ background: brand }}>
-            {place.isPending ? 'Placing…' : `Place order · ${formatINR(cartTotal)}`}
-          </button>
+          {otpRequired && (
+            <div className="mt-2 p-3 rounded-md border bg-muted/40">
+              <label className="text-sm font-medium">Enter OTP to use your membership</label>
+              <input value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
+                maxLength={6} placeholder="6-digit code" inputMode="numeric"
+                className="w-full h-10 px-3 rounded-md border bg-background mt-1" />
+              <button onClick={verifyOtp} disabled={otpCode.length < 4 || place.isPending}
+                className="w-full h-11 rounded-lg text-white font-semibold mt-2 disabled:opacity-50"
+                style={{ background: brand }}>
+                Verify & place order
+              </button>
+              <button onClick={() => { setOtpRequired(false); setBenefitToken(undefined); place.mutate(); }}
+                className="w-full h-9 text-sm text-muted-foreground mt-1">
+                Skip — place without membership
+              </button>
+            </div>
+          )}
+
+          {!otpRequired && (
+            <button onClick={submit} disabled={!canSubmit || place.isPending || checking}
+              className="w-full h-14 rounded-xl text-white font-bold text-lg mt-4 disabled:opacity-50"
+              style={{ background: brand }}>
+              {place.isPending || checking ? 'Placing…' : `Place order · ${formatINR(cartTotal)}`}
+            </button>
+          )}
           <p className="text-xs text-center text-muted-foreground mt-2">
             Pay at the counter when your meal is served.
           </p>

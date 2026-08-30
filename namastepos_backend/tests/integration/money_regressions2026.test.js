@@ -54,6 +54,49 @@ describe('Razorpay: cancelled subscription is not resurrected by a charge', () =
   });
 });
 
+describe('Guest path: membership bundle only spent when benefits allowed', () => {
+  it('does NOT decrement a member bundle when allowMemberBenefits is false', async () => {
+    const biz = await makeBusiness({ email: `mb-${Date.now()}` });
+    const phone = '9812300000';
+    const item = await menuService.create(biz.id, { name: 'Cold Coffee', price: 150 });
+    const cust = (await query(
+      `INSERT INTO customers (business_id, phone, name) VALUES ($1,$2,'Member') RETURNING id`,
+      [biz.id, phone]
+    )).rows[0];
+    const mem = (await query(
+      `INSERT INTO memberships (business_id, name, price_paise) VALUES ($1,'Coffee Club',500000) RETURNING id`,
+      [biz.id]
+    )).rows[0];
+    const remaining = JSON.stringify([{ menuItemId: item.id, qty: 5 }]);
+    await query(
+      `INSERT INTO membership_subscriptions
+         (business_id, customer_id, membership_id, expires_at, amount_paid_paise, status, remaining)
+       VALUES ($1,$2,$3, NOW() + INTERVAL '30 days', 500000, 'active', $4::jsonb)`,
+      [biz.id, cust.id, mem.id, remaining]
+    );
+
+    // Guest path (no OTP proof) → benefits NOT applied.
+    await orderService.create(biz.id, {
+      source: 'other', customerPhone: phone, allowMemberBenefits: false,
+      items: [{ menuItemId: item.id, name: 'Cold Coffee', price: 150, qty: 2 }],
+    });
+    let rem = (await query(
+      `SELECT remaining FROM membership_subscriptions WHERE customer_id = $1`, [cust.id]
+    )).rows[0].remaining;
+    expect(rem[0].qty).toBe(5); // untouched
+
+    // Verified path → benefit honored, bundle counts down.
+    await orderService.create(biz.id, {
+      source: 'other', customerPhone: phone, allowMemberBenefits: true,
+      items: [{ menuItemId: item.id, name: 'Cold Coffee', price: 150, qty: 2 }],
+    });
+    rem = (await query(
+      `SELECT remaining FROM membership_subscriptions WHERE customer_id = $1`, [cust.id]
+    )).rows[0].remaining;
+    expect(rem[0].qty).toBe(3); // 2 consumed
+  });
+});
+
 describe('Order cancel restores raw-ingredient stock', () => {
   it('adds ingredient stock back on cancel, not just dish stock', async () => {
     const biz = await makeBusiness({ email: `inv-${Date.now()}` });
