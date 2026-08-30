@@ -22,6 +22,15 @@ const pinLimiter = env.isProd()
   ? rateLimit({ windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false })
   : (_req, _res, next) => next();
 
+// Hardening (2026-08-30): staff-resolve / staff-picker are unauthenticated
+// LOOKUP endpoints (no PIN tried, so the per-account lockout can't slow them).
+// A legit user hits each once during sign-in, so a strict 5/min/IP cap slows
+// phone/tenant enumeration without affecting the real flow. The PIN-verify
+// path keeps the looser pinLimiter above.
+const enumLimiter = env.isProd()
+  ? rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false })
+  : (_req, _res, next) => next();
+
 // NOTE: /request-otp and /verify-otp are placeholders for a future
 // phone-based owner sign-in flow. The OTP infrastructure is already in
 // place (services/otpService.js), what's missing is the users.phone
@@ -32,8 +41,8 @@ router.post ('/dev-login',       loginLimiter, ...c.devLogin);  // gated by FF_D
 router.post ('/register',        loginLimiter, ...c.register);
 router.post ('/login',           loginLimiter, ...c.passwordLogin);
 router.post ('/pin-login',       pinLimiter, ...c.pinLogin);   // Push 14a
-router.post ('/staff-picker',    pinLimiter, ...c.staffPicker); // Push 14b
-router.post ('/staff-resolve',   pinLimiter, ...c.staffResolve); // phone-first staff login
+router.post ('/staff-picker',    enumLimiter, ...c.staffPicker); // Push 14b
+router.post ('/staff-resolve',   enumLimiter, ...c.staffResolve); // phone-first staff login
 router.post ('/refresh',         loginLimiter, ...c.refresh);
 router.post ('/logout',          requireAuth,  c.logout);
 router.get  ('/me',              requireAuth,  c.me);

@@ -229,13 +229,16 @@ async function restoreForOrder(client, { businessId, orderId, orderItems }) {
       WHERE i.id = d.id`,
     [ids, deltas]
   );
-  // Offsetting +ve ledger rows (kind 'returned'), balance_after read post-restore.
+  // Offsetting +ve ledger rows. 'reverse' is the ingredient_txn_kind enum's
+  // inverse-of-sale value (the enum has no 'returned'); using an invalid value
+  // here would throw and silently roll back the restore via the caller's
+  // SAVEPOINT. balance_after is read post-restore.
   await client.query(
     `INSERT INTO ingredient_transactions
        (business_id, ingredient_id, qty_change, balance_after, unit_cost_paise, kind, order_id)
      SELECT $1, ing_id, qty,
             (SELECT stock FROM ingredients WHERE id = ing_id),
-            cost, 'returned', $2
+            cost, 'reverse', $2
        FROM UNNEST($3::uuid[], $4::numeric[], $5::int[]) AS t(ing_id, qty, cost)`,
     [businessId, orderId, ids, deltas, ids.map((id) => unitCost.get(id))]
   );
