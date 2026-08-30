@@ -157,8 +157,8 @@ export function CrmPage() {
                     <div className="text-xs text-muted-foreground mt-0.5">
                       {r.kind === 'trial_ending' ? 'Trial ends' : 'Renews'} —{' '}
                       {new Date(r.endsAt).toLocaleDateString()} ·{' '}
-                      {r.plan.name || r.plan.tier || 'no plan'}
-                      {r.plan.billingPeriod && ` (${r.plan.billingPeriod})`}
+                      {r.plan?.name || r.plan?.tier || 'no plan'}
+                      {r.plan?.billingPeriod && ` (${r.plan.billingPeriod})`}
                     </div>
                     {r.lifecycleStage && (
                       <LifecycleBadge stage={r.lifecycleStage} className="mt-1" />

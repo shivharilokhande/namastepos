@@ -119,8 +119,19 @@ const benefitVerify = [
   }) }),
   asyncHandler(async (req, res) => {
     const { businessId } = await qr.verifyToken(req.params.token);
-    await otpService.verifyOtp({ requestId: req.body.requestId, code: req.body.code });
-    res.json({ benefitToken: _mintBenefitToken(businessId, req.body.phone) });
+    const result = await otpService.verifyOtp({
+      requestId: req.body.requestId, code: req.body.code,
+    });
+    // SECURITY (2026-08-30 review): bind the benefit token to the phone the OTP
+    // was actually SENT to (result.phone), never the client-supplied phone —
+    // otherwise an attacker who completes any OTP on their own number could
+    // mint a token for a victim's number and drain their bundle. Also require
+    // this OTP was minted by benefitCheck for THIS business (purpose + meta),
+    // so an OTP from another flow (e.g. aggregator link) can't be reused here.
+    if (result.purpose !== 'guest_benefit' || result.meta?.businessId !== businessId) {
+      throw new BadRequest('This code is not valid for membership verification');
+    }
+    res.json({ benefitToken: _mintBenefitToken(businessId, result.phone) });
   }),
 ];
 

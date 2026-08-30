@@ -460,6 +460,19 @@ async function _onChargeSuccess(sub, pay) {
   // left the plan active with no invoice/payment row — revenue silently
   // unrecorded and the PDF endpoint with nothing to render.
   await withTransaction(async (client) => {
+    // Idempotency (2026-08-30 review): if this exact charge was already
+    // recorded, do nothing. The dedup-row-delete-on-error path means a failure
+    // AFTER this txn commits (e.g. dunning.onRecovered) can trigger a Razorpay
+    // retry that re-enters here; without this guard the invoice INSERT (which
+    // draws a fresh sequence number and has no unique key on the charge) would
+    // create a second, orphaned invoice for the same payment.
+    const already = await client.query(
+      `SELECT 1 FROM payments WHERE razorpay_payment_id = $1 LIMIT 1`, [pay.id]
+    );
+    if (already.rowCount > 0) {
+      logger.info(`Charge ${pay.id} already recorded; skipping invoice/payment`);
+      return;
+    }
     if (!isCancelled) {
       await client.query(
         `UPDATE subscriptions

@@ -281,13 +281,17 @@ function CartSheet({ cart, brand, setCart, requirePhone, requireName, token, onC
   const cartTotal = cart.reduce((s: number, c: CartItem) => s + c.price * c.qty, 0);
 
   const place = useMutation({
-    mutationFn: () => guest.placeOrder(token, {
+    // Accept the benefit token as an argument: after benefitVerify we call
+    // place.mutate(freshToken) — reading `benefitToken` from state here would
+    // be a stale closure (React hasn't re-rendered yet), so the just-verified
+    // benefit would be dropped. Fall back to state for the normal path.
+    mutationFn: (bt?: string) => guest.placeOrder(token, {
       items: cart.map((c: CartItem) => ({
         menuItemId: c.id, name: c.name, price: c.price, qty: c.qty,
       })),
       customerPhone: phone || undefined,
       customerName: name || undefined,
-      benefitToken,
+      benefitToken: bt ?? benefitToken,
     }),
     onSuccess: (r) => { toast.success('Order placed!'); onPlaced(r.order); },
     onError: (e: any) => toast.error(e.response?.data?.message || 'Could not place order'),
@@ -309,18 +313,24 @@ function CartSheet({ cart, brand, setCart, requirePhone, requireName, token, onC
       } catch { /* non-fatal — fall through and place without a benefit */ }
       finally { setChecking(false); }
     }
-    place.mutate();
+    place.mutate(undefined);
   };
 
   // Step 2: verify the OTP, capture the benefit token, then place the order.
+  const [verifying, setVerifying] = useState(false);
   const verifyOtp = async () => {
+    if (verifying || place.isPending) return; // guard double-tap
     try {
+      setVerifying(true);
       const r = await guest.benefitVerify(token, { requestId: otpRequestId, code: otpCode, phone });
       setBenefitToken(r.benefitToken);
       setOtpRequired(false);
-      place.mutate();
+      // Pass the fresh token directly — state isn't updated yet this tick.
+      place.mutate(r.benefitToken);
     } catch (e: any) {
       toast.error(e.response?.data?.message || 'Invalid OTP');
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -392,12 +402,12 @@ function CartSheet({ cart, brand, setCart, requirePhone, requireName, token, onC
               <input value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
                 maxLength={6} placeholder="6-digit code" inputMode="numeric"
                 className="w-full h-10 px-3 rounded-md border bg-background mt-1" />
-              <button onClick={verifyOtp} disabled={otpCode.length < 4 || place.isPending}
+              <button onClick={verifyOtp} disabled={otpCode.length < 4 || place.isPending || verifying}
                 className="w-full h-11 rounded-lg text-white font-semibold mt-2 disabled:opacity-50"
                 style={{ background: brand }}>
-                Verify & place order
+                {verifying || place.isPending ? 'Verifying…' : 'Verify & place order'}
               </button>
-              <button onClick={() => { setOtpRequired(false); setBenefitToken(undefined); place.mutate(); }}
+              <button onClick={() => { setOtpRequired(false); setBenefitToken(undefined); place.mutate(undefined); }}
                 className="w-full h-9 text-sm text-muted-foreground mt-1">
                 Skip — place without membership
               </button>
