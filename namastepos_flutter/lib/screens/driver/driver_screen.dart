@@ -193,7 +193,9 @@ class _DriverScreenState extends State<DriverScreen> {
     final address = j['address'] as String? ?? '';
     final orderNo = j['order_no'] ?? '?';
     final fee = j['delivery_fee_paise'] != null
-        ? (j['delivery_fee_paise'] as int) / 100
+        // `as num` not `as int`: JSON numbers can deserialize as double, which
+        // would throw on `as int`. num covers both.
+        ? (j['delivery_fee_paise'] as num) / 100
         : null;
 
     return Card(

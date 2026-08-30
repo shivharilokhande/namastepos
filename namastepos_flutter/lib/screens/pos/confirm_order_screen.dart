@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../constants/colors.dart';
 import '../../models/customer.dart';
@@ -42,6 +43,11 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
   String? _appliedCoupon;
   bool _applyingCoupon = false;
   bool _saving = false;
+  // Idempotency (2026-08-30 review): a stable clientId minted once per checkout
+  // and REUSED across retries, so a split order the server committed but that
+  // timed out client-side isn't duplicated (double wallet/loyalty debit) when
+  // the cashier taps Confirm again. Cleared on success so the next order is new.
+  String? _pendingClientId;
   // FF-322 mobile split-tender. When non-null the order is submitted
   // as a multi-leg payment. Each entry is {method, amountInr}. Sum
   // must equal the total; validated in the bottom-sheet before we
@@ -239,9 +245,11 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
       // stores a single discount amount, so send the combined figure.
       final discount = (double.tryParse(_discount.text.trim()) ?? 0) + _couponDiscount;
       final biz = auth.business!;
+      _pendingClientId ??= const Uuid().v4(); // stable across retries
       order = await orders.createOrderFromCart(
         businessId: biz.id,
         source: _source,
+        clientId: _pendingClientId,
         tableNo: _source == OrderSource.dineIn ? _table.text.trim() : null,
         customerPhone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         paymentMethod: kotOnly ? PaymentMethod.unpaid : _payment,
@@ -259,6 +267,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         paymentBreakdown: (!kotOnly && _splits != null && _splits!.isNotEmpty)
             ? _splits : null,
       );
+      _pendingClientId = null; // placed successfully — next order gets a new id
 
       // Print (best-effort — never fails the order).
       // P1 fix (2026-08-22): errors were swallowed with just a debugPrint,

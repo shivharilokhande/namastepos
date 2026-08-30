@@ -11,38 +11,62 @@ import { adminApi, Admin } from '@/api/admin';
 import { adminLogout } from '@/api/client';
 import { cn } from '@/lib/utils';
 
-interface NavItem { to: string; icon: any; label: string; needs?: string[]; }
+interface NavItem { to: string; icon: any; label: string; needs?: string; }
 type Section = { label: string; items: NavItem[] };
+
+// Mirror of the backend RBAC matrix (src/middleware/adminRbac.js) so we only
+// SHOW nav a role can actually use — otherwise every non-super role saw items
+// that 403 on click now that the backend re-checks the live role. Backend
+// remains the source of truth; this is UX only. Keep in sync with the backend.
+const ROLE_PERMS: Record<string, string[]> = {
+  super_admin: ['*'],
+  finance: ['revenue.read', 'revenue.write', 'refunds.read', 'refunds.write',
+    'gst.read', 'gst.write', 'invoices.read', 'invoices.write', 'customers.read',
+    'plans.read', 'coupons.read', 'audit.read', 'reports.read', 'settings.read',
+    'compliance.read'],
+  support: ['customers.read', 'customers.write', 'customers.impersonate',
+    'notes.read', 'notes.write', 'staff.read', 'menu.read', 'orders.read',
+    'reports.read', 'audit.read', 'plans.read', 'coupons.read', 'invoices.read',
+    'refunds.read', 'gst.read', 'compliance.read', 'compliance.write'],
+  sales: ['customers.read', 'customers.write', 'plans.read', 'plans.change',
+    'coupons.read', 'reports.read'],
+};
+function roleCan(role: string | undefined, need?: string): boolean {
+  if (!need) return true;            // always-visible items
+  if (!role) return false;
+  const g = ROLE_PERMS[role] || [];
+  return g.includes('*') || g.includes(need);
+}
 
 const SECTIONS: Section[] = [
   { label: 'Overview', items: [
     { to: '/',          icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/reports',   icon: TrendingUp,      label: 'Reports' },
-    { to: '/metrics',   icon: BarChart3,       label: 'Metrics' },
+    { to: '/reports',   icon: TrendingUp,      label: 'Reports',  needs: 'reports.read' },
+    { to: '/metrics',   icon: BarChart3,       label: 'Metrics',  needs: 'reports.read' },
   ]},
   { label: 'Customers', items: [
-    { to: '/customers', icon: Users,           label: 'Customers' },
+    { to: '/customers', icon: Users,           label: 'Customers', needs: 'customers.read' },
     // FF-402 — CRM primitives: cross-tenant follow-up + renewal view
-    { to: '/crm',       icon: TrendingUp,      label: 'CRM' },
-    { to: '/support',   icon: LifeBuoy,        label: 'Support' },
-    { to: '/broadcast', icon: Send,            label: 'Broadcast' },
-    { to: '/referrals', icon: Gift,            label: 'Referrals' },
+    { to: '/crm',       icon: TrendingUp,      label: 'CRM',       needs: 'customers.read' },
+    { to: '/support',   icon: LifeBuoy,        label: 'Support',   needs: 'compliance.read' },
+    { to: '/broadcast', icon: Send,            label: 'Broadcast', needs: 'compliance.write' },
+    { to: '/referrals', icon: Gift,            label: 'Referrals', needs: 'reports.read' },
   ]},
   { label: 'Revenue', items: [
-    { to: '/subscriptions', icon: CreditCard,  label: 'Subscriptions' },
-    { to: '/plans',     icon: CreditCard,      label: 'Plans' },
-    { to: '/addons',    icon: Package,         label: 'Add-ons' },
-    { to: '/coupons',   icon: Tag,             label: 'Coupons' },
-    { to: '/finance',   icon: Receipt,         label: 'Finance' },
-    { to: '/refunds',   icon: Receipt,         label: 'Refunds' },
-    { to: '/gst',       icon: FileText,        label: 'GST & Tax' },
+    { to: '/subscriptions', icon: CreditCard,  label: 'Subscriptions', needs: 'revenue.read' },
+    { to: '/plans',     icon: CreditCard,      label: 'Plans',    needs: 'plans.read' },
+    { to: '/addons',    icon: Package,         label: 'Add-ons',  needs: 'plans.read' },
+    { to: '/coupons',   icon: Tag,             label: 'Coupons',  needs: 'coupons.read' },
+    { to: '/finance',   icon: Receipt,         label: 'Finance',  needs: 'revenue.read' },
+    { to: '/refunds',   icon: Receipt,         label: 'Refunds',  needs: 'refunds.read' },
+    { to: '/gst',       icon: FileText,        label: 'GST & Tax', needs: 'gst.read' },
   ]},
   { label: 'Operations', items: [
-    { to: '/compliance', icon: ShieldCheck,    label: 'Compliance' },
-    { to: '/audit',     icon: ScrollText,      label: 'Audit log' },
-    { to: '/webhooks',  icon: BarChart3,       label: 'Webhooks' },
-    { to: '/team',      icon: UsersRound,      label: 'Admin team' },
-    { to: '/settings',  icon: Settings,        label: 'Platform settings' },
+    { to: '/compliance', icon: ShieldCheck,    label: 'Compliance', needs: 'compliance.read' },
+    { to: '/audit',     icon: ScrollText,      label: 'Audit log', needs: 'audit.read' },
+    { to: '/webhooks',  icon: BarChart3,       label: 'Webhooks',  needs: 'settings.write' },
+    { to: '/team',      icon: UsersRound,      label: 'Admin team', needs: 'settings.write' },
+    { to: '/settings',  icon: Settings,        label: 'Platform settings', needs: 'settings.write' },
   ]},
 ];
 
@@ -83,7 +107,12 @@ export function Layout() {
         )}
 
         <nav className="flex-1 space-y-4">
-          {SECTIONS.map((sec) => (
+          {SECTIONS.map((sec) => ({
+            ...sec,
+            items: sec.items.filter((it) => roleCan(me?.role, it.needs)),
+          }))
+            .filter((sec) => sec.items.length > 0)
+            .map((sec) => (
             <div key={sec.label}>
               <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {sec.label}

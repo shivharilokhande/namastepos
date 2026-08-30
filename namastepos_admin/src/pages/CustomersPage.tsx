@@ -22,6 +22,8 @@ export function CustomersPage() {
   const [search, setSearch] = useState('');
   const [plan, setPlan] = useState('');
   const [creating, setCreating] = useState(false);
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(0);
   // Push 19a — fetch the live plan catalog so the filter dropdown +
   // manual-create dialog reflect new tiers (Advanced etc.) instead of
   // the hardcoded free/basic/pro list.
@@ -32,9 +34,14 @@ export function CustomersPage() {
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ['customers', search, plan],
-    queryFn: () => adminApi.listCustomers({ search: search || undefined, plan: plan || undefined }),
+    queryKey: ['customers', search, plan, page],
+    queryFn: () => adminApi.listCustomers({
+      search: search || undefined, plan: plan || undefined,
+      limit: PAGE_SIZE, offset: page * PAGE_SIZE,
+    }),
   });
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   // FF-402 — compact health dot: red < 30, amber 30-59, green ≥ 60.
   // Rendered inline on the customers list so we can eyeball who to call.
@@ -77,9 +84,9 @@ export function CustomersPage() {
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder="Search by name, email, phone…" className="pl-9"
-                     value={search} onChange={(e) => setSearch(e.target.value)} />
+                     value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} />
             </div>
-            <select value={plan} onChange={(e) => setPlan(e.target.value)}
+            <select value={plan} onChange={(e) => { setPlan(e.target.value); setPage(0); }}
                     className="h-10 rounded-md border border-input bg-background px-3 text-sm">
               <option value="">All plans</option>
               {planCatalog.map((p: any) => (
@@ -159,6 +166,20 @@ export function CustomersPage() {
               ))}
             </TableBody>
           </Table>
+          {total > PAGE_SIZE && (
+            <div className="flex items-center justify-between pt-4 text-sm">
+              <span className="text-muted-foreground">
+                {total === 0 ? 0 : page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" disabled={page <= 0}
+                        onClick={() => setPage((p) => Math.max(0, p - 1))}>Prev</Button>
+                <span className="text-muted-foreground">Page {page + 1} / {pageCount}</span>
+                <Button variant="outline" size="sm" disabled={page + 1 >= pageCount}
+                        onClick={() => setPage((p) => p + 1)}>Next</Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

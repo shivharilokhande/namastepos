@@ -180,6 +180,11 @@ class OrdersProvider extends ChangeNotifier {
     // the order total ±₹0.01 (server 400s otherwise). Supersedes `splits`
     // — wallet legs and the strict sum check only exist on this key.
     List<Map<String, dynamic>>? paymentBreakdown,
+    // Idempotency (2026-08-30 review): the caller can supply a stable clientId
+    // generated ONCE per checkout attempt and reused across retries, so a
+    // committed-but-timed-out split order isn't duplicated when the cashier
+    // re-taps. If omitted we mint one (single call), but retries must reuse.
+    String? clientId,
     // Surge pricing (2026-08-23): >1 multiplies every line price. The
     // confirm screen fetches /surge/current and passes it through so
     // "Sun 1-2pm ×2" rules actually change the bill.
@@ -221,9 +226,10 @@ class OrdersProvider extends ChangeNotifier {
       // order + double wallet debit + double loyalty burn. The backend
       // dedupes on client_id (same as the legacy OrderRepo path), so we
       // mint one here to make split-tender orders idempotent on retry.
-      final clientId = const Uuid().v4();
+      // Reuse the caller-supplied id across retries; only mint if absent.
+      final effectiveClientId = clientId ?? const Uuid().v4();
       final resp = await ApiService.instance.createOrder(businessId, {
-        'clientId': clientId,
+        'clientId': effectiveClientId,
         // Same body shape OrderRepo posts — backend Joi requires name +
         // price on every item, not just menuItemId.
         'items': items

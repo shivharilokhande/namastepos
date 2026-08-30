@@ -109,15 +109,15 @@ export function CustomerDetailPage() {
           <Button variant="outline" onClick={() => setChangingPlan(true)}>
             <ArrowUpRight className="mr-2 h-4 w-4" /> Change plan
           </Button>
-          <Button variant="outline" onClick={() => impersonate.mutate()}>
+          <Button variant="outline" onClick={() => impersonate.mutate()} disabled={impersonate.isPending}>
             <UserCheck className="mr-2 h-4 w-4" /> Impersonate
           </Button>
           {s?.status === 'paused' ? (
-            <Button variant="secondary" onClick={() => restore.mutate()}>
+            <Button variant="secondary" onClick={() => restore.mutate()} disabled={restore.isPending}>
               <Play className="mr-2 h-4 w-4" /> Restore
             </Button>
           ) : (
-            <Button variant="destructive" onClick={() => suspend.mutate()}>
+            <Button variant="destructive" onClick={() => suspend.mutate()} disabled={suspend.isPending}>
               <Pause className="mr-2 h-4 w-4" /> Suspend
             </Button>
           )}

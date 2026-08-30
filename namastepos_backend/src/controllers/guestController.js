@@ -487,18 +487,17 @@ const confirmSessionPayment = [
           AND status NOT IN ('cancelled','collected')`,
       [businessId, req.body.sessionId]
     );
-    // Record one payment row for the aggregated amount (webhook will
-    // reconcile actual method — cash/upi/card — within seconds).
+    // Record the payment for exactly the amount charged (= the validated
+    // outstanding due). Bug fix (2026-08-30 review): the old version re-summed
+    // ALL orders in the session, so if part of the session had been settled in
+    // an earlier partial payment the recorded amount overstated what was
+    // actually charged. `duePaise` already == rzOrder.amount (asserted above).
     await query(
       `INSERT INTO payments (business_id, method, amount_paise, status,
                               razorpay_payment_id, notes)
-       SELECT $1, 'upi',
-              ROUND(COALESCE(SUM(total), 0) * 100)::bigint,
-              'captured', $2,
-              jsonb_build_object('sessionId', $3::text, 'source', 'guest-qr-session')
-         FROM orders
-        WHERE business_id = $1 AND table_session_id = $3::uuid`,
-      [businessId, req.body.razorpayPaymentId, req.body.sessionId]
+       VALUES ($1, 'upi', $2, 'captured', $3,
+               jsonb_build_object('sessionId', $4::text, 'source', 'guest-qr-session'))`,
+      [businessId, duePaise, req.body.razorpayPaymentId, req.body.sessionId]
     );
     await query(
       `UPDATE table_sessions SET closed_at = NOW()
