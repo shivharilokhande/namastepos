@@ -1,6 +1,6 @@
 // NamastePOS — Mobile Reviews (H13).
 //
-// Pulls aggregated Google + Zomato + Swiggy reviews from the backend and
+// Pulls Google reviews from the backend and
 // lets the owner reply inline. Replies post to /reviews/:id/reply.
 
 import 'package:flutter/material.dart';
@@ -82,33 +82,12 @@ class _ReviewsScreenState extends State<ReviewsScreen> {
               ? EmptyState(
                   icon: Icons.reviews_outlined,
                   title: 'No reviews yet — good time to ask',
-                  hint: 'Reviews start showing up here from Google, Zomato and Swiggy. Send a WhatsApp thank-you after each order and watch the ratings roll in.',
+                  // Parity with the web dashboard (2026-08-30): Google reviews
+                  // only. Zomato/Swiggy review linking isn't a feature, so we
+                  // no longer advertise it here.
+                  hint: 'Google reviews show up here once your Google Business Profile is linked. Send a WhatsApp thank-you after each order and ask happy customers to leave a review.',
                   ctaLabel: 'Refresh',
                   onCta: _load,
-                  secondaryLabel: 'How to link Zomato/Swiggy',
-                  // P2 fix (2026-08-22): was popUntil-home — a dead end.
-                  // Show the actual steps instead.
-                  onSecondary: () {
-                    showDialog<void>(
-                      context: context,
-                      builder: (ctx) => AlertDialog(
-                        title: const Text('Link Zomato / Swiggy'),
-                        content: const Text(
-                          '1. Open the menu (☰) → Aggregators.\n'
-                          '2. Tap your platform (Zomato or Swiggy).\n'
-                          '3. Verify your registered phone with the OTP.\n'
-                          '4. Paste your outlet ID from the partner app.\n\n'
-                          'Once linked, orders and reviews sync here automatically.',
-                        ),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.of(ctx).pop(),
-                            child: const Text('Got it'),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
                 )
               : ListView.separated(
                   padding: const EdgeInsets.all(12),

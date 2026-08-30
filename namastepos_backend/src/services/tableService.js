@@ -427,7 +427,7 @@ async function unjoinTable(businessId, sessionId, tableId) {
 //     wallet movement (reason 'shortfall') so the debt lives on the
 //     customer's wallet and is visible on their card. Requires an
 //     identified customer on the session.
-async function closeSession(businessId, sessionId, closedByUserId, paymentMethod = 'cash', discountInr = 0, paymentBreakdown = null, shortfallInr = 0) {
+async function closeSession(businessId, sessionId, closedByUserId, paymentMethod = 'cash', discountInr = 0, paymentBreakdown = null, shortfallInr = 0, autoWallet = false, walletCapInr = null) {
   return withTransaction(async (client) => {
     // Settle-time discount (2026-08-22, founder request): applied to the
     // HEAD order (smallest order_no) of the session so it's auditable on
@@ -495,6 +495,44 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
       Math.round(Math.max(0, Number(shortfallInr) || 0) * 100),
     );
     let breakdownPrimary = null; // largest leg's method → orders.payment_method
+
+    // Wallet-as-tender auto-apply on settle (2026-08-30): mirror the order
+    // create path. The due here is the session total minus any shortfall; the
+    // orders already carry their membership/discount, so this due is final.
+    // Draw min(due, balance, cap) from the session customer's wallet and route
+    // the rest to `paymentMethod`, then let the existing wallet-leg path below
+    // debit + validate. Skipped if the caller already sent explicit legs.
+    if (autoWallet && !(Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0)) {
+      const custQ = await client.query(
+        `SELECT customer_id FROM orders
+          WHERE table_session_id = $1 AND business_id = $2
+            AND status <> 'cancelled' AND customer_id IS NOT NULL
+          ORDER BY order_no ASC LIMIT 1`,
+        [sessionId, businessId],
+      );
+      const custId = custQ.rows[0]?.customer_id || null;
+      const duePaise = totalPaise - shortPaise;
+      if (custId && duePaise > 0) {
+        const balRow = await client.query(
+          `SELECT balance_paise FROM customer_wallets
+            WHERE business_id = $1 AND customer_id = $2 LIMIT 1`,
+          [businessId, custId],
+        );
+        const balPaise = parseInt(balRow.rows[0]?.balance_paise || 0, 10);
+        const capPaise = walletCapInr != null
+          ? Math.max(0, Math.round(Number(walletCapInr) * 100)) : Infinity;
+        const walletUsePaise = Math.max(0, Math.min(duePaise, balPaise, capPaise));
+        if (walletUsePaise > 0) {
+          const residualPaise = duePaise - walletUsePaise;
+          const wLegs = [{ method: 'wallet', amountInr: walletUsePaise / 100 }];
+          if (residualPaise > 0) {
+            wLegs.push({ method: paymentMethod, amountInr: residualPaise / 100 });
+          }
+          paymentBreakdown = wLegs;
+        }
+      }
+    }
+
     if (shortPaise > 0 || (Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0)) {
       const ordersQ = await client.query(
         `SELECT id, order_no, customer_id FROM orders

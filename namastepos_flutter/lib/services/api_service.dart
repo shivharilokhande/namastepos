@@ -1267,6 +1267,11 @@ class ApiService {
     double discountInr = 0,
     List<Map<String, dynamic>>? paymentBreakdown,
     double shortfallInr = 0,
+    // Wallet-as-tender auto-apply at settle (2026-08-30): server draws the
+    // session customer's wallet for the due and routes the rest to
+    // paymentMethod. Ignored when explicit paymentBreakdown legs are sent.
+    bool autoWallet = false,
+    double? walletCapInr,
   }) async {
     final r = await _wrap(() => _dio.post(
           '/businesses/$businessId/ops/sessions/$sessionId/close',
@@ -1276,6 +1281,8 @@ class ApiService {
             if (paymentBreakdown != null && paymentBreakdown.isNotEmpty)
               'paymentBreakdown': paymentBreakdown,
             if (shortfallInr > 0) 'shortfallInr': shortfallInr,
+            if (autoWallet) 'autoWallet': true,
+            if (autoWallet && walletCapInr != null) 'walletCapInr': walletCapInr,
           },
         ));
     return ((r as Map)['session'] as Map).cast<String, dynamic>();

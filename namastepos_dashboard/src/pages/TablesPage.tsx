@@ -635,6 +635,9 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
   // less than the bill; the gap books as a NEGATIVE wallet movement (debt)
   // on the identified customer — server refuses without one.
   const [splitOn, setSplitOn] = useState(false);
+  // Wallet-as-tender auto-apply at settle (2026-08-30): pre-checked; server
+  // sizes it against the session due and routes the rest to paymentMethod.
+  const [autoWalletSettle, setAutoWalletSettle] = useState(true);
   const [settleLegs, setSettleLegs] = useState<SettleLeg[]>([
     { method: 'cash', amountInr: '' }, { method: 'upi', amountInr: '' },
   ]);
@@ -685,6 +688,11 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
           method: l.method,
           amountInr: +(parseFloat(l.amountInr) || 0).toFixed(2),
         }));
+      } else if (autoWalletSettle && walletAvailable && walletBalance > 0) {
+        // Wallet-as-tender auto-apply at settle (2026-08-30): server draws the
+        // session customer's wallet for the due and routes the rest to
+        // paymentMethod. Only on single-tender (not a manual split).
+        body.autoWallet = true;
       }
       return closeSessionApi(sessionId, body);
     },
@@ -1087,21 +1095,33 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                   </label>
                 </div>
                 {!splitOn ? (
-                  <div className="grid grid-cols-3 gap-1">
-                    {(['cash', 'upi', 'card'] as const).map((m) => (
-                      <button
-                        key={m}
-                        onClick={() => setPaymentMethod(m)}
-                        className={`h-9 rounded-md border text-xs font-semibold capitalize transition-colors ${
-                          paymentMethod === m
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : 'border-input hover:bg-accent'
-                        }`}
-                      >
-                        {m}
-                      </button>
-                    ))}
-                  </div>
+                  <>
+                    <div className="grid grid-cols-3 gap-1">
+                      {(['cash', 'upi', 'card'] as const).map((m) => (
+                        <button
+                          key={m}
+                          onClick={() => setPaymentMethod(m)}
+                          className={`h-9 rounded-md border text-xs font-semibold capitalize transition-colors ${
+                            paymentMethod === m
+                              ? 'border-primary bg-primary/10 text-primary'
+                              : 'border-input hover:bg-accent'
+                          }`}
+                        >
+                          {m}
+                        </button>
+                      ))}
+                    </div>
+                    {walletAvailable && walletBalance > 0 && (
+                      <label className="flex items-start gap-2 text-xs cursor-pointer mt-2 p-2 rounded-md bg-primary/5">
+                        <input type="checkbox" checked={autoWalletSettle} className="mt-0.5"
+                          onChange={(e) => setAutoWalletSettle(e.target.checked)} />
+                        <span>
+                          Use wallet balance ({formatINR(walletBalance)}) — the rest is
+                          collected via <span className="uppercase font-semibold">{paymentMethod}</span>.
+                        </span>
+                      </label>
+                    )}
+                  </>
                 ) : (
                   <div className="space-y-1.5">
                     {walletAvailable && walletBalance > 0 && (

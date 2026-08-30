@@ -170,12 +170,18 @@ const closeSession = [
     // 2026-08-25 shortfall: customer underpaid this much — booked as a
     // negative wallet movement (debt) on the identified customer.
     shortfallInr: Joi.number().min(0).default(0),
+    // Wallet-as-tender auto-apply on settle (2026-08-30): server draws the
+    // session customer's wallet for the due (minus shortfall), capped at
+    // walletCapInr, and routes the rest to paymentMethod.
+    autoWallet: Joi.boolean().allow(null),
+    walletCapInr: Joi.number().min(0).allow(null),
   })}),
   asyncHandler(async (req, res) => {
     const session = await tables.closeSession(
       req.params.businessId, req.params.sessionId, req.user.id,
       req.body.paymentMethod || 'cash', req.body.discountInr || 0,
-      req.body.paymentBreakdown || null, req.body.shortfallInr || 0);
+      req.body.paymentBreakdown || null, req.body.shortfallInr || 0,
+      req.body.autoWallet === true, req.body.walletCapInr ?? null);
     res.json({ session });
   }),
 ];
