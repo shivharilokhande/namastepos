@@ -186,6 +186,61 @@ async function deductForOrder(client, { businessId, orderId, orderItems }) {
   return { orderFoodCostPaise, perItem };
 }
 
+/**
+ * Inverse of deductForOrder — called INSIDE the order-cancel transaction to
+ * put raw-ingredient stock BACK. Bug fix (2026-08-30): cancel previously only
+ * restored dish-level menu_items.stock, so every cancelled order permanently
+ * under-counted ingredient stock (false low-stock alerts + a corrupt
+ * ingredient_transactions ledger that disagreed with the dish-stock system).
+ *
+ * orderItems: [{ menuItemId, qty }, ...] (from the cancelled order's rows)
+ */
+async function restoreForOrder(client, { businessId, orderId, orderItems }) {
+  if (!orderItems || !orderItems.length) return;
+  const menuIds = orderItems.map((i) => i.menuItemId).filter(Boolean);
+  if (!menuIds.length) return;
+
+  const recipeRows = await client.query(
+    `SELECT rc.menu_item_id, rc.ingredient_id, rc.qty, i.cost_per_unit_paise
+       FROM recipes rc JOIN ingredients i ON i.id = rc.ingredient_id
+      WHERE rc.business_id = $1 AND rc.menu_item_id = ANY($2::uuid[])
+      ORDER BY rc.ingredient_id FOR UPDATE OF i`,
+    [businessId, menuIds]
+  );
+  if (recipeRows.rowCount === 0) return;
+
+  const ingDelta = new Map();       // ingredient_id → totalQtyToRestore
+  const unitCost = new Map();       // ingredient_id → cost_per_unit_paise
+  for (const it of orderItems) {
+    for (const r of recipeRows.rows.filter((x) => x.menu_item_id === it.menuItemId)) {
+      const qty = parseFloat(r.qty) * Number(it.qty);
+      ingDelta.set(r.ingredient_id, (ingDelta.get(r.ingredient_id) || 0) + qty);
+      unitCost.set(r.ingredient_id, r.cost_per_unit_paise || 0);
+    }
+  }
+  if (ingDelta.size === 0) return;
+
+  const ids = [...ingDelta.keys()];
+  const deltas = ids.map((id) => ingDelta.get(id));
+  await client.query(
+    `UPDATE ingredients i
+        SET stock = i.stock + d.qty
+       FROM (SELECT UNNEST($1::uuid[]) AS id, UNNEST($2::numeric[]) AS qty) d
+      WHERE i.id = d.id`,
+    [ids, deltas]
+  );
+  // Offsetting +ve ledger rows (kind 'returned'), balance_after read post-restore.
+  await client.query(
+    `INSERT INTO ingredient_transactions
+       (business_id, ingredient_id, qty_change, balance_after, unit_cost_paise, kind, order_id)
+     SELECT $1, ing_id, qty,
+            (SELECT stock FROM ingredients WHERE id = ing_id),
+            cost, 'returned', $2
+       FROM UNNEST($3::uuid[], $4::numeric[], $5::int[]) AS t(ing_id, qty, cost)`,
+    [businessId, orderId, ids, deltas, ids.map((id) => unitCost.get(id))]
+  );
+}
+
 // ── Food-cost report (dashboard) ───────────────────────────────────────
 async function reportFoodCost(businessId, { startDate, endDate } = {}) {
   const r = await query(
@@ -222,5 +277,5 @@ async function reportFoodCost(businessId, { startDate, endDate } = {}) {
 }
 
 module.exports = {
-  listForItem, setRecipe, previewCost, deductForOrder, reportFoodCost,
+  listForItem, setRecipe, previewCost, deductForOrder, restoreForOrder, reportFoodCost,
 };

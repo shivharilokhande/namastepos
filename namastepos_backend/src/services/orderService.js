@@ -1127,6 +1127,22 @@ async function updateStatus(businessId, orderId, status, reason = null, reasonCo
           );
         }
       }
+      // (a2) Bug fix (2026-08-30): also restore RAW-INGREDIENT stock that
+      // deductForOrder consumed at create. Without this, cancels only put
+      // back dish stock and ingredient stock drifted down forever. Best-effort
+      // via SAVEPOINT so a business without recipes/ingredient tables can't
+      // poison the cancel txn.
+      await client.query('SAVEPOINT cancel_ingredients');
+      try {
+        await recipes.restoreForOrder(client, {
+          businessId,
+          orderId,
+          orderItems: its.rows.map((r) => ({ menuItemId: r.menu_item_id, qty: r.qty })),
+        });
+        await client.query('RELEASE SAVEPOINT cancel_ingredients');
+      } catch (_) {
+        await client.query('ROLLBACK TO SAVEPOINT cancel_ingredients');
+      }
       // (b) Return consumed membership-bundle entitlements (audit rows
       // written at create, migration 055). Still best-effort — via a
       // SAVEPOINT, because a plain try/catch inside a txn would poison

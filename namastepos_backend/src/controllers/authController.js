@@ -536,7 +536,13 @@ const OWNER_ONLY_FIELDS = new Set([
 ]);
 
 const patchMe = asyncHandler(async (req, res) => {
-  if (req.user.role === 'staff_cashier') throw new Forbidden('Insufficient role');
+  // Hardening (2026-08-30): editing the business profile (name, phone, address,
+  // logo, service mode, Google links) is an owner/manager action. Previously
+  // only staff_cashier was blocked, so waiters/kitchen/captains/drivers could
+  // rename the restaurant or change its address. Restrict to owner + manager.
+  if (!['business_owner', 'staff_manager'].includes(req.user.role)) {
+    throw new Forbidden('Only the owner or a manager can edit the business profile');
+  }
 
   const protectedKeysInBody = Object.keys(req.body).filter((k) => OWNER_ONLY_FIELDS.has(k));
   if (protectedKeysInBody.length > 0 && req.user.role !== 'business_owner') {

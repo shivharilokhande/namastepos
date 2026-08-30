@@ -739,8 +739,19 @@ async function sessionDetail(businessId, sessionId) {
   );
   if (s.rowCount === 0) throw new NotFound('Session not found');
   const orders = await query(
+    // Bug fix (2026-08-30): select the breakup columns too — serializeSession
+    // reads o.loyaltyDiscountInr / serviceChargeInr / roundOffInr / cgst / sgst
+    // / igst / pointsRedeemed, but they weren't selected, so the dine-in
+    // session bill printed CGST ₹0 / service charge ₹0 etc. Aliased to the
+    // camelCase keys the serializer expects; *_paise converted to rupees
+    // (cgst/sgst/igst are already NUMERIC rupees).
     `SELECT id, order_no, subtotal, tax, discount, total,
-            status, payment_method, created_at
+            status, payment_method, created_at,
+            cgst, sgst, igst,
+            loyalty_discount_paise / 100.0 AS "loyaltyDiscountInr",
+            service_charge_paise   / 100.0 AS "serviceChargeInr",
+            round_off_paise        / 100.0 AS "roundOffInr",
+            points_redeemed                AS "pointsRedeemed"
        FROM orders
       WHERE table_session_id = $1
       ORDER BY created_at ASC`,

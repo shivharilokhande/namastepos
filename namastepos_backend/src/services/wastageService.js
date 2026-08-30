@@ -90,8 +90,10 @@ async function log(businessId, body, userId) {
 async function report(businessId, { startDate, endDate } = {}) {
   const where = ['business_id = $1'];
   const values = [businessId]; let idx = 2;
-  if (startDate) { where.push(`created_at >= $${idx++}::date`); values.push(startDate); }
-  if (endDate)   { where.push(`created_at < ($${idx++}::date + INTERVAL '1 day')`); values.push(endDate); }
+  // IST date bucketing so this report ties out with P&L COGS (which sums
+  // wastage by IST date). created_at is TIMESTAMPTZ stored UTC.
+  if (startDate) { where.push(`(created_at AT TIME ZONE 'Asia/Kolkata')::date >= $${idx++}::date`); values.push(startDate); }
+  if (endDate)   { where.push(`(created_at AT TIME ZONE 'Asia/Kolkata')::date <= $${idx++}::date`); values.push(endDate); }
   const total = await query(
     `SELECT COALESCE(SUM(cost_paise), 0) / 100.0 AS total_inr,
             COUNT(*)::int AS event_count

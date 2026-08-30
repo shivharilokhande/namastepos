@@ -52,7 +52,7 @@ describe('CSRF: ff_admin cookie exemption', () => {
 
 describe('Org-wide 2FA enforcement at login', () => {
   const email = 'enforce-2fa@namastepos.in';
-  const password = 'secret123';
+  const password = 'secret123-strong'; // ≥12 chars (admin password minimum)
 
   beforeAll(async () => {
     await adminTeam.create({ email, password, displayName: 'Enforce Test', role: 'support' });

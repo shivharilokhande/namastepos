@@ -122,6 +122,13 @@ async function requireBusinessOwnership(req, _res, next) {
       if (!(await _adminActive(req.user.id))) {
         return next(new Unauthorized('Admin account is no longer active'));
       }
+      // Hardening (2026-08-30): an enrol-only token (issued when org 2FA is
+      // enforced but the admin hasn't enrolled yet) must not read tenant data.
+      // The enrol gate only covers the /admin router; this closes the tenant
+      // read path so 2FA enforcement can't be sidestepped here.
+      if (req.user.enrol2fa === true) {
+        return next(new Forbidden('Complete two-factor enrolment before accessing tenant data'));
+      }
       return next();
     }
     const bid = req.params.businessId;

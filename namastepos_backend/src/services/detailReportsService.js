@@ -67,8 +67,12 @@ async function incomeRegister(businessId, { startDate, endDate }) {
               created_at
          FROM orders
         WHERE business_id = $1
-          AND created_at::date >= $2::date
-          AND created_at::date <= $3::date
+          -- Bug fix (2026-08-30): bucket by IST date, matching every other
+          -- money report. created_at is TIMESTAMPTZ stored UTC, so a bare
+          -- ::date put 00:00–05:30 IST orders on the previous day and this
+          -- report wouldn't foot against the Income Statement / Daily P&L.
+          AND (created_at AT TIME ZONE 'Asia/Kolkata')::date >= $2::date
+          AND (created_at AT TIME ZONE 'Asia/Kolkata')::date <= $3::date
           AND status <> 'cancelled'
         ORDER BY created_at DESC`,
       [businessId, startDate, endDate]

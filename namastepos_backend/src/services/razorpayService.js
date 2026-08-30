@@ -268,22 +268,14 @@ function verifyWebhookSignature(req) {
 async function handleWebhook(payload) {
   const eventId = payload.id || `evt-${Date.now()}`;
   const event = payload.event;
-  // Route addon-tagged events to the addon service
-  const sub = payload.payload?.subscription?.entity;
-  if (sub && sub.notes?.kind === 'addon') {
-    const addons = require('./addonService');
-    await addons.handleRazorpayEvent(event, payload.payload);
-    await query(
-      `INSERT INTO webhook_events (provider, external_id, event_type, payload, processed_at)
-       VALUES ('razorpay', $1, $2, $3, NOW()) ON CONFLICT DO NOTHING`,
-      [eventId, event, payload]
-    );
-    return;
-  }
+  const isAddon = payload.payload?.subscription?.entity?.notes?.kind === 'addon';
 
   // P1 (Arvind #8) — Idempotency: skip if we've already processed this
   // event. Return the stored response_body so re-fires get a stable echo
   // (the side-effects already happened on the first delivery).
+  // Hardening (2026-08-30): addon events now run through this SAME dedup gate
+  // (they used to be handled before it), so a future non-idempotent addon
+  // handler can't double-apply on Razorpay's routine delivery retries.
   const dup = await query(
     `SELECT response_body FROM webhook_events WHERE external_id = $1`, [eventId]
   );
@@ -293,11 +285,21 @@ async function handleWebhook(payload) {
   }
   await query(
     `INSERT INTO webhook_events (provider, external_id, event_type, payload)
-     VALUES ('razorpay', $1, $2, $3)`,
+     VALUES ('razorpay', $1, $2, $3) ON CONFLICT (external_id) DO NOTHING`,
     [eventId, event, payload]
   );
 
   try {
+    if (isAddon) {
+      const addons = require('./addonService');
+      await addons.handleRazorpayEvent(event, payload.payload);
+      const responseBody = { received: true, event, eventId, addon: true };
+      await query(
+        `UPDATE webhook_events SET processed_at = NOW(), response_body = $1 WHERE external_id = $2`,
+        [responseBody, eventId]
+      );
+      return responseBody;
+    }
     switch (event) {
       case 'subscription.charged': {
         const sub = payload.payload.subscription.entity;

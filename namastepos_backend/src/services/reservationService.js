@@ -91,6 +91,16 @@ async function update(businessId, id, patch) {
     specialRequests: 'special_requests', partySize: 'party_size',
     reservedAt: 'reserved_at',
   };
+  // IDOR fix (2026-08-30): if re-pointing the reservation at a table, verify
+  // that table belongs to THIS business — the incoming tableId was written
+  // straight through, allowing a cross-tenant table reference.
+  if (patch.tableId !== undefined && patch.tableId !== null) {
+    const own = await query(
+      `SELECT 1 FROM tables WHERE id = $1 AND business_id = $2`,
+      [patch.tableId, businessId]
+    );
+    if (own.rowCount === 0) throw new NotFound('Table not found');
+  }
   const sets = []; const values = []; let idx = 1;
   for (const [k, col] of Object.entries(allowed)) {
     if (patch[k] !== undefined) { sets.push(`${col} = $${idx++}`); values.push(patch[k]); }

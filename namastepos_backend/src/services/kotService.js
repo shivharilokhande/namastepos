@@ -124,7 +124,8 @@ async function nextTicketNo(client, businessId) {
     `SELECT COALESCE(MAX(ticket_no), 0) + 1 AS next
        FROM kot_tickets
       WHERE business_id = $1
-        AND created_at::date = CURRENT_DATE`,
+        AND (created_at AT TIME ZONE 'Asia/Kolkata')::date
+            = (now() AT TIME ZONE 'Asia/Kolkata')::date`,
     [businessId],
   );
   return r.rows[0].next;
@@ -214,8 +215,9 @@ async function listTickets(businessId, { stationId, status, day } = {}) {
     where.push(`kt.created_at::date = $${idx++}::date`);
     values.push(day);
   } else {
-    // default: today
-    where.push('kt.created_at::date = CURRENT_DATE');
+    // default: today (IST, so the KDS queue rolls over at IST midnight
+    // not 05:30 IST / UTC midnight)
+    where.push("(kt.created_at AT TIME ZONE 'Asia/Kolkata')::date = (now() AT TIME ZONE 'Asia/Kolkata')::date");
   }
 
   const r = await query(

@@ -99,7 +99,11 @@ async function list() {
 
 async function create({ email, password, displayName, role = 'support', invitedBy }) {
   if (!email || !password) throw new BadRequest('email and password required');
-  if (password.length < 6) throw new BadRequest('password too short');
+  // Hardening (2026-08-30): platform admins hold full control of every tenant,
+  // so require a stronger password than the 6-char minimum (business owners
+  // already use 8). Enforced on create/reset only — login is unaffected, so no
+  // existing admin is locked out.
+  if (password.length < 12) throw new BadRequest('Admin password must be at least 12 characters');
   const hash = await bcrypt.hash(password, SALT);
   try {
     const r = await query(

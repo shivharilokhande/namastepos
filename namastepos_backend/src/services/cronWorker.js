@@ -127,7 +127,10 @@ async function _runOnce() {
     }).formatToParts(new Date());
     const istHour = Number(istParts.find((p) => p.type === 'hour').value) % 24;
     const istMin = Number(istParts.find((p) => p.type === 'minute').value);
-    if (istHour === 2 && istMin < 5) {
+    // Bug fix (2026-08-30): was `istMin < 5`, which — with a 60s tick — fired
+    // the heavy block 5×/night (02:00–02:04), duplicating CRM activity rows.
+    // Pin to a single minute so it runs exactly once.
+    if (istHour === 2 && istMin === 2) {
       await refreshAllBusinessAnalytics();
       // FF-402f — self-heal stale billing periods. If an active sub's
       // `current_period_end` is in the past (Razorpay webhook dropped,
