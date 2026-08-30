@@ -109,6 +109,47 @@ function _resolveShortLink(shortUrl) {
   });
 }
 
+// Resolve a Place ID from a maps URL that carries only a name + coordinates
+// (the common case for a "Share" short link, which expands to
+// /maps/place/<Name>/@<lat>,<lng>/...!3d<lat>!4d<lng>). We ask Places
+// "Find Place From Text" for the name, BIASED to the exact coordinates from
+// the owner's own link — so it returns that specific place, not a same-named
+// one elsewhere. Returns the ChIJ… place_id or null.
+function _placeIdFromNameAndCoords(expandedUrl, apiKey) {
+  return new Promise((resolve) => {
+    if (!apiKey) return resolve(null);
+    const nameM = expandedUrl.match(/\/maps\/place\/([^/@]+)/);
+    if (!nameM) return resolve(null);
+    const name = decodeURIComponent(nameM[1]).replace(/\+/g, ' ').trim();
+    if (!name) return resolve(null);
+    // Prefer the precise place pin (!3d<lat>!4d<lng>); fall back to the @lat,lng
+    // viewport centre.
+    const pin = expandedUrl.match(/!3d(-?[0-9.]+)!4d(-?[0-9.]+)/)
+      || expandedUrl.match(/@(-?[0-9.]+),(-?[0-9.]+)/);
+    const params = new URLSearchParams({
+      input: name, inputtype: 'textquery', fields: 'place_id', key: apiKey,
+    });
+    if (pin) params.set('locationbias', `point:${pin[1]},${pin[2]}`);
+    const req = https.request({
+      hostname: 'maps.googleapis.com',
+      path: `/maps/api/place/findplacefromtext/json?${params.toString()}`,
+      method: 'GET',
+    }, (res) => {
+      let body = '';
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => {
+        try {
+          const j = JSON.parse(body);
+          resolve(j.candidates && j.candidates[0] ? j.candidates[0].place_id : null);
+        } catch (_) { resolve(null); }
+      });
+    });
+    req.setTimeout(6000, () => { req.destroy(); resolve(null); });
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+}
+
 // Real fetcher: Google Places API "place details" endpoint with reviews.
 // Config lives on the businesses row (migration 061: google_place_id +
 // google_maps_url), saved from the dashboard Settings "Google reviews" card
@@ -150,8 +191,14 @@ async function fetchAllProviders(businessId) {
     if (!placeId && /(?:maps\.app\.goo\.gl|goo\.gl)/.test(biz.google_maps_url)) {
       const resolved = await _resolveShortLink(biz.google_maps_url);
       if (resolved) {
+        // 1) Exact id in the expanded URL / HTML, if present.
         placeId = extractPlaceIdFromUrl(resolved.finalUrl)
           || extractPlaceIdFromUrl(resolved.body || '');
+        // 2) Share links usually only carry name + coords → resolve via a
+        //    coordinate-biased Places lookup on the owner's own link.
+        if (!placeId) {
+          placeId = await _placeIdFromNameAndCoords(resolved.finalUrl, apiKey);
+        }
       }
     }
     if (placeId) {
