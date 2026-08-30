@@ -17,7 +17,7 @@ const crypto = require('crypto');
 const https = require('https');
 const env = require('../config/env');
 const logger = require('../config/logger');
-const { query } = require('../config/db');
+const { query, withTransaction } = require('../config/db');
 const { NotFound, BadRequest } = require('../utils/errors');
 
 // ── Lazy HTTP client (Razorpay's official Node SDK would be cleaner;
@@ -174,6 +174,23 @@ async function createSubscription(businessId, tier, { billingPeriod = 'monthly' 
     total_count: totalCount,
     notes: { businessId, billingPeriod: useYearly ? 'yearly' : 'monthly' },
   });
+
+  // P0 fix (2026-08-30): cancel the PREVIOUS Razorpay subscription before we
+  // repoint the business at the new one. Without this, a plan/cadence change
+  // (or a re-checkout) left the old gateway subscription authorised and still
+  // charging the customer's mandate — double billing — and its future
+  // `subscription.charged` webhooks hit "unknown subscription" and were
+  // dropped. Best-effort: a gateway failure here must not block the upgrade
+  // the customer just paid for; the old sub is also caught by the
+  // reactivation guard in _onChargeSuccess.
+  if (sub?.razorpay_subscription_id && sub.razorpay_subscription_id !== created.id) {
+    try {
+      await rzCall('POST', `/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
+        { cancel_at_cycle_end: 0 });
+    } catch (e) {
+      logger.warn(`Could not cancel prior Razorpay subscription ${sub.razorpay_subscription_id}: ${e.message}`);
+    }
+  }
 
   // Persist the cadence up-front so subsequent UI reads reflect it
   // even before the webhook fires.
@@ -360,12 +377,39 @@ async function handleWebhook(payload) {
     );
     return responseBody;
   } catch (err) {
+    // P1 fix (2026-08-30): the dedup row was written BEFORE processing, so a
+    // mid-handler failure left the event marked "seen" — Razorpay's automatic
+    // retry then matched the dedup gate and replayed an empty response WITHOUT
+    // re-running the side-effects, permanently losing the charge. Delete the
+    // dedup row on failure so the retry genuinely reprocesses. (We log to the
+    // app logger for observability since the row itself is going away.)
+    logger.error(`Razorpay webhook ${eventId} (${event}) failed, clearing dedup for retry: ${err.message}`);
     await query(
-      `UPDATE webhook_events SET error = $1 WHERE external_id = $2`,
-      [err.message, eventId]
-    );
+      `DELETE FROM webhook_events WHERE external_id = $1`,
+      [eventId]
+    ).catch((e) => logger.error(`Failed to clear webhook dedup ${eventId}: ${e.message}`));
     throw err;
   }
+}
+
+// ── Cancel a business's Razorpay subscription at the gateway ──────────────
+// Stops the recurring mandate from charging. `atCycleEnd` keeps service until
+// the paid period ends (the owner-facing "cancel at period end"); false
+// cancels immediately. Best-effort by design — callers update local state
+// regardless so a gateway hiccup never traps an owner in a paid plan.
+async function cancelSubscription(businessId, { atCycleEnd = true } = {}) {
+  const row = (await query(
+    `SELECT razorpay_subscription_id FROM subscriptions WHERE business_id = $1`,
+    [businessId]
+  )).rows[0];
+  const rzId = row?.razorpay_subscription_id;
+  if (!rzId) return { cancelled: false, reason: 'no_gateway_subscription' };
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
+    return { cancelled: false, reason: 'razorpay_not_configured' };
+  }
+  await rzCall('POST', `/v1/subscriptions/${rzId}/cancel`,
+    { cancel_at_cycle_end: atCycleEnd ? 1 : 0 });
+  return { cancelled: true, razorpaySubscriptionId: rzId };
 }
 
 async function _onChargeSuccess(sub, pay) {
@@ -379,6 +423,17 @@ async function _onChargeSuccess(sub, pay) {
     return;
   }
   const sr = r.rows[0];
+
+  // P0 fix (2026-08-30): never resurrect a cancelled subscription. A sub that
+  // the owner cancelled (cancel_at_period_end/cancelled) — or an orphaned
+  // gateway sub left over from a plan change — must not be flipped back to
+  // 'active' with an extended period by a stray charge. We still RECORD the
+  // payment below (they were charged, so it belongs in the ledger) but we do
+  // not re-activate. This pairs with the gateway-cancel in createSubscription
+  // and cancelAtPeriodEnd so the mandate stops charging in the first place.
+  const isCancelled = sr.cancel_at_period_end === true
+    || sr.status === 'cancelled'
+    || sr.cancelled_at != null;
 
   // Look up which of OUR plans this Razorpay plan corresponds to. The
   // webhook payload carries Razorpay's plan_id (e.g. `plan_QXabcdef`)
@@ -397,35 +452,49 @@ async function _onChargeSuccess(sub, pay) {
     ? new Date(sub.current_end * 1000)
     : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-  await query(
-    `UPDATE subscriptions
-        SET plan_id = $1,
-            status = 'active',
-            current_period_start = NOW(),
-            current_period_end = $2,
-            updated_at = NOW()
-      WHERE id = $3`,
-    [newPlanId, periodEnd, sr.id]
-  );
+  // P1 fix (2026-08-30): do the reactivation + invoice + payment in ONE
+  // transaction. Previously each ran on autocommit, so a failure between the
+  // status flip and the invoice insert (e.g. an invoice-number collision)
+  // left the plan active with no invoice/payment row — revenue silently
+  // unrecorded and the PDF endpoint with nothing to render.
+  await withTransaction(async (client) => {
+    if (!isCancelled) {
+      await client.query(
+        `UPDATE subscriptions
+            SET plan_id = $1,
+                status = 'active',
+                current_period_start = NOW(),
+                current_period_end = $2,
+                updated_at = NOW()
+          WHERE id = $3`,
+        [newPlanId, periodEnd, sr.id]
+      );
+    } else {
+      logger.warn(`Charge on cancelled subscription ${sr.id} (rzp ${sub.id}); recording payment but NOT reactivating`);
+    }
 
-  // Create invoice + payment rows
-  const invoiceNumber = `INV-${new Date().getFullYear()}-${Math.floor(Math.random() * 1e6).toString().padStart(6, '0')}`;
-  const inv = await query(
-    `INSERT INTO invoices
-       (business_id, subscription_id, number, status,
-        amount_paise, currency, period_start, period_end, paid_at)
-     VALUES ($1, $2, $3, 'paid', $4, 'INR', NOW(), $5, NOW())
-     RETURNING id`,
-    [sr.business_id, sr.id, invoiceNumber, pay.amount, periodEnd]
-  );
-  await query(
-    `INSERT INTO payments
-       (business_id, invoice_id, amount_paise, currency, method,
-        razorpay_payment_id, status, raw_payload)
-     VALUES ($1, $2, $3, 'INR', $4, $5, 'captured', $6)
-     ON CONFLICT (razorpay_payment_id) DO NOTHING`,
-    [sr.business_id, inv.rows[0].id, pay.amount, pay.method, pay.id, pay]
-  );
+    // Collision-safe invoice number: a per-year DB sequence guarantees
+    // uniqueness under concurrency (the old Math.random() 6-digit value
+    // collided at volume → 23505 → lost payment record).
+    const seq = await client.query(`SELECT nextval('subscription_invoice_seq') AS n`);
+    const invoiceNumber = `INV-${new Date().getFullYear()}-${String(seq.rows[0].n).padStart(6, '0')}`;
+    const inv = await client.query(
+      `INSERT INTO invoices
+         (business_id, subscription_id, number, status,
+          amount_paise, currency, period_start, period_end, paid_at)
+       VALUES ($1, $2, $3, 'paid', $4, 'INR', NOW(), $5, NOW())
+       RETURNING id`,
+      [sr.business_id, sr.id, invoiceNumber, pay.amount, periodEnd]
+    );
+    await client.query(
+      `INSERT INTO payments
+         (business_id, invoice_id, amount_paise, currency, method,
+          razorpay_payment_id, status, raw_payload)
+       VALUES ($1, $2, $3, 'INR', $4, $5, 'captured', $6)
+       ON CONFLICT (razorpay_payment_id) DO NOTHING`,
+      [sr.business_id, inv.rows[0].id, pay.amount, pay.method, pay.id, pay]
+    );
+  });
 }
 
 /**

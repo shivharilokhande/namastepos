@@ -37,9 +37,18 @@ async function setVariants(businessId, menuItemId, variants) {
   // Replace-all: simpler UX from the menu editor. We diff inserts/updates
   // so existing variant IDs keep their FKs intact (order_items.variant_id).
   return withTransaction(async (client) => {
+    // IDOR fix (2026-08-30): confirm the item belongs to THIS business before
+    // touching its variants. The route only validates :businessId; :itemId was
+    // passed straight through, so tenant A could deactivate tenant B's variants
+    // by posting an empty list against B's item id.
+    const own = await client.query(
+      `SELECT 1 FROM menu_items WHERE id = $1 AND business_id = $2`,
+      [menuItemId, businessId]
+    );
+    if (own.rowCount === 0) throw new NotFound('Menu item not found');
     const existing = await client.query(
-      `SELECT id FROM menu_item_variants WHERE menu_item_id = $1`,
-      [menuItemId]
+      `SELECT id FROM menu_item_variants WHERE menu_item_id = $1 AND business_id = $2`,
+      [menuItemId, businessId]
     );
     const keepIds = new Set();
     for (const v of variants || []) {
@@ -74,8 +83,8 @@ async function setVariants(businessId, menuItemId, variants) {
     for (const row of existing.rows) {
       if (!keepIds.has(row.id)) {
         await client.query(
-          `UPDATE menu_item_variants SET is_active = FALSE WHERE id = $1`,
-          [row.id]
+          `UPDATE menu_item_variants SET is_active = FALSE WHERE id = $1 AND business_id = $2`,
+          [row.id, businessId]
         );
       }
     }
@@ -195,6 +204,15 @@ async function upsertGroup(businessId, body) {
 }
 
 async function setItemModifierGroups(businessId, menuItemId, groupIds) {
+  // IDOR fix (2026-08-30): confirm the target item belongs to this business.
+  // The unscoped DELETE below would otherwise let tenant A wipe tenant B's
+  // item→modifier-group links by passing B's item id (with an empty list the
+  // group-ownership check is skipped entirely).
+  const own = await query(
+    `SELECT 1 FROM menu_items WHERE id = $1 AND business_id = $2`,
+    [menuItemId, businessId]
+  );
+  if (own.rowCount === 0) throw new NotFound('Menu item not found');
   // Validate ownership
   if (groupIds && groupIds.length > 0) {
     const owned = await query(

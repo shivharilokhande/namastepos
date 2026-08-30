@@ -314,6 +314,18 @@ async function cancelAtPeriodEnd(businessId) {
     [businessId]
   );
   if (r.rowCount === 0) throw new NotFound('No subscription');
+  // P0 fix (2026-08-30): actually stop the Razorpay mandate. Previously this
+  // only flipped local columns, so the gateway kept auto-charging the saved
+  // UPI/card every cycle and the next `subscription.charged` webhook silently
+  // re-activated the "cancelled" plan. cancel_at_cycle_end keeps service until
+  // the paid period ends. Best-effort: never trap the owner if Razorpay errors
+  // — the reactivation guard in _onChargeSuccess is the backstop.
+  try {
+    const rzp = require('./razorpayService');
+    await rzp.cancelSubscription(businessId, { atCycleEnd: true });
+  } catch (e) {
+    require('../config/logger').warn(`Gateway cancel failed for business ${businessId}: ${e.message}`);
+  }
   return r.rows[0];
 }
 

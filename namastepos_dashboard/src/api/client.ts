@@ -69,13 +69,16 @@ export function isImpersonating(): boolean {
   } catch (_) { return false; }
 }
 
-export function exitImpersonation(): void {
+export async function exitImpersonation(): Promise<void> {
+  // Auth fix (2026-08-30): call server-side logout FIRST, while the Bearer
+  // token is still present. The request interceptor only attaches Authorization
+  // when getToken() is truthy, and /auth/logout is auth-gated — so removing the
+  // token before this call (the old order) made it arrive unauthenticated → 401,
+  // and the refresh token/cookie were never actually revoked.
+  try { await api.post('/auth/logout'); } catch { /* best-effort */ }
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem('ff_dash_refresh');
   localStorage.removeItem(BUSINESS_KEY);
-  // Clear the refresh cookie too — best-effort; server-side logout is
-  // the authoritative revocation path.
-  api.post('/auth/logout').catch(() => { /* swallow */ });
   window.location.href = '/login';
 }
 

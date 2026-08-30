@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { ImpersonationBanner } from './ImpersonationBanner';
-import { setSession, setBusinessCache, getBusinessCache } from '@/api/client';
+import { api, setSession, setBusinessCache, getBusinessCache } from '@/api/client';
 import { cn } from '@/lib/utils';
 import { usePlan } from '@/hooks/usePlan';
 import { useAddons } from '@/hooks/useAddons';
@@ -199,7 +199,14 @@ export function Layout() {
     })();
   }, [meQ.data, navigate, queryClient]);
 
-  const logout = () => {
+  const logout = async () => {
+    // Auth fix (2026-08-30): revoke the server-side refresh token + clear the
+    // httpOnly ff_refresh cookie BEFORE wiping local state. Previously logout
+    // only cleared localStorage, so the refresh cookie survived — the browser
+    // kept minting fresh access tokens via /auth/refresh and the next person on
+    // a shared counter/kitchen PC could resurrect the prior user's session.
+    // Must run while the Bearer header is still attached (before setSession).
+    try { await api.post('/auth/logout'); } catch { /* best-effort */ }
     setSession(null, null);
     setBusinessCache(null);
     // Privacy fix: previously the TanStack Query cache survived logout, so the

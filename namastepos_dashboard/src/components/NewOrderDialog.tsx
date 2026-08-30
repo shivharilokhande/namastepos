@@ -18,7 +18,7 @@
 //     membership offer card (sell cheapest plan inline), and split payments
 //     (2-3 legs incl. wallet-as-tender with live balance + remaining meter)
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
@@ -185,20 +185,34 @@ export function NewOrderDialog({
     retry: false,
   });
 
-  // Auto-apply membership discount when a member walks in
+  // Auto-apply membership percentage discount.
+  // Bug fix (2026-08-30): the old effect ran ONLY when customerProfile changed
+  // and bailed if `discount` was already set. On the common flow the cashier
+  // types the phone first (which loads the profile) while the cart is still
+  // empty, so subtotal was 0 → discount 0, and it never recomputed as items
+  // were added — the member silently paid full price. The backend does NOT
+  // apply discount_pct on its own, so this is the only place it happens.
+  // Now we recompute whenever the cart or profile changes, and only touch the
+  // discount when the current value is our own last auto-applied figure (so a
+  // manually typed discount is never clobbered).
+  const memberDiscountRef = useRef(0);
   useEffect(() => {
     const mb = customerProfile?.activeMembership;
-    if (mb?.benefits?.discount_pct && !discount) {
-      const subtotalNow = cart.reduce((s, l) => s + l.price * l.qty, 0);
-      const pct = Number(mb.benefits.discount_pct);
-      const d = +(subtotalNow * pct / 100).toFixed(2);
-      if (d > 0) {
-        setDiscount(d);
-        toast.success(`Member discount ${pct}% applied (${formatINR(d)})`);
+    const pct = Number(mb?.benefits?.discount_pct || 0);
+    const subtotalNow = cart.reduce((s, l) => s + l.price * l.qty, 0);
+    const auto = pct > 0 ? +(subtotalNow * pct / 100).toFixed(2) : 0;
+    // Only manage the discount if it is untouched (0) or still equal to the
+    // membership figure we last set — never override a manual entry.
+    const isOursOrEmpty = discount === 0 || discount === memberDiscountRef.current;
+    if (pct > 0 && isOursOrEmpty && auto !== discount) {
+      if (auto > 0 && memberDiscountRef.current === 0) {
+        toast.success(`Member discount ${pct}% applied (${formatINR(auto)})`);
       }
+      setDiscount(auto);
+      memberDiscountRef.current = auto;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customerProfile]);
+  }, [customerProfile, cart]);
 
   // Bug #3a (2026-08-25): auto-fill the customer's name once the phone lookup
   // matches. The profile was already fetched for loyalty/memberships — staff

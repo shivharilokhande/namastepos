@@ -1,0 +1,12 @@
+-- 069_subscription_invoice_seq.sql
+-- P1 fix (2026-08-30): subscription invoice numbers were generated with a
+-- Math.random() 6-digit suffix (INV-YYYY-NNNNNN). Under any real volume that
+-- collides (birthday problem) against the VARCHAR(50) UNIQUE `invoices.number`
+-- constraint, and because the charge webhook committed the plan activation
+-- before the invoice insert, a collision left the plan active with NO invoice
+-- or payment row — revenue silently unrecorded.
+--
+-- Replace the random suffix with a monotonic DB sequence. Start at 1_000_000
+-- so every new number is 7+ digits and can never collide with a historical
+-- 6-digit random value already stored under the same year.
+CREATE SEQUENCE IF NOT EXISTS subscription_invoice_seq START WITH 1000000 INCREMENT BY 1;

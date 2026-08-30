@@ -147,9 +147,13 @@ function _formatInvoiceNo(fyShort, seq) {
  */
 async function issueFromOrder(businessId, orderId, opts = {}) {
   return withTransaction(async (client) => {
-    // Existing?
+    // Existing? IDOR fix (2026-08-30): scope by business_id. This idempotency
+    // return fires BEFORE the ownership-scoped order fetch below, so without
+    // the tenant scope a caller could pass another tenant's orderId and get
+    // back that tenant's full invoice — recipient name, GSTIN, address, phone.
     const ex = await client.query(
-      `SELECT * FROM tax_invoices WHERE order_id = $1`, [orderId]);
+      `SELECT * FROM tax_invoices WHERE order_id = $1 AND business_id = $2`,
+      [orderId, businessId]);
     if (ex.rowCount > 0) return _serialize(ex.rows[0]);
 
     // Pull order + items + business
@@ -380,7 +384,8 @@ async function issueFromSession(businessId, sessionId, opts = {}) {
  */
 async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
   const ex = await client.query(
-    `SELECT * FROM tax_invoices WHERE order_id = $1`, [orderId]);
+    `SELECT * FROM tax_invoices WHERE order_id = $1 AND business_id = $2`,
+    [orderId, businessId]);
   if (ex.rowCount > 0) return _serialize(ex.rows[0]);
   // Delegate the heavy lifting to issueFromOrder AFTER this tx? No —
   // simplest correct approach: rerun the same INSERT flow via the
