@@ -16,7 +16,7 @@ initSentry();
 // QA-9 perf #9: sensible defaults so navigation doesn't refetch on every
 // click. 60s staleTime is short enough that stale data shows up rarely,
 // long enough to make UI feel instant on back/forward.
-const queryClient = new QueryClient({
+export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,

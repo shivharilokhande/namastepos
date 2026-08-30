@@ -2,8 +2,9 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
 
+import { reticle } from '@reticlehq/vite-plugin';
 export default defineConfig({
-  plugins: [react()],
+  plugins: [reticle({ captureNetworkBodies: true }),react()],
   resolve: { alias: { '@': path.resolve(__dirname, './src') } },
   // Vendor code-splitting (2026-08-25): pair with App.tsx's React.lazy so the
   // heavy third-party libs land in their own long-lived chunks instead of the
