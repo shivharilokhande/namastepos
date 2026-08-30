@@ -11,7 +11,7 @@ import { initSentry } from './lib/sentry';
 // FF-211: init Sentry before React mounts. No-op unless VITE_SENTRY_DSN set.
 initSentry();
 
-const queryClient = new QueryClient({
+export const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, refetchOnWindowFocus: false, staleTime: 30_000 },
   },
