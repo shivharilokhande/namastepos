@@ -185,6 +185,12 @@ class OrdersProvider extends ChangeNotifier {
     // committed-but-timed-out split order isn't duplicated when the cashier
     // re-taps. If omitted we mint one (single call), but retries must reuse.
     String? clientId,
+    // Wallet-as-tender auto-apply (2026-08-30): server draws the customer's
+    // wallet down for the residual due after membership/discounts, capped at
+    // walletCapInr. Uses the online direct-post path (the server needs the live
+    // balance), so it's not queued offline.
+    bool autoWallet = false,
+    double? walletCapInr,
     // Surge pricing (2026-08-23): >1 multiplies every line price. The
     // confirm screen fetches /surge/current and passes it through so
     // "Sun 1-2pm ×2" rules actually change the bill.
@@ -219,7 +225,7 @@ class OrdersProvider extends ChangeNotifier {
     // balance + strict leg-sum are validated server-side), so an offline
     // queue for it would only defer a guaranteed 400. Single-tender and
     // legacy-split orders keep the offline-tolerant repo path below.
-    if (paymentBreakdown != null && paymentBreakdown.isNotEmpty) {
+    if ((paymentBreakdown != null && paymentBreakdown.isNotEmpty) || autoWallet) {
       // Review fix (2026-08-25, 🔴): this direct-post path had NO clientId,
       // so a request the server committed but that timed out client-side
       // (flaky café network, 20s timeout) would be retried → DUPLICATE
@@ -252,6 +258,8 @@ class OrdersProvider extends ChangeNotifier {
         'discount': discount,
         'paymentMethod': paymentMethod.name,
         'paymentBreakdown': paymentBreakdown,
+        if (autoWallet) 'autoWallet': true,
+        if (autoWallet && walletCapInr != null) 'walletCapInr': walletCapInr,
       });
       final created = Order.fromBackend(
           ((resp['order'] ?? resp) as Map).cast<String, dynamic>());

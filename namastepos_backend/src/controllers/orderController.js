@@ -79,6 +79,11 @@ const createBody = Joi.object({
   // Aggregator channel tag (set server-side by aggregatorService, but
   // harmless to accept):
   channel: Joi.string().max(30).allow('', null),
+  // Wallet-as-tender auto-apply (2026-08-30): server draws the wallet down for
+  // the residual due after membership/discounts, up to walletCapInr (cashier's
+  // adjustable amount; null = use full balance).
+  autoWallet: Joi.boolean().allow(null),
+  walletCapInr: Joi.number().min(0).allow(null),
 });
 
 const listQuery = Joi.object({

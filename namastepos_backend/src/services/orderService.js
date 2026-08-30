@@ -156,6 +156,13 @@ async function create(businessId, body) {
     // and a 'wallet' leg debits the customer's wallet atomically inside
     // this txn. Supersedes `splits` when both are sent.
     paymentBreakdown = null,
+    // Wallet-as-tender auto-apply (2026-08-30): when true and the customer has
+    // a wallet balance, the server draws the wallet down for the residual due
+    // AFTER membership/discounts (min of due, balance, and the optional
+    // walletCapInr the cashier set), then routes the rest to `paymentMethod`.
+    // Sized server-side because only the server knows the post-membership total.
+    autoWallet = false,
+    walletCapInr = null,
     // FF-1005 gift card / wallet redemption applied to this order.
     // {giftCardCode?, customerId?, amountInr}. Deducted BEFORE splits.
     walletRedeem = null,
@@ -704,6 +711,40 @@ async function create(businessId, body) {
       orderRow.tip_paise = Math.round((tipInr || 0) * 100);
     }
 
+    // Wallet-as-tender auto-apply (2026-08-30). Translate `autoWallet` into a
+    // paymentBreakdown [wallet + residual] so it flows through the existing,
+    // tested wallet-leg path below (atomic debit + sum validation + payment
+    // rows). `total` here is the FINAL payable — already net of membership
+    // bundle, discounts, loyalty and tax. Only runs for a real tender (not a
+    // KOT-only 'unpaid' save) and when the client hasn't already sent explicit
+    // legs / walletRedeem.
+    // `paymentBreakdown` is destructured const; use a reassignable local so the
+    // autoWallet translation and the downstream leg-processing share one value.
+    let pbEff = paymentBreakdown;
+    if (autoWallet && customerRow?.id && paymentMethod && paymentMethod !== 'unpaid'
+        && !(Array.isArray(pbEff) && pbEff.length > 0)
+        && !(Array.isArray(splits) && splits.length > 1)
+        && !walletRedeem && total > 0) {
+      const balRow = await client.query(
+        `SELECT balance_paise FROM customer_wallets
+          WHERE business_id = $1 AND customer_id = $2 LIMIT 1`,
+        [businessId, customerRow.id],
+      );
+      const balPaise = parseInt(balRow.rows[0]?.balance_paise || 0, 10);
+      const totalPaise = Math.round(total * 100);
+      const capPaise = walletCapInr != null
+        ? Math.max(0, Math.round(Number(walletCapInr) * 100)) : Infinity;
+      const walletUsePaise = Math.max(0, Math.min(totalPaise, balPaise, capPaise));
+      if (walletUsePaise > 0) {
+        const residualPaise = totalPaise - walletUsePaise;
+        const wLegs = [{ method: 'wallet', amountInr: walletUsePaise / 100 }];
+        if (residualPaise > 0) {
+          wLegs.push({ method: paymentMethod, amountInr: residualPaise / 100 });
+        }
+        pbEff = wLegs; // handed to the tested wallet-leg path below
+      }
+    }
+
     // FF-1005 — wallet / gift-card redemption. Recorded BEFORE splits
     // so the remaining amount is what gets split-tendered.
     // 2026-08-25 (security review finding #6): this used to be deferred
@@ -719,7 +760,7 @@ async function create(businessId, body) {
       // legs). Reject the combination. (b) Cap the redemption at the order
       // total so a bad client can't over-debit the customer's wallet beyond
       // the bill.
-      if (Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0) {
+      if (Array.isArray(pbEff) && pbEff.length > 0) {
         throw new BadRequest(
           'Send either walletRedeem or a paymentBreakdown wallet leg — not both.',
         );
@@ -737,7 +778,7 @@ async function create(businessId, body) {
     // FF-312 — split-tender. Insert one `payments` row per leg. The
     // primary method already lives in orders.payment_method; here we
     // just persist the breakdown + flag the order.
-    if (!paymentBreakdown && Array.isArray(splits) && splits.length > 1) {
+    if (!pbEff && Array.isArray(splits) && splits.length > 1) {
       let sum = 0;
       for (const s of splits) {
         const amt = Math.round((s.amountInr || 0) * 100);
@@ -770,8 +811,8 @@ async function create(businessId, body) {
     // no charge). 'wallet' legs debit the customer wallet INSIDE this
     // txn (see giftCardService.debitWalletTx WHY-comment) so an
     // insufficient balance also aborts the order atomically.
-    if (Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0) {
-      const legs = paymentBreakdown.map((l) => ({
+    if (Array.isArray(pbEff) && pbEff.length > 0) {
+      const legs = pbEff.map((l) => ({
         method: l.method,
         amountPaise: Math.round((l.amountInr || 0) * 100),
       }));
@@ -815,7 +856,7 @@ async function create(businessId, body) {
                 is_split_tender = $3
           WHERE id = $4
           RETURNING payment_method, payment_breakdown, is_split_tender`,
-        [primary, JSON.stringify(paymentBreakdown), legs.length > 1, orderRow.id],
+        [primary, JSON.stringify(pbEff), legs.length > 1, orderRow.id],
       );
       Object.assign(orderRow, upd.rows[0]);
     }

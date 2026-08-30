@@ -300,6 +300,10 @@ export function NewOrderDialog({
   // ── Split-payment math (2026-08-25, founder) ──────────────────────────
   const walletBalance: number = walletInfo?.balanceInr ?? 0;
   const walletAvailable = !!customerId && !!walletInfo && !walletError;
+  // Wallet-as-tender auto-apply (2026-08-30): pre-checked when a balance exists;
+  // server sizes it against the true post-membership due. Off while a manual
+  // split is being built.
+  const [autoWalletOn, setAutoWalletOn] = useState(true);
   const legSum = legs.reduce((s, l) => s + (parseFloat(l.amountInr) || 0), 0);
   const splitRemaining = +(payableTotal - legSum).toFixed(2);
   const walletLegInr = legs
@@ -441,6 +445,11 @@ export function NewOrderDialog({
           method: l.method,
           amountInr: +(parseFloat(l.amountInr) || 0).toFixed(2),
         }));
+      } else if (mode === 'pay' && autoWalletOn && walletAvailable && walletBalance > 0) {
+        // Wallet-as-tender auto-apply (2026-08-30): server sizes the wallet
+        // draw against the true post-membership due (which the client can't
+        // compute for bundle memberships) and routes the rest to paymentMethod.
+        body.autoWallet = true;
       }
       return ffApi.createOrder(body);
     },
@@ -785,14 +794,26 @@ export function NewOrderDialog({
                   </label>
                 </div>
                 {!splitOn ? (
-                  <div className="grid grid-cols-4 gap-1 mt-1">
-                    {(['cash', 'upi', 'card', 'unpaid'] as const).map((m) => (
-                      <button key={m} onClick={() => setPaymentMethod(m)}
-                        className={`h-8 rounded-md border text-xs font-semibold capitalize transition-colors ${
-                          paymentMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-input hover:bg-accent'
-                        }`}>{m}</button>
-                    ))}
-                  </div>
+                  <>
+                    <div className="grid grid-cols-4 gap-1 mt-1">
+                      {(['cash', 'upi', 'card', 'unpaid'] as const).map((m) => (
+                        <button key={m} onClick={() => setPaymentMethod(m)}
+                          className={`h-8 rounded-md border text-xs font-semibold capitalize transition-colors ${
+                            paymentMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-input hover:bg-accent'
+                          }`}>{m}</button>
+                      ))}
+                    </div>
+                    {walletAvailable && walletBalance > 0 && paymentMethod !== 'unpaid' && (
+                      <label className="flex items-start gap-2 text-xs cursor-pointer mt-2 p-2 rounded-md bg-primary/5">
+                        <input type="checkbox" checked={autoWalletOn} className="mt-0.5"
+                          onChange={(e) => setAutoWalletOn(e.target.checked)} />
+                        <span>
+                          Use wallet balance ({formatINR(walletBalance)}) — applied after membership;
+                          the rest is collected via <span className="uppercase font-semibold">{paymentMethod}</span>.
+                        </span>
+                      </label>
+                    )}
+                  </>
                 ) : (
                   <div className="mt-1 space-y-1.5">
                     {walletAvailable && walletBalance > 0 && (

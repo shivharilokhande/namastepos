@@ -66,6 +66,17 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
   // the split sheet instead of surfacing an error to the cashier.
   double _walletBalance = 0;
   bool _walletAvailable = false;
+  // Wallet-as-tender auto-apply (2026-08-30): pre-checked when the customer has
+  // a balance; cashier can uncheck or cap the amount. Server sizes the actual
+  // use against the post-membership due.
+  bool _useWallet = true;
+  final _walletCap = TextEditingController();
+  double? _walletCapInr() {
+    final t = _walletCap.text.trim();
+    if (t.isEmpty) return null; // null = use full balance (server caps at due)
+    final v = double.tryParse(t);
+    return (v != null && v > 0) ? v : null;
+  }
 
   // Membership context (2026-08-23): active bundle → server auto-applies
   // covered items as a discount at billing. Expired/absent → offer shown
@@ -123,6 +134,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
     _phone.dispose();
     _discount.dispose();
     _coupon.dispose();
+    _walletCap.dispose();
     // Don't clear pendingCaptainSession here — captain_screen clears it
     // when its post-push .then() callback fires, so we don't double-clear
     // and break a sibling confirm screen mid-flow.
@@ -181,6 +193,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         _pointsToRedeem = 0;
         _walletBalance = walletBal;
         _walletAvailable = walletOk;
+        _useWallet = walletOk && walletBal > 0; // pre-check when there's a balance
         _looking = false;
       });
     } catch (_) {
@@ -266,6 +279,13 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         // Ignored on KOT-only saves — an unpaid order has no tender.
         paymentBreakdown: (!kotOnly && _splits != null && _splits!.isNotEmpty)
             ? _splits : null,
+        // Wallet-as-tender auto-apply (2026-08-30): only on a real payment,
+        // when the cashier left "Use wallet" on and isn't running a manual
+        // split. Server draws the wallet down for the residual after the
+        // membership bundle; walletCapInr caps it (default = full balance).
+        autoWallet: !kotOnly && _useWallet && _walletAvailable
+            && (_splits == null || _splits!.isEmpty),
+        walletCapInr: _walletCapInr(),
       );
       _pendingClientId = null; // placed successfully — next order gets a new id
 
@@ -601,6 +621,53 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                       onChange: (v) => setState(() { _pointsToRedeem = v; _splits = null; }),
                     ),
                   const SizedBox(height: 16),
+
+                  // Wallet-as-tender (2026-08-30): pre-checked when the matched
+                  // customer has a balance. Server uses it for the residual due
+                  // AFTER the membership bundle; the rest goes to the method
+                  // chosen below. Cashier can switch it off or cap the amount.
+                  if (_walletAvailable && _walletBalance > 0) ...[
+                    Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Column(children: [
+                        SwitchListTile(
+                          value: _useWallet,
+                          onChanged: _splits != null
+                              ? null // wallet auto-apply is off while a manual split is set
+                              : (v) => setState(() => _useWallet = v),
+                          title: const Text('Use wallet balance',
+                              style: TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Text(
+                            'Balance ₹${_walletBalance.toStringAsFixed(2)} • applied after membership; '
+                            'remaining via ${_payment.name.toUpperCase()}',
+                            style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                          ),
+                          dense: true,
+                        ),
+                        if (_useWallet)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                            child: TextField(
+                              controller: _walletCap,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                              ],
+                              decoration: InputDecoration(
+                                isDense: true,
+                                labelText: 'Max wallet to use (optional)',
+                                hintText: 'Blank = up to ₹${_walletBalance.toStringAsFixed(0)}',
+                                border: const OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                      ]),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   // Payment
                   const Text('Payment method', style: _labelStyle),
