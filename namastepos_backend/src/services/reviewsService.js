@@ -2,6 +2,7 @@
 // Pulls from Google + Zomato + Swiggy public review pages OR API where
 // available. Schema-stable; fetchers stub when keys missing.
 
+const https = require('https');
 const { query } = require('../config/db');
 const env = require('../config/env');
 const logger = require('../config/logger');
@@ -72,6 +73,42 @@ function extractPlaceIdFromUrl(url) {
   return null;
 }
 
+// 2026-08-30: follow a shortened maps.app.goo.gl / goo.gl/maps link to its real
+// target and pull the Place ID out of the EXPANDED url or landing HTML. This is
+// safe (it resolves the OWNER's own link to its exact place — no fuzzy name
+// search that could grab a stranger's reviews, which the block above warns
+// against). Best-effort: any network hiccup returns null and the caller falls
+// back to the "paste the full link / enter Place ID" message.
+function _resolveShortLink(shortUrl) {
+  return new Promise((resolve) => {
+    let hops = 0;
+    const visit = (u) => {
+      if (hops++ > 5) return resolve(null);
+      let parsed;
+      try { parsed = new URL(u); } catch (_) { return resolve(null); }
+      const req = https.request({
+        hostname: parsed.hostname,
+        path: (parsed.pathname || '/') + (parsed.search || ''),
+        method: 'GET',
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; NamastePOS/1.0)' },
+      }, (res) => {
+        const loc = res.headers.location;
+        if (res.statusCode >= 300 && res.statusCode < 400 && loc) {
+          res.resume();
+          return visit(loc.startsWith('http') ? loc : `https://${parsed.hostname}${loc}`);
+        }
+        let body = '';
+        res.on('data', (c) => { if (body.length < 300000) body += c; });
+        res.on('end', () => resolve({ finalUrl: u, body }));
+      });
+      req.setTimeout(6000, () => { req.destroy(); resolve(null); });
+      req.on('error', () => resolve(null));
+      req.end();
+    };
+    visit(shortUrl);
+  });
+}
+
 // Real fetcher: Google Places API "place details" endpoint with reviews.
 // Config lives on the businesses row (migration 061: google_place_id +
 // google_maps_url), saved from the dashboard Settings "Google reviews" card
@@ -108,6 +145,15 @@ async function fetchAllProviders(businessId) {
   // No stored Place ID yet — try to derive one from the pasted Maps link.
   if (!placeId && biz.google_maps_url) {
     placeId = extractPlaceIdFromUrl(biz.google_maps_url);
+    // Shortened links (maps.app.goo.gl / goo.gl) carry no id inline — follow
+    // the redirect to the real target and extract from the expanded URL/HTML.
+    if (!placeId && /(?:maps\.app\.goo\.gl|goo\.gl)/.test(biz.google_maps_url)) {
+      const resolved = await _resolveShortLink(biz.google_maps_url);
+      if (resolved) {
+        placeId = extractPlaceIdFromUrl(resolved.finalUrl)
+          || extractPlaceIdFromUrl(resolved.body || '');
+      }
+    }
     if (placeId) {
       // Persist the resolved ID so future fetches (and npsService's
       // write-a-review link) skip re-parsing the URL.
