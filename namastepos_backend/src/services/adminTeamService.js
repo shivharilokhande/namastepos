@@ -170,6 +170,9 @@ async function update(id, patch, actorId = null) {
     values
   );
   if (r.rowCount === 0) throw new NotFound('Admin not found');
+  // Drop the RBAC role cache so a role change / deactivation takes effect
+  // immediately rather than after the 30s TTL.
+  try { require('../middleware/adminRbac').invalidateRole(id); } catch (_) { /* noop */ }
   return serialize(r.rows[0]);
 }
 

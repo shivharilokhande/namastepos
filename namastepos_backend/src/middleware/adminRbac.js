@@ -45,6 +45,31 @@ function can(role, perm) {
   return grants.includes('*') || grants.includes(perm);
 }
 
+// Hardening (2026-08-30): resolve the admin's role LIVE from the DB, not from
+// the (up-to-1h-lived) JWT claim. Without this, a demoted admin kept their old
+// permissions — e.g. settings.write / team management — until their access
+// token expired. A tiny TTL cache keeps this to ~1 DB read per admin per
+// window instead of one per request. Returns null when the admin is no longer
+// active, which denies every permission.
+const ROLE_TTL_MS = 30_000;
+const _roleCache = new Map(); // adminId → { role, exp }
+
+async function _liveRole(adminId) {
+  const hit = _roleCache.get(adminId);
+  if (hit && hit.exp > Date.now()) return hit.role;
+  const r = await query(
+    `SELECT role FROM admin_users WHERE id = $1 AND is_active = TRUE LIMIT 1`,
+    [adminId]
+  );
+  const role = r.rows[0]?.role || null; // null = deactivated / gone → deny all
+  _roleCache.set(adminId, { role, exp: Date.now() + ROLE_TTL_MS });
+  return role;
+}
+
+// Let callers (e.g. role change / deactivation handlers) drop a stale entry so
+// the change takes effect immediately rather than after the TTL.
+function invalidateRole(adminId) { _roleCache.delete(adminId); }
+
 /**
  * Express middleware factory.
  *   requirePermission('refunds.write') → only finance and super_admin pass.
@@ -54,15 +79,16 @@ function requirePermission(perm) {
     if (!req.user?.isSuperAdmin) {
       return next(new Forbidden('Admin access required'));
     }
-    let role = req.user.role;
-    if (!role) {
-      const r = await query(
-        `SELECT role FROM admin_users WHERE id = $1 AND is_active = TRUE LIMIT 1`,
-        [req.user.id]
-      );
-      role = r.rows[0]?.role || 'support';
-      req.user.role = role;
+    let role;
+    try {
+      role = await _liveRole(req.user.id);
+    } catch (e) {
+      return next(e);
     }
+    if (!role) {
+      return next(new Forbidden('Admin account is no longer active'));
+    }
+    req.user.role = role; // reflect the live role downstream
     if (!can(role, perm)) {
       return next(new Forbidden(`Permission denied: ${perm}. Your role: ${role}`));
     }
@@ -70,4 +96,4 @@ function requirePermission(perm) {
   };
 }
 
-module.exports = { requirePermission, can, PERMISSIONS };
+module.exports = { requirePermission, can, PERMISSIONS, invalidateRole };
