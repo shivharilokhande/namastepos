@@ -232,7 +232,13 @@ function buildApp() {
   // Mounted BEFORE the business-scoped routers so file fetches don't go
   // through the auth + feature-gate middleware (images are public URLs
   // baked into menu items / receipts / e-invoices).
-  app.use('/uploads', express.static(require('path').join(__dirname, '..', 'uploads')));
+  // Strix M-2 (2026-08-31): send X-Content-Type-Options: nosniff so a browser
+  // can't be tricked into content-sniffing an uploaded file into active
+  // content when it's served same-origin (the local-disk/dev path). Production
+  // R2 mode already serves from a separate cookieless images. domain.
+  app.use('/uploads', express.static(require('path').join(__dirname, '..', 'uploads'), {
+    setHeaders: (res) => { res.setHeader('X-Content-Type-Options', 'nosniff'); },
+  }));
 
   // Image uploads — accessible to any authenticated business owner/staff.
   // No feature gate (starter tier needs menu images too).

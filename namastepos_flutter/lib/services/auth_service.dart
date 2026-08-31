@@ -27,7 +27,13 @@ class AuthService {
   static final AuthService instance = AuthService._();
 
   final _api = ApiService.instance;
-  final _secure = const FlutterSecureStorage();
+  // Strix I-2 (2026-08-31): iOS keychain this-device-only (see api_service.dart).
+  final _secure = const FlutterSecureStorage(
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+      synchronizable: false,
+    ),
+  );
   static const _kBusiness = 'ff_business';
 
   // Web Client ID from Google Cloud Console (the SAME id the backend lists in

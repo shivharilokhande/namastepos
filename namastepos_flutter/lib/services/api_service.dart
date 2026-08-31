@@ -47,7 +47,15 @@ class ApiService {
   /// N parallel refresh calls (which would race + revoke each other's tokens).
   Future<bool>? _inflightRefresh;
   Dio get dio => _dio;
-  final _secure = const FlutterSecureStorage();
+  // Strix I-2 (2026-08-31): Android storage is encrypted by default in
+  // flutter_secure_storage v11; pin the iOS Keychain item to this-device-only
+  // (never synced to iCloud) and available only after first unlock.
+  final _secure = const FlutterSecureStorage(
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+      synchronizable: false,
+    ),
+  );
 
   static const _tokenKey = 'ff_jwt';
   static const _refreshKey = 'ff_refresh';

@@ -33,6 +33,16 @@ function safeColor(c, fallback) {
   return /^#[0-9a-fA-F]{6}$/.test(c || '') ? c : fallback;
 }
 
+// Strix L-2 (2026-08-31): HTML-entity escaping is the wrong tool for a URL that
+// lands inside `url('…')` in a <style> block or an <img src>. Validate the
+// SCHEME against an https?:// allowlist first (blocks javascript:, data:, etc.),
+// then escape. Empty string = drop the URL entirely.
+function safeUrl(u) {
+  const s = String(u ?? '').trim();
+  if (!/^https?:\/\//i.test(s)) return '';
+  return esc(s);
+}
+
 router.get('/:slug', asyncHandler(async (req, res) => {
   const s = await site.bySlug(req.params.slug);
   if (!s) {
@@ -68,7 +78,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
       <h2>${esc(cat)}</h2>
       ${items.map((m) => `
         <div class="item">
-          ${m.image_url ? `<img loading="lazy" src="${esc(m.image_url)}" alt="">` : ''}
+          ${safeUrl(m.image_url) ? `<img loading="lazy" src="${safeUrl(m.image_url)}" alt="">` : ''}
           <div class="item-body">
             <div class="item-head">
               <span class="veg ${m.is_veg ? 'v' : 'nv'}" title="${m.is_veg ? 'Veg' : 'Non-veg'}"></span>
@@ -93,7 +103,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
   * { box-sizing: border-box; margin: 0; }
   body { font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; color: #222; background: #faf8f5; }
   .hero { background: linear-gradient(160deg, var(--brand), #00000088), #333 center/cover no-repeat;
-          ${s.hero_image_url ? `background-image: linear-gradient(160deg, ${color}cc, #000000aa), url('${esc(s.hero_image_url)}');` : ''}
+          ${safeUrl(s.hero_image_url) ? `background-image: linear-gradient(160deg, ${color}cc, #000000aa), url('${safeUrl(s.hero_image_url)}');` : ''}
           color: #fff; padding: 4rem 1.2rem 3rem; text-align: center; }
   .hero h1 { font-size: 2.2rem; letter-spacing: .5px; }
   .hero p { margin-top: .8rem; opacity: .92; max-width: 40rem; margin-inline: auto; line-height: 1.5; }

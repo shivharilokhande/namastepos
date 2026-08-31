@@ -87,6 +87,21 @@ const upload = multer({
   },
 });
 
+// Strix M-2 (2026-08-31): the multipart MIME/extension is client-supplied, so
+// fileFilter alone can't stop a polyglot (e.g. HTML bytes labelled image/png).
+// Confirm the REAL file bytes are one of the allow-listed image formats by
+// magic number before we persist/serve it. Returns the true type or null.
+function sniffImageType(buf) {
+  if (!buf || buf.length < 12) return null;
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return 'image/jpeg';
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png';
+  if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38) return 'image/gif';
+  // RIFF....WEBP
+  if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+      && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp';
+  return null;
+}
+
 router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'BAD_REQUEST', message: 'No file provided' });
@@ -99,6 +114,10 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
     if (!UUID_RE.test(bid)) {
       return res.status(400).json({ error: 'BAD_REQUEST', message: 'Invalid businessId' });
     }
+    // Strix M-2: verify real bytes are a genuine image before storing.
+    if (!sniffImageType(req.file.buffer)) {
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'File is not a valid image' });
+    }
     const ext = MIME_EXT[req.file.mimetype] || '.jpg';
     const key = `${bid}/${uuidv4()}${ext}`;
     const url = await storageSvc.putObject(key, req.file.buffer, req.file.mimetype);
@@ -108,6 +127,22 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
       size: req.file.size,
       mime: req.file.mimetype,
     });
+  }
+
+  // Strix M-2: sniff the bytes that were just written to disk; on mismatch,
+  // delete the file and reject so a polyglot never lands under the public mount.
+  try {
+    const fd = fs.openSync(req.file.path, 'r');
+    const head = Buffer.alloc(16);
+    fs.readSync(fd, head, 0, 16, 0);
+    fs.closeSync(fd);
+    if (!sniffImageType(head)) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'BAD_REQUEST', message: 'File is not a valid image' });
+    }
+  } catch (_) { /* if we can't verify, fail closed */
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({ error: 'BAD_REQUEST', message: 'Could not validate image' });
   }
 
   // Dev fallback — local disk, relative URL served by the static mount.

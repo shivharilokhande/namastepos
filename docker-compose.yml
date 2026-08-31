@@ -19,7 +19,10 @@ services:
       POSTGRES_USER: namastepos
       # Required — set in .env next to this compose file.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-    ports: ["5432:5432"]
+    # Strix L-5 (2026-08-31): bind to loopback only. `api` reaches Postgres over
+    # the compose network (host "postgres"), so the host mapping is just for
+    # local dev tools — never expose the DB on 0.0.0.0.
+    ports: ["127.0.0.1:5432:5432"]
     volumes: [ff-pgdata:/var/lib/postgresql/data]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U namastepos"]
@@ -30,7 +33,12 @@ services:
   redis:
     image: redis:7-alpine
     container_name: ff-redis
-    ports: ["6379:6379"]
+    # Strix L-5 (2026-08-31): loopback-only host binding. An open Redis on
+    # 0.0.0.0 is a known RCE/data-exposure vector; `api` talks to it over the
+    # compose network. If Redis ever runs on a non-trusted host, also set a
+    # password: command: ["redis-server","--requirepass","<secret>"] and add it
+    # to the api's REDIS_URL.
+    ports: ["127.0.0.1:6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s

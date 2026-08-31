@@ -44,3 +44,8 @@ nohup.out
 # Large build artifacts (served from R2, not git)
 namastepos_flutter/NamastePOS.apk
 namastepos_flutter/.wrangler/
+
+# Strix L-4/I-1 (2026-08-31): never track wrangler caches or APK artifacts anywhere
+**/.wrangler/
+*.apk
+/NamastePOS.apk
