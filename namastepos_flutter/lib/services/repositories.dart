@@ -4,8 +4,6 @@
 // then attempt a sync via ApiService. The sync_queue table stores deltas
 // that failed to push so they get retried on next connectivity.
 
-import 'dart:convert';
-
 import 'package:dio/dio.dart' show DioException;
 import 'package:sqflite/sqflite.dart';
 import 'package:uuid/uuid.dart';
@@ -202,16 +200,10 @@ class OrderRepo {
         }
       }
 
-      // queue for sync
-      await txn.insert('sync_queue', {
-        'id': uuid.v4(),
-        'entityType': 'order',
-        'entityId': orderId,
-        'action': 'create',
-        'payload': jsonEncode(order.toMap()),
-        'attempts': 0,
-        'createdAt': now.toIso8601String(),
-      });
+      // 2026-08-31 review fix: the `sync_queue` table was written on every
+      // order but NEVER drained — the real replay engine is OfflineOutbox
+      // (below), so this row just grew the DB one row per order forever with
+      // no effect. Removed. (OfflineOutbox is idempotent via clientId=orderId.)
     });
 
     // Also push through the connectivity-aware OfflineOutbox so we attempt
@@ -284,6 +276,24 @@ class OrderRepo {
       orderBy: 'createdAt DESC',
     );
 
+    final result = <Order>[];
+    for (final o in ords) {
+      final itRows = await db.query('order_items',
+          where: 'orderId = ?', whereArgs: [o['id']]);
+      result.add(Order.fromMap(o, items: itRows.map(OrderItem.fromMap).toList()));
+    }
+    return result;
+  }
+
+  /// 2026-08-31 review fix: local orders created offline that haven't synced
+  /// yet (synced=0). load() must preserve these across a server-list refresh so
+  /// an offline order doesn't disappear from the UI before the outbox drains
+  /// (a disappearance invites a re-ring → a true duplicate with a new clientId).
+  Future<List<Order>> unsynced(String businessId) async {
+    final db = await DatabaseService.instance.db;
+    final ords = await db.query('orders',
+        where: 'businessId = ? AND synced = 0', whereArgs: [businessId],
+        orderBy: 'createdAt DESC');
     final result = <Order>[];
     for (final o in ords) {
       final itRows = await db.query('order_items',

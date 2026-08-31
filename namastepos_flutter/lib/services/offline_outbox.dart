@@ -165,13 +165,23 @@ class OfflineOutbox {
         // ignore: avoid_print
         print('OUTBOX DRAIN: ${row['method']} ${row['endpoint']} '
             '(attempt ${(row['attempts'] as int) + 1}) FAILED — $err');
+        int nextAttempts = (row['attempts'] as int) + 1;
         if (err is DioException) {
           // ignore: avoid_print
           print('OUTBOX DRAIN status=${err.response?.statusCode} body=${err.response?.data}');
+          // 2026-08-31 review fix: a permanent 4xx rejection (validation, a
+          // stale points-redeem, a deleted business 404) will NEVER succeed on
+          // retry — jump it straight to dead-letter so the cashier is told at
+          // once instead of after 25 min of pointless retries. 401/408/429 are
+          // transient and keep their normal +1 backoff.
+          final sc = err.response?.statusCode ?? 0;
+          if (sc >= 400 && sc < 500 && sc != 401 && sc != 408 && sc != 429) {
+            nextAttempts = _maxAttempts + 1;
+          }
         }
         await _db!.update('outbox',
           {
-            'attempts': (row['attempts'] as int) + 1,
+            'attempts': nextAttempts,
             'last_attempt_at': DateTime.now().millisecondsSinceEpoch,
             'last_error': err.toString(),
           },
@@ -186,8 +196,38 @@ class OfflineOutbox {
   }
 
   Future<int> pendingCount() async {
+    if (_db == null) return 0;
     final r = await _db!.rawQuery('SELECT COUNT(*) AS n FROM outbox');
     return Sqflite.firstIntValue(r) ?? 0;
+  }
+
+  /// Orders still queued and being retried (not yet dead-lettered).
+  Future<int> activePendingCount() async {
+    if (_db == null) return 0;
+    final r = await _db!.rawQuery(
+      'SELECT COUNT(*) AS n FROM outbox WHERE attempts <= ?', [_maxAttempts]);
+    return Sqflite.firstIntValue(r) ?? 0;
+  }
+
+  /// The dead-lettered rows, so a "failed to sync" screen can list them.
+  Future<List<Map<String, dynamic>>> deadLetters() async {
+    if (_db == null) return const [];
+    return _db!.query('outbox',
+        where: 'attempts > ?', whereArgs: [_maxAttempts], orderBy: 'created_at');
+  }
+
+  /// Reset a dead-lettered row's attempt counter and try to send it again.
+  Future<void> retryDeadLetters() async {
+    if (_db == null) return;
+    await _db!.update('outbox', {'attempts': 0, 'last_error': null},
+        where: 'attempts > ?', whereArgs: [_maxAttempts]);
+    await drainOnce();
+  }
+
+  /// Permanently drop a queued/failed row (cashier chose to discard).
+  Future<void> discard(String clientId) async {
+    if (_db == null) return;
+    await _db!.delete('outbox', where: 'client_id = ?', whereArgs: [clientId]);
   }
 
   Future<void> dispose() async {

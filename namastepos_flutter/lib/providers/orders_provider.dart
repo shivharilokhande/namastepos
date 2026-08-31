@@ -46,6 +46,14 @@ class OrdersProvider extends ChangeNotifier {
           .map(Order.fromBackend)
           .toList();
       debugPrint('ORDERS load: backend returned ${list.length} orders for biz $businessId');
+      // 2026-08-31 review fix: capture local orders that were created offline
+      // and haven't synced yet BEFORE purging — otherwise purgeAll deletes them
+      // and, because the outbox hasn't drained, they're not in the server list
+      // either, so they vanish from the UI (inviting a duplicate re-ring).
+      final unsynced = await OrderRepo.instance.unsynced(businessId);
+      final serverIds = list.map((o) => o.id).toSet();
+      final stillPending =
+          unsynced.where((o) => !serverIds.contains(o.id)).toList();
       // Push 13.7: backend succeeded → purge the local SQLite cache so
       // any ghost orders (created offline, never synced, or from old
       // businesses) can't keep haunting the UI. This is the automatic
@@ -54,8 +62,14 @@ class OrdersProvider extends ChangeNotifier {
       // H3 fix (2026-08-23): repopulate the offline cache — purging
       // without re-caching left the offline fallback permanently empty.
       await OrderRepo.instance.cacheAll(businessId, list);
+      // Re-cache the not-yet-synced local orders too so the offline fallback
+      // keeps them and the outbox can still drain them.
+      if (stillPending.isNotEmpty) {
+        await OrderRepo.instance.cacheAll(businessId, stillPending);
+      }
       _orders
         ..clear()
+        ..addAll(stillPending) // newest (just-created offline) first
         ..addAll(list);
     } catch (e) {
       // Used to be `catch (_) {}` — silently masked auth/feature-gate
@@ -225,7 +239,15 @@ class OrdersProvider extends ChangeNotifier {
     // balance + strict leg-sum are validated server-side), so an offline
     // queue for it would only defer a guaranteed 400. Single-tender and
     // legacy-split orders keep the offline-tolerant repo path below.
-    if ((paymentBreakdown != null && paymentBreakdown.isNotEmpty) || autoWallet) {
+    // 2026-08-31 review fix: loyalty-points redemption ALSO needs the live
+    // server (it burns points against a balance the server must re-validate).
+    // Queuing it offline would print a discounted bill + take cash, then the
+    // server could reject the stale redeem on drain → silent loss. Force it
+    // onto the online direct-post path alongside wallet/split, so offline it
+    // fails loudly (cashier told) instead of queuing a phantom discount.
+    if ((paymentBreakdown != null && paymentBreakdown.isNotEmpty)
+        || autoWallet
+        || pointsToRedeem > 0) {
       // Review fix (2026-08-25, 🔴): this direct-post path had NO clientId,
       // so a request the server committed but that timed out client-side
       // (flaky café network, 20s timeout) would be retried → DUPLICATE
