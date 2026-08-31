@@ -839,6 +839,15 @@ class _CaptainScreenState extends State<CaptainScreen> {
       _SettleLeg('cash', TextEditingController()),
       _SettleLeg('upi', TextEditingController()),
     ];
+    // Wallet auto-apply on the SINGLE-method path (2026-08-31, founder):
+    // when the customer has a balance, one toggle tells the server to use
+    // wallet for the residual and collect the rest via the picked method —
+    // same "auto-fill, cashier can adjust" behaviour as pay & place. Off by
+    // default; hidden unless a customer with a positive balance is present.
+    // For finer control the cashier can still use Split payment. An optional
+    // cap limits how much wallet is drawn (blank = up to the whole balance).
+    bool useWallet = false;
+    final walletCapCtl = TextEditingController();
     final settleResult = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -993,10 +1002,58 @@ class _CaptainScreenState extends State<CaptainScreen> {
                     onChanged: (v) => setSheetState(() => splitOn = v),
                   ),
                   if (!splitOn) ...[
+                    // Wallet auto-apply toggle — only when an identified
+                    // customer has a positive balance. On = server draws
+                    // wallet first (up to the optional cap), remainder via
+                    // the method tapped below.
+                    if (walletAvailable && walletBalance > 0) ...[
+                      SwitchListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(
+                            'Use wallet balance (${AppFmt.money(walletBalance)})',
+                            style: const TextStyle(fontWeight: FontWeight.w700)),
+                        subtitle: const Text(
+                            'Pays part of the bill from wallet; collect the rest below',
+                            style: TextStyle(fontSize: 11)),
+                        value: useWallet,
+                        onChanged: (v) => setSheetState(() => useWallet = v),
+                      ),
+                      if (useWallet)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: TextField(
+                            controller: walletCapCtl,
+                            keyboardType:
+                                const TextInputType.numberWithOptions(
+                                    decimal: true),
+                            decoration: const InputDecoration(
+                              labelText: 'Max wallet to use (₹) — optional',
+                              helperText:
+                                  'Blank = use up to the full balance',
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (_) => setSheetState(() {}),
+                          ),
+                        ),
+                    ],
                     const Text('Payment method',
                         style: TextStyle(
                             fontSize: 12, color: Colors.grey,
                             fontWeight: FontWeight.w700)),
+                    if (useWallet)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2, bottom: 4),
+                        child: Text(
+                          'Wallet covers the bill first — pick how the '
+                          'remaining amount (if any) is collected.',
+                          style: TextStyle(
+                              fontSize: 11,
+                              color: AppColors.warning,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      ),
                     ListTile(
                       dense: true,
                       leading: const Icon(Icons.currency_rupee, color: Colors.green),
@@ -1004,6 +1061,8 @@ class _CaptainScreenState extends State<CaptainScreen> {
                       onTap: () => Navigator.pop(sheetCtx, {
                         'pm': 'cash', 'discount': discount,
                         'shortfall': shortfall,
+                        'autoWallet': useWallet,
+                        if (useWallet) 'walletCapInr': _walletCapOrNull(walletCapCtl),
                       }),
                     ),
                     ListTile(
@@ -1013,6 +1072,8 @@ class _CaptainScreenState extends State<CaptainScreen> {
                       onTap: () => Navigator.pop(sheetCtx, {
                         'pm': 'upi', 'discount': discount,
                         'shortfall': shortfall,
+                        'autoWallet': useWallet,
+                        if (useWallet) 'walletCapInr': _walletCapOrNull(walletCapCtl),
                       }),
                     ),
                     ListTile(
@@ -1022,6 +1083,8 @@ class _CaptainScreenState extends State<CaptainScreen> {
                       onTap: () => Navigator.pop(sheetCtx, {
                         'pm': 'card', 'discount': discount,
                         'shortfall': shortfall,
+                        'autoWallet': useWallet,
+                        if (useWallet) 'walletCapInr': _walletCapOrNull(walletCapCtl),
                       }),
                     ),
                     ListTile(
@@ -1032,6 +1095,8 @@ class _CaptainScreenState extends State<CaptainScreen> {
                       onTap: () => Navigator.pop(sheetCtx, {
                         'pm': 'online', 'discount': discount,
                         'shortfall': shortfall,
+                        'autoWallet': useWallet,
+                        if (useWallet) 'walletCapInr': _walletCapOrNull(walletCapCtl),
                       }),
                     ),
                   ] else ...[
@@ -1185,6 +1250,8 @@ class _CaptainScreenState extends State<CaptainScreen> {
         ?.cast<Map>()
         .map((m) => m.cast<String, dynamic>())
         .toList();
+    final autoWallet = settleResult['autoWallet'] == true;
+    final walletCapInr = (settleResult['walletCapInr'] as num?)?.toDouble();
 
     // Shortfall books real debt — confirm before committing (2026-08-25).
     if (shortfallInr > 0) {
@@ -1230,6 +1297,8 @@ class _CaptainScreenState extends State<CaptainScreen> {
         discountInr: settleDiscount,
         paymentBreakdown: breakdown,
         shortfallInr: shortfallInr,
+        autoWallet: autoWallet,
+        walletCapInr: walletCapInr,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1381,6 +1450,14 @@ class _SettleLeg {
   String method;
   final TextEditingController ctl;
   _SettleLeg(this.method, this.ctl);
+}
+
+/// Parse the optional "max wallet to use" field on the settle sheet. Blank
+/// or non-positive → null (server uses up to the whole balance).
+double? _walletCapOrNull(TextEditingController ctl) {
+  final v = double.tryParse(ctl.text.trim());
+  if (v == null || v <= 0) return null;
+  return double.parse(v.toStringAsFixed(2));
 }
 
 /// PAID/UNPAID pill per KOT in the running-bill sheet (2026-08-25, F2) —
