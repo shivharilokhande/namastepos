@@ -342,18 +342,36 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
 
     if (!mounted) return;
     setState(() => _saving = false);
+    // Wallet-as-tender (2026-08-31 review fix): the server records the wallet
+    // draw-down as a paymentBreakdown leg, NOT a deduction from order.total.
+    // So the CASH the cashier must collect = order.total − wallet + membership.
+    // Previously the dialog showed the gross total (and even told the cashier to
+    // COLLECT total + membership), making them over-collect by the wallet amount.
+    final o = order; // promoted non-null here; captured for the dialog closure
+    final walletPaid = (o.paymentBreakdown ?? const <Map<String, dynamic>>[])
+        .where((l) => (l['method'] as String?) == 'wallet')
+        .fold<double>(0, (s, l) => s + ((l['amountInr'] as num?)?.toDouble() ?? 0));
+    final netCollect = (o.total - walletPaid + _membershipFeeInr)
+        .clamp(0, double.infinity)
+        .toDouble();
+    final showCollect = walletPaid > 0 || _membershipFeeInr > 0;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: const Text('Order placed'),
         content: Text(
-          'Token #${order!.orderNo} • ${AppFmt.money(order.total, decimals: true)}\n'
-          // Membership bought during this billing → collect one combined
-          // amount (order total already reflects any bundle discount).
+          'Token #${o.orderNo} • ${AppFmt.money(o.total, decimals: true)}\n'
+          '${walletPaid > 0
+              ? "− Paid from wallet ${AppFmt.money(walletPaid, decimals: true)}\n"
+              : ""}'
+          // Membership bought during this billing (order total already reflects
+          // any bundle discount).
           '${_membershipFeeInr > 0
-              ? "+ Membership ${AppFmt.money(_membershipFeeInr)} — "
-                "COLLECT ${AppFmt.money(order.total + _membershipFeeInr, decimals: true)} TOTAL\n"
+              ? "+ Membership ${AppFmt.money(_membershipFeeInr)}\n"
+              : ""}'
+          '${showCollect
+              ? "COLLECT ${AppFmt.money(netCollect, decimals: true)} in cash\n"
               : ""}'
           '${printed
               ? "Token printed successfully."

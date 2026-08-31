@@ -194,6 +194,23 @@ class Order {
       updatedAt: DateTime.now(),
       readyAt: readyAt ?? this.readyAt,
       collectedAt: collectedAt ?? this.collectedAt,
+      // Preserve every remaining field (2026-08-31 review fix): copyWith used
+      // to drop these, so advancing a session-bill row's status/print reset
+      // isBill→false, emptied kots/tableSessionId, and wiped the tax breakup +
+      // paymentBreakdown from the in-memory list until the next full load().
+      refundedInr: refundedInr,
+      cgst: cgst,
+      sgst: sgst,
+      igst: igst,
+      loyaltyDiscountInr: loyaltyDiscountInr,
+      serviceChargeInr: serviceChargeInr,
+      roundOffInr: roundOffInr,
+      pointsRedeemed: pointsRedeemed,
+      paymentBreakdown: paymentBreakdown,
+      isBill: isBill,
+      tableSessionId: tableSessionId,
+      displayNo: displayNo,
+      kots: kots,
     );
   }
 

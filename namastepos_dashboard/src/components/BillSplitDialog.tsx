@@ -7,7 +7,7 @@
 // IDs from session.items. We expose it as a manual-line variant where the
 // cashier toggles which items belong to which guest.
 import { useState, useMemo } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Users, Plus, Trash2, IndianRupee, Receipt } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -41,11 +41,14 @@ export function BillSplitDialog({
 
   // After splitting we show the per-guest invoices and let the cashier
   // mark each one paid as the cash/UPI hits the till.
-  const { data: split } = useQuery({
-    queryKey: ['bill-split', created?.id],
-    queryFn: async () => created,
-    enabled: !!created,
-  });
+  // 2026-08-31 review fix: this used to be a useQuery keyed on created.id.
+  // Because pay.onSuccess mutates `created` state WITHOUT changing the id,
+  // the query key stayed stable and React Query never re-ran queryFn — so the
+  // rendered `split` was frozen at the first snapshot: PAID badges never
+  // flipped, allPaid never became true, and settled rows stayed clickable
+  // (double-collection risk). Render straight from the `created` state so every
+  // setCreated re-render reflects reality.
+  const split = created;
 
   const totalCustom = useMemo(
     () => guests.reduce((s, g) => s + (g.amount || 0), 0),

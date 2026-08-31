@@ -1241,6 +1241,14 @@ class _CaptainScreenState extends State<CaptainScreen> {
         },
       ),
     );
+    // Dispose every controller the sheet owned (2026-08-31 review fix): these
+    // were leaked on each settle — only a removed leg's controller was disposed.
+    discountCtl.dispose();
+    shortfallCtl.dispose();
+    walletCapCtl.dispose();
+    for (final l in legs) {
+      l.ctl.dispose();
+    }
     if (settleResult == null) return;
     if (!mounted) return;
     final paymentMethod = settleResult['pm'] as String;

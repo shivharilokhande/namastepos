@@ -1271,6 +1271,43 @@ async function updateStatus(businessId, orderId, status, reason = null, reasonCo
           }
         }
       }
+      // Wallet-as-tender refund on cancel (2026-08-31 review fix): if this
+      // order was paid (wholly or partly) from a CUSTOMER wallet, cancelling
+      // used to leave that money debited with no path back — refundService
+      // rejects cancelled orders, so the customer silently lost it. Credit the
+      // NET wallet movement for this order back, inside the same cancel txn.
+      // Idempotent: refund = −SUM(amount_paise); once credited the net is 0, so
+      // it can never double-refund (and the guarded status UPDATE already runs
+      // this block at most once). Best-effort via SAVEPOINT so a wallet/ledger
+      // hiccup can never block the cancel itself. (Gift-card legs carry
+      // gift_card_id not customer_id, so they're excluded — a separate,
+      // smaller gap tracked for later.)
+      if (cancelling) {
+        await client.query('SAVEPOINT cancel_wallet');
+        try {
+          const wl = await client.query(
+            `SELECT customer_id, COALESCE(SUM(amount_paise), 0)::bigint AS net_paise
+               FROM wallet_ledger
+              WHERE business_id = $1 AND order_id = $2 AND customer_id IS NOT NULL
+              GROUP BY customer_id`,
+            [businessId, orderId],
+          );
+          for (const w of wl.rows) {
+            const refundPaise = -parseInt(w.net_paise, 10); // net debit is negative
+            if (refundPaise > 0) {
+              await require('./giftCardService').creditWalletTx(
+                client, businessId, w.customer_id, refundPaise,
+                { reason: 'refund', orderId, note: 'Cancelled order — wallet tender refund' },
+              );
+            }
+          }
+          await client.query('RELEASE SAVEPOINT cancel_wallet');
+        } catch (e) {
+          await client.query('ROLLBACK TO SAVEPOINT cancel_wallet');
+          // eslint-disable-next-line no-console
+          console.warn(`[orderService] wallet refund on cancel failed for order ${orderId}: ${e?.message}`);
+        }
+      }
       return upd.rows[0];
     });
   } else {
