@@ -267,6 +267,10 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         customerPhone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         paymentMethod: kotOnly ? PaymentMethod.unpaid : _payment,
         discount: discount,
+        // Send the applied coupon code so the server records its use + enforces
+        // max_redemptions (2026-09-01). The discount amount is already in
+        // `discount`; this is only for cap tracking.
+        couponCode: kotOnly ? null : _appliedCoupon,
         pointsToRedeem: _pointsToRedeem,
         priceMultiplier: _surgeMultiplier, // surge (×1 when inactive)
         // Captain "Add items" flow — bind the new KOT to the exact open
@@ -1250,7 +1254,9 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
                       style: TextStyle(fontWeight: FontWeight.w700)),
                   const Spacer(),
                   Text(
-                    AppFmt.money(_balance),
+                    // 2 decimals (2026-09-01) so a sub-rupee split imbalance is
+                    // visible instead of showing a red "₹0".
+                    AppFmt.money(_balance, decimals: true),
                     style: TextStyle(
                       fontWeight: FontWeight.w900,
                       color: _valid ? AppColors.success : AppColors.error,

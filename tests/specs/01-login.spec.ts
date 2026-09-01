@@ -10,9 +10,12 @@ test.describe('Login + session', () => {
   test('owner can sign in with email + password and lands on overview', async ({ page }) => {
     await loginAsOwner(page);
     // The business name lives in the sidebar but is hidden at narrower
-    // Playwright viewports (responsive layout). Check the localStorage
-    // signals instead — they're the source of truth for "logged in".
-    const token = await page.evaluate(() => localStorage.getItem('ff_dash_token'));
+    // Playwright viewports (responsive layout). Check the session signals
+    // instead — they're the source of truth for "logged in". The access
+    // token is in-memory now (L-1), so read it via the exposed getter.
+    const token = await page.evaluate(
+      () => (window as any).__ffGetToken?.() || localStorage.getItem('ff_dash_token'),
+    );
     expect(token).toBeTruthy();
     const business = await page.evaluate(() => localStorage.getItem('ff_dash_business'));
     expect(business).toBeTruthy();

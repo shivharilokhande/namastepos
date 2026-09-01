@@ -1,6 +1,6 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { getToken } from './api/client';
+import { getToken, bootstrapAuth } from './api/client';
 
 // Code-splitting (2026-08-25): App.tsx used to STATICALLY import ~55 page
 // components, so Vite bundled every page — Reports/HeatMap/Forecast (recharts),
@@ -92,6 +92,15 @@ function PageFallback() {
 }
 
 export default function App() {
+  // L-1 (2026-09-01): the access token is now in-memory only, so on a fresh
+  // page load it's gone and RequireAuth (which reads getToken synchronously)
+  // would bounce a still-logged-in user to /login. Restore it first by
+  // exchanging the httpOnly refresh cookie for a new access token, and hold
+  // the routes behind a loader until that one-time check resolves.
+  const [booting, setBooting] = useState(true);
+  useEffect(() => { bootstrapAuth().finally(() => setBooting(false)); }, []);
+  if (booting) return <PageFallback />;
+
   return (
     <>
     <Suspense fallback={<PageFallback />}>

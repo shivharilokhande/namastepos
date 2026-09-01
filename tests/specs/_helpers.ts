@@ -54,7 +54,12 @@ export async function loginAsOwner(page: Page) {
  * an expense before testing the expense register).
  */
 export async function apiAs(page: Page, path: string, init: RequestInit = {}) {
-  const token = await page.evaluate(() => localStorage.getItem('ff_dash_token'));
+  // L-1 (2026-09-01): the dashboard access token is in-memory only now, so
+  // read it via the exposed getter; fall back to legacy localStorage for
+  // older builds.
+  const token = await page.evaluate(
+    () => (window as any).__ffGetToken?.() || localStorage.getItem('ff_dash_token'),
+  );
   const url = `${ENV.apiUrl}${path.startsWith('/') ? '' : '/'}${path}`;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',

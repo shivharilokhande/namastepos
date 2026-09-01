@@ -35,6 +35,10 @@ const createBody = Joi.object({
   items: Joi.array().items(orderItem).min(1).required(),
   tax: Joi.number().min(0).default(0),
   discount: Joi.number().min(0).default(0),
+  // Food-coupon code applied at POS (2026-09-01). The discount amount rides in
+  // `discount` (previewed via /food-coupons/apply); this lets create() record
+  // the redemption and enforce max_redemptions atomically in the order txn.
+  couponCode: Joi.string().max(40).allow('', null),
   paymentMethod: Joi.string().valid('cash', 'upi', 'card', 'online', 'unpaid').default('cash'),
   // Dine-in running bill / Save-KOT support
   tableId: Joi.string().uuid().allow(null),

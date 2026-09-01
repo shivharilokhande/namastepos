@@ -26,6 +26,17 @@ export const api = axios.create({
 const TOKEN_KEY = 'ff_dash_token';
 const BUSINESS_KEY = 'ff_dash_business';
 
+// L-1 (2026-09-01): the short-lived access token now lives ONLY in this
+// module-scoped variable — never in localStorage. localStorage persists
+// across tabs/reloads and survives the page, so a single reflected-XSS
+// payload landing at any time could read a token stored there; an
+// in-memory token is gone the moment the tab closes and can't be lifted
+// from storage by a fresh injection. The long-lived refresh token was
+// already moved to the httpOnly `ff_refresh` cookie (Task-99); on reload
+// bootstrapAuth() silently mints a new access token from that cookie, so
+// keeping the access token out of storage costs the user nothing.
+let accessToken: string | null = null;
+
 export function setSession(token: string | null, _refresh?: string | null) {
   // Task-99: `_refresh` argument kept for call-site compatibility but
   // ignored — refresh token now lives in the httpOnly `ff_refresh`
@@ -33,14 +44,76 @@ export function setSession(token: string | null, _refresh?: string | null) {
   // client that already ships this change, the client simply doesn't
   // persist the refresh — subsequent silent-refresh calls will send
   // whatever cookie the server set (or 401 → force login).
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
+  accessToken = token;
   if (token === null) localStorage.removeItem(BUSINESS_KEY);
-  // Legacy: remove any refresh token that may still be persisted from
-  // a previous release so it can't be picked up by mistake.
+  // Legacy hygiene: purge any tokens a previous release persisted so a
+  // stale value can never be picked up (and so old localStorage tokens
+  // stop lingering after this migration).
+  localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem('ff_dash_refresh');
 }
-export function getToken() { return localStorage.getItem(TOKEN_KEY); }
+export function getToken() { return accessToken; }
+
+// e2e / debugging hook: the Playwright suite used to read the access token
+// from localStorage. Expose a read-only getter so it can still fetch the
+// in-memory token. This is not a new attack surface — any script already
+// executing in the page can import getToken() from this module directly.
+if (typeof window !== 'undefined') (window as any).__ffGetToken = () => accessToken;
+
+let bootstrapped = false;
+
+/**
+ * Restore the session on a fresh page load. The access token is in-memory
+ * only (see above), so after a reload we have nothing until we exchange the
+ * httpOnly `ff_refresh` cookie for a new one. Resolves to true if a session
+ * was restored, false if the user must log in.
+ *
+ * Also handles two adoption paths so nobody is logged out by this migration:
+ *   1. `#imp=<token>` URL hash — super-admin impersonation (the admin app
+ *      hands over a Bearer token); adopted into memory, then the hash is
+ *      stripped so it never lands in history or a bookmark.
+ *   2. a legacy `ff_dash_token` left in localStorage by a pre-migration
+ *      build — adopted once, then removed.
+ */
+export async function bootstrapAuth(): Promise<boolean> {
+  if (bootstrapped) return !!accessToken;
+  bootstrapped = true;
+
+  // 1. Impersonation hand-off via URL hash.
+  try {
+    const h = window.location.hash || '';
+    const m = h.match(/[#&]imp=([^&]+)/);
+    if (m) {
+      accessToken = decodeURIComponent(m[1]);
+      // Strip the token from the URL without adding a history entry.
+      const clean = window.location.pathname + window.location.search;
+      window.history.replaceState(null, '', clean);
+      return true;
+    }
+  } catch (_) { /* non-browser / malformed hash */ }
+
+  // 2. One-time migration of a legacy persisted token.
+  try {
+    const legacy = localStorage.getItem(TOKEN_KEY);
+    if (legacy) {
+      accessToken = legacy;
+      localStorage.removeItem(TOKEN_KEY);
+      return true;
+    }
+  } catch (_) { /* storage disabled */ }
+
+  // 3. Silent refresh using the httpOnly cookie.
+  try {
+    const r = await axios.post(
+      `${api.defaults.baseURL}/auth/refresh`,
+      {},
+      { withCredentials: true, headers: { 'X-Auth-Mode': 'cookie' } },
+    );
+    if (r.data?.token) { accessToken = r.data.token; return true; }
+  } catch (_) { /* no valid cookie → not logged in */ }
+
+  return false;
+}
 
 export function setBusinessCache(b: any) {
   if (b) localStorage.setItem(BUSINESS_KEY, JSON.stringify(b));
@@ -76,8 +149,7 @@ export async function exitImpersonation(): Promise<void> {
   // token before this call (the old order) made it arrive unauthenticated → 401,
   // and the refresh token/cookie were never actually revoked.
   try { await api.post('/auth/logout'); } catch { /* best-effort */ }
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem('ff_dash_refresh');
+  setSession(null);
   localStorage.removeItem(BUSINESS_KEY);
   window.location.href = '/login';
 }

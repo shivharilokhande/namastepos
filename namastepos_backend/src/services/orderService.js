@@ -122,6 +122,7 @@ async function create(businessId, body) {
   const {
     clientId = null, source = 'dineIn', tableNo = null, customerPhone = null,
     customerName = null, items, discount = 0,
+    couponCode = null, // food-coupon code (2026-09-01) — records use + enforces cap
     paymentMethod = 'cash',
     // Security (2026-08-30): whether to auto-apply the phone's membership
     // bundle. Trusted callers (staff POS, authenticated app) pass true; the
@@ -550,6 +551,29 @@ async function create(businessId, body) {
           [businessId, customerRow.id, -redeemedPoints,
             updated.rows[0].points_balance, orderRow.id],
         );
+      }
+
+      // Food-coupon redemption (2026-09-01 review fix): if a coupon code was
+      // applied at POS, record its use atomically in THIS transaction so
+      // redemption_count is tracked and max_redemptions is enforced exactly
+      // once. recordUse() throws BadRequest('Coupon fully redeemed') when the
+      // cap is hit → the whole order rolls back (no phantom discount). Unknown/
+      // inactive/expired codes are ignored — the cashier's discount stands; we
+      // only touch the ledger for a genuinely valid food coupon.
+      if (couponCode) {
+        const cRow = await client.query(
+          `SELECT id, status, applies_to, expires_at
+             FROM coupons
+            WHERE code = $1 AND (business_id IS NULL OR business_id = $2)
+            LIMIT 1`,
+          [String(couponCode).toUpperCase(), businessId],
+        );
+        const c = cRow.rows[0];
+        if (c && c.status === 'active'
+            && ['food_order', 'both'].includes(c.applies_to)
+            && (!c.expires_at || new Date(c.expires_at) >= new Date())) {
+          await require('./foodCouponService').recordUse(c.id, orderRow.id, client);
+        }
       }
     } catch (err) {
       // 23505 on uq_orders_client → another request beat us. The current

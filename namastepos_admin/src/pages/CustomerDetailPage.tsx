@@ -69,8 +69,19 @@ export function CustomerDetailPage() {
   const impersonate = useMutation({
     mutationFn: () => adminApi.impersonate(id!),
     onSuccess: (r) => {
-      navigator.clipboard.writeText(r.accessToken);
-      toast.success('Impersonation token copied to clipboard');
+      // The tenant dashboard now keeps its access token in-memory only, so
+      // pasting a token into localStorage no longer works. Hand it over via
+      // the `#imp=` URL hash, which bootstrapAuth() adopts and immediately
+      // strips. If no dashboard URL is configured, fall back to copying the
+      // raw token so support still has an escape hatch.
+      const dash = (import.meta.env.VITE_DASHBOARD_URL as string | undefined)?.replace(/\/$/, '');
+      if (dash) {
+        window.open(`${dash}/#imp=${encodeURIComponent(r.accessToken)}`, '_blank', 'noopener');
+        toast.success('Opening the tenant dashboard as this customer…');
+      } else {
+        navigator.clipboard.writeText(r.accessToken);
+        toast.success('Impersonation token copied to clipboard');
+      }
     },
     onError: (e) => toast.error(apiError(e)),
   });

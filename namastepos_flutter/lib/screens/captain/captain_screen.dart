@@ -1178,7 +1178,10 @@ class _CaptainScreenState extends State<CaptainScreen> {
                             style: TextStyle(fontWeight: FontWeight.w700)),
                         const Spacer(),
                         Text(
-                          AppFmt.money(splitBalance),
+                          // 2 decimals (2026-09-01): a sub-rupee mismatch like
+                          // ₹0.40 used to render as a red "₹0" the cashier
+                          // couldn't reconcile.
+                          AppFmt.money(splitBalance, decimals: true),
                           style: TextStyle(
                             fontWeight: FontWeight.w900,
                             color: splitValid

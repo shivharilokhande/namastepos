@@ -56,7 +56,9 @@ test.describe('Settings', () => {
 
   test('settings page returns a 200 from underlying business GET API', async ({ page, request }) => {
     await page.goto('/settings');
-    const token = await page.evaluate(() => localStorage.getItem('ff_dash_token'));
+    const token = await page.evaluate(
+      () => (window as any).__ffGetToken?.() || localStorage.getItem('ff_dash_token'),
+    );
     if (!token) test.skip(true, 'no token to make API call');
     const businessJson = await page.evaluate(() => localStorage.getItem('ff_dash_business'));
     const businessId = businessJson ? JSON.parse(businessJson).id : null;

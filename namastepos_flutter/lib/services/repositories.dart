@@ -131,6 +131,8 @@ class OrderRepo {
     // Loyalty redemption (2026-08-23): server recomputes caps/balance and
     // burns the points — client just declares intent.
     int pointsToRedeem = 0,
+    // Applied food-coupon code (2026-09-01) — server records use + enforces cap.
+    String? couponCode,
   }) async {
     final db = await DatabaseService.instance.db;
     final uuid = const Uuid();
@@ -235,6 +237,7 @@ class OrderRepo {
           'customerName': customerName,
           'tax': tax,
           'discount': discount,
+          if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
           'paymentMethod': paymentMethod.name,
           if (splits != null && splits.isNotEmpty) 'splits': splits,
         },

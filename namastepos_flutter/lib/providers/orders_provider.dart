@@ -184,6 +184,10 @@ class OrdersProvider extends ChangeNotifier {
     PaymentMethod paymentMethod = PaymentMethod.cash,
     double tax = 0,
     double discount = 0,
+    // Applied food-coupon code (2026-09-01) — forwarded so the server records
+    // the redemption + enforces max_redemptions. Discount itself rides in
+    // `discount`. Null when no coupon applied.
+    String? couponCode,
     int pointsToRedeem = 0,
     // FF-322 mobile split-tender — [{method:'cash', amountInr: 200},
     // {method:'upi', amountInr: 300}]. When set, paymentMethod is
@@ -278,6 +282,7 @@ class OrdersProvider extends ChangeNotifier {
         'customerName': customerName,
         'tax': tax,
         'discount': discount,
+        if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
         'paymentMethod': paymentMethod.name,
         'paymentBreakdown': paymentBreakdown,
         if (autoWallet) 'autoWallet': true,
@@ -311,6 +316,7 @@ class OrdersProvider extends ChangeNotifier {
       splits: splits,
       tableSessionId: tableSessionId,
       tableId: tableId,
+      couponCode: couponCode,
       // C1 fix (2026-08-23, review): pointsToRedeem was accepted here but
       // never forwarded — the POS showed a redeemed total while the
       // backend recorded full price and never burned the points.
