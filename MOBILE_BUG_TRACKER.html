@@ -1,0 +1,121 @@
+<meta charset="utf-8">
+<title>NamastePOS — Mobile App Bug Tracker</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --line:#252a34; --txt:#e6e9ef; --mut:#9aa4b2;
+    --p1:#ef4444; --p2:#f59e0b; --p3:#3b82f6;
+    --open:#ef4444; --prog:#a855f7; --fixed:#22c55e; --down:#64748b; --wont:#475569;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;padding:28px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:var(--mut);margin:0 0 20px;font-size:13px}
+  .cards{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:22px}
+  .c{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 18px;min-width:120px}
+  .c .n{font-size:26px;font-weight:700}
+  .c .l{color:var(--mut);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{padding:11px 13px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);background:#12151b}
+  tr:last-child td{border-bottom:none}
+  td.id{font-family:ui-monospace,Menlo,monospace;color:var(--mut);white-space:nowrap}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#cbd5e1;background:#0d0f14;padding:1px 5px;border-radius:5px;display:inline-block;margin-top:3px}
+  .badge{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:700;white-space:nowrap}
+  .sev-P1{background:rgba(239,68,68,.15);color:var(--p1);border:1px solid var(--p1)}
+  .sev-P2{background:rgba(245,158,11,.15);color:var(--p2);border:1px solid var(--p2)}
+  .sev-P3{background:rgba(59,130,246,.15);color:var(--p3);border:1px solid var(--p3)}
+  .st-open{background:rgba(239,68,68,.15);color:var(--open)}
+  .st-prog{background:rgba(168,85,247,.18);color:var(--prog)}
+  .st-fixed{background:rgba(34,197,94,.18);color:var(--fixed)}
+  .st-down{background:rgba(100,116,139,.2);color:#cbd5e1}
+  .st-wont{background:rgba(71,85,105,.2);color:#94a3b8}
+  .title{font-weight:600}
+  .note{color:var(--mut);font-size:12.5px;margin-top:4px}
+  .foot{color:var(--mut);font-size:12px;margin-top:16px}
+</style>
+
+<h1>NamastePOS — Mobile App Bug Tracker</h1>
+<p class="sub" id="updated"></p>
+
+<div class="cards" id="cards"></div>
+<table>
+  <thead><tr><th>ID</th><th>Sev</th><th>Area</th><th>Finding</th><th>Status</th></tr></thead>
+  <tbody id="rows"></tbody>
+</table>
+<p class="foot">Severity: P1 = crash / money-loss · P2 = serious · P3 = minor. Status updates live as fixes land &amp; are verified. "Downgraded" = flagged by review but confirmed lower-risk after reading the code.</p>
+
+<script>
+// EDIT the `status` field on any row to update the tracker. Statuses:
+// 'open' | 'prog' (in progress) | 'fixed' (fixed + verified) | 'down' (downgraded) | 'wont' (won't fix)
+const LAST_UPDATED = "2026-09-01 — batch 1 fixed (FB-01..06), analyze clean, deploying";
+const DATA = [
+  {id:"FB-01",sev:"P1",area:"Reports",title:"Report tabs red-screen on a null API field",
+   loc:"register_reports_screen.dart:292,684,691,697 · income_statement_screen.dart:285,293,306",
+   note:"Hard as-String / DateTime.parse casts; one missing createdAt/label/invoiceNo crashes the whole tab.",status:"fixed"},
+  {id:"FB-02",sev:"P2",area:"Auth",title:"Offline launch / offline MPIN-unlock bounces to login",
+   loc:"auth_provider.dart:141,154",note:"ensureValidSession() needs network; offline with valid tokens → login screen.",status:"fixed"},
+  {id:"FB-03",sev:"P2",area:"Networking",title:"401 retry has no retry-once guard → refresh/retry loop",
+   loc:"api_service.dart:99-108",note:"Persistent 401 on a valid token loops forever, hammering the server. (verified)",status:"fixed"},
+  {id:"FB-04",sev:"P2",area:"Reports",title:"Revenue bucketed by UTC, not IST",
+   loc:"reports_screen.dart:47 · monthly_report.dart:50,56",note:"Late-night orders misattributed to prior day/month.",status:"fixed"},
+  {id:"FB-05",sev:"P2",area:"Order flow",title:"Coupon orders not forced online",
+   loc:"orders_provider.dart:252",note:"Offline single-tender coupon order can be queued, cash taken at discount, then rejected on drain by max_redemptions.",status:"fixed"},
+  {id:"FB-06",sev:"P2",area:"Order flow",title:"Offline order total not floored → can go negative",
+   loc:"orders_provider.dart:236",note:"Discount typo prints/stores a negative total on the offline path.",status:"fixed"},
+  {id:"FB-07",sev:"P2",area:"Auth",title:"Logout doesn't revoke refresh token server-side",
+   loc:"auth_service.dart:307,331",note:"Refresh token stays valid on server until expiry after logout.",status:"open"},
+  {id:"FB-08",sev:"P2",area:"Auth",title:"Stale plan (features) can leak across account switch",
+   loc:"auth_service.dart:255,326",note:"On shared device, a login response without plan reuses prior account's entitlements.",status:"open"},
+  {id:"FB-09",sev:"P2",area:"Offline",title:"synced flag never reset to 1 after successful send",
+   loc:"offline_outbox.dart / repositories.dart",note:"Leaves phantom 'pending' orders until a full reload.",status:"open"},
+  {id:"FB-10",sev:"P2",area:"Offline",title:"4xx-rejected create leaves a permanent local ghost order",
+   loc:"repositories.dart:177,245",note:"Rejected order stays synced=0 and recurs on every load as a live pending order.",status:"open"},
+  {id:"FB-11",sev:"P2",area:"Networking",title:"Byte-download API calls bypass the error wrapper",
+   loc:"api_service.dart:487,529,556",note:"PDF/export failures throw raw DioException, escaping ApiException handlers.",status:"open"},
+  {id:"FB-12",sev:"P2",area:"Order flow",title:"Split legs validated on raw values but submitted rounded",
+   loc:"confirm_order_screen.dart:1121/1294 · captain_screen.dart",note:"Rounding drift can make a 'valid' split 400 server-side.",status:"open"},
+  {id:"FB-13",sev:"P2",area:"Offline",title:"Non-atomic purge→cache in load()",
+   loc:"orders_provider.dart:61-69",note:"App kill mid-refresh can empty the local order cache.",status:"open"},
+  {id:"FB-14",sev:"P3",area:"Order flow",title:"clientId ignored on single-tender path (defense-in-depth)",
+   loc:"orders_provider.dart:304",note:"Reviewers called this a P1 duplicate-charge; I traced the flow — NOT a dup risk (stable _pendingClientId + timeout swallow + stable outbox id). Downgraded to P3.",status:"down"},
+  {id:"FB-15",sev:"P3",area:"Order flow",title:"totalQty truncates fractional (weight-priced) quantities",
+   loc:"order.dart:165",note:"0.5 kg line counts as 0 in item-count displays.",status:"open"},
+  {id:"FB-16",sev:"P3",area:"Auth",title:"Weak MPIN hashing (single SHA-256 over 4-digit space)",
+   loc:"auth_service.dart:356",note:"Keychain compromise allows instant offline PIN enumeration. Use a slow KDF.",status:"open"},
+  {id:"FB-17",sev:"P3",area:"Auth",title:"Open staff-picker enumerates userIds/roles",
+   loc:"api_service.dart:392",note:"Unauthenticated picker leaks staff for any businessId; relies on server PIN lockout.",status:"open"},
+  {id:"FB-18",sev:"P3",area:"UI/leaks",title:"Undisposed TextEditingControllers",
+   loc:"bill_split_screen.dart:233 · support_screen.dart:119,184 · various dialogs",note:"Steady controller/focus leaks; bill-split resets cursor mid-edit.",status:"open"},
+  {id:"FB-19",sev:"P3",area:"Order flow",title:"Applied coupon not cleared when customer/phone cleared",
+   loc:"confirm_order_screen.dart:462,597",note:"Customer-scoped coupon submitted detached from its customer.",status:"open"},
+  {id:"FB-20",sev:"P3",area:"UI/crash",title:"setState after await without mounted guard",
+   loc:"bill_split:84 · tables_editor:101 · modifier_groups:53,57 · tip_report:54,56 · home:383",note:"Navigating away mid-request can throw setState-after-dispose.",status:"open"},
+  {id:"FB-21",sev:"P3",area:"Offline",title:"No WAN reachability probe before draining",
+   loc:"offline_outbox.dart",note:"Captive-portal wifi is treated as online; can dead-letter good orders. (previously deferred by design)",status:"open"},
+  {id:"FB-22",sev:"P3",area:"Offline",title:"Outbox bare DB path · drain caps at 20 · retryDeadLetters resets all",
+   loc:"offline_outbox.dart",note:"Robustness: path resolution, backlog drain lag, blind dead-letter retry.",status:"open"},
+  {id:"FB-23",sev:"P3",area:"Reports",title:"netMargin rendered raw ('null%' / full precision)",
+   loc:"income_statement_screen.dart:321",note:"Cosmetic; guard + round.",status:"open"},
+];
+
+const SEV={P1:"sev-P1",P2:"sev-P2",P3:"sev-P3"};
+const ST={open:["st-open","Open"],prog:["st-prog","In progress"],fixed:["st-fixed","Fixed ✓"],down:["st-down","Downgraded"],wont:["st-wont","Won't fix"]};
+function esc(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+document.getElementById("updated").textContent = "Last updated: " + LAST_UPDATED + " · " + DATA.length + " findings";
+const rows = DATA.map(d=>{
+  const [sc,sl]=ST[d.status];
+  return `<tr><td class="id">${d.id}</td>
+    <td><span class="badge ${SEV[d.sev]}">${d.sev}</span></td>
+    <td>${esc(d.area)}</td>
+    <td><div class="title">${esc(d.title)}</div><code>${esc(d.loc)}</code><div class="note">${esc(d.note)}</div></td>
+    <td><span class="badge ${sc}">${sl}</span></td></tr>`;
+}).join("");
+document.getElementById("rows").innerHTML = rows;
+const counts={open:0,prog:0,fixed:0,down:0,wont:0};
+DATA.forEach(d=>counts[d.status]++);
+const total=DATA.length, active=counts.open+counts.prog;
+document.getElementById("cards").innerHTML = [
+  ["Total",total,"--txt"],["Open",counts.open,"--open"],["In progress",counts.prog,"--prog"],
+  ["Fixed",counts.fixed,"--fixed"],["Downgraded",counts.down,"--mut"]
+].map(([l,n,c])=>`<div class="c"><div class="n" style="color:var(${c})">${n}</div><div class="l">${l}</div></div>`).join("");
+</script>

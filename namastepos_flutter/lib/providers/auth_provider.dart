@@ -138,9 +138,14 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
     // Silently confirm the session is still valid before showing the app.
-    final ok = await AuthService.instance.ensureValidSession();
-    _status = ok ? AuthStatus.authenticated : AuthStatus.unauthenticated;
-    if (ok) _postLogin();
+    // FB-02 (2026-09-01): only log out on an EXPLICIT server rejection (false).
+    // Offline / unreachable server returns null — for an offline-first POS we
+    // keep the last-known session (we hold a refresh token) rather than stranding
+    // the operator on the login screen with no internet; the next real request
+    // refreshes the token or fires onAuthExpired if it's genuinely dead.
+    final outcome = await AuthService.instance.tryRefreshSession();
+    _status = (outcome == false) ? AuthStatus.unauthenticated : AuthStatus.authenticated;
+    if (outcome != false) _postLogin();
     notifyListeners();
   }
 
@@ -151,12 +156,14 @@ class AuthProvider extends ChangeNotifier {
     final ok = await AuthService.instance.verifyMpin(pin);
     if (!ok) return false;
     await AuthService.instance.clearMpinFails(); // reset the persistent counter on success
-    final valid = await AuthService.instance.ensureValidSession();
-    if (valid) {
+    // FB-02: correct MPIN offline must UNLOCK, not bounce to login. Only an
+    // explicit server rejection (false) logs out; null = offline → stay in.
+    final outcome = await AuthService.instance.tryRefreshSession();
+    if (outcome == false) {
+      _status = AuthStatus.unauthenticated;
+    } else {
       _status = AuthStatus.authenticated;
       _postLogin();
-    } else {
-      _status = AuthStatus.unauthenticated;
     }
     notifyListeners();
     return true;

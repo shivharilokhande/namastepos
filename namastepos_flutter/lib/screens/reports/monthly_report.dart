@@ -47,9 +47,11 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
     final dailyExpense = List<double>.filled(daysInMonth, 0);
 
     for (final o in orders) {
-      if (o.createdAt.year == _month.year && o.createdAt.month == _month.month &&
+      // FB-04 (2026-09-01): bucket on the LOCAL (IST) day — createdAt is UTC.
+      final d = o.createdAt.toLocal();
+      if (d.year == _month.year && d.month == _month.month &&
           o.status != OrderStatus.cancelled) {
-        daily[o.createdAt.day - 1] += o.total;
+        daily[d.day - 1] += o.total;
       }
     }
     for (final e in expenses) {

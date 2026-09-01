@@ -69,6 +69,39 @@ class ApiService {
   /// (or can mint) a valid access token. Never throws.
   Future<bool> ensureFreshToken() => _refresh();
 
+  /// FB-02 (2026-09-01): session check that distinguishes a genuine auth
+  /// rejection from simply being offline. `ensureFreshToken()` returns a bare
+  /// bool and reports `false` for BOTH a dead session and a network failure —
+  /// so an offline-first POS launched without internet (or an MPIN unlock done
+  /// offline) was logged out despite holding valid tokens. Returns:
+  ///   true  = refreshed OK (session confirmed alive)
+  ///   false = server explicitly rejected the refresh token (401 → must log in)
+  ///   null  = could not reach the server (offline / timeout / 5xx) → keep the
+  ///           session optimistically; the next real request will refresh or
+  ///           fire onAuthExpired if the token is actually dead.
+  Future<bool?> tryRefreshSession() async {
+    final r = await refreshToken;
+    if (r == null || r.isEmpty) return false; // nothing to refresh → not logged in
+    try {
+      final resp = await _refreshDio.post('/auth/refresh', data: {'refreshToken': r});
+      final data = resp.data;
+      final newJwt = data is Map ? data['token'] as String? : null;
+      if (newJwt == null) return null; // 200 but unexpected body → don't kill the session
+      await _secure.write(key: _tokenKey, value: newJwt);
+      final newRefresh = (data as Map)['refreshToken'] as String?;
+      if (newRefresh != null) await _secure.write(key: _refreshKey, value: newRefresh);
+      return true;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        await clearTokens(); // refresh token is genuinely dead
+        return false;
+      }
+      return null; // no response / 5xx / timeout → offline, keep session
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> setTokens({required String jwt, required String refresh}) async {
     await _secure.write(key: _tokenKey, value: jwt);
     await _secure.write(key: _refreshKey, value: refresh);
@@ -96,11 +129,20 @@ class ApiService {
         // we recurse forever when the refresh token is revoked.
         final path = e.requestOptions.path;
         final isRefresh = path.contains('/auth/refresh');
-        if (e.response?.statusCode == 401 && !isRefresh) {
+        // FB-03 (2026-09-01): retry-once guard. The retry below re-enters this
+        // same interceptor via _dio.fetch. Without a marker, an endpoint that
+        // returns 401 for a NON-expiry reason (a role guard answering 401 not
+        // 403, or a replica rejecting a freshly-minted token on clock skew)
+        // would loop 401→refresh→retry→401… forever, hanging the request and
+        // hammering /auth/refresh. Mark the request so we refresh+retry at most
+        // once; a second 401 falls straight through to the caller.
+        final alreadyRetried = e.requestOptions.extra['__retried__'] == true;
+        if (e.response?.statusCode == 401 && !isRefresh && !alreadyRetried) {
           final ok = await _refresh();
           if (ok) {
             try {
               final req = e.requestOptions;
+              req.extra['__retried__'] = true;
               final t = await token;
               req.headers['Authorization'] = 'Bearer $t';
               final resp = await _dio.fetch(req);

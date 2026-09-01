@@ -346,6 +346,10 @@ class AuthService {
   /// refresh token is missing/expired (→ the app should show login).
   Future<bool> ensureValidSession() => _api.ensureFreshToken();
 
+  /// FB-02: session check that returns null when offline (keep session) vs
+  /// false when the server rejects the token (log out). See ApiService.
+  Future<bool?> tryRefreshSession() => _api.tryRefreshSession();
+
   // ── Owner MPIN (PhonePe-style quick unlock) ───────────────────────────
   // The MPIN is a convenience lock on top of the real credential (the
   // refresh token). We store only a salted SHA-256 of it in the OS-encrypted

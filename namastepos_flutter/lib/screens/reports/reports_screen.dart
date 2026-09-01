@@ -43,11 +43,16 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final orders = context.watch<OrdersProvider>();
     final expenses = context.watch<ExpensesProvider>();
 
-    final dayOrders = orders.orders.where((o) =>
-        o.createdAt.year == _date.year &&
-        o.createdAt.month == _date.month &&
-        o.createdAt.day == _date.day &&
-        o.status != OrderStatus.cancelled).toList();
+    // FB-04 (2026-09-01): order.createdAt is parsed from a Z-suffixed ISO string
+    // → a UTC DateTime. Bucket on the LOCAL (IST) calendar day, else a 00:30 IST
+    // order (19:00 UTC prior day) is misattributed to yesterday's takings.
+    final dayOrders = orders.orders.where((o) {
+      final d = o.createdAt.toLocal();
+      return d.year == _date.year &&
+          d.month == _date.month &&
+          d.day == _date.day &&
+          o.status != OrderStatus.cancelled;
+    }).toList();
 
     final revenueBySource = <OrderSource, double>{};
     for (final o in dayOrders) {

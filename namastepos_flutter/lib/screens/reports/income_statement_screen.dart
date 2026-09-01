@@ -282,7 +282,9 @@ class _PnlBody extends StatelessWidget {
         const SizedBox(height: 12),
         _Section(title: 'I. Revenue from operations'),
         for (final r in fromOps)
-          _Row(label: r['label'] as String, amount: (r['grossValue'] as num?)?.toDouble() ?? 0, fmt: fmt, indent: true),
+          // FB-01 (2026-09-01): null-safe label — a line item missing `label`
+          // used to throw a cast error and blank the whole P&L body.
+          _Row(label: (r['label'] as String?) ?? '', amount: (r['grossValue'] as num?)?.toDouble() ?? 0, fmt: fmt, indent: true),
         _Row(label: 'Gross revenue', amount: (revenue['grossRevenue'] as num?)?.toDouble() ?? 0, fmt: fmt, bold: true),
         _Row(label: 'Less: GST collected (pass-through)', amount: (taxes['total'] as num?)?.toDouble() ?? 0, fmt: fmt),
         // Other income — membership sales/refunds (2026-08-26, founder:
@@ -290,7 +292,7 @@ class _PnlBody extends StatelessWidget {
         if (otherIncome.isNotEmpty) ...[
           _Section(title: 'I(b). Other income'),
           for (final r in otherIncome)
-            _Row(label: r['label'] as String, amount: (r['amount'] as num?)?.toDouble() ?? 0, fmt: fmt, indent: true),
+            _Row(label: (r['label'] as String?) ?? '', amount: (r['amount'] as num?)?.toDouble() ?? 0, fmt: fmt, indent: true),
         ],
         _Row(label: 'II. Net revenue', amount: (revenue['netRevenue'] as num?)?.toDouble() ?? 0, fmt: fmt, bold: true, highlight: true),
         const SizedBox(height: 8),
@@ -303,7 +305,7 @@ class _PnlBody extends StatelessWidget {
         const SizedBox(height: 8),
         _Section(title: 'V. Operating expenses'),
         for (final e in opex)
-          _Row(label: e['label'] as String, amount: (e['amount'] as num?)?.toDouble() ?? 0, fmt: fmt, indent: true),
+          _Row(label: (e['label'] as String?) ?? '', amount: (e['amount'] as num?)?.toDouble() ?? 0, fmt: fmt, indent: true),
         _Row(label: 'Total operating expenses', amount: (report['totalOperatingExpenses'] as num?)?.toDouble() ?? 0, fmt: fmt, bold: true),
         const SizedBox(height: 8),
         _Row(label: 'VI. EBITDA (IV - V)', amount: (report['ebitda'] as num?)?.toDouble() ?? 0, fmt: fmt, bold: true, highlight: true),

@@ -289,7 +289,10 @@ class _IncomeTab extends StatelessWidget {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) {
               final r = (rows[i] as Map).cast<String, dynamic>();
-              final d = DateTime.parse(r['createdAt'] as String).toLocal();
+              // FB-01 (2026-09-01): null-safe — a missing/blank createdAt used to
+              // throw (as String / DateTime.parse) and red-screen the whole tab.
+              final rawDate = r['createdAt'] as String?;
+              final d = rawDate == null ? null : DateTime.tryParse(rawDate)?.toLocal();
               return ListTile(
                 dense: true,
                 // Push 17e — tap any income row to see the tax invoice
@@ -305,7 +308,7 @@ class _IncomeTab extends StatelessWidget {
                   ],
                 ),
                 subtitle: Text(
-                  '${DateFormat('dd MMM, hh:mm a').format(d)} · ${(r['source'] ?? 'unknown').toString().replaceAll('_', ' ')}'
+                  '${d != null ? DateFormat('dd MMM, hh:mm a').format(d) : '—'} · ${(r['source'] ?? 'unknown').toString().replaceAll('_', ' ')}'
                   '${r['customerName'] != null ? " · ${r['customerName']}" : ""}',
                   style: const TextStyle(fontSize: 11),
                 ),
@@ -681,20 +684,24 @@ class _InvoiceTab extends StatelessWidget {
             separatorBuilder: (_, __) => const Divider(height: 1),
             itemBuilder: (_, i) {
               final r = (rows[i] as Map).cast<String, dynamic>();
-              final d = DateTime.parse(r['invoiceDate'] as String).toLocal();
+              // FB-01 (2026-09-01): null-safe — a missing invoiceDate/invoiceNo/id
+              // used to throw (as String / DateTime.parse) and red-screen the tab.
+              final rawDate = r['invoiceDate'] as String?;
+              final d = rawDate == null ? null : DateTime.tryParse(rawDate)?.toLocal();
+              final invoiceId = r['id'] as String?;
               final cancelled = r['status'] == 'cancelled';
               return ListTile(
                 dense: true,
                 // Push 17e — tap row to open the full tax invoice detail
-                onTap: () {
+                onTap: invoiceId == null ? null : () {
                   Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => TaxInvoiceDetailScreen(invoiceId: r['id'] as String),
+                    builder: (_) => TaxInvoiceDetailScreen(invoiceId: invoiceId),
                   ));
                 },
                 title: Row(
                   children: [
                     Expanded(child: Text(
-                      r['invoiceNo'] as String,
+                      (r['invoiceNo'] as String?) ?? '—',
                       style: TextStyle(
                         fontFamily: 'monospace',
                         fontWeight: FontWeight.w800,
@@ -707,7 +714,7 @@ class _InvoiceTab extends StatelessWidget {
                   ],
                 ),
                 subtitle: Text(
-                  '${DateFormat('dd MMM, hh:mm a').format(d)}'
+                  '${d != null ? DateFormat('dd MMM, hh:mm a').format(d) : '—'}'
                   '${r['recipientName'] != null ? " · ${r['recipientName']}" : ""}'
                   '${r['recipientGstin'] != null ? " · GSTIN ${r['recipientGstin']}" : ""}',
                   style: const TextStyle(fontSize: 11),

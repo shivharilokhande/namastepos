@@ -233,7 +233,12 @@ class OrdersProvider extends ChangeNotifier {
             ))
         .toList();
     final subtotal = double.parse((cartSubtotal * m).toStringAsFixed(2));
-    final total = subtotal + tax - discount;
+    // FB-06 (2026-09-01): floor the stored/printed total at 0. An over-discount
+    // (cashier typo where discount > subtotal+tax) previously produced a NEGATIVE
+    // total on the offline OrderRepo path — the build() display clamps to ≥0 but
+    // the value actually persisted and printed here did not. The online path is
+    // corrected by the server recompute; this fixes the offline path to match.
+    final total = (subtotal + tax - discount).clamp(0, double.infinity).toDouble();
 
     // Round-2 (2026-08-25): split payments v2 post DIRECTLY to the backend
     // instead of via OrderRepo/OfflineOutbox. WHY: the outbox body carries
@@ -249,9 +254,16 @@ class OrdersProvider extends ChangeNotifier {
     // server could reject the stale redeem on drain → silent loss. Force it
     // onto the online direct-post path alongside wallet/split, so offline it
     // fails loudly (cashier told) instead of queuing a phantom discount.
+    // FB-05 (2026-09-01): a coupon must also be redeemed against the LIVE server
+    // (max_redemptions + expiry are enforced server-side, 2026-09-01). Queuing a
+    // coupon order offline would print a discounted bill + collect cash, then the
+    // server could reject the stale coupon on drain → silent loss — the same
+    // staleness risk already handled for wallet/points above. Force it online so
+    // offline it fails loudly (cashier told) instead of queuing a phantom discount.
     if ((paymentBreakdown != null && paymentBreakdown.isNotEmpty)
         || autoWallet
-        || pointsToRedeem > 0) {
+        || pointsToRedeem > 0
+        || (couponCode != null && couponCode.isNotEmpty)) {
       // Review fix (2026-08-25, 🔴): this direct-post path had NO clientId,
       // so a request the server committed but that timed out client-side
       // (flaky café network, 20s timeout) would be retried → DUPLICATE
