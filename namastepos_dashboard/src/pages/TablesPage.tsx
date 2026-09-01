@@ -663,6 +663,21 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
   const walletBalance: number = walletInfo?.balanceInr ?? 0;
   const walletAvailable = !!custId && !!walletInfo && !walletError;
 
+  // Loyalty points redemption at settle (2026-09-01, founder). Mirror of
+  // NewOrderDialog's cap: floor(bill × maxRedemptionPct% ÷ value-per-point),
+  // gated on minRedemptionPoints. Server re-caps inside the settle txn, so
+  // this is display + a hint for the leg target.
+  const { data: loyaltySettings } = useQuery({
+    queryKey: ['loyalty-settings'],
+    queryFn: () => ffApi.getLoyaltySettings(),
+    retry: false,
+  });
+  const custPoints: number = custProfile?.customer?.pointsBalance ?? 0;
+  const [pointsToRedeem, setPointsToRedeem] = useState(0);
+  const pointValueInr = (Number(loyaltySettings?.redemptionValuePaise) || 0) / 100;
+  const loyaltyAvailable = !!custId && !!loyaltySettings
+    && pointValueInr > 0 && custPoints > 0;
+
   // A hidden wallet option must never stay selected (server would 400 on
   // settle) — fall those legs back to cash if the wallet disappears.
   useEffect(() => {
@@ -683,6 +698,9 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
       // enables, and again server-side inside the settle txn.
       const body: any = { paymentMethod };
       if (shortfallOpen && shortfallInput > 0) body.shortfallInr = shortfallInput;
+      // Loyalty points redeemed at settle — server re-caps and books the
+      // discount + points debit inside the close txn (mirrors order path).
+      if (redeemPoints > 0) body.pointsToRedeem = redeemPoints;
       if (splitOn) {
         body.paymentBreakdown = settleLegs.map((l) => ({
           method: l.method,
@@ -790,7 +808,17 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
   const shortfall = shortfallOpen
     ? Math.min(Math.max(0, Number(shortfallInput) || 0), sessionTotal)
     : 0;
-  const totalDue = Math.max(0, +(sessionTotal - shortfall).toFixed(2));
+  // Points cap against the LIVE bill (mirrors server + NewOrderDialog).
+  const maxRedeemablePoints = (() => {
+    if (!loyaltyAvailable) return 0;
+    if (custPoints < (Number(loyaltySettings?.minRedemptionPoints) || 0)) return 0;
+    const capInr = sessionTotal * ((Number(loyaltySettings?.maxRedemptionPct) || 0) / 100);
+    return Math.max(0, Math.min(custPoints, Math.floor(capInr / pointValueInr)));
+  })();
+  const redeemPoints = Math.min(Math.max(0, pointsToRedeem), maxRedeemablePoints);
+  const loyaltyDiscount = +(redeemPoints * pointValueInr).toFixed(2);
+  // Points reduce what must be collected — legs settle (total − short − points).
+  const totalDue = Math.max(0, +(sessionTotal - shortfall - loyaltyDiscount).toFixed(2));
   const legSum = settleLegs.reduce((s, l) => s + (parseFloat(l.amountInr) || 0), 0);
   const settleRemaining = +(totalDue - legSum).toFixed(2);
   const walletLegInr = settleLegs
@@ -1127,15 +1155,15 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                     {walletAvailable && walletBalance > 0 && (
                       <button type="button"
                         onClick={() => {
-                          const apply = Math.min(walletBalance, session.totalInr || 0);
-                          const rem = +((session.totalInr || 0) - apply).toFixed(2);
+                          const apply = Math.min(walletBalance, totalDue);
+                          const rem = +(totalDue - apply).toFixed(2);
                           const next: SettleLeg[] = [{ method: 'wallet', amountInr: apply.toFixed(2) }];
                           if (rem > 0.001) next.push({ method: 'cash', amountInr: rem.toFixed(2) });
                           setSettleLegs(next);
                         }}
                         className="text-xs text-primary font-semibold hover:underline">
-                        Use wallet {formatINR(Math.min(walletBalance, session.totalInr || 0))}
-                        {walletBalance < (session.totalInr || 0) ? ` + ${formatINR((session.totalInr || 0) - walletBalance)} on another tender` : ''}
+                        Use wallet {formatINR(Math.min(walletBalance, totalDue))}
+                        {walletBalance < totalDue ? ` + ${formatINR(totalDue - walletBalance)} on another tender` : ''}
                       </button>
                     )}
                     {settleLegs.map((leg, i) => (
@@ -1182,6 +1210,37 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                         Wallet has only {formatINR(walletBalance)} — reduce the wallet amount.
                       </div>
                     )}
+                  </div>
+                )}
+
+                {/* Loyalty points redemption at settle (2026-09-01, founder).
+                    Reduces what's collected now; server books discount + debit. */}
+                {loyaltyAvailable && maxRedeemablePoints > 0 && (
+                  <div className="mt-3 border-t pt-2 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs">Redeem points ({custPoints} available)</Label>
+                      {redeemPoints > 0 && (
+                        <span className="text-xs font-semibold text-emerald-700">
+                          − {formatINR(loyaltyDiscount)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Input type="number" min={0} max={maxRedeemablePoints} value={pointsToRedeem || ''}
+                        placeholder="0"
+                        onChange={(e) => setPointsToRedeem(
+                          Math.min(Math.max(0, Math.floor(+e.target.value || 0)), maxRedeemablePoints))}
+                        className="h-8 w-28 text-xs" />
+                      <button type="button"
+                        onClick={() => setPointsToRedeem(maxRedeemablePoints)}
+                        className="text-xs text-primary font-semibold hover:underline">
+                        Max {maxRedeemablePoints}
+                      </button>
+                      {redeemPoints > 0 && (
+                        <button type="button" onClick={() => setPointsToRedeem(0)}
+                          className="text-xs text-muted-foreground hover:underline">Clear</button>
+                      )}
+                    </div>
                   </div>
                 )}
 

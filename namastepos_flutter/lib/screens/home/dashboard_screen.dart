@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/expenses_provider.dart';
 import '../../providers/menu_provider.dart';
 import '../../providers/orders_provider.dart';
+import '../../services/api_service.dart';
 import '../../utils/formatters.dart';
 import '../../widgets/kpi_card.dart';
 import '../../widgets/home_drawer_button.dart';
@@ -225,6 +226,13 @@ class DashboardScreen extends StatelessWidget {
                       ],
                     ),
                   ),
+
+                  const SizedBox(height: 12),
+
+                  // Collections today — where the money actually came from
+                  // (2026-09-01, founder). Wallet is prepaid, so it's shown
+                  // apart from cash-in-drawer; points are a discount, not cash.
+                  const _CollectionsCard(),
                 ]),
               ),
             ),
@@ -410,4 +418,125 @@ class DashboardScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Today's collections, split by tender (cash/upi/card/wallet). Fed by the
+/// daily report's accurate `tenders` map — the same numbers the web
+/// dashboard's Payments card shows. Wallet is prepaid money spent today, so
+/// it's separated from cash-in-drawer; points redeemed are a discount, not a
+/// collection. Silent (renders nothing) until data loads or if there's no
+/// money in yet, so an empty day doesn't add clutter.
+class _CollectionsCard extends StatefulWidget {
+  const _CollectionsCard();
+  @override
+  State<_CollectionsCard> createState() => _CollectionsCardState();
+}
+
+class _CollectionsCardState extends State<_CollectionsCard> {
+  Map<String, dynamic>? _report;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final biz = context.read<AuthProvider>().business;
+    if (biz == null) { if (mounted) setState(() => _loading = false); return; }
+    try {
+      final r = await ApiService.instance.dailyReport(biz.id, DateTime.now());
+      if (mounted) setState(() { _report = r; _loading = false; });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false); // best-effort; hide on error
+    }
+  }
+
+  static const _labels = {
+    'cash': 'Cash', 'upi': 'UPI', 'card': 'Card',
+    'online': 'Online', 'wallet': 'Wallet (prepaid)',
+  };
+  static const _icons = {
+    'cash': Icons.payments_rounded, 'upi': Icons.qr_code_rounded,
+    'card': Icons.credit_card_rounded, 'online': Icons.language_rounded,
+    'wallet': Icons.account_balance_wallet_rounded,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading || _report == null) return const SizedBox.shrink();
+    final tenders = (_report!['tenders'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final entries = tenders.entries
+        .where((e) => ((e.value as num?)?.toDouble() ?? 0) > 0)
+        .toList()
+      ..sort((a, b) => ((b.value as num).toDouble()).compareTo((a.value as num).toDouble()));
+    final cashToday = (_report!['cashCollectedToday'] as num?)?.toDouble() ?? 0;
+    final walletColl = (_report!['walletCollected'] as num?)?.toDouble() ?? 0;
+    final disc = (_report!['discountBreakdown'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final pointsVal = (disc['pointsValue'] as num?)?.toDouble() ?? 0;
+    if (entries.isEmpty && pointsVal == 0) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.account_balance_rounded, size: 18, color: AppColors.primary),
+              const SizedBox(width: 8),
+              const Text('Collections today',
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+              const Spacer(),
+              Text(AppFmt.money(cashToday + walletColl),
+                  style: const TextStyle(fontWeight: FontWeight.w900)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          for (final e in entries)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                children: [
+                  Icon(_icons[e.key] ?? Icons.payments_rounded,
+                      size: 15, color: AppColors.textSecondary),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(_labels[e.key] ?? e.key,
+                      style: const TextStyle(fontSize: 13))),
+                  Text(AppFmt.money((e.value as num).toDouble()),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 13,
+                          fontFeatures: [FontFeature.tabularFigures()])),
+                ],
+              ),
+            ),
+          const Divider(height: 16),
+          _foot('Cash in drawer today (excludes wallet)', cashToday),
+          if (walletColl > 0) _foot('Paid from wallet (prepaid earlier)', walletColl),
+          if (pointsVal > 0) _foot('Points redeemed (discount, not cash)', pointsVal),
+        ],
+      ),
+    );
+  }
+
+  Widget _foot(String label, double amount) => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            Expanded(child: Text(label,
+                style: const TextStyle(fontSize: 11, color: AppColors.textSecondary))),
+            Text(AppFmt.money(amount),
+                style: const TextStyle(
+                    fontSize: 11, color: AppColors.textSecondary,
+                    fontFeatures: [FontFeature.tabularFigures()])),
+          ],
+        ),
+      );
 }
