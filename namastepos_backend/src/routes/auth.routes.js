@@ -41,7 +41,14 @@ router.post ('/dev-login',       loginLimiter, ...c.devLogin);  // gated by FF_D
 router.post ('/register',        loginLimiter, ...c.register);
 router.post ('/login',           loginLimiter, ...c.passwordLogin);
 router.post ('/pin-login',       pinLimiter, ...c.pinLogin);   // Push 14a
-router.post ('/staff-picker',    enumLimiter, ...c.staffPicker); // Push 14b
+// FB-17 (2026-09-01): the staff PICKER dumps the whole staff roster (userId +
+// role + name) for any businessId, and businessIds aren't secret (they appear
+// in QR/deep links). Rate-limiting slowed enumeration but the roster was still
+// disclosed to anonymous callers. It's now auth-gated: the current app signs in
+// phone-first via /auth/staff-resolve (which returns [] for unknown numbers, so
+// no enumeration) and never calls the picker pre-login, so this is not a
+// functional regression — it only removes the anonymous roster-dump surface.
+router.post ('/staff-picker',    requireAuth, enumLimiter, ...c.staffPicker); // Push 14b
 router.post ('/staff-resolve',   enumLimiter, ...c.staffResolve); // phone-first staff login
 router.post ('/refresh',         loginLimiter, ...c.refresh);
 router.post ('/logout',          requireAuth,  c.logout);

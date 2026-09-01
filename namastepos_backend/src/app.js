@@ -151,8 +151,10 @@ function buildApp() {
       // ff_refresh cookie from a previous owner session on a shared PC makes
       // the double-submit check 403 ("CSRF token missing or invalid") even
       // though the staffer is just logging in. 2026-08-26.
+      // FB-17 (2026-09-01): /staff-picker is no longer pre-login — it now
+      // requires auth (see auth.routes.js), so it's dropped from this exempt
+      // list. Only the genuinely pre-login staff steps remain here.
       req.path === `${authPath}/staff-resolve` ||
-      req.path === `${authPath}/staff-picker` ||
       req.path === `${authPath}/pin-login`
     ) {
       return next();

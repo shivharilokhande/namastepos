@@ -47,7 +47,7 @@
 <script>
 // EDIT the `status` field on any row to update the tracker. Statuses:
 // 'open' | 'prog' (in progress) | 'fixed' (fixed + verified) | 'down' (downgraded) | 'wont' (won't fix)
-const LAST_UPDATED = "2026-09-01 — ALL fixed except FB-17 (needs backend). Shipped: commit 2905435, APK on R2, app 1.0.9+10 on device. 21 fixed · 1 downgraded · 1 open.";
+const LAST_UPDATED = "2026-09-01 — DONE. 22 fixed · 1 downgraded (FB-14, not a real bug) · 0 open. FB-17 staff-picker now auth-gated (backend, 266/266 tests). App 1.0.9+10; backend auto-deploys on push.";
 const DATA = [
   {id:"FB-01",sev:"P1",area:"Reports",title:"Report tabs red-screen on a null API field",
    loc:"register_reports_screen.dart:292,684,691,697 · income_statement_screen.dart:285,293,306",
@@ -83,7 +83,7 @@ const DATA = [
   {id:"FB-16",sev:"P3",area:"Auth",title:"Weak MPIN hashing (single SHA-256 over 4-digit space)",
    loc:"auth_service.dart:356",note:"Keychain compromise allows instant offline PIN enumeration. Now PBKDF2 (120k iters) + legacy migration.",status:"fixed"},
   {id:"FB-17",sev:"P3",area:"Auth",title:"Open staff-picker enumerates userIds/roles",
-   loc:"api_service.dart:392",note:"Unauthenticated picker leaks staff for any businessId; relies on server PIN lockout. OPEN — needs a backend rate-limit/authorize decision (not a client-only fix).",status:"open"},
+   loc:"api_service.dart:392",note:"Unauthenticated picker leaked the staff roster for any businessId. Now auth-gated on the backend (requireAuth) + dropped from the pre-login CSRF exemption; app already uses phone-first staff-resolve so no functional regression. Backend 266/266.",status:"fixed"},
   {id:"FB-18",sev:"P3",area:"UI/leaks",title:"Undisposed TextEditingControllers",
    loc:"bill_split_screen.dart:233 · support_screen.dart:119,184 · various dialogs",note:"Support ticket sheets/thread controllers now disposed. (a few one-shot dialog controllers remain, negligible)",status:"fixed"},
   {id:"FB-19",sev:"P3",area:"Order flow",title:"Applied coupon not cleared when customer/phone cleared",

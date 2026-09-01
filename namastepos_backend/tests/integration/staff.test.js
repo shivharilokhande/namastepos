@@ -61,16 +61,21 @@ describe('POST /staff/pin', () => {
   });
 });
 
-describe('PIN login (public)', () => {
-  it('rejects bad business ID', async () => {
+describe('staff picker (auth-gated after FB-17)', () => {
+  it('rejects an anonymous caller (no roster dump)', async () => {
     const r = await request(app).post('/v1/auth/staff-picker')
+      .send({ businessId: owner.id });
+    expect(r.status).toBe(401);
+  });
+  it('rejects bad business ID (authenticated)', async () => {
+    const r = await request(app).post('/v1/auth/staff-picker').set(auth())
       .send({ businessId: 'not-a-uuid' });
     expect([400, 404]).toContain(r.status);
   });
-  it('returns a list of staff for a valid business', async () => {
-    const r = await request(app).post('/v1/auth/staff-picker')
+  it('returns a list of staff for a valid business (authenticated)', async () => {
+    const r = await request(app).post('/v1/auth/staff-picker').set(auth())
       .send({ businessId: owner.id });
-    expect([200, 401, 403]).toContain(r.status);
+    expect([200, 403]).toContain(r.status);
   });
 });
 
