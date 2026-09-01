@@ -162,7 +162,9 @@ class Order {
     this.kots = const [],
   });
 
-  int get totalQty => items.fold<int>(0, (a, b) => a + b.qty.toInt());
+  // FB-15 (2026-09-01): round, don't truncate. qty is a double (weight-priced
+  // items), so `.toInt()` turned a 0.5 kg line into 0 in item-count displays.
+  int get totalQty => items.fold<double>(0, (a, b) => a + b.qty).round();
 
   Order copyWith({
     OrderStatus? status,

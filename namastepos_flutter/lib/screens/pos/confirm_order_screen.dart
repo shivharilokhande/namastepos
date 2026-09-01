@@ -606,6 +606,12 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                           _walletBalance = 0;
                           _walletAvailable = false;
                           _splits = null;
+                          // FB-19 (2026-09-01): also drop the applied coupon. It
+                          // was validated against this customer (customerId); left
+                          // in place it would submit detached from the customer it
+                          // was priced for (server may reject or reprice).
+                          _appliedCoupon = null;
+                          _couponDiscount = 0;
                         });
                       }
                     },
@@ -1108,14 +1114,20 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
     super.dispose();
   }
 
-  double get _sum => _legs.fold<double>(0, (s, l) =>
-      s + (double.tryParse(l.ctl.text.trim()) ?? 0));
+  // FB-12 (2026-09-01): validate on the SAME rounded values that get submitted.
+  // Each leg is sent as toStringAsFixed(2); validating on the raw parse let
+  // per-leg rounding drift (up to ~₹0.005 × legs) push a split the cashier saw
+  // as balanced outside the server's strict ±₹0.01 tolerance → a 400 after the
+  // fact. Rounding here first makes the on-screen check match the wire payload.
+  double _legAmt(_SplitLeg l) =>
+      double.parse((double.tryParse(l.ctl.text.trim()) ?? 0).toStringAsFixed(2));
+  double get _sum => _legs.fold<double>(0, (s, l) => s + _legAmt(l));
   double get _balance => widget.total - _sum;
   // Client-side mirror of the server's insufficient-wallet 400 — catch it
   // before the order round-trips and rolls back (2026-08-25).
   double get _walletSum => _legs
       .where((l) => l.method == 'wallet')
-      .fold<double>(0, (s, l) => s + (double.tryParse(l.ctl.text.trim()) ?? 0));
+      .fold<double>(0, (s, l) => s + _legAmt(l));
   bool get _walletOver =>
       widget.walletAvailable && _walletSum > widget.walletBalance + 0.001;
   bool get _valid =>
@@ -1124,7 +1136,7 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
       // ≥1 leg (a lone full-wallet tender is valid); backend requires each
       // paymentBreakdown leg to be POSITIVE.
       _legs.isNotEmpty &&
-      _legs.every((l) => (double.tryParse(l.ctl.text.trim()) ?? 0) > 0);
+      _legs.every((l) => _legAmt(l) > 0);
 
   // One-tap: apply wallet balance (up to the bill), put any remainder on cash.
   // e.g. bill ₹300, wallet ₹290 → wallet ₹290 + cash ₹10.
@@ -1294,9 +1306,7 @@ class _SplitTenderSheetState extends State<_SplitTenderSheet> {
                         final legs = _legs
                             .map((l) => {
                                   'method': l.method,
-                                  'amountInr': double.parse(
-                                      (double.tryParse(l.ctl.text.trim()) ?? 0)
-                                          .toStringAsFixed(2)),
+                                  'amountInr': _legAmt(l), // FB-12: same rounded value we validated
                                 })
                             .toList();
                         Navigator.pop(context, legs);

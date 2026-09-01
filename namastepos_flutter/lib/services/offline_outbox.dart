@@ -14,6 +14,8 @@ import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:uuid/uuid.dart';
 
+import 'database_service.dart';
+
 class OfflineOutbox {
   static final OfflineOutbox _i = OfflineOutbox._();
   factory OfflineOutbox() => _i;
@@ -134,18 +136,59 @@ class OfflineOutbox {
     return Sqflite.firstIntValue(r) ?? 0;
   }
 
+  static const int _drainPageSize = 20;
+
+  /// FB-21 (2026-09-01): cheap reachability probe. On captive-portal / dead-WAN
+  /// wifi the device reports "connected" but every POST times out — draining
+  /// then just inflates `attempts` and eventually dead-letters good orders. We
+  /// gate the drain on an actual /health round-trip so a transient outage no
+  /// longer burns retry budget.
+  Future<bool> _reachable() async {
+    if (_api == null) return false;
+    try {
+      final r = await _api!.get('/health',
+          options: Options(receiveTimeout: const Duration(seconds: 5),
+                           sendTimeout: const Duration(seconds: 5)));
+      return (r.statusCode ?? 500) < 500;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<int> drainOnce() async {
     if (_db == null) return 0;
     if (_draining) return 0;
     _draining = true;
     try {
+      // Skip the (network) reachability probe entirely when nothing is queued —
+      // avoids a needless /health ping every 30s on the happy path.
+      if (await activePendingCount() == 0) return 0;
+      // FB-21: only drain when the server is actually reachable.
+      if (!await _reachable()) return 0;
+      // FB-22 (2026-09-01): drain the FULL backlog, not just the first 20. Keep
+      // pulling pages while a page comes back completely sent (more likely
+      // waiting); stop as soon as a page is partial (nothing more to send now).
+      int total = 0;
+      while (true) {
+        final n = await _drainBatch();
+        total += n;
+        if (n < _drainPageSize) break;
+      }
+      return total;
+    } finally {
+      _draining = false;
+    }
+  }
+
+  /// Sends up to one page of queued rows. Returns the number successfully sent.
+  Future<int> _drainBatch() async {
     // Review 2026-08-28: DO NOT delete exhausted entries — a create that fails
     // through a long outage would vanish while the cashier thinks it saved.
     // Instead we leave them (surfaced via deadLetterCount) and simply skip them
     // in the drain query below (attempts <= _maxAttempts).
     final rows = await _db!.query(
       'outbox', where: 'attempts <= ?', whereArgs: [_maxAttempts],
-      orderBy: 'created_at', limit: 20);
+      orderBy: 'created_at', limit: _drainPageSize);
     int sent = 0;
     for (final row in rows) {
       try {
@@ -155,6 +198,10 @@ class OfflineOutbox {
             : await _api!.put(row['endpoint'] as String, data: body);
         if (r.statusCode != null && r.statusCode! < 300) {
           await _db!.delete('outbox', where: 'client_id = ?', whereArgs: [row['client_id']]);
+          // FB-09 (2026-09-01): mark the corresponding local order synced so it
+          // stops showing as a phantom "pending" row until the next full load().
+          await _markOrderSynced(row['endpoint'] as String, row['method'] as String,
+              row['client_id'] as String);
           sent++;
         }
       } catch (err) {
@@ -190,9 +237,18 @@ class OfflineOutbox {
       }
     }
     return sent;
-    } finally {
-      _draining = false;
-    }
+  }
+
+  /// FB-09: flip the local order's synced flag to 1 after its create POST
+  /// drains successfully. Best-effort — a cache miss just means the row
+  /// reconciles on the next load() instead.
+  Future<void> _markOrderSynced(String endpoint, String method, String clientId) async {
+    if (method != 'POST' || !endpoint.endsWith('/orders')) return;
+    try {
+      final db = await DatabaseService.instance.db;
+      await db.update('orders', {'synced': 1},
+          where: 'id = ?', whereArgs: [clientId]);
+    } catch (_) { /* cache-only nicety */ }
   }
 
   Future<int> pendingCount() async {

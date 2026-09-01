@@ -252,8 +252,15 @@ class AuthService {
     }
     final business = Business.fromMap(data['business'] as Map<String, dynamic>);
     await _persistBusiness(business);
+    // FB-08: ALWAYS reflect the login response's plan — write it when present,
+    // clear it when absent — so a response without `plan` can never leave a
+    // previous account's entitlements cached.
     final p = data['plan'];
-    if (p != null) await _secure.write(key: _kPlan, value: jsonEncode(p));
+    if (p != null) {
+      await _secure.write(key: _kPlan, value: jsonEncode(p));
+    } else {
+      await _secure.delete(key: _kPlan);
+    }
     // Push 14b: cache role for the drawer/nav role-gating to consume on
     // cold start. The role field is the authoritative source of what
     // screens this user can see.
@@ -310,6 +317,9 @@ class AuthService {
     // dev-login path), so swallow.
     try { if (_googleInitialised) await _google.signOut(); } catch (_) {}
     try { if (_googleInitialised) await _google.disconnect(); } catch (_) {}
+    // FB-07: kill the refresh token on the server first (Bearer still present),
+    // then drop the local copies.
+    await _api.revokeSession();
     await _api.clearTokens();
     // Push 14b: keep _kBusiness around after sign-out. The cached business
     // ID is what powers the "Sign in as staff (PIN)" link on the login
@@ -318,12 +328,17 @@ class AuthService {
     // plan are cleared (security); only the business identifier stays.
     await _secure.delete(key: _kRole);
     await _secure.delete(key: _kPerms);
+    // FB-08 (2026-09-01): clear the cached plan on sign-out. Keeping it meant
+    // that if the NEXT login response omitted `plan`, the previous account's
+    // paid entitlements leaked to the new user on a shared device. Role/perms
+    // were already cleared; the plan was the remaining gap. No user is logged
+    // in between logout and the next login, so a null plan (→ starter default)
+    // is the correct state anyway.
+    await _secure.delete(key: _kPlan);
     // NOTE: MPIN is intentionally NOT cleared here. Normal sign-out keeps the
     // MPIN + refresh token so the owner can quick-login again (AuthProvider
     // routes a MPIN-enabled sign-out to the lock screen). Only a full
     // account switch (logoutFull → "Use another account") wipes the MPIN.
-    // _kPlan stays cached so the next user's plan check works offline;
-    // it gets overwritten on the next successful login anyway.
   }
 
   /// Hard reset — wipes EVERYTHING including the cached business. Used
@@ -357,7 +372,32 @@ class AuthService {
   static const _kMpin = 'ff_mpin_hash';
   static const _kMpinSalt = 'ff_mpin_salt';
 
-  String _hashMpin(String pin, String salt) =>
+  // FB-16 (2026-09-01): the MPIN is a 4-digit PIN — a keyspace of only 10,000.
+  // A single unsalted-stretch SHA-256 (the old `_hashMpin`) could be enumerated
+  // instantly if the keychain were ever extracted. We now use PBKDF2-HMAC-SHA256
+  // with a high iteration count, which multiplies an offline attacker's cost by
+  // the iteration factor. Stored format is version-tagged: "p2$<iters>$<hex>".
+  // Legacy bare-hex values are still accepted and transparently migrated on the
+  // next successful unlock, so no existing owner is locked out by this change.
+  static const int _mpinIterations = 120000;
+
+  /// Standard PBKDF2-HMAC-SHA256 producing one 32-byte output block (dkLen=hLen).
+  String _pbkdf2(String pin, String salt, int iterations) {
+    final hmac = Hmac(sha256, utf8.encode(pin));
+    // U1 = PRF(password, salt || INT_32_BE(1))
+    var u = hmac.convert([...utf8.encode(salt), 0, 0, 0, 1]).bytes;
+    final out = List<int>.from(u);
+    for (var i = 1; i < iterations; i++) {
+      u = hmac.convert(u).bytes;
+      for (var j = 0; j < out.length; j++) {
+        out[j] ^= u[j];
+      }
+    }
+    return out.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  // Legacy (pre-FB-16) hash, kept only to verify + migrate old stored values.
+  String _hashMpinLegacy(String pin, String salt) =>
       sha256.convert(utf8.encode('$salt::$pin')).toString();
 
   Future<bool> hasMpin() async {
@@ -371,14 +411,26 @@ class AuthService {
       salt = const Uuid().v4();
       await _secure.write(key: _kMpinSalt, value: salt);
     }
-    await _secure.write(key: _kMpin, value: _hashMpin(pin, salt));
+    final hash = _pbkdf2(pin, salt, _mpinIterations);
+    await _secure.write(key: _kMpin, value: 'p2\$$_mpinIterations\$$hash');
   }
 
   Future<bool> verifyMpin(String pin) async {
     final stored = await _secure.read(key: _kMpin);
     final salt = await _secure.read(key: _kMpinSalt);
     if (stored == null || salt == null) return false;
-    return _hashMpin(pin, salt) == stored;
+    if (stored.startsWith('p2\$')) {
+      final parts = stored.split('\$'); // p2 $ iters $ hex
+      final iters = int.tryParse(parts.length > 1 ? parts[1] : '') ?? _mpinIterations;
+      return _pbkdf2(pin, salt, iters) == (parts.length > 2 ? parts[2] : '');
+    }
+    // Legacy bare-hex value — verify with the old algorithm, and if it matches,
+    // migrate it to PBKDF2 so the weak hash stops living in the keychain.
+    if (_hashMpinLegacy(pin, salt) == stored) {
+      await setMpin(pin);
+      return true;
+    }
+    return false;
   }
 
   Future<void> clearMpin() async {

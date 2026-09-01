@@ -112,6 +112,19 @@ class ApiService {
     await _secure.delete(key: _refreshKey);
   }
 
+  /// FB-07 (2026-09-01): revoke the refresh token SERVER-SIDE on logout. Local
+  /// clearTokens() alone left the refresh token valid on the backend until it
+  /// naturally expired (up to 30 days), so a token captured before logout stayed
+  /// usable. Must run BEFORE clearTokens() so the Bearer is still attached (the
+  /// endpoint is auth-gated); the refresh token also rides in the body. Best-
+  /// effort — a failed revoke must never block sign-out.
+  Future<void> revokeSession() async {
+    try {
+      final r = await refreshToken;
+      await _dio.post('/auth/logout', data: {'refreshToken': r});
+    } catch (_) { /* best-effort — local tokens are cleared regardless */ }
+  }
+
   Future<String?> get token => _secure.read(key: _tokenKey);
   Future<String?> get refreshToken => _secure.read(key: _refreshKey);
 
@@ -526,12 +539,11 @@ class ApiService {
   /// `printing` package on iOS/Android.
   Future<List<int>> incomeStatementExport(String businessId,
       {required String format, required String startDate, required String endDate}) async {
-    final response = await _dio.get<List<int>>(
+    return _wrapBytes(() => _dio.get<List<int>>(
       '/businesses/$businessId/reports/income-statement.$format',
       queryParameters: {'startDate': startDate, 'endDate': endDate},
       options: Options(responseType: ResponseType.bytes),
-    );
-    return response.data ?? const [];
+    ));
   }
 
   // Push 15h — register reports (income / expense / invoice)
@@ -568,12 +580,11 @@ class ApiService {
       'expense': 'expense-register',
       'invoice': 'invoice-register',
     }[kind]!;
-    final response = await _dio.get<List<int>>(
+    return _wrapBytes(() => _dio.get<List<int>>(
       '/businesses/$businessId/reports/$pathPart.$format',
       queryParameters: {'startDate': startDate, 'endDate': endDate},
       options: Options(responseType: ResponseType.bytes),
-    );
-    return response.data ?? const [];
+    ));
   }
 
   Future<List<dynamic>> listTaxInvoices(String businessId,
@@ -596,11 +607,10 @@ class ApiService {
   }
 
   Future<List<int>> taxInvoicePdf(String businessId, String invoiceId) async {
-    final response = await _dio.get<List<int>>(
+    return _wrapBytes(() => _dio.get<List<int>>(
       '/businesses/$businessId/tax-invoices/$invoiceId/pdf',
       options: Options(responseType: ResponseType.bytes),
-    );
-    return response.data ?? const [];
+    ));
   }
 
   Future<Map<String, dynamic>> cancelTaxInvoice(
@@ -1417,6 +1427,22 @@ class ApiService {
           ? (e.response!.data['message']?.toString() ?? e.message ?? 'API error')
           : (e.message ?? 'Network error');
       throw ApiException(msg, code);
+    }
+  }
+
+  /// FB-11 (2026-09-01): bytes-aware sibling of _wrap for file/PDF downloads.
+  /// Previously incomeStatementExport / registerExport / taxInvoicePdf called
+  /// `_dio.get` for bytes directly and threw a RAW DioException on any failure —
+  /// callers written to catch ApiException (the app-wide convention) let those
+  /// escape as unhandled exceptions on a failed export or an un-refreshable 401.
+  Future<List<int>> _wrapBytes(Future<Response<List<int>>> Function() fn) async {
+    try {
+      final resp = await fn();
+      return resp.data ?? const [];
+    } on DioException catch (e) {
+      // The error body is raw bytes here, so keep the message generic and pass
+      // the status code through for support (same ApiException the app expects).
+      throw ApiException(e.message ?? 'Could not download file', e.response?.statusCode);
     }
   }
 }

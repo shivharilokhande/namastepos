@@ -51,8 +51,10 @@ class _TipReportScreenState extends State<TipReportScreen> {
         startDate: fmt.format(_start),
         endDate: fmt.format(_end),
       );
+      if (!mounted) return; // FB-20: guard setState after await
       setState(() { _rows = rows; _loading = false; });
     } catch (e) {
+      if (!mounted) return; // FB-20
       setState(() { _error = humanizeError(e); _loading = false; });
     }
   }

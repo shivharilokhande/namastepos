@@ -213,7 +213,7 @@ class OrderRepo {
     // the next sync_queue drain), and otherwise queue. Idempotency is keyed
     // by orderId, which the backend's orderService.create() honors as clientId.
     try {
-      await OfflineOutbox().sendOrQueue(
+      final sentNow = await OfflineOutbox().sendOrQueue(
         endpoint: '/businesses/$businessId/orders',
         method: 'POST',
         body: {
@@ -242,12 +242,25 @@ class OrderRepo {
           if (splits != null && splits.isNotEmpty) 'splits': splits,
         },
       );
+      // FB-09 (2026-09-01): a non-null response means it POSTed successfully
+      // just now (online). Mark the local row synced so it doesn't linger as a
+      // phantom "pending" order until the next full load() reconciles it.
+      if (sentNow != null) {
+        await db.update('orders', {'synced': 1},
+            where: 'id = ?', whereArgs: [orderId]);
+        order = order.copyWith(synced: true);
+      }
     } catch (e) {
       // H4 fix (2026-08-23): 4xx rejections now rethrow from the outbox —
       // surface them so the cashier KNOWS the order didn't reach the
       // kitchen dashboard (5xx/offline are still queued silently).
       if (e is DioException && (e.response?.statusCode ?? 0) >= 400
           && (e.response?.statusCode ?? 0) < 500) {
+        // FB-10 (2026-09-01): the server REJECTED this create, so the order
+        // never existed server-side. Drop the optimistic local row we inserted
+        // above — otherwise it stays synced=0 and reappears on every load() as
+        // a live "pending" order the kitchen keeps trying to make.
+        try { await removeById(orderId); } catch (_) {}
         rethrow;
       }
       /* outbox already queues network failures — silent */
@@ -378,6 +391,35 @@ class OrderRepo {
         await batch.commit(noResult: true);
       });
     } catch (_) { /* cache is a nicety — never fail the fetch over it */ }
+  }
+
+  /// FB-13 (2026-09-01): atomically replace a business's cached orders. The old
+  /// load() did purgeAll → cacheAll(server) → cacheAll(pending) as THREE separate
+  /// operations; an exception or app-kill between them could leave the cache
+  /// empty (blanking the offline fallback and dropping not-yet-synced orders,
+  /// recoverable only via the outbox). Doing it in one transaction means the
+  /// cache is either the old contents or the new — never an empty in-between.
+  Future<void> replaceCache(
+      String businessId, List<Order> serverOrders, List<Order> pending) async {
+    final db = await DatabaseService.instance.db;
+    await db.transaction((txn) async {
+      final ids = await txn.query('orders',
+          columns: ['id'], where: 'businessId = ?', whereArgs: [businessId]);
+      for (final row in ids) {
+        await txn.delete('order_items', where: 'orderId = ?', whereArgs: [row['id']]);
+      }
+      await txn.delete('orders', where: 'businessId = ?', whereArgs: [businessId]);
+      final batch = txn.batch();
+      for (final o in [...serverOrders, ...pending]) {
+        batch.insert('orders', o.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+        for (final it in o.items) {
+          if (it.id.isEmpty) continue;
+          batch.insert('order_items', it.toMap(),
+              conflictAlgorithm: ConflictAlgorithm.replace);
+        }
+      }
+      await batch.commit(noResult: true);
+    });
   }
 }
 

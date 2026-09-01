@@ -320,7 +320,9 @@ class _PnlBody extends StatelessWidget {
             children: [
               const Text('Net margin %', style: TextStyle(fontStyle: FontStyle.italic, color: AppColors.textSecondary)),
               const Spacer(),
-              Text('${report['netMargin']}%', style: const TextStyle(fontWeight: FontWeight.w700)),
+              // FB-23 (2026-09-01): guard + round — a missing field rendered
+              // "null%" and a raw double printed full precision.
+              Text('${(report['netMargin'] as num?)?.toStringAsFixed(1) ?? '0.0'}%', style: const TextStyle(fontWeight: FontWeight.w700)),
             ],
           ),
         ),

@@ -82,6 +82,10 @@ class _BillSplitScreenState extends State<BillSplitScreen> {
         if (idx >= 0) list[idx] = updated.cast<String, dynamic>();
       });
     } catch (e) {
+      // FB-20 (2026-09-01): guard context after await — if the screen was
+      // popped while the pay request was in flight, ScaffoldMessenger.of(context)
+      // hits a deactivated element and throws (crashes in release too).
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(humanizeError(e))),
       );

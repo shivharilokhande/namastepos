@@ -122,6 +122,13 @@ class _NewTicketSheetState extends State<_NewTicketSheet> {
   bool _busy = false;
 
   @override
+  void dispose() { // FB-18 (2026-09-01): dispose controllers to avoid leaks
+    _subject.dispose();
+    _body.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Padding(
       padding: EdgeInsets.only(
@@ -186,6 +193,9 @@ class _TicketThreadState extends State<_TicketThread> {
 
   @override
   void initState() { super.initState(); _load(); }
+
+  @override
+  void dispose() { _reply.dispose(); super.dispose(); } // FB-18
 
   Future<void> _load() async {
     final bizId = context.read<AuthProvider>().business!.id;

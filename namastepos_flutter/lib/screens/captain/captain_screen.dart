@@ -870,19 +870,17 @@ class _CaptainScreenState extends State<CaptainScreen> {
               .clamp(0, double.infinity)
               .toDouble();
           final payable = legsTarget + membershipFee;
-          final legSum = legs.fold<double>(
-              0, (s, l) => s + (double.tryParse(l.ctl.text.trim()) ?? 0));
+          // FB-12: sum/validate on the rounded leg values that get submitted.
+          final legSum = legs.fold<double>(0, (s, l) => s + _legAmount(l.ctl));
           final walletSum = legs
               .where((l) => l.method == 'wallet')
-              .fold<double>(
-                  0, (s, l) => s + (double.tryParse(l.ctl.text.trim()) ?? 0));
+              .fold<double>(0, (s, l) => s + _legAmount(l.ctl));
           final walletOver = walletAvailable && walletSum > walletBalance + 0.001;
           final splitBalance = legsTarget - legSum;
           final splitValid = splitBalance.abs() <= 0.01 &&
               !walletOver &&
               legs.length >= 2 &&
-              legs.every(
-                  (l) => (double.tryParse(l.ctl.text.trim()) ?? 0) > 0);
+              legs.every((l) => _legAmount(l.ctl) > 0);
           return SafeArea(
             child: Padding(
               padding: EdgeInsets.only(
@@ -1224,11 +1222,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
                                 'legs': legs
                                     .map((l) => {
                                           'method': l.method,
-                                          'amountInr': double.parse(
-                                              (double.tryParse(
-                                                          l.ctl.text.trim()) ??
-                                                      0)
-                                                  .toStringAsFixed(2)),
+                                          'amountInr': _legAmount(l.ctl), // FB-12
                                         })
                                     .toList(),
                               });
@@ -1470,6 +1464,12 @@ double? _walletCapOrNull(TextEditingController ctl) {
   if (v == null || v <= 0) return null;
   return double.parse(v.toStringAsFixed(2));
 }
+
+/// FB-12 (2026-09-01): a split leg's amount ROUNDED to 2dp — the exact value
+/// submitted. Validate the split balance on this (not the raw parse) so per-leg
+/// rounding drift can't make a screen-valid split fail the server's ±₹0.01 check.
+double _legAmount(TextEditingController ctl) =>
+    double.parse((double.tryParse(ctl.text.trim()) ?? 0).toStringAsFixed(2));
 
 /// PAID/UNPAID pill per KOT in the running-bill sheet (2026-08-25, F2) —
 /// the "Pay & place" flow collects money at order time, so the cashier

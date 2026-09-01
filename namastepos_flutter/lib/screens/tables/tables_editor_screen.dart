@@ -99,6 +99,7 @@ class _TablesEditorScreenState extends State<TablesEditorScreen> {
     final biz = _bizId; if (biz == null) return;
     try {
       final floor = await ApiService.instance.createFloor(biz, {'name': name});
+      if (!mounted) return; // FB-20: guard setState after await
       setState(() {
         _floors = [..._floors, floor];
         _selectedFloorId = floor['id'] as String?;

@@ -376,10 +376,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       ),
     );
     if (picked == null || !mounted) return;
+    // FB-20 (2026-09-01): null-safe id — every sibling field is read
+    // defensively; a driver row with a null id used to throw on this cast.
+    final driverId = picked['id'] as String?;
+    if (driverId == null) return;
     Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => DriverScreen(
         businessId: biz.id,
-        driverId: picked['id'] as String,
+        driverId: driverId,
       ),
     ));
   }

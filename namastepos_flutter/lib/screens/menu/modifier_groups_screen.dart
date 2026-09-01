@@ -50,8 +50,10 @@ class _ModifierGroupsScreenState extends State<ModifierGroupsScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       final raw = await ApiService.instance.listAllModifierGroups(biz.id);
+      if (!mounted) return; // FB-20: guard setState after await
       setState(() => _groups = raw.cast<Map<String, dynamic>>());
     } on ApiException catch (e) {
+      if (!mounted) return; // FB-20
       // 402 here means the business is on Starter — we still show the empty
       // state with a clear hint instead of an angry error screen.
       setState(() => _error = e.statusCode == 402

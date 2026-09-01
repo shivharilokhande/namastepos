@@ -54,19 +54,12 @@ class OrdersProvider extends ChangeNotifier {
       final serverIds = list.map((o) => o.id).toSet();
       final stillPending =
           unsynced.where((o) => !serverIds.contains(o.id)).toList();
-      // Push 13.7: backend succeeded → purge the local SQLite cache so
-      // any ghost orders (created offline, never synced, or from old
-      // businesses) can't keep haunting the UI. This is the automatic
-      // version of the broom-button "Clean local cache" action.
-      await OrderRepo.instance.purgeAll(businessId);
-      // H3 fix (2026-08-23): repopulate the offline cache — purging
-      // without re-caching left the offline fallback permanently empty.
-      await OrderRepo.instance.cacheAll(businessId, list);
-      // Re-cache the not-yet-synced local orders too so the offline fallback
-      // keeps them and the outbox can still drain them.
-      if (stillPending.isNotEmpty) {
-        await OrderRepo.instance.cacheAll(businessId, stillPending);
-      }
+      // FB-13 (2026-09-01): atomically replace the cache (purge + re-cache
+      // server list + re-cache not-yet-synced locals) in ONE transaction, so an
+      // app-kill mid-refresh can't leave the cache empty (blanking the offline
+      // fallback and dropping pending orders). Replaces the old three-op
+      // purgeAll → cacheAll(server) → cacheAll(pending) sequence.
+      await OrderRepo.instance.replaceCache(businessId, list, stillPending);
       _orders
         ..clear()
         ..addAll(stillPending) // newest (just-created offline) first
