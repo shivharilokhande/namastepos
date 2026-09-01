@@ -192,8 +192,16 @@ async function mrrTrend({ months = 12 } = {}) {
 /**
  * Push 19e — outstanding (unpaid) subscription invoices, grouped into
  * 0-30 / 31-60 / 61-90 / 90+ day aging buckets so the finance team can
- * follow up on stale receivables. Status filters out drafts and voids
- * (only `open` and `past_due` count as collectable).
+ * follow up on stale receivables. Status filters out drafts and voids.
+ *
+ * Hotfix (2026-09-01): this filtered on `i.status IN ('open','past_due')`, but
+ * `past_due` is NOT a member of the `invoice_status` enum
+ * ('draft','open','paid','void','uncollectible','refunded') — it belongs to
+ * subscription_status/addon_status. Postgres therefore threw
+ * `invalid input value for enum invoice_status: "past_due"` and this admin
+ * report 500'd. Invoices never take `past_due` (dunning marks the SUBSCRIPTION
+ * past_due, not the invoice), so `open` is the collectable set; `days_overdue`
+ * already surfaces how stale each open invoice is.
  */
 async function outstandingInvoices() {
   const { query } = require('../config/db');
@@ -207,7 +215,7 @@ async function outstandingInvoices() {
             END AS days_overdue
        FROM invoices i
        JOIN businesses b ON b.id = i.business_id
-      WHERE i.status IN ('open','past_due')
+      WHERE i.status = 'open'
       ORDER BY days_overdue DESC, i.amount_paise DESC`
   );
   const rows = r.rows.map((x) => ({
