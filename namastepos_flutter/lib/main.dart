@@ -4,9 +4,11 @@
 // Author: Smart IT by Shiv (Founder: Arjun Mehta)
 // License: Proprietary
 
-import 'package:flutter/foundation.dart' show kReleaseMode, debugPrint;
+import 'package:flutter/foundation.dart'
+    show kReleaseMode, debugPrint, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:provider/provider.dart';
 
 import 'app.dart';
@@ -30,6 +32,19 @@ Future<void> main() async {
   // error inside `runApp` is captured by Telemetry.
   await Telemetry.runGuarded(() async {
     WidgetsFlutterBinding.ensureInitialized();
+
+    // iOS Keychain scheme migration (2026-09-01, P0 sign-in fix).
+    // The Strix I-2 hardening pinned Keychain items to
+    // `first_unlock_this_device`. iOS keeps Keychain items across app
+    // reinstalls, so items written by OLDER builds under the default
+    // accessibility now COLLIDE on write → PlatformException
+    // "The specified item already exists in the keychain." (OSStatus -25299),
+    // which broke EVERY sign-in path (Google, password, staff PIN, owner MPIN):
+    // pin-login succeeded server-side but the token write threw, surfacing as
+    // "Sign-in failed". Clear the old items ONCE, under the SAME options the app
+    // now uses, then mark the scheme migrated so this runs only on first launch
+    // of a build that has this fix. MUST run before any storage access below.
+    await _migrateKeychainScheme();
 
     // Bug fix (B37): loudly warn if the release build is missing the
     // API_URL dart-define. The fallback in ApiService points at a real
@@ -105,5 +120,31 @@ Future<void> _restoreLocaleOverride() async {
     await loadLocaleOverride();
   } catch (e) {
     debugPrint('[i18n] locale-override load failed: $e');
+  }
+}
+
+/// iOS Keychain scheme migration (2026-09-01). See the call site in main() for
+/// the full rationale. In short: older builds wrote Keychain items under the
+/// default accessibility; the current build pins `first_unlock_this_device`,
+/// and because iOS keeps Keychain items across reinstalls those legacy items
+/// collide on write (OSStatus -25299), breaking sign-in. Clear them once under
+/// the SAME options the app now uses, gated by a one-time scheme flag. Best
+/// effort — never blocks boot. iOS-only (Android uses encrypted prefs, no clash).
+Future<void> _migrateKeychainScheme() async {
+  if (defaultTargetPlatform != TargetPlatform.iOS) return;
+  const storage = FlutterSecureStorage(
+    iOptions: IOSOptions(
+      accessibility: KeychainAccessibility.first_unlock_this_device,
+      synchronizable: false,
+    ),
+  );
+  const flag = 'ff_keychain_scheme_v2';
+  try {
+    if (await storage.read(key: flag) == '1') return; // already migrated
+    await storage.deleteAll(); // drop legacy (old-accessibility) items once
+    await storage.write(key: flag, value: '1');
+    debugPrint('[keychain] migrated to scheme v2 (cleared legacy items)');
+  } catch (e) {
+    debugPrint('[keychain] scheme migration skipped: $e');
   }
 }
