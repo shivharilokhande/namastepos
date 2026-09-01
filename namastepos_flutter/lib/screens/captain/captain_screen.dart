@@ -19,6 +19,7 @@ import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../utils/error_humanizer.dart';
 import '../../providers/auth_provider.dart';
+import '../../models/customer.dart' show LoyaltySettingsLite;
 import '../../services/api_service.dart';
 import '../../services/printer_service.dart';
 import '../../utils/formatters.dart';
@@ -789,6 +790,11 @@ class _CaptainScreenState extends State<CaptainScreen> {
     String? customerId;
     double walletBalance = 0;
     bool walletAvailable = false;
+    // Loyalty at settle (2026-09-01, founder): capture the customer's points +
+    // the business loyalty rules so the cashier can redeem points here, exactly
+    // like Pay & place. Both ride along the same lookup round-trip.
+    LoyaltySettingsLite? loyaltySettings;
+    int customerPoints = 0;
     if (customerPhone != null && customerPhone.isNotEmpty) {
       try {
         final data = await ApiService.instance
@@ -798,6 +804,11 @@ class _CaptainScreenState extends State<CaptainScreen> {
             (data?['expiredMembership'] as Map?)?.cast<String, dynamic>();
         final custId = ((data?['customer'] as Map?)?['id'])?.toString();
         customerId = custId;
+        final st = data?['loyaltySettings'];
+        if (st != null) {
+          loyaltySettings = LoyaltySettingsLite.fromMap((st as Map).cast<String, dynamic>());
+        }
+        customerPoints = (((data?['customer'] as Map?)?['pointsBalance']) as num?)?.toInt() ?? 0;
         if (mem == null && custId != null && mounted) {
           final fee = await showMembershipOfferDialog(
             context,
@@ -848,6 +859,10 @@ class _CaptainScreenState extends State<CaptainScreen> {
     // cap limits how much wallet is drawn (blank = up to the whole balance).
     bool useWallet = false;
     final walletCapCtl = TextEditingController();
+    // Loyalty points to redeem at settle (lives outside StatefulBuilder so the
+    // slider value survives rebuilds). Only usable with an identified customer +
+    // active loyalty. The server re-caps + applies the discount.
+    int pointsToRedeem = 0;
     final settleResult = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
       isScrollControlled: true,
@@ -863,10 +878,15 @@ class _CaptainScreenState extends State<CaptainScreen> {
               : (double.tryParse(shortfallCtl.text.trim()) ?? 0)
                   .clamp(0, totalInr - discount)
                   .toDouble();
+          // Loyalty redemption reduces what the customer pays, like the settle
+          // discount. Capped to what the customer can actually redeem here.
+          final loyaltyDiscount = loyaltySettings != null
+              ? (pointsToRedeem * loyaltySettings.redemptionValuePaise) / 100
+              : 0.0;
           // Contract: split legs must sum to (session total − discount −
-          // shortfall) ±₹0.01. Membership fee is charged separately by the
-          // subscribe flow, so it's shown but NOT part of the leg target.
-          final legsTarget = (totalInr - discount - shortfall)
+          // loyalty − shortfall) ±₹0.01. Membership fee is charged separately by
+          // the subscribe flow, so it's shown but NOT part of the leg target.
+          final legsTarget = (totalInr - discount - loyaltyDiscount - shortfall)
               .clamp(0, double.infinity)
               .toDouble();
           final payable = legsTarget + membershipFee;
@@ -988,6 +1008,71 @@ class _CaptainScreenState extends State<CaptainScreen> {
                           fontSize: 11, color: AppColors.warning,
                           fontWeight: FontWeight.w700),
                     ),
+                  // Loyalty points redemption at settle (2026-09-01, founder).
+                  // Only when the session customer + active loyalty allow it.
+                  // Slider caps at what the customer can redeem for this bill;
+                  // the value comes off the total above and is sent as
+                  // pointsToRedeem (server re-caps + applies).
+                  if (loyaltySettings != null &&
+                      loyaltySettings.isActive &&
+                      loyaltySettings.maxRedeemable(customerPoints, totalInr) > 0) ...[
+                    const Divider(),
+                    Builder(builder: (_) {
+                      final maxRedeem =
+                          loyaltySettings!.maxRedeemable(customerPoints, totalInr);
+                      final capped = pointsToRedeem.clamp(0, maxRedeem);
+                      if (capped != pointsToRedeem) {
+                        pointsToRedeem = capped; // keep in range if bill shrank
+                      }
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            const Icon(Icons.card_giftcard_rounded,
+                                size: 18, color: AppColors.primary),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Redeem points ($customerPoints available)',
+                                style: const TextStyle(fontWeight: FontWeight.w700),
+                              ),
+                            ),
+                            Text(
+                              '-${AppFmt.money(loyaltyDiscount, decimals: true)}',
+                              style: const TextStyle(
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.w800),
+                            ),
+                          ]),
+                          Row(children: [
+                            Expanded(
+                              child: Slider(
+                                value: pointsToRedeem.toDouble()
+                                    .clamp(0, maxRedeem.toDouble()),
+                                min: 0,
+                                max: maxRedeem.toDouble(),
+                                divisions: maxRedeem,
+                                label: '$pointsToRedeem pts',
+                                activeColor: AppColors.primary,
+                                onChanged: (v) => setSheetState(() {
+                                  pointsToRedeem = v.round();
+                                }),
+                              ),
+                            ),
+                            if (pointsToRedeem > 0)
+                              TextButton(
+                                onPressed: () =>
+                                    setSheetState(() => pointsToRedeem = 0),
+                                child: const Text('Clear'),
+                              ),
+                          ]),
+                          Text('Max $maxRedeem pts',
+                              style: const TextStyle(
+                                  fontSize: 11, color: AppColors.textSecondary)),
+                        ],
+                      );
+                    }),
+                  ],
                   const Divider(),
                   // Split payment toggle (2026-08-25): off = the familiar
                   // single-method tiles below stay exactly as before.
@@ -1059,6 +1144,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
                       onTap: () => Navigator.pop(sheetCtx, {
                         'pm': 'cash', 'discount': discount,
                         'shortfall': shortfall,
+                        'pointsToRedeem': pointsToRedeem,
                         'autoWallet': useWallet,
                         if (useWallet) 'walletCapInr': _walletCapOrNull(walletCapCtl),
                       }),
@@ -1070,6 +1156,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
                       onTap: () => Navigator.pop(sheetCtx, {
                         'pm': 'upi', 'discount': discount,
                         'shortfall': shortfall,
+                        'pointsToRedeem': pointsToRedeem,
                         'autoWallet': useWallet,
                         if (useWallet) 'walletCapInr': _walletCapOrNull(walletCapCtl),
                       }),
@@ -1081,6 +1168,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
                       onTap: () => Navigator.pop(sheetCtx, {
                         'pm': 'card', 'discount': discount,
                         'shortfall': shortfall,
+                        'pointsToRedeem': pointsToRedeem,
                         'autoWallet': useWallet,
                         if (useWallet) 'walletCapInr': _walletCapOrNull(walletCapCtl),
                       }),
@@ -1093,6 +1181,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
                       onTap: () => Navigator.pop(sheetCtx, {
                         'pm': 'online', 'discount': discount,
                         'shortfall': shortfall,
+                        'pointsToRedeem': pointsToRedeem,
                         'autoWallet': useWallet,
                         if (useWallet) 'walletCapInr': _walletCapOrNull(walletCapCtl),
                       }),
@@ -1219,6 +1308,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
                                 'pm': pm,
                                 'discount': discount,
                                 'shortfall': shortfall,
+                                'pointsToRedeem': pointsToRedeem,
                                 'legs': legs
                                     .map((l) => {
                                           'method': l.method,
@@ -1257,6 +1347,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
         .toList();
     final autoWallet = settleResult['autoWallet'] == true;
     final walletCapInr = (settleResult['walletCapInr'] as num?)?.toDouble();
+    final pointsRedeem = (settleResult['pointsToRedeem'] as num?)?.toInt() ?? 0;
 
     // Shortfall books real debt — confirm before committing (2026-08-25).
     if (shortfallInr > 0) {
@@ -1304,6 +1395,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
         shortfallInr: shortfallInr,
         autoWallet: autoWallet,
         walletCapInr: walletCapInr,
+        pointsToRedeem: pointsRedeem,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

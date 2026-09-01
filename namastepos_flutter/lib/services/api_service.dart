@@ -1332,6 +1332,8 @@ class ApiService {
     // paymentMethod. Ignored when explicit paymentBreakdown legs are sent.
     bool autoWallet = false,
     double? walletCapInr,
+    // 2026-09-01: redeem loyalty points at settle (server caps + applies).
+    int pointsToRedeem = 0,
   }) async {
     final r = await _wrap(() => _dio.post(
           '/businesses/$businessId/ops/sessions/$sessionId/close',
@@ -1343,6 +1345,7 @@ class ApiService {
             if (shortfallInr > 0) 'shortfallInr': shortfallInr,
             if (autoWallet) 'autoWallet': true,
             if (autoWallet && walletCapInr != null) 'walletCapInr': walletCapInr,
+            if (pointsToRedeem > 0) 'pointsToRedeem': pointsToRedeem,
           },
         ));
     return ((r as Map)['session'] as Map).cast<String, dynamic>();

@@ -103,22 +103,32 @@ export function DashboardPage() {
 
       {/* FF-241 payment breakdown + FF-242 order status donut */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <PaymentCard payment={payment} />
+        <PaymentCard report={report} />
         <StatusCard statuses={statuses} />
       </div>
     </div>
   );
 }
 
-// ── FF-241 — Payment method breakdown ─────────────────────────────────
-function PaymentCard({ payment }: { payment?: Record<string, { count: number; amount: number }> }) {
-  const rows = Object.entries(payment || {})
-    .sort(([, a], [, b]) => (b?.amount || 0) - (a?.amount || 0));
-  const total = rows.reduce((s, [, v]) => s + (v?.amount || 0), 0);
+// ── Collected by tender (2026-09-01) ──────────────────────────────────
+// Uses the ACCURATE per-tender split from the daily report (payment legs +
+// single-tender orders), not the legacy per-order primary method. Adds a
+// footer separating real cash in the drawer from the wallet draw-down
+// (prepaid, not new cash today) and points given as a discount — so revenue
+// (net sales) reconciles against what actually hit the till.
+function PaymentCard({ report }: { report?: any }) {
+  const tenders: Record<string, number> = report?.tenders || {};
+  const rows = Object.entries(tenders)
+    .filter(([, amt]) => (amt || 0) > 0)
+    .sort(([, a], [, b]) => (b as number) - (a as number));
+  const total = rows.reduce((s, [, v]) => s + (v as number), 0);
+  const disc = report?.discountBreakdown || {};
+  const cashToday = report?.cashCollectedToday ?? 0;
+  const walletUsed = report?.walletCollected ?? 0;
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Payment breakdown</CardTitle>
+        <CardTitle>Collected by tender</CardTitle>
       </CardHeader>
       <CardContent className="space-y-2 text-sm">
         {rows.length === 0 && (
@@ -126,11 +136,11 @@ function PaymentCard({ payment }: { payment?: Record<string, { count: number; am
             No collected orders yet today.
           </div>
         )}
-        {rows.map(([method, v]) => {
+        {rows.map(([method, amt]) => {
           const meta = PAYMENT_META[method] || {
             label: method, icon: Wallet, color: 'text-slate-700 bg-slate-50',
           };
-          const pct = total > 0 ? (v.amount / total) * 100 : 0;
+          const pct = total > 0 ? ((amt as number) / total) * 100 : 0;
           const Icon = meta.icon;
           return (
             <div key={method} className="space-y-1">
@@ -139,12 +149,9 @@ function PaymentCard({ payment }: { payment?: Record<string, { count: number; am
                   <span className={`inline-flex items-center justify-center w-6 h-6 rounded ${meta.color}`}>
                     <Icon className="w-3.5 h-3.5" />
                   </span>
-                  <span className="font-medium">{meta.label}</span>
-                  <span className="text-xs text-muted-foreground">
-                    · {v.count} order{v.count === 1 ? '' : 's'}
-                  </span>
+                  <span className="font-medium capitalize">{meta.label}</span>
                 </div>
-                <strong>{formatINR(v.amount)}</strong>
+                <strong>{formatINR(amt as number)}</strong>
               </div>
               <div className="h-1.5 bg-muted rounded overflow-hidden">
                 <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
@@ -152,6 +159,26 @@ function PaymentCard({ payment }: { payment?: Record<string, { count: number; am
             </div>
           );
         })}
+        {(rows.length > 0 || walletUsed > 0 || (disc.pointsValue || 0) > 0) && (
+          <div className="mt-3 space-y-1 border-t pt-2 text-xs text-muted-foreground">
+            <div className="flex justify-between">
+              <span>Cash in drawer today (excludes wallet)</span>
+              <strong className="text-foreground">{formatINR(cashToday)}</strong>
+            </div>
+            {walletUsed > 0 && (
+              <div className="flex justify-between">
+                <span>Paid from wallet (prepaid, counted when loaded)</span>
+                <span>{formatINR(walletUsed)}</span>
+              </div>
+            )}
+            {(disc.pointsValue || 0) > 0 && (
+              <div className="flex justify-between">
+                <span>Points redeemed (discount · {disc.pointsRedeemed} pts)</span>
+                <span>−{formatINR(disc.pointsValue)}</span>
+              </div>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

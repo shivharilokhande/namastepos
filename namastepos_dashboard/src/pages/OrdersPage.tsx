@@ -53,6 +53,10 @@ export function OrdersPage() {
   // FF-903-b — assign-driver workflow. Owners had drivers listed but
   // no way to attach a driver to a specific order from the queue.
   const [assigning, setAssigning] = useState<any | null>(null);
+  // Founder ask (2026-09-01): clicking an order should open THAT order's full
+  // detail. The list already carries the whole order object, so the drawer
+  // renders from it — no extra round-trip.
+  const [detailOrder, setDetailOrder] = useState<any | null>(null);
   const qc = useQueryClient();
 
   const { data: cancelReasons = [] } = useQuery({
@@ -301,7 +305,14 @@ export function OrdersPage() {
                   <div className="flex items-center gap-2">
                     {/* Bill rows (groupBy=session) show the pinned bill
                         number; plain orders show their own KOT number. */}
-                    <div className="text-xl font-bold">#{o.displayNo ?? o.orderNo}</div>
+                    <button
+                      type="button"
+                      onClick={() => setDetailOrder(o)}
+                      className="text-xl font-bold text-primary hover:underline focus:underline"
+                      title="View order details"
+                    >
+                      #{o.displayNo ?? o.orderNo}
+                    </button>
                     {o.isBill && Array.isArray(o.kots) && o.kots.length > 1 && (
                       <span className="inline-flex items-center rounded-full bg-primary/10 text-primary px-2 py-0.5 text-[10px] font-semibold">
                         {o.kots.length} KOTs
@@ -489,6 +500,59 @@ export function OrdersPage() {
             </Button>
           </div>
         </div>
+      )}
+
+      {/* 2026-09-01: order detail drawer — opens on clicking the order number */}
+      {detailOrder && (
+        <Dialog open onOpenChange={(v) => !v && setDetailOrder(null)}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Order #{detailOrder.displayNo ?? detailOrder.orderNo}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 text-sm">
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-muted-foreground">
+                <span>{formatDateTime(detailOrder.createdAt)}</span>
+                <span className="capitalize">{detailOrder.source}</span>
+                <span className="capitalize">Status: {detailOrder.status}</span>
+                {detailOrder.tableNo ? <span>Table {detailOrder.tableNo}</span> : null}
+                {detailOrder.customerPhone ? <span>{detailOrder.customerName ? `${detailOrder.customerName} · ` : ''}{detailOrder.customerPhone}</span> : null}
+              </div>
+              {Array.isArray(detailOrder.kots) && detailOrder.kots.length > 1 && (
+                <div className="text-xs text-muted-foreground">{detailOrder.kots.length} KOTs merged into this bill</div>
+              )}
+              <ul className="divide-y rounded-md border">
+                {(detailOrder.items || []).map((it: any, i: number) => (
+                  <li key={i} className="flex justify-between px-3 py-2">
+                    <span>{it.qty} × {it.name}</span>
+                    <span className="text-muted-foreground">{formatINR(it.price * it.qty)}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="space-y-1 border-t pt-2">
+                {Number(detailOrder.discount) > 0 && (
+                  <div className="flex justify-between text-muted-foreground"><span>Discount</span><span>−{formatINR(detailOrder.discount)}</span></div>
+                )}
+                {Number(detailOrder.loyaltyDiscountInr ?? (Number(detailOrder.pointsRedeemed) > 0 ? undefined : 0)) > 0 && (
+                  <div className="flex justify-between text-muted-foreground"><span>Loyalty ({detailOrder.pointsRedeemed} pts)</span><span>−{formatINR(detailOrder.loyaltyDiscountInr)}</span></div>
+                )}
+                <div className="flex justify-between font-bold text-base"><span>Total</span><span>{formatINR(detailOrder.total)}</span></div>
+                {/* Tender breakdown for split/wallet orders */}
+                {Array.isArray(detailOrder.paymentBreakdown) && detailOrder.paymentBreakdown.length > 0 ? (
+                  <div className="pt-1 text-xs text-muted-foreground">
+                    {detailOrder.paymentBreakdown.map((l: any, i: number) => (
+                      <div key={i} className="flex justify-between"><span className="capitalize">Paid — {l.method}</span><span>{formatINR(l.amountInr ?? (l.amountPaise ? l.amountPaise / 100 : 0))}</span></div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-muted-foreground capitalize">Paid via {detailOrder.paymentMethod}</div>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setDetailOrder(null)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
 
       {/* FF-503: Cancel with structured reason picker */}
