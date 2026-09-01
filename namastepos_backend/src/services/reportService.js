@@ -94,6 +94,58 @@ async function dailyReport(businessId, dateStr) {
     [businessId, dateStr],
   );
 
+  // 2026-09-01 (founder) — ACCURATE "collected by tender" for the day.
+  // The `pay` query above groups SUM(total) by the order's single
+  // payment_method, which MIS-attributes split/wallet orders (a ₹150 order
+  // paid ₹50 wallet + ₹55 cash + ₹45 points shows the whole ₹105 under one
+  // method, and never separates the wallet draw-down from real cash). This
+  // computes the true per-tender split from the `payments` legs (split/wallet/
+  // breakdown orders) UNIONed with single-tender collected orders (which write
+  // no payments row — fall back to orders.payment_method × total). Unpaid open
+  // KOTs are excluded (nothing collected yet). Wallet appears as its own tender
+  // so the owner can see it's a prepaid draw-down, not cash in the drawer.
+  const tenderRows = await query(
+    `WITH d AS (
+       SELECT id, total, payment_method
+         FROM orders
+        WHERE business_id = $1
+          AND (created_at AT TIME ZONE 'Asia/Kolkata')::date = $2::date
+          AND status = 'collected'
+     ),
+     legged AS (
+       SELECT DISTINCT p.order_id FROM payments p JOIN d ON d.id = p.order_id
+     ),
+     leg_sum AS (
+       SELECT p.method::text AS method, SUM(p.amount_paise)::bigint AS paise
+         FROM payments p JOIN d ON d.id = p.order_id
+        GROUP BY p.method
+     ),
+     single_sum AS (
+       SELECT d.payment_method::text AS method, ROUND(SUM(d.total) * 100)::bigint AS paise
+         FROM d
+        WHERE d.id NOT IN (SELECT order_id FROM legged)
+          AND d.payment_method <> 'unpaid'
+        GROUP BY d.payment_method
+     )
+     SELECT method, SUM(paise)::bigint AS paise
+       FROM (SELECT * FROM leg_sum UNION ALL SELECT * FROM single_sum) x
+      GROUP BY method`,
+    [businessId, dateStr],
+  );
+  // Discounts given today: loyalty points (business-funded, already excluded
+  // from revenue) + manual/settle discounts. Surfaced so the owner sees WHY
+  // net sales < gross and that points never hit the till.
+  const discRows = await query(
+    `SELECT COALESCE(SUM(loyalty_discount_paise), 0)::bigint AS points_paise,
+            COALESCE(SUM(points_redeemed), 0)::bigint       AS points_count,
+            COALESCE(SUM(discount), 0)::float               AS manual_discount
+       FROM orders
+      WHERE business_id = $1
+        AND (created_at AT TIME ZONE 'Asia/Kolkata')::date = $2::date
+        AND status <> 'cancelled'`,
+    [businessId, dateStr],
+  );
+
   // FF-242 — order status counts (pending/ready/collected/cancelled).
   // Powers the donut on Overview. Uses ALL orders regardless of
   // payment state so a still-pending walk-in shows up.
@@ -157,6 +209,22 @@ async function dailyReport(businessId, dateStr) {
     return acc;
   }, {});
 
+  // Accurate collected-by-tender (rupees). Keys: cash/upi/card/online/wallet.
+  const tenders = tenderRows.rows.reduce((acc, r) => {
+    acc[r.method] = Math.round((parseInt(r.paise, 10) || 0)) / 100;
+    return acc;
+  }, {});
+  const tendersTotal = Object.values(tenders).reduce((s, v) => s + v, 0);
+  // Cash actually collected today = everything EXCEPT the wallet draw-down
+  // (wallet is prepaid money recognised as sales on spend, not new cash today).
+  const cashCollectedToday = Math.round((tendersTotal - (tenders.wallet || 0)) * 100) / 100;
+  const dr = discRows.rows[0] || {};
+  const discountBreakdown = {
+    pointsValue: Math.round((parseInt(dr.points_paise, 10) || 0)) / 100,
+    pointsRedeemed: parseInt(dr.points_count, 10) || 0,
+    manual: parseFloat(dr.manual_discount) || 0,
+  };
+
   const payload = {
     date: dateStr,
     revenue: { ...revenue, total: totalRevenue },
@@ -165,7 +233,13 @@ async function dailyReport(businessId, dateStr) {
     margin: Math.round(margin * 10) / 10,
     orderCount,
     topItems,
-    paymentBreakdown, // FF-241
+    paymentBreakdown, // FF-241 (legacy, per-order primary method)
+    // 2026-09-01: accurate per-tender collection + wallet/points transparency.
+    tenders,
+    tendersTotal: Math.round(tendersTotal * 100) / 100,
+    walletCollected: tenders.wallet || 0,
+    cashCollectedToday,
+    discountBreakdown,
     statusCounts, // FF-242
     channelCounts, // FF-243
   };

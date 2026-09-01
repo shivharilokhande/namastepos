@@ -175,13 +175,18 @@ const closeSession = [
     // walletCapInr, and routes the rest to paymentMethod.
     autoWallet: Joi.boolean().allow(null),
     walletCapInr: Joi.number().min(0).allow(null),
+    // 2026-09-01 (founder): redeem loyalty points at settle, like Pay & place.
+    // Server caps to the customer's balance + loyalty rules; needs an
+    // identified customer on the session.
+    pointsToRedeem: Joi.number().integer().min(0).allow(null),
   })}),
   asyncHandler(async (req, res) => {
     const session = await tables.closeSession(
       req.params.businessId, req.params.sessionId, req.user.id,
       req.body.paymentMethod || 'cash', req.body.discountInr || 0,
       req.body.paymentBreakdown || null, req.body.shortfallInr || 0,
-      req.body.autoWallet === true, req.body.walletCapInr ?? null);
+      req.body.autoWallet === true, req.body.walletCapInr ?? null,
+      req.body.pointsToRedeem || 0);
     res.json({ session });
   }),
 ];

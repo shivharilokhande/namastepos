@@ -427,7 +427,7 @@ async function unjoinTable(businessId, sessionId, tableId) {
 //     wallet movement (reason 'shortfall') so the debt lives on the
 //     customer's wallet and is visible on their card. Requires an
 //     identified customer on the session.
-async function closeSession(businessId, sessionId, closedByUserId, paymentMethod = 'cash', discountInr = 0, paymentBreakdown = null, shortfallInr = 0, autoWallet = false, walletCapInr = null) {
+async function closeSession(businessId, sessionId, closedByUserId, paymentMethod = 'cash', discountInr = 0, paymentBreakdown = null, shortfallInr = 0, autoWallet = false, walletCapInr = null, pointsToRedeem = 0) {
   return withTransaction(async (client) => {
     // Settle-time discount (2026-08-22, founder request): applied to the
     // HEAD order (smallest order_no) of the session so it's auditable on
@@ -459,6 +459,78 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
               WHERE id = $2`,
             [applied, head.rows[0].id]
           );
+        }
+      }
+    }
+
+    // Loyalty points redemption at settle (2026-09-01, founder). Mirrors the
+    // order-create redemption but applied to the session HEAD order so it's
+    // auditable on the bill and flows into reports (revenue already excludes it
+    // — total is reduced here). Requires an identified customer + the loyalty
+    // feature active. Points are capped so the whole discount lands on the head
+    // order (never burn points whose value exceeds what we can discount).
+    const wantPoints = Math.max(0, parseInt(pointsToRedeem, 10) || 0);
+    if (wantPoints > 0) {
+      const loyalty = require('./loyaltyService');
+      const loyaltyOn = await require('./featureService').hasFeature(businessId, 'loyalty');
+      if (loyaltyOn) {
+        const settings = await loyalty.getSettings(businessId);
+        if (settings.isActive && settings.redemptionValuePaise > 0) {
+          const headRow = await client.query(
+            `SELECT id, total FROM orders
+              WHERE table_session_id = $1 AND business_id = $2 AND status <> 'cancelled'
+              ORDER BY order_no ASC LIMIT 1 FOR UPDATE`,
+            [sessionId, businessId],
+          );
+          const custRow = await client.query(
+            `SELECT customer_id FROM orders
+              WHERE table_session_id = $1 AND business_id = $2
+                AND status <> 'cancelled' AND customer_id IS NOT NULL
+              ORDER BY order_no ASC LIMIT 1`,
+            [sessionId, businessId],
+          );
+          const custId = custRow.rows[0]?.customer_id || null;
+          if (headRow.rowCount > 0 && custId) {
+            const sumQ = await client.query(
+              `SELECT COALESCE(SUM(total), 0) AS total FROM orders
+                WHERE table_session_id = $1 AND status <> 'cancelled'`,
+              [sessionId],
+            );
+            const sessionTotalPaise = Math.round(parseFloat(sumQ.rows[0].total) * 100);
+            const headTotalPaise = Math.round(parseFloat(headRow.rows[0].total) * 100);
+            const balQ = await client.query(
+              'SELECT points_balance FROM customers WHERE id = $1 FOR UPDATE',
+              [custId],
+            );
+            const balance = balQ.rows[0]?.points_balance || 0;
+            const maxRedeem = loyalty.maxRedeemablePoints(balance, sessionTotalPaise, settings);
+            const maxByHead = Math.floor(headTotalPaise / settings.redemptionValuePaise);
+            const redeem = Math.min(wantPoints, maxRedeem, maxByHead);
+            if (redeem > 0) {
+              const discPaise = redeem * settings.redemptionValuePaise;
+              await client.query(
+                `UPDATE orders
+                    SET total = GREATEST(0, total - $1),
+                        loyalty_discount_paise = COALESCE(loyalty_discount_paise, 0) + $2,
+                        points_redeemed = COALESCE(points_redeemed, 0) + $3
+                  WHERE id = $4`,
+                [discPaise / 100, discPaise, redeem, headRow.rows[0].id],
+              );
+              const updated = await client.query(
+                `UPDATE customers
+                    SET points_balance = points_balance - $1,
+                        lifetime_redeemed = lifetime_redeemed + $1
+                  WHERE id = $2 RETURNING points_balance`,
+                [redeem, custId],
+              );
+              await client.query(
+                `INSERT INTO loyalty_transactions
+                   (business_id, customer_id, kind, points, balance_after, order_id)
+                 VALUES ($1, $2, 'redeem', $3, $4, $5)`,
+                [businessId, custId, -redeem, updated.rows[0].points_balance, headRow.rows[0].id],
+              );
+            }
+          }
         }
       }
     }
