@@ -7,7 +7,10 @@ const { requireAuth, requireBusinessOwnership, requireRole } = require('../middl
 const requireAddon = require('../middleware/requireAddon');
 
 const router = express.Router({ mergeParams: true });
-router.use(requireAuth, requireBusinessOwnership, requireAddon('loyalty'));
+// 2026-09-03: plan-granted 'loyalty' (or an admin override) opens the CRM
+// too — the addon is one way to get the feature, not the only way.
+router.use(requireAuth, requireBusinessOwnership,
+           requireAddon('loyalty', { orFeature: 'loyalty' }));
 
 // Customer CRUD
 router.get   ('/',                   ...c.list);

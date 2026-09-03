@@ -637,6 +637,38 @@ class ApiService {
     return (r as Map)['addons'] as List? ?? const [];
   }
 
+  /// POST /addons/subscribe. Free addons activate instantly
+  /// ({activated:true}); paid addons return {requiresPayment:true,
+  /// razorpayOrder:{id,amount,currency}, keyId} and only activate after
+  /// [confirmAddonPayment] verifies the checkout signature server-side.
+  Future<Map<String, dynamic>> subscribeAddon(String businessId, String slug) async {
+    final r = await _wrap(() => _dio.post(
+          '/businesses/$businessId/addons/subscribe',
+          data: {'slug': slug},
+        ));
+    return (r as Map).cast<String, dynamic>();
+  }
+
+  /// Second leg of the paid-addon flow — mirrors the web MarketplacePage
+  /// confirm call. The backend re-verifies the Razorpay HMAC signature
+  /// before activating, so a spoofed success callback grants nothing.
+  Future<void> confirmAddonPayment(
+    String businessId,
+    String slug, {
+    required String razorpayPaymentId,
+    required String razorpayOrderId,
+    required String razorpaySignature,
+  }) async {
+    await _wrap(() => _dio.post(
+          '/businesses/$businessId/addons/$slug/confirm-payment',
+          data: {
+            'razorpayPaymentId': razorpayPaymentId,
+            'razorpayOrderId': razorpayOrderId,
+            'razorpaySignature': razorpaySignature,
+          },
+        ));
+  }
+
   // ── Loyalty / Customer CRM ─────────────────────────────────────────────
   /// Returns {customer, loyaltySettings} — customer may be null (new visitor).
   /// Returns null when the addon isn't subscribed (402).

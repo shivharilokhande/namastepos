@@ -11,7 +11,7 @@ import {
   Activity, TrendingUp, Star, BookOpen, Ticket, Calendar as CalIcon,
   MessageSquare, Upload, Landmark, FileText, Repeat, Zap,
   ShieldCheck, Inbox, TrendingDown, HelpCircle, Undo2, ChevronDown,
-  LifeBuoy, Gift,
+  LifeBuoy, Gift, ArrowRightLeft,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { ImpersonationBanner } from './ImpersonationBanner';
@@ -142,6 +142,10 @@ const navGroups: { name: string; items: NavItem[] }[] = [
       // change made bulk imports available on ALL plans, so the sidebar
       // must not show a lock the API no longer enforces. `null` = always on.
       { to: '/bulk-import', icon: Upload,        label: 'Bulk import',      feature: null },
+      // Migration wizard (2026-09-03): step-by-step "bring your data from
+      // your old POS" flow. Ungated — switchers migrate before picking a
+      // plan, so this must be visible to every tenant.
+      { to: '/migrate',   icon: ArrowRightLeft,  label: 'Switch to NamastePOS', feature: null },
       // DPDP: always-on entry point — every user must be able to reach
       // their privacy controls in at most one click. Cannot be plan-gated.
       { to: '/privacy',   icon: ShieldCheck,     label: 'Privacy',          feature: null },

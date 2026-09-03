@@ -96,10 +96,21 @@ async function syncPlans() {
   // compares amounts, and creates a REPLACEMENT plan on any mismatch.
   // Existing subscriptions keep their old plan; only new checkouts use
   // the replacement.
-  const r = await query(`SELECT * FROM plans WHERE tier <> 'free' AND price_inr_paise > 0`);
+  // 2026-09-03 (custom plans): only PUBLIC plans sync in the bulk pass —
+  // custom per-customer plans mint their Razorpay ids at create/update time
+  // via syncOnePlan() below.
+  const r = await query(
+    `SELECT * FROM plans
+      WHERE tier <> 'free' AND price_inr_paise > 0 AND is_public = TRUE`
+  );
 
-  /** Ensure one cadence (monthly|yearly) of one plan row matches Razorpay. */
-  async function ensureCadence(p, { column, period, label, wantPaise }) {
+  for (const p of r.rows) {
+    await _syncPlanRowCadences(p);
+  }
+}
+
+/** Ensure one cadence (monthly|yearly) of one plan row matches Razorpay. */
+async function ensureCadence(p, { column, period, label, wantPaise }) {
     const currentId = p[column];
     if (currentId) {
       try {
@@ -124,28 +135,48 @@ async function syncPlans() {
     }
     await query(`UPDATE plans SET ${column} = $1 WHERE id = $2`, [created.id, p.id]);
     logger.info(`Synced ${period} plan ${p.tier} → ${created.id} (₹${wantPaise / 100})`);
-  }
+}
 
-  for (const p of r.rows) {
-    try {
-      await ensureCadence(p, {
-        column: 'razorpay_plan_id', period: 'monthly',
-        label: `NamastePOS ${p.name}`, wantPaise: p.price_inr_paise,
-      });
-    } catch (err) {
-      logger.warn(`Razorpay monthly sync failed for ${p.tier}: ${err.message}`);
-    }
-    try {
-      const yearlyPaise = p.price_yearly_paise
-        || Math.round(p.price_inr_paise * 10);   // default: 10× = 2 months free
+/** Both cadences for one plan row (shared by syncPlans + syncOnePlan). */
+async function _syncPlanRowCadences(p) {
+  try {
+    await ensureCadence(p, {
+      column: 'razorpay_plan_id', period: 'monthly',
+      label: `NamastePOS ${p.name}`, wantPaise: p.price_inr_paise,
+    });
+  } catch (err) {
+    logger.warn(`Razorpay monthly sync failed for ${p.tier}: ${err.message}`);
+  }
+  try {
+    // Custom plans may legitimately have NO yearly price (null = monthly
+    // only); public plans keep the historical 10× default.
+    const yearlyPaise = p.price_yearly_paise
+      || (p.is_public === false ? 0 : Math.round(p.price_inr_paise * 10));
+    if (yearlyPaise > 0) {
       await ensureCadence(p, {
         column: 'razorpay_plan_id_yearly', period: 'yearly',
         label: `NamastePOS ${p.name} (yearly)`, wantPaise: yearlyPaise,
       });
-    } catch (err) {
-      logger.warn(`Razorpay yearly sync failed for ${p.tier}: ${err.message}`);
     }
+  } catch (err) {
+    logger.warn(`Razorpay yearly sync failed for ${p.tier}: ${err.message}`);
   }
+}
+
+/**
+ * 2026-09-03 (custom plans) — mint/refresh Razorpay plan ids for a single
+ * plans row (used right after a custom plan is created or repriced, since
+ * the bulk syncPlans() deliberately skips non-public plans). No-op when
+ * Razorpay isn't configured or the plan is free.
+ */
+async function syncOnePlan(planId) {
+  if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) return { synced: false, reason: 'not_configured' };
+  const r = await query(`SELECT * FROM plans WHERE id = $1 LIMIT 1`, [planId]);
+  if (r.rowCount === 0) return { synced: false, reason: 'not_found' };
+  const p = r.rows[0];
+  if (!p.price_inr_paise || p.price_inr_paise <= 0) return { synced: false, reason: 'free_plan' };
+  await _syncPlanRowCadences(p);
+  return { synced: true };
 }
 
 // ── Create subscription for a business ───────────────────────────────────
@@ -576,6 +607,10 @@ async function _onChargeSuccess(sub, pay) {
       [sr.business_id, inv.rows[0].id, pay.amount, pay.method, pay.id, pay]
     );
   });
+  // 2026-09-03 (plans/addons audit #5): the charge may have flipped the
+  // business onto a new plan (plan_id update above) — bust the 60s feature
+  // cache AFTER the txn commits so gates reflect the paid tier immediately.
+  try { require('./featureService').clearCache(sr.business_id); } catch (_) { /* non-fatal */ }
 }
 
 /**
@@ -622,6 +657,7 @@ function verifyCheckoutSignature({ orderId, paymentId, signature }) {
 
 module.exports = {
   syncPlans,
+  syncOnePlan,               // 2026-09-03 custom plans
   createSubscription,
   verifyWebhookSignature,
   handleWebhook,

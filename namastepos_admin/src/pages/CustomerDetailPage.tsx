@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { adminApi } from '@/api/admin';
+import { adminApi, FeatureKey, FeatureOverride, CustomPlanLimits } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR, formatDate, formatDateTime } from '@/lib/utils';
 // FF-402 — reuse the visual chips from the CRM page so the tenant
@@ -23,7 +23,9 @@ import { formatINR, formatDate, formatDateTime } from '@/lib/utils';
 import { HealthPill, LifecycleBadge } from './CrmPage';
 
 // FF-402 — 'crm' tab groups the activity feed + tenant tasks + health.
-const TABS = ['overview', 'crm', 'addons', 'menu', 'orders', 'staff', 'invoices', 'notes', 'audit'] as const;
+// Plans-addons migration — 'plan & features' tab: per-customer custom plan
+// editor + feature overrides.
+const TABS = ['overview', 'crm', 'plan & features', 'addons', 'menu', 'orders', 'staff', 'invoices', 'notes', 'audit'] as const;
 type Tab = typeof TABS[number];
 
 // Push 20c — CSV writer shared by orders/invoices/payments export buttons.
@@ -171,6 +173,7 @@ export function CustomerDetailPage() {
 
       {tab === 'overview' && <OverviewTab business={b} subscription={s} payments={payments} />}
       {tab === 'crm' && <CrmTab businessId={id!} business={b} />}
+      {tab === 'plan & features' && <PlanFeaturesTab businessId={id!} />}
       {tab === 'addons' && <AddonsTab businessId={id!} />}
       {tab === 'menu' && <MenuTab menu={menu} businessId={id!} />}
       {tab === 'orders' && <OrdersTab orders={orders} />}
@@ -594,6 +597,346 @@ function AddonsTab({ businessId }: { businessId: string }) {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// ── Plans-addons migration — per-customer custom plan + feature overrides ──
+const CUSTOM_PLAN_LIMIT_KEYS: (keyof CustomPlanLimits)[] =
+  ['staff', 'tables', 'floors', 'menu_items', 'monthly_orders'];
+const CUSTOM_TIER_KINDS = ['starter', 'pro', 'enterprise'] as const;
+type CustomTierKind = typeof CUSTOM_TIER_KINDS[number];
+
+function PlanFeaturesTab({ businessId }: { businessId: string }) {
+  // One shared feature-key catalog for both panels. adminApi.listFeatureKeys
+  // normalises {keys:[{key,label?}]} and plain-string-array responses.
+  const { data: featureKeys = [] } = useQuery({
+    queryKey: ['feature-keys'],
+    queryFn: adminApi.listFeatureKeys,
+    staleTime: 60_000,
+  });
+  return (
+    <div className="space-y-6">
+      <CustomPlanCard businessId={businessId} featureKeys={featureKeys} />
+      <FeatureOverridesCard businessId={businessId} featureKeys={featureKeys} />
+    </div>
+  );
+}
+
+// Group + filter the catalog for checkbox rendering. Grouped by the key's
+// first underscore-segment so related keys (menu_*, reports_* …) sit together.
+function useFeatureGroups(featureKeys: FeatureKey[], search: string) {
+  return useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const visible = featureKeys.filter((f) =>
+      !q || f.key.toLowerCase().includes(q) || (f.label || '').toLowerCase().includes(q));
+    const buckets: Record<string, FeatureKey[]> = {};
+    for (const f of visible) {
+      const g = f.key.includes('_') ? f.key.split('_')[0] : 'general';
+      (buckets[g] ||= []).push(f);
+    }
+    return Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b));
+  }, [featureKeys, search]);
+}
+
+function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featureKeys: FeatureKey[] }) {
+  const qc = useQueryClient();
+  const { data, isLoading } = useQuery({
+    queryKey: ['custom-plan', businessId],
+    queryFn: () => adminApi.getCustomPlan(businessId),
+  });
+  const plan = data?.plan ?? null;
+
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState('');
+  // Prices are edited in RUPEES; converted to paise on save.
+  const [priceMonthly, setPriceMonthly] = useState('');
+  const [priceYearly, setPriceYearly] = useState('');
+  const [tierKind, setTierKind] = useState<CustomTierKind>('pro');
+  const [limits, setLimits] = useState<Record<string, string>>(
+    Object.fromEntries(CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, '-1'])));
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
+
+  // Seed the form from the server copy whenever it (re)loads.
+  useEffect(() => {
+    if (!data?.plan) return;
+    const p = data.plan;
+    setName(p.name || '');
+    setPriceMonthly(String((p.priceInrPaise ?? 0) / 100));
+    setPriceYearly(p.priceYearlyPaise != null ? String(p.priceYearlyPaise / 100) : '');
+    setTierKind((p.tierKind as CustomTierKind) || 'pro');
+    setLimits(Object.fromEntries(
+      CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, String(p.limits?.[k] ?? -1)])));
+    setSelected(new Set(data.featureKeys ?? []));
+    setEditing(true);
+  }, [data]);
+
+  const buildBody = (assign: boolean) => ({
+    name: name.trim(),
+    priceInrPaise: Math.round(Number(priceMonthly || 0) * 100),
+    priceYearlyPaise: priceYearly.trim() === '' ? null : Math.round(Number(priceYearly) * 100),
+    limits: Object.fromEntries(
+      CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, Number(limits[k] ?? -1)])) as unknown as CustomPlanLimits,
+    featureKeys: Array.from(selected),
+    tierKind,
+    assign,
+  });
+  const save = useMutation({
+    // "Save" keeps the current assignment; "Save & assign" forces it on.
+    mutationFn: (assign: boolean) => adminApi.saveCustomPlan(businessId, buildBody(assign)),
+    onSuccess: (_r, assign) => {
+      toast.success(assign ? 'Custom plan saved & assigned' : 'Custom plan saved');
+      qc.invalidateQueries({ queryKey: ['custom-plan', businessId] });
+      qc.invalidateQueries({ queryKey: ['drilldown', businessId] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const remove = useMutation({
+    mutationFn: () => adminApi.deleteCustomPlan(businessId),
+    onSuccess: () => {
+      toast.success('Custom plan deleted');
+      setEditing(false);
+      setName(''); setPriceMonthly(''); setPriceYearly('');
+      setSelected(new Set());
+      setLimits(Object.fromEntries(CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, '-1'])));
+      qc.invalidateQueries({ queryKey: ['custom-plan', businessId] });
+      qc.invalidateQueries({ queryKey: ['drilldown', businessId] });
+    },
+    onError: (e) => toast.error(apiError(e)), // 409 when assigned — backend guards too
+  });
+
+  const groups = useFeatureGroups(featureKeys, search);
+  const toggle = (k: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k); else next.add(k);
+      return next;
+    });
+  };
+  const busy = save.isPending || remove.isPending;
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between space-y-0">
+        <div>
+          <CardTitle className="text-base">Custom plan</CardTitle>
+          <CardDescription>
+            A private plan for this customer only — its own price, limits and feature set.
+            {plan?.assigned && <span className="ml-1 font-medium text-emerald-700">Currently assigned.</span>}
+          </CardDescription>
+        </div>
+        {plan && (
+          // Tooltip via title attr — Delete stays visible but disabled while assigned.
+          <span title={plan.assigned ? 'Unassign first — move the customer to another plan before deleting' : undefined}>
+            <Button size="sm" variant="ghost" className="text-destructive"
+              disabled={plan.assigned || busy}
+              onClick={() => {
+                if (confirm(`Delete the custom plan "${plan.name}"?`)) remove.mutate();
+              }}>
+              <Trash2 className="h-4 w-4 mr-1" /> Delete
+            </Button>
+          </span>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading…</div>
+        ) : !plan && !editing ? (
+          <Button variant="outline" onClick={() => setEditing(true)}>
+            Create custom plan
+          </Button>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <Label>Name</Label>
+                <Input value={name} placeholder="e.g. Sharma Dhaba Custom"
+                  onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div>
+                <Label>Monthly price (₹)</Label>
+                <Input type="number" min={0} value={priceMonthly}
+                  onChange={(e) => setPriceMonthly(e.target.value)} />
+              </div>
+              <div>
+                <Label>Yearly price (₹, optional)</Label>
+                <Input type="number" min={0} value={priceYearly}
+                  placeholder="10× monthly default"
+                  onChange={(e) => setPriceYearly(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <Label>Tier kind</Label>
+              <select value={tierKind} onChange={(e) => setTierKind(e.target.value as CustomTierKind)}
+                className="h-10 w-full md:w-56 rounded-md border border-input bg-background px-3 text-sm">
+                {CUSTOM_TIER_KINDS.map((tk) => <option key={tk} value={tk}>{tk}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="text-sm font-semibold mb-2">
+                Limits <span className="text-xs font-normal text-muted-foreground">(-1 = unlimited)</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {CUSTOM_PLAN_LIMIT_KEYS.map((k) => (
+                  <div key={k}>
+                    <Label className="text-xs">{k.replace(/_/g, ' ')}</Label>
+                    <Input type="number" value={limits[k] ?? '-1'}
+                      onChange={(e) => setLimits((prev) => ({ ...prev, [k]: e.target.value }))} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-semibold">
+                  Features <span className="text-xs font-normal text-muted-foreground">({selected.size} selected)</span>
+                </div>
+                <Input className="w-48 h-8" placeholder="Filter features…"
+                  value={search} onChange={(e) => setSearch(e.target.value)} />
+              </div>
+              <div className="border rounded-md p-3 max-h-72 overflow-y-auto space-y-3">
+                {featureKeys.length === 0 && (
+                  <div className="text-sm text-muted-foreground">No feature keys available.</div>
+                )}
+                {groups.map(([groupName, keys]) => (
+                  <div key={groupName}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      {groupName}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-1">
+                      {keys.map((f) => (
+                        <label key={f.key}
+                          className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/50 cursor-pointer text-sm">
+                          <input type="checkbox" checked={selected.has(f.key)}
+                            onChange={() => toggle(f.key)} />
+                          <span className="font-mono text-[12px]">{f.label || f.key}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="outline" disabled={busy || !name.trim()}
+                onClick={() => save.mutate(plan?.assigned ?? false)}>
+                {save.isPending ? 'Saving…' : 'Save'}
+              </Button>
+              <Button disabled={busy || !name.trim()} onClick={() => save.mutate(true)}>
+                {save.isPending ? 'Saving…' : 'Save & assign to this customer'}
+              </Button>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function FeatureOverridesCard({ businessId, featureKeys }: { businessId: string; featureKeys: FeatureKey[] }) {
+  const qc = useQueryClient();
+  const { data: overrides = [], isLoading } = useQuery({
+    queryKey: ['feature-overrides', businessId],
+    queryFn: () => adminApi.getFeatureOverrides(businessId),
+  });
+  const [addKey, setAddKey] = useState('');
+  const [addMode, setAddMode] = useState<'enable' | 'disable'>('enable');
+
+  const invalidate = () =>
+    qc.invalidateQueries({ queryKey: ['feature-overrides', businessId] });
+  // PUT replaces the whole set — used to add rows / flip a row's mode.
+  const saveSet = useMutation({
+    mutationFn: (next: FeatureOverride[]) => adminApi.setFeatureOverrides(businessId, next),
+    onSuccess: () => { toast.success('Overrides saved'); setAddKey(''); invalidate(); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  const removeOne = useMutation({
+    mutationFn: (featureKey: string) => adminApi.deleteFeatureOverride(businessId, featureKey),
+    onSuccess: () => { toast.success('Override removed'); invalidate(); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const existing = new Set(overrides.map((o) => o.featureKey));
+  const addable = featureKeys.filter((f) => !existing.has(f.key));
+  const busy = saveSet.isPending || removeOne.isPending;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Feature overrides</CardTitle>
+        <CardDescription>
+          Overrides win over plan and addons; use sparingly.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading…</div>
+        ) : overrides.length === 0 ? (
+          <div className="text-sm text-muted-foreground">No overrides on this customer.</div>
+        ) : (
+          <Table>
+            <TableHeader><TableRow>
+              <TableHead>Feature key</TableHead>
+              <TableHead>Mode</TableHead>
+              <TableHead></TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {overrides.map((o) => (
+                <TableRow key={o.featureKey}>
+                  <TableCell className="font-mono text-xs">{o.featureKey}</TableCell>
+                  <TableCell>
+                    <button type="button" disabled={busy}
+                      title="Click to flip enable/disable"
+                      onClick={() => saveSet.mutate(overrides.map((x) =>
+                        x.featureKey === o.featureKey
+                          ? { ...x, mode: x.mode === 'enable' ? 'disable' : 'enable' }
+                          : x))}>
+                      <Badge variant={o.mode === 'enable' ? 'success' : 'destructive'}>
+                        {o.mode}
+                      </Badge>
+                    </button>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button size="sm" variant="ghost" disabled={busy}
+                      onClick={() => removeOne.mutate(o.featureKey)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        <div className="flex gap-2 items-end flex-wrap border-t pt-4">
+          <div className="flex-1 min-w-48">
+            <Label className="text-xs">Feature</Label>
+            <select value={addKey} onChange={(e) => setAddKey(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
+              <option value="">Select a feature key…</option>
+              {addable.map((f) => (
+                <option key={f.key} value={f.key}>{f.label || f.key}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <Label className="text-xs">Mode</Label>
+            <div className="flex gap-1">
+              {(['enable', 'disable'] as const).map((m) => (
+                <button key={m} type="button" onClick={() => setAddMode(m)}
+                  className={`px-3 h-9 rounded border text-sm capitalize ${
+                    addMode === m ? 'border-primary bg-primary/10 font-semibold' : 'border-input'}`}>
+                  {m}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Button size="sm" disabled={!addKey || busy}
+            onClick={() => saveSet.mutate([...overrides, { featureKey: addKey, mode: addMode }])}>
+            {saveSet.isPending ? 'Saving…' : 'Add override'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

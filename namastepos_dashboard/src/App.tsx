@@ -54,6 +54,7 @@ const CouponsPage = lazy(() => import('./pages/CouponsPage').then(m => ({ defaul
 const ReservationWidgetPage = lazy(() => import('./pages/ReservationWidgetPage').then(m => ({ default: m.ReservationWidgetPage })));
 const CampaignsPage = lazy(() => import('./pages/CampaignsPage').then(m => ({ default: m.CampaignsPage })));
 const BulkImportPage = lazy(() => import('./pages/BulkImportPage').then(m => ({ default: m.BulkImportPage })));
+const MigrationPage = lazy(() => import('./pages/MigrationPage').then(m => ({ default: m.MigrationPage })));
 const BankReconcilePage = lazy(() => import('./pages/BankReconcilePage').then(m => ({ default: m.BankReconcilePage })));
 const B2BInvoiceTemplatePage = lazy(() => import('./pages/B2BInvoiceTemplatePage').then(m => ({ default: m.B2BInvoiceTemplatePage })));
 const RecurringInvoicesPage = lazy(() => import('./pages/RecurringInvoicesPage').then(m => ({ default: m.RecurringInvoicesPage })));
@@ -162,6 +163,7 @@ export default function App() {
         <Route path="reservation-widget" element={<ReservationWidgetPage />} />
         <Route path="campaigns" element={<CampaignsPage />} />
         <Route path="bulk-import" element={<BulkImportPage />} />
+        <Route path="migrate" element={<MigrationPage />} />
         <Route path="bank-reconcile" element={<BankReconcilePage />} />
         <Route path="b2b-invoice-template" element={<B2BInvoiceTemplatePage />} />
         <Route path="recurring-invoices" element={<RecurringInvoicesPage />} />

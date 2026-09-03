@@ -41,6 +41,10 @@ export interface Plan {
   isActive: boolean;
   limits: Record<string, number>;
   features: Record<string, any>;
+  // Custom (per-customer) plans: is_public=false + linked business. The admin
+  // list endpoint may or may not return them — code defensively.
+  isPublic?: boolean;
+  businessId?: string | null;
 }
 
 export interface Coupon {
@@ -359,6 +363,34 @@ export const adminApi = {
     api.post<{ inserted: number; skipped: number; errors: Array<{ row: number; name?: string; message: string }> }>(
       `/admin/customers/${businessId}/menu/bulk`, { items }
     ).then((r) => r.data),
+
+  // ── Custom plans + feature overrides (plans-addons migration) ─────────
+  // Global feature-key catalog. The backend may return {keys:[{key,label?}]}
+  // OR a plain string array — normalise both to FeatureKey[] here so pages
+  // never have to care.
+  listFeatureKeys: () =>
+    api.get<any>('/admin/feature-keys').then((r) => {
+      const raw = Array.isArray(r.data) ? r.data : (r.data?.keys ?? []);
+      return (raw as any[]).map((k): FeatureKey =>
+        typeof k === 'string' ? { key: k } : { key: k.key, label: k.label });
+    }),
+  getFeatureOverrides: (businessId: string) =>
+    api.get<{ overrides: FeatureOverride[] }>(`/admin/customers/${businessId}/feature-overrides`)
+       .then((r) => r.data.overrides ?? []),
+  // PUT replaces the whole set.
+  setFeatureOverrides: (businessId: string, overrides: FeatureOverride[]) =>
+    api.put<{ overrides: FeatureOverride[] }>(`/admin/customers/${businessId}/feature-overrides`, { overrides })
+       .then((r) => r.data.overrides ?? []),
+  deleteFeatureOverride: (businessId: string, featureKey: string) =>
+    api.delete(`/admin/customers/${businessId}/feature-overrides/${featureKey}`).then((r) => r.data),
+  // {plan:null} when the customer has no custom plan yet.
+  getCustomPlan: (businessId: string) =>
+    api.get<CustomPlanResponse>(`/admin/customers/${businessId}/custom-plan`).then((r) => r.data),
+  saveCustomPlan: (businessId: string, body: CustomPlanInput) =>
+    api.put<CustomPlanResponse>(`/admin/customers/${businessId}/custom-plan`, body).then((r) => r.data),
+  // 409 when the plan is currently assigned to the customer.
+  deleteCustomPlan: (businessId: string) =>
+    api.delete(`/admin/customers/${businessId}/custom-plan`).then((r) => r.data),
 };
 
 // ── DPDP / Compliance ──────────────────────────────────────────────────
@@ -407,6 +439,31 @@ export interface RetentionConfig {
 export interface RetentionPreview {
   config: RetentionConfig;
   businessesEligible: number; auditRowsEligible: number; consentRowsEligible: number;
+}
+
+// ── Custom plans + feature overrides ───────────────────────────────────
+export interface FeatureKey { key: string; label?: string }
+export interface FeatureOverride { featureKey: string; mode: 'enable' | 'disable' }
+export interface CustomPlanLimits {
+  staff: number; tables: number; floors: number;
+  menu_items: number; monthly_orders: number;
+}
+export interface CustomPlan {
+  tier: string; name: string;
+  priceInrPaise: number; priceYearlyPaise: number | null;
+  limits: CustomPlanLimits;
+  tierKind: 'starter' | 'pro' | 'enterprise';
+  assigned: boolean;
+}
+export interface CustomPlanResponse { plan: CustomPlan | null; featureKeys?: string[] }
+export interface CustomPlanInput {
+  name: string;
+  priceInrPaise: number;
+  priceYearlyPaise: number | null;
+  limits: CustomPlanLimits;
+  featureKeys: string[];
+  tierKind: 'starter' | 'pro' | 'enterprise';
+  assign: boolean;
 }
 
 export interface Addon {

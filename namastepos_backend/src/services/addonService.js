@@ -54,6 +54,8 @@ function serializeAddon(a) {
     requiredPlanTier: a.required_plan_tier,
     trialDays: a.trial_days,
     features: a.features || {},
+    // 2026-09-03 — the feature keys this addon unlocks (migration 074).
+    grantsFeatures: a.grants_features || [],
     razorpayPlanId: a.razorpay_plan_id,
     isActive: a.is_active,
     displayOrder: a.display_order,
@@ -109,8 +111,8 @@ async function createAddon(body) {
          (slug, name, tagline, description, icon, category,
           price_inr_paise, billing_period, required_plan_tier,
           trial_days, features, is_active, display_order,
-          partner_name, revenue_share_pct)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+          partner_name, revenue_share_pct, grants_features)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
       [body.slug, body.name, body.tagline || null, body.description || null,
        body.icon || 'box', body.category || 'operations',
        body.price_inr_paise, body.billing_period || 'monthly',
@@ -118,7 +120,8 @@ async function createAddon(body) {
        JSON.stringify(body.features || {}),
        body.is_active !== false,
        body.display_order || 100,
-       body.partner_name || null, body.revenue_share_pct || 0]
+       body.partner_name || null, body.revenue_share_pct || 0,
+       body.grants_features || []]
     );
     return serializeAddon(r.rows[0]);
   } catch (err) {
@@ -131,7 +134,8 @@ async function updateAddon(slug, patch) {
   const fields = ['name', 'tagline', 'description', 'icon', 'category',
                   'price_inr_paise', 'billing_period', 'required_plan_tier',
                   'trial_days', 'features', 'is_active', 'display_order',
-                  'razorpay_plan_id', 'partner_name', 'revenue_share_pct'];
+                  'razorpay_plan_id', 'partner_name', 'revenue_share_pct',
+                  'grants_features'];
   const sets = []; const values = []; let idx = 1;
   for (const f of fields) {
     if (patch[f] !== undefined) {
@@ -146,6 +150,11 @@ async function updateAddon(slug, patch) {
     values
   );
   if (r.rowCount === 0) throw new NotFound('Addon not found');
+  // grants_features / is_active changes alter what every subscriber's merged
+  // feature set resolves to — drop all cached sets so gates update now.
+  if (patch.grants_features !== undefined || patch.is_active !== undefined) {
+    try { require('./featureService').clearAllCaches(); } catch (_) { /* non-fatal */ }
+  }
   return serializeAddon(r.rows[0]);
 }
 
@@ -260,8 +269,16 @@ async function subscribe(businessId, slug) {
       WHERE business_id = $1 AND addon_id = $2`,
     [businessId, addon.id]
   );
-  if (existing.rowCount > 0
-      && ['trialing', 'active', 'past_due'].includes(existing.rows[0].status)) {
+  const alreadyActive = existing.rowCount > 0
+      && ['trialing', 'active', 'past_due'].includes(existing.rows[0].status);
+  const razorpayConfigured = !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+  // 2026-09-03 (plans/addons audit #4a): re-purchasing an ACTIVE paid addon
+  // is now a RENEWAL, not a conflict — the paid branch below returns a fresh
+  // Razorpay order and confirmPayment() stacks the new period on top of the
+  // remaining one (GREATEST(current_period_end, NOW()) + period). Free /
+  // no-gateway activations have a 100-year period, so "renewing" those is
+  // meaningless and stays a 409.
+  if (alreadyActive && (addon.price_inr_paise === 0 || !razorpayConfigured)) {
     throw new Conflict('Addon already active for this business');
   }
 
@@ -275,8 +292,7 @@ async function subscribe(businessId, slug) {
   // without RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET and rzCall() hard-fails
   // in that case. We keep the old instant activation there so the
   // marketplace stays usable offline; production always has keys, so real
-  // customers always go through payment.
-  const razorpayConfigured = !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+  // customers always go through payment. (razorpayConfigured computed above.)
   if (addon.price_inr_paise === 0 || !razorpayConfigured) {
     const ins = await query(
       `INSERT INTO business_addons
@@ -309,6 +325,9 @@ async function subscribe(businessId, slug) {
   return {
     activated: false,
     requiresPayment: true,
+    // 2026-09-03: tells the dashboard this checkout EXTENDS the current
+    // period (addon already active) rather than starting a fresh one.
+    renewal: alreadyActive,
     razorpayOrder: { id: order.id, amount: order.amount, currency: order.currency },
     keyId: env.RAZORPAY_KEY_ID,
     addon: serializeAddon(addon),
@@ -340,7 +359,9 @@ async function confirmPayment(businessId, slug,
   // Cross-check the order server-side: a VALID signature for a different
   // order (cheaper addon, other tenant) must not activate this one, so we
   // re-fetch the order and match tenant, addon and amount against it.
-  const order = await rzCall('GET', `/v1/orders/${razorpayOrderId}`);
+  // 2026-09-03: use razorpayService.getOrder (same rzCall under the hood)
+  // instead of the local helper so tests can stub the gateway boundary.
+  const order = await rz.getOrder(razorpayOrderId);
   const notes = order.notes || {};
   if (notes.kind !== 'addon'
       || notes.addonSlug !== addon.slug
@@ -353,6 +374,11 @@ async function confirmPayment(businessId, slug,
 
   // Activate — same write as the free path, but with a real paid period
   // (first month/year) instead of the free 100-year window.
+  // 2026-09-03 (plans/addons audit #4a): renewal STACKS — the new period is
+  // added on top of whatever is left (GREATEST of the current end and NOW()),
+  // so renewing 5 days early no longer burns those 5 days. A lapsed addon
+  // (period end in the past) restarts from NOW(). notified_expiry_at resets
+  // so the next expiry window notifies again.
   const periodInterval = addon.billing_period === 'yearly' ? '365 days' : '30 days';
   const ins = await query(
     `INSERT INTO business_addons
@@ -360,7 +386,9 @@ async function confirmPayment(businessId, slug,
      VALUES ($1, $2, 'active', NULL, NOW() + $3::interval)
      ON CONFLICT (business_id, addon_id) DO UPDATE
        SET status = 'active', cancelled_at = NULL, cancel_at_period_end = FALSE,
-           current_period_end = NOW() + $3::interval
+           current_period_end =
+             GREATEST(business_addons.current_period_end, NOW()) + $3::interval,
+           notified_expiry_at = NULL
      RETURNING *`,
     [businessId, addon.id, periodInterval]
   );
@@ -462,6 +490,10 @@ async function detach(businessId, slug) {
     [businessId, addon.id]
   );
   if (r.rowCount === 0) throw new NotFound('Addon not subscribed');
+  // 2026-09-03 (plans/addons audit #5): mirror cancel() — bust the 60s
+  // feature cache so a super-admin Detach locks the gated feature right
+  // away instead of after the TTL.
+  try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
   return serializeActivation(r.rows[0], addon);
 }
 
@@ -530,11 +562,56 @@ async function handleRazorpayEvent(event, payload) {
   return true;
 }
 
+/**
+ * 2026-09-03 (plans/addons audit #4b) — nightly expiry reminders.
+ * Finds paid activations whose period ends within the next 3 days, or ended
+ * within the last day, that haven't been notified yet (notified_expiry_at
+ * guard, migration 074 — reset on renewal in confirmPayment). Sends a push
+ * to the business owners (the existing tenant notification channel,
+ * pushService.sendToBusinessOwners) and stamps the flag, so each activation
+ * notifies exactly once per expiry window. Free/comped activations have a
+ * 100-year period and never match. Runs from cronWorker's nightly slot.
+ */
+async function notifyExpiringActivations() {
+  const due = await query(
+    `SELECT ba.id, ba.business_id, ba.current_period_end, a.name, a.slug
+       FROM business_addons ba
+       JOIN addons a ON a.id = ba.addon_id
+      WHERE ba.status IN ('active', 'trialing', 'past_due')
+        AND ba.notified_expiry_at IS NULL
+        AND ba.current_period_end BETWEEN NOW() - INTERVAL '1 day'
+                                      AND NOW() + INTERVAL '3 days'
+      LIMIT 200`
+  );
+  let notified = 0;
+  for (const row of due.rows) {
+    const expired = new Date(row.current_period_end).getTime() <= Date.now();
+    const title = expired
+      ? `${row.name} add-on has expired`
+      : `${row.name} add-on expires soon`;
+    const body = expired
+      ? `Your ${row.name} add-on expired on ${new Date(row.current_period_end).toLocaleDateString('en-IN')}. Renew from the Add-ons page to keep the feature on.`
+      : `Your ${row.name} add-on expires on ${new Date(row.current_period_end).toLocaleDateString('en-IN')}. Renew from the Add-ons page to avoid interruption.`;
+    try {
+      await require('./pushService').sendToBusinessOwners(row.business_id, {
+        title, body, data: { kind: 'addon_expiry', addonSlug: row.slug },
+      });
+    } catch (_) { /* push is best-effort; still stamp so we don't loop */ }
+    // Stamp AFTER the send attempt — once per activation per window.
+    await query(
+      `UPDATE business_addons SET notified_expiry_at = NOW() WHERE id = $1`,
+      [row.id]
+    );
+    notified += 1;
+  }
+  return { scanned: due.rowCount, notified };
+}
+
 module.exports = {
   listCatalog, getBySlug, getById,
   createAddon, updateAddon, syncRazorpayPlans,
   listActiveForBusiness, listAllForBusiness, hasAddon,
   subscribe, forceActivate, confirmPayment, cancel, detach, resume, updateSettings,
-  handleRazorpayEvent,
+  handleRazorpayEvent, notifyExpiringActivations,
   serializeAddon, serializeActivation,
 };

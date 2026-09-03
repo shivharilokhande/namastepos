@@ -115,7 +115,7 @@ async function _load(businessId) {
   // used elsewhere in the codebase (active / trialing).
   try {
     const addons = await query(
-      `SELECT a.slug
+      `SELECT a.slug, a.grants_features
          FROM business_addons ba
          JOIN addons a ON a.id = ba.addon_id
         WHERE ba.business_id = $1
@@ -124,9 +124,32 @@ async function _load(businessId) {
       [businessId]
     );
     for (const row of addons.rows) {
-      if (row.slug) features.add(row.slug);
+      if (row.slug) features.add(row.slug); // back-compat: slug doubles as a key
+      // 2026-09-03 (plans/addons audit #2): an addon now declares the real
+      // feature keys it unlocks (addons.grants_features, migration 074) so
+      // e.g. buying 'whatsapp-marketing' opens the featureGate'd
+      // 'whatsapp_marketing' routes, not just the slug pseudo-key.
+      for (const key of row.grants_features || []) {
+        if (key) features.add(key);
+      }
     }
   } catch (_) { /* fail open — plan features still apply */ }
+  // 2026-09-03 (plans/addons audit #1): per-business feature overrides
+  // (business_feature_overrides, FF-315) are applied LAST so they win over
+  // both the plan matrix and addon grants: enabled=TRUE force-adds the key,
+  // enabled=FALSE force-removes it. Written only by super-admin.
+  try {
+    const overrides = await query(
+      `SELECT feature_key, enabled FROM business_feature_overrides
+        WHERE business_id = $1`,
+      [businessId]
+    );
+    for (const row of overrides.rows) {
+      if (!row.feature_key) continue;
+      if (row.enabled) features.add(row.feature_key);
+      else features.delete(row.feature_key);
+    }
+  } catch (_) { /* fail open — plan+addon features still apply */ }
   const entry = {
     expires: Date.now() + TTL_MS,
     tier: resolved.tier,
@@ -171,7 +194,15 @@ function clearAllCaches() {
 }
 
 function nextTierUp(tierKind) {
-  return { starter: 'pro', pro: 'enterprise', enterprise: null }[tierKind] || 'pro';
+  // 2026-09-03 (custom plans): a custom per-customer plan has no meaningful
+  // "next tier up" — return null so clients hide the upgrade CTA instead of
+  // pitching a generic 'pro' upsell to a bespoke-priced tenant. Applies both
+  // to the tier CODE form ('custom-xxxxxxxx') and any unknown input.
+  if (!tierKind || String(tierKind).startsWith('custom-')) return null;
+  const ladder = { starter: 'pro', pro: 'enterprise', enterprise: null };
+  // `in` check: enterprise legitimately maps to null (top tier) — the old
+  // `[tierKind] || 'pro'` coerced that null into a bogus 'pro' upsell.
+  return tierKind in ladder ? ladder[tierKind] : 'pro';
 }
 
 // Push 14d — feature catalog: the master list of every feature key the
@@ -215,6 +246,11 @@ const WELL_KNOWN_FEATURE_KEYS = [
   'memberships',
   'reviews',
   'marketplace_addons',
+  // 2026-09-03 (plans/addons audit): bill-template editing is now gated by
+  // this key (granted by the custom-branding addon's grants_features, or
+  // per-plan / per-business override). Must be in the catalog so the admin
+  // plan editor + custom-plan builder can grant it.
+  'custom_branding',
   // Migration 034 grants this to pro/enterprise and app code checks for
   // it, but it was missing from the well-known catalog so it never
   // appeared in the admin picker either. Restoring here.

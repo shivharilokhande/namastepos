@@ -707,6 +707,81 @@ const renewalsCtrl = asyncHandler(async (req, res) => {
   res.json({ items });
 });
 
+// ── Per-business feature overrides (FF-315, wired 2026-09-03) ────────────
+// business_feature_overrides existed since migration 046 but nothing wrote
+// it and featureService ignored it. Now featureService._load applies it
+// after the plan+addon merge; these endpoints are the admin write surface.
+const featureFlags = require('../services/featureFlagsService');
+
+const listFeatureOverrides = asyncHandler(async (req, res) => {
+  res.json({ overrides: await featureFlags.list(req.params.businessId) });
+});
+
+const setFeatureOverridesBody = Joi.object({
+  overrides: Joi.array().items(Joi.object({
+    featureKey: Joi.string().min(1).max(60).required(),
+    mode: Joi.string().valid('enable', 'disable').required(),
+    reason: Joi.string().max(500).allow('', null),
+  })).max(100).required(),
+});
+const setFeatureOverrides = [
+  validate({ body: setFeatureOverridesBody }),
+  asyncHandler(async (req, res) => {
+    const overrides = await featureFlags.replaceAll(
+      req.params.businessId, req.body.overrides, { adminId: req.user?.id }
+    );
+    res.json({ overrides });
+  }),
+];
+
+const deleteFeatureOverride = asyncHandler(async (req, res) => {
+  await featureFlags.remove(req.params.businessId, req.params.featureKey);
+  res.json({ success: true });
+});
+
+// ── Custom (per-customer) plans (2026-09-03) ─────────────────────────────
+const customPlans = require('../services/customPlanService');
+
+const getCustomPlan = asyncHandler(async (req, res) => {
+  res.json({ plan: await customPlans.getForBusiness(req.params.businessId) });
+});
+
+const putCustomPlanBody = Joi.object({
+  name: Joi.string().min(1).max(60).required(),
+  priceInrPaise: Joi.number().integer().min(0).required(),
+  priceYearlyPaise: Joi.number().integer().min(0).allow(null),
+  limits: Joi.object({
+    staff: Joi.number().integer().min(-1),
+    tables: Joi.number().integer().min(-1),
+    floors: Joi.number().integer().min(-1),
+    menu_items: Joi.number().integer().min(-1),
+    monthly_orders: Joi.number().integer().min(-1),
+  }).unknown(true).default({}),
+  featureKeys: Joi.array().items(Joi.string().min(1).max(60)).max(100).default([]),
+  tierKind: Joi.string().valid('starter', 'pro', 'enterprise').required(),
+  assign: Joi.boolean().default(false),
+});
+const putCustomPlan = [
+  validate({ body: putCustomPlanBody }),
+  asyncHandler(async (req, res) => {
+    const out = await customPlans.upsertForBusiness(req.params.businessId, req.body);
+    // Mirror setPlanManually's CRM breadcrumb when the plan was assigned.
+    if (req.body.assign === true) {
+      require('../services/crmService').logActivity({
+        businessId: req.params.businessId, kind: 'plan_change',
+        title: `Custom plan "${req.body.name}" assigned`,
+        meta: { tier: out.plan?.tier, priceInrPaise: req.body.priceInrPaise },
+        actorType: 'admin', actorEmail: req.user?.email,
+      }).catch(() => {});
+    }
+    res.json(out);
+  }),
+];
+
+const deleteCustomPlan = asyncHandler(async (req, res) => {
+  res.json(await customPlans.removeForBusiness(req.params.businessId));
+});
+
 module.exports = {
   login, logout, me,
   twoFaVerify, twoFaEnrolStart, twoFaEnrolConfirm, twoFaDisable,
@@ -734,4 +809,7 @@ module.exports = {
   listActivitiesCtrl, addActivityCtrl,
   listTasksCtrl, createTaskCtrl, completeTaskCtrl,
   recomputeHealthCtrl, recomputeAllHealthCtrl, renewalsCtrl,
+  // 2026-09-03 — feature overrides + custom plans
+  listFeatureOverrides, setFeatureOverrides, deleteFeatureOverride,
+  getCustomPlan, putCustomPlan, deleteCustomPlan,
 };

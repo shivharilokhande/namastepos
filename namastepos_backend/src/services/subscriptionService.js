@@ -28,6 +28,10 @@ function serializePlan(p) {
     razorpayPlanId: p.razorpay_plan_id,
     razorpayPlanIdYearly: p.razorpay_plan_id_yearly,
     isActive: p.is_active,
+    // 2026-09-03 custom plans (migration 074): is_public=FALSE hides a plan
+    // from public catalogs; business_id scopes it to exactly one tenant.
+    isPublic: p.is_public !== false,
+    businessId: p.business_id || null,
     limits: p.limits || {},
     features: p.features || {},
   };
@@ -51,11 +55,23 @@ function serializeSubscription(s, plan) {
 
 // ── Plans ────────────────────────────────────────────────────────────────
 
-async function listPlans() {
-  const r = await query(
-    `SELECT * FROM plans WHERE is_active = TRUE
-      ORDER BY price_inr_paise ASC`
-  );
+// 2026-09-03 custom plans: public surfaces (GET /v1/plans anonymous,
+// /v1/public/plans, landing feed) list only is_public plans. When a tenant
+// context is known (`forBusinessId`), THAT tenant's own custom plan is
+// included too so their BillingPage shows the plan they're actually on.
+async function listPlans({ forBusinessId = null } = {}) {
+  const r = forBusinessId
+    ? await query(
+        `SELECT * FROM plans
+          WHERE is_active = TRUE AND (is_public = TRUE OR business_id = $1)
+          ORDER BY price_inr_paise ASC`,
+        [forBusinessId]
+      )
+    : await query(
+        `SELECT * FROM plans
+          WHERE is_active = TRUE AND is_public = TRUE
+          ORDER BY price_inr_paise ASC`
+      );
   return r.rows.map(serializePlan);
 }
 
@@ -242,6 +258,20 @@ function computeProrationPaise(subRow, currentPlan, newPlan, cadence) {
 
 async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
   const plan = await getPlanByTier(newTier);
+  // 2026-09-03 (plans/addons audit #5): tenants can only self-serve onto a
+  // plan that is (a) active, and (b) public OR their own custom plan. A
+  // retired plan, a hidden internal plan, or another tenant's custom plan
+  // all 400 PLAN_NOT_AVAILABLE. (Admin assignment uses
+  // customerAdminService.setPlanManually, which is not restricted here.)
+  const notAvailable =
+    plan.is_active === false
+    || (plan.business_id != null && String(plan.business_id) !== String(businessId))
+    || (plan.is_public === false && plan.business_id == null);
+  if (notAvailable) {
+    const { HttpError } = require('../utils/errors');
+    throw new HttpError(400, 'This plan is not available', 'PLAN_NOT_AVAILABLE',
+      { tier: newTier });
+  }
   // Load the CURRENT sub + plan first so we can price the upgrade delta.
   const curQ = await query(
     `SELECT s.*, p.price_inr_paise, p.price_yearly_paise, p.tier AS cur_tier

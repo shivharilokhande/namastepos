@@ -15,6 +15,10 @@ const FEATURE_RULES = [
   // Pro features
   { match: '/kds/',             key: 'kds' },
   { match: '/ops/kot/stations', key: 'kds' },
+  // 2026-09-03 (plans/addons audit #3b): the whole KOT surface (tickets,
+  // status flips, printed marks) is a KDS-tier feature, not just stations.
+  // Same key as the stations rule above, so rule order is irrelevant here.
+  { match: '/ops/kot/',         key: 'kds' },
   { match: '/captain/',         key: 'captain_mode' },
   { match: '/drivers',          key: 'driver_mode' },
   { match: '/delivery-assignments', key: 'driver_mode' },
@@ -52,6 +56,12 @@ const FEATURE_RULES = [
   { match: '/dead-stock',       key: 'dead_stock' },
   { match: '/orders-by-hour',   key: 'heat_map' },
   { match: '/bulk-import',      key: 'bulk_import' },
+  // 2026-09-03 (plans/addons audit #3b): retail (SKUs, vendors, POs, party
+  // ledger, cheques, warehouses) is an enterprise surface. MUST stay BELOW
+  // the '/bulk-import' rule: requiredFeature() returns the FIRST substring
+  // match, so '/retail/bulk-import' keeps its existing 'bulk_import' key
+  // while every other /retail/* route needs 'multi_outlet'.
+  { match: '/retail/',          key: 'multi_outlet' },
   { match: '/marketplace',      key: 'marketplace_addons' },
   { match: '/tds-tcs',          key: 'tds_tcs' },
   { match: '/fx-rates',         key: 'multi_currency_fx' },
@@ -59,6 +69,13 @@ const FEATURE_RULES = [
 
 /** Returns the feature key required for `req.path`, or null if open. */
 function requiredFeature(path) {
+  // 2026-09-03 (plans/addons audit): the addon-marketplace endpoints
+  // (/addons, /addons/subscribe, /addons/:slug/confirm-payment|cancel|resume)
+  // must NEVER be plan-gated — '/addons/whatsapp-marketing/...' was substring-
+  // matching the '/whatsapp' rule, which 402'd the very checkout that would
+  // have granted the feature. Buying/cancelling an addon is a billing action,
+  // not a gated feature.
+  if (path.startsWith('/addons')) return null;
   for (const r of FEATURE_RULES) {
     if (path.includes(r.match)) return r.key;
   }

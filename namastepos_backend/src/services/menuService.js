@@ -211,6 +211,16 @@ async function bulkImport(businessId, items) {
   }
   let inserted = 0; let skipped = 0;
   const errors = [];
+  // Migration wizard (2026-09-03): optional variant columns. A row with a
+  // `variant_name` is a VARIANT of the item named in its `name` column — it
+  // never creates a menu item itself; it collapses onto the parent (the
+  // plain row with the same name earlier in the file). variant_price falls
+  // back to the row's price column. Plain CSVs without variant columns hit
+  // exactly the old code path, row for row.
+  const variantsByName = new Map();   // lower(name) → [{ label, price }]
+  const variantFirstRow = new Map();  // lower(name) → 1-based row of first variant
+  const createdByName = new Map();    // lower(name) → menu_item id created this batch
+  let variantsApplied = 0;
   for (let i = 0; i < items.length; i++) {
     const raw = items[i] || {};
     // Normalise keys to camel/snake whichever the caller used
@@ -227,12 +237,28 @@ async function bulkImport(businessId, items) {
       errors.push({ row: i + 1, message: 'Missing name' });
       skipped++; continue;
     }
+    const variantLabel = String(get('variant_name', 'variantName', 'Variant Name', 'variant') || '').trim();
+    if (variantLabel) {
+      const vpRaw = get('variant_price', 'variantPrice', 'Variant Price');
+      const vPrice = vpRaw != null && vpRaw !== '' ? Number(vpRaw) : price;
+      if (!Number.isFinite(vPrice) || vPrice < 0) {
+        errors.push({ row: i + 1, name, message: `Invalid variant price for "${variantLabel}"` });
+        skipped++; continue;
+      }
+      const key = name.toLowerCase();
+      if (!variantsByName.has(key)) {
+        variantsByName.set(key, []);
+        variantFirstRow.set(key, i + 1);
+      }
+      variantsByName.get(key).push({ label: variantLabel, price: vPrice });
+      continue; // collapsed onto the parent — applied after the item pass
+    }
     if (!Number.isFinite(price) || price < 0) {
       errors.push({ row: i + 1, name, message: 'Invalid price' });
       skipped++; continue;
     }
     try {
-      await create(businessId, {
+      const item = await create(businessId, {
         name,
         price,
         description: get('description', 'Description') || null,
@@ -246,13 +272,48 @@ async function bulkImport(businessId, items) {
         isActive: String(get('is_active', 'isActive', 'Active') ?? 'true').toLowerCase() !== 'false',
         isVeg: String(get('is_veg', 'isVeg', 'Veg') ?? 'true').toLowerCase() !== 'false',
       });
+      createdByName.set(name.toLowerCase(), item.id);
       inserted++;
     } catch (e) {
       errors.push({ row: i + 1, name, message: e.message || 'Insert failed' });
       skipped++;
     }
   }
-  return { inserted, skipped, errors };
+
+  // Attach collected variants — prefer the item created in THIS batch; fall
+  // back to an existing active item of the same name (re-import case).
+  for (const [key, variants] of variantsByName) {
+    const rowNo = variantFirstRow.get(key);
+    try {
+      let itemId = createdByName.get(key);
+      if (!itemId) {
+        const r = await query(
+          `SELECT id FROM menu_items
+            WHERE business_id = $1 AND LOWER(name) = $2 AND is_active = TRUE
+            ORDER BY created_at LIMIT 1`,
+          [businessId, key],
+        );
+        itemId = r.rows[0]?.id;
+      }
+      if (!itemId) {
+        errors.push({ row: rowNo, name: key, message:
+          'Variant rows need a base item row with the same name (add a plain row for the item first)' });
+        skipped += variants.length;
+        continue;
+      }
+      // setVariants is replace-all per item, so one call with the full
+      // list per item — a re-import of the same CSV converges instead of
+      // stacking duplicates.
+      const variantSvc = require('./variantService');
+      await variantSvc.setVariants(businessId, itemId, variants);
+      variantsApplied += variants.length;
+    } catch (e) {
+      errors.push({ row: rowNo, name: key, message: e.message || 'Variant import failed' });
+      skipped += variants.length;
+    }
+  }
+
+  return { inserted, skipped, errors, variants: variantsApplied };
 }
 
 module.exports = { serialize, list, byId, create, update, softDelete, adjustStock, stockHistory, bulkImport };

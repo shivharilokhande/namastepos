@@ -1,17 +1,25 @@
 // Mobile Marketplace — browse addon catalog + activate / cancel.
 //
 // Backend endpoints used:
-//   GET  /v1/addons                                    — public catalog
-//   GET  /v1/businesses/:id/addons                     — my active addons
-//   POST /v1/businesses/:id/addons/subscribe { slug }  — activate
-//   POST /v1/businesses/:id/addons/:slug/cancel        — cancel
+//   GET  /v1/addons                                          — public catalog
+//   GET  /v1/businesses/:id/addons                           — my active addons
+//   POST /v1/businesses/:id/addons/subscribe { slug }        — activate
+//   POST /v1/businesses/:id/addons/:slug/confirm-payment     — paid-addon 2nd leg
+//   POST /v1/businesses/:id/addons/:slug/cancel              — cancel
+//
+// Paid addons (2026-09-03): /subscribe no longer activates a paid addon —
+// the backend returns { requiresPayment:true, razorpayOrder:{id,amount,
+// currency}, keyId } and we open native Razorpay Checkout for that order
+// (mirroring the web MarketplacePage). Activation happens only after
+// /confirm-payment verifies the signature server-side; a dismissed checkout
+// activates nothing. Free addons keep the instant-activate path.
 //
 // Stays deliberately small: list rows with name + price + a single CTA
 // that flips between "Activate" and "Cancel" based on the current state.
 
-import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../constants/colors.dart';
 import '../../utils/error_humanizer.dart';
@@ -34,11 +42,27 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   bool _loading = true;
   String? _error;
   String? _busySlug;
+  // Paid-addon checkout state: the slug whose Razorpay checkout is currently
+  // open. Handlers use it to confirm/reset; null when no checkout is live.
+  String? _payingSlug;
+  late final Razorpay _razorpay;
 
   @override
   void initState() {
     super.initState();
+    _razorpay = Razorpay()
+      ..on(Razorpay.EVENT_PAYMENT_SUCCESS, _onPaySuccess)
+      ..on(Razorpay.EVENT_PAYMENT_ERROR, _onPayError)
+      ..on(Razorpay.EVENT_EXTERNAL_WALLET, _onExternalWallet);
     _load();
+  }
+
+  @override
+  void dispose() {
+    // Same rule as BillingScreen: clear() or the native broadcast receiver
+    // leaks on Android and crashes the next open.
+    _razorpay.clear();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -88,10 +112,38 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     if (biz == null) return;
     setState(() => _busySlug = slug);
     try {
-      await ApiService.instance.dio.post(
-        '/businesses/${biz.id}/addons/subscribe',
-        data: { 'slug': slug },
-      );
+      final res = await ApiService.instance.subscribeAddon(biz.id, slug);
+
+      // Paid addon → the backend created a one-time Razorpay Order and wrote
+      // NO activation row yet. Open native checkout; activation happens in
+      // _onPaySuccess via /confirm-payment. (`order`/`key` read defensively
+      // alongside the current `razorpayOrder`/`keyId` field names.)
+      if (res['requiresPayment'] == true) {
+        final order = ((res['razorpayOrder'] ?? res['order']) as Map?)
+            ?.cast<String, dynamic>();
+        final key = (res['keyId'] ?? order?['key'])?.toString();
+        if (order == null || order['id'] == null || key == null || key.isEmpty) {
+          _showSnack('Could not start payment — please try again.');
+          return; // finally resets _busySlug
+        }
+        final addonName = _catalog.firstWhere(
+          (a) => (a['slug'] ?? '') == slug,
+          orElse: () => const {},
+        )['name']?.toString();
+        _payingSlug = slug; // keep _busySlug set — handlers reset both
+        _razorpay.open(<String, dynamic>{
+          'key': key,
+          'order_id': order['id'],
+          'amount': order['amount'],
+          'currency': order['currency'] ?? 'INR',
+          'name': 'NamastePOS Add-on',
+          'description': addonName ?? slug,
+          'prefill': {'contact': biz.phone},
+        });
+        return;
+      }
+
+      // Free addon (or no Razorpay configured) → instant activation, as before.
       // Refresh plan + addon list so the drawer immediately reflects the
       // newly-granted feature key.
       if (!mounted) return;
@@ -102,30 +154,85 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           SnackBar(content: Text('Activated $slug')),
         );
       }
-    } catch (e) {
+    } on ApiException catch (e) {
       if (!mounted) return;
       // 409 = already subscribed. Treat it as success — refresh the UI
       // so the button flips to "Cancel" and stop showing a scary error.
-      final isConflict = e is DioException && e.response?.statusCode == 409;
-      if (isConflict) {
+      if (e.statusCode == 409) {
         await _load();
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Already activated')),
         );
       } else {
-        final msg = e is DioException
-            ? (e.response?.data is Map
-                ? (e.response!.data['message']?.toString() ?? e.message ?? 'request failed')
-                : (e.message ?? 'request failed'))
-            : e.toString();
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not activate: $msg')),
+          SnackBar(content: Text('Could not activate: ${e.message}')),
         );
       }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not activate: $e')),
+      );
+    } finally {
+      // Keep the row busy while a checkout modal is up — the payment
+      // handlers own the reset in that case.
+      if (mounted && _payingSlug == null) setState(() => _busySlug = null);
+    }
+  }
+
+  // ── Paid-addon Razorpay handlers ─────────────────────────────────────────
+  Future<void> _onPaySuccess(PaymentSuccessResponse resp) async {
+    final slug = _payingSlug;
+    _payingSlug = null;
+    if (!mounted) return;
+    final biz = context.read<AuthProvider>().business;
+    if (slug == null || biz == null) {
+      setState(() => _busySlug = null);
+      return;
+    }
+    try {
+      // Server-side confirmation: the backend re-verifies the HMAC signature
+      // before activating, so a spoofed success event grants nothing.
+      await ApiService.instance.confirmAddonPayment(
+        biz.id,
+        slug,
+        razorpayPaymentId: resp.paymentId ?? '',
+        razorpayOrderId: resp.orderId ?? '',
+        razorpaySignature: resp.signature ?? '',
+      );
+      if (!mounted) return;
+      await context.read<AuthProvider>().refreshPlan();
+      await _load();
+      _showSnack('Activated $slug');
+    } catch (e) {
+      _showSnack('Payment received but activation is pending — '
+          'pull to refresh in a moment. (${humanizeError(e)})');
     } finally {
       if (mounted) setState(() => _busySlug = null);
     }
+  }
+
+  void _onPayError(PaymentFailureResponse resp) {
+    _payingSlug = null;
+    if (!mounted) return;
+    setState(() => _busySlug = null);
+    // Dismissed modal isn't an error — keep the snackbar neutral.
+    final isCancel = resp.code == Razorpay.PAYMENT_CANCELLED || resp.code == 0;
+    _showSnack(isCancel
+        ? 'Checkout cancelled — nothing was charged'
+        : 'Payment failed: ${resp.message ?? 'unknown error'}');
+  }
+
+  void _onExternalWallet(ExternalWalletResponse resp) {
+    // PhonePe / GPay handoff — no final result here; the user returns and
+    // can refresh. Keep it neutral.
+    _showSnack('Opening ${resp.walletName ?? "wallet"}…');
+  }
+
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _cancel(String slug) async {

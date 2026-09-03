@@ -130,6 +130,14 @@ function AddonDialog({ mode, addon, onClose, onSaved }:
     queryFn: adminApi.listPlans,
     staleTime: 60_000,
   });
+  // Plans-addons migration — the addon can grant plan-level feature keys
+  // while active. Same catalog the custom-plan editor uses.
+  const { data: featureKeys = [] } = useQuery({
+    queryKey: ['feature-keys'],
+    queryFn: adminApi.listFeatureKeys,
+    staleTime: 60_000,
+  });
+  const [grantSearch, setGrantSearch] = useState('');
   const [f, setF] = useState<any>(addon ? {
     slug: addon.slug, name: addon.name, tagline: addon.tagline || '',
     description: addon.description || '', icon: addon.icon, category: addon.category,
@@ -137,13 +145,26 @@ function AddonDialog({ mode, addon, onClose, onSaved }:
     required_plan_tier: addon.requiredPlanTier || '', trial_days: addon.trialDays,
     features: addon.features, is_active: addon.isActive, display_order: addon.displayOrder,
     partner_name: (addon as any).partnerName || '', revenue_share_pct: (addon as any).revenueSharePct || 0,
+    grantsFeatures: (addon as any).grantsFeatures || (addon as any).grants_features || [],
   } : {
     slug: '', name: '', tagline: '', description: '', icon: 'box',
     category: 'integrations', price_inr_paise: 9900, billing_period: 'monthly',
     required_plan_tier: '', trial_days: 0, features: { permissions: [] },
     is_active: true, display_order: 100, partner_name: '', revenue_share_pct: 0,
+    grantsFeatures: [],
   });
   const set = (k: string, v: any) => setF((p: any) => ({ ...p, [k]: v }));
+  const toggleGrant = (key: string) =>
+    setF((p: any) => ({
+      ...p,
+      grantsFeatures: p.grantsFeatures.includes(key)
+        ? p.grantsFeatures.filter((k: string) => k !== key)
+        : [...p.grantsFeatures, key],
+    }));
+  const visibleGrantKeys = featureKeys.filter((fk) => {
+    const q = grantSearch.trim().toLowerCase();
+    return !q || fk.key.toLowerCase().includes(q) || (fk.label || '').toLowerCase().includes(q);
+  });
 
   const save = useMutation({
     mutationFn: () => {
@@ -215,6 +236,35 @@ function AddonDialog({ mode, addon, onClose, onSaved }:
             <Input value={(f.features.permissions || []).join(', ')}
                    onChange={(e) => set('features', { ...f.features, permissions: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
                    placeholder="aggregator_integrations, push_notifications" />
+          </div>
+          {/* Plans-addons migration — plan-level feature keys the addon grants
+              while active (sent as grantsFeatures). */}
+          <div className="col-span-2">
+            <div className="flex items-center justify-between mb-1">
+              <Label>Grants features ({f.grantsFeatures.length} selected)</Label>
+              <Input className="w-44 h-8" placeholder="Filter…"
+                     value={grantSearch} onChange={(e) => setGrantSearch(e.target.value)} />
+            </div>
+            <div className="border rounded-md p-2 max-h-40 overflow-y-auto">
+              {featureKeys.length === 0 ? (
+                <div className="text-xs text-muted-foreground p-1">No feature keys available.</div>
+              ) : (
+                <div className="grid grid-cols-2 gap-1">
+                  {visibleGrantKeys.map((fk) => (
+                    <label key={fk.key}
+                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/50 cursor-pointer text-sm">
+                      <input type="checkbox"
+                          checked={f.grantsFeatures.includes(fk.key)}
+                          onChange={() => toggleGrant(fk.key)} />
+                      <span className="font-mono text-[12px]">{fk.label || fk.key}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Subscribers get these plan features while the addon is active.
+            </p>
           </div>
           <div className="col-span-2 flex items-center gap-3">
             <label className="flex items-center gap-2 cursor-pointer">

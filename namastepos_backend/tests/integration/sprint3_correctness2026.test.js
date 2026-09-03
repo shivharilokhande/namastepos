@@ -197,8 +197,20 @@ describe('NP-124 gift-card redeem code normalization', () => {
 // ── NP-125: multi-outlet owner gate uses the live DB role ───────────────
 
 describe('NP-125 requireOwner re-checks the DB role', () => {
+  // The multi-outlet PLAN gate (2026-09-03) now runs before the role check —
+  // grant the feature via an override so these tests exercise the ROLE layer.
+  async function grantMultiOutlet(businessId) {
+    await query(
+      `INSERT INTO business_feature_overrides (business_id, feature_key, enabled)
+       VALUES ($1, 'multi_outlet', TRUE)
+       ON CONFLICT (business_id, feature_key) DO UPDATE SET enabled = TRUE`,
+      [businessId],
+    );
+  }
+
   it('a stale business_owner JWT whose DB role was demoted gets 403', async () => {
     const biz = await makeBusiness({ email: 'np125a@example.com', name: 'NP125 A' });
+    await grantMultiOutlet(biz.id);
     const staleOwnerToken = tokenFor(biz); // claims role: business_owner
     // Demote BEFORE the first request so the 30s role cache never holds 'owner'.
     await query(
@@ -215,6 +227,7 @@ describe('NP-125 requireOwner re-checks the DB role', () => {
 
   it('a genuine owner still passes', async () => {
     const biz = await makeBusiness({ email: 'np125b@example.com', name: 'NP125 B' });
+    await grantMultiOutlet(biz.id);
     const r = await request(app)
       .get('/v1/outlet-groups')
       .set('Authorization', `Bearer ${tokenFor(biz)}`);

@@ -180,6 +180,18 @@ async function _runOnce() {
       } catch (e) {
         logger.warn(`[crm nightly] ${e.message}`);
       }
+      // 2026-09-03 (plans/addons audit #4b) — addon expiry reminders: paid
+      // add-ons expiring within 3 days (or expired in the last day) push a
+      // renewal nudge to the business owners, once per activation
+      // (business_addons.notified_expiry_at guard, migration 074).
+      try {
+        const r = await require('./addonService').notifyExpiringActivations();
+        if (r.notified > 0) {
+          logger.info(`[addon-expiry] notified ${r.notified} activation(s)`);
+        }
+      } catch (e) {
+        logger.warn(`[addon-expiry] nightly scan failed: ${e.message}`);
+      }
       // DPDP data-retention sweep (2026-08-28). All windows are opt-in and
       // default to disabled, so this is a no-op until a super-admin configures
       // retention.* in the admin Compliance → Retention tab.

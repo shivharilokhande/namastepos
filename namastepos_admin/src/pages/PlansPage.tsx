@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, RefreshCw, Edit2, Plus, Trash2, Sparkles } from 'lucide-react';
@@ -45,6 +46,15 @@ export function PlansPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
+  // Plans-addons migration — per-customer custom plans (is_public=false /
+  // business-linked) MAY now appear in the admin list. Split them out of the
+  // public grid defensively: if the backend keeps filtering them server-side,
+  // customPlans is simply empty and only the one-line note renders.
+  const publicPlans = (plans ?? []).filter(
+    (p) => p.isPublic !== false && !(p as any).businessId && !(p as any).business_id);
+  const customPlans = (plans ?? []).filter(
+    (p) => p.isPublic === false || !!(p as any).businessId || !!(p as any).business_id);
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -70,21 +80,67 @@ export function PlansPage() {
       {/* Push 18b — features are now per-plan, not per-tier_kind. Each
           plan card has its own "Edit features" button. The old "Feature
           matrix by tier" card is removed. */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {plans?.map((p) => (
-          <PlanCard
-            key={p.id}
-            plan={p}
-            onEdit={() => setEditing(p)}
-            onEditFeatures={() => setFeaturePicker(p)}
-            onDelete={() => {
-              if (confirm(`Delete plan "${p.name}" (${p.tier})? Customers on this plan will block deletion until moved.`)) {
-                remove.mutate(p.tier);
-              }
-            }}
-          />
-        ))}
+      <div>
+        <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-1">
+          Public plans
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {publicPlans.map((p) => (
+            <PlanCard
+              key={p.id}
+              plan={p}
+              onEdit={() => setEditing(p)}
+              onEditFeatures={() => setFeaturePicker(p)}
+              onDelete={() => {
+                if (confirm(`Delete plan "${p.name}" (${p.tier})? Customers on this plan will block deletion until moved.`)) {
+                  remove.mutate(p.tier);
+                }
+              }}
+            />
+          ))}
+        </div>
       </div>
+
+      {/* Plans-addons migration — per-customer custom plans, collapsed by
+          default. Edited from the linked customer's "Plan & Features" tab,
+          never from here. */}
+      {customPlans.length > 0 ? (
+        <details className="rounded-md border">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-semibold">
+            Custom plans (per-customer) — {customPlans.length}
+          </summary>
+          <div className="divide-y border-t">
+            {customPlans.map((p) => {
+              const bizId = p.businessId || (p as any).business_id || null;
+              return (
+                <div key={p.id} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
+                  <div className="min-w-0">
+                    <span className="font-medium">{p.name}</span>
+                    <span className="text-xs text-muted-foreground ml-2 font-mono">
+                      {bizId ? `business ${bizId}` : 'no linked business'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 whitespace-nowrap">
+                    <span className="font-medium">
+                      {formatINR(p.priceInr)}<span className="text-xs text-muted-foreground">/mo</span>
+                    </span>
+                    {bizId && (
+                      <Link to={`/customers/${bizId}`} className="text-xs text-primary hover:underline">
+                        Open customer →
+                      </Link>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      ) : (
+        <p className="text-xs text-muted-foreground px-1">
+          Per-customer custom plans don't show here — manage them from the customer's
+          "Plan &amp; Features" tab.
+        </p>
+      )}
 
       {editing && (
         <EditPlanDialog

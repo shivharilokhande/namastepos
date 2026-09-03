@@ -60,6 +60,20 @@ export const ffApi = {
     const b = getBusinessCache();
     return api.post(`/businesses/${b.id}/menu/bulk`, { items }).then((r) => r.data);
   },
+  // Migration wizard (2026-09-03) — "Switch to NamastePOS" imports. Both
+  // return { imported, failed: [{row,error}], warnings: [{row,warning}] }.
+  importCustomers: (rows: any[]) => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/imports/customers`, { rows }).then((r) => r.data);
+  },
+  importSalesHistory: (rows: any[]) => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/imports/sales-history`, { rows }).then((r) => r.data);
+  },
+  importExpenses: (rows: any[]) => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/imports/expenses`, { rows }).then((r) => r.data);
+  },
   // FF-244 owner inbox
   actionCenter: () => {
     const b = getBusinessCache();

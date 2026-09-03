@@ -1753,4 +1753,8 @@ module.exports = {
   serializeOrder,
   resolveServiceMode,
   ORDER_TRANSITIONS,
+  // Migration wizard (2026-09-03): the sales-history import inserts
+  // aggregate orders directly (deliberately skipping create()'s side
+  // effects) but must allocate order_no through the same atomic counter.
+  nextOrderNo,
 };

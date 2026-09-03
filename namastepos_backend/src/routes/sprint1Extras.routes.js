@@ -87,8 +87,13 @@ router.get('/bill-template', asyncHandler(async (req, res) => {
   res.json({ template: await billTemplate.get(req.params.businessId) });
 }));
 
+// 2026-09-03 (plans/addons audit #3c): EDITING the bill template is the
+// custom-branding value prop (custom-branding addon grants the
+// 'custom_branding' feature; plans/overrides can grant it too). GET above
+// stays open so already-saved templates keep printing after a downgrade.
 router.put('/bill-template',
   requireRole(['business_owner']),
+  require('../middleware/requireFeature')('custom_branding'),
   validate({ body: Joi.object({
     logoUrl: Joi.string().uri().allow('', null),
     headerLines: Joi.array().items(Joi.string().max(200)).max(8),

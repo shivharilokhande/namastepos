@@ -66,11 +66,25 @@ const adminCreateBody = Joi.object({
   display_order: Joi.number().integer().default(100),
   partner_name: Joi.string().max(120).allow('', null),
   revenue_share_pct: Joi.number().min(0).max(100).default(0),
+  // 2026-09-03 — feature keys this addon unlocks (migration 074). Accept
+  // both the AddonsPage camelCase name and the DB snake_case name.
+  grants_features: Joi.array().items(Joi.string().min(1).max(60)).max(50),
+  grantsFeatures: Joi.array().items(Joi.string().min(1).max(60)).max(50),
 });
+
+// Normalise grantsFeatures (camel) → grants_features (snake) for the service.
+function _normalizeGrants(body) {
+  if (body.grantsFeatures !== undefined && body.grants_features === undefined) {
+    body.grants_features = body.grantsFeatures;
+  }
+  delete body.grantsFeatures;
+  return body;
+}
+
 const adminCreate = [
   validate({ body: adminCreateBody }),
   asyncHandler(async (req, res) => {
-    const a = await addons.createAddon(req.body);
+    const a = await addons.createAddon(_normalizeGrants(req.body));
     res.status(201).json({ addon: a });
   }),
 ];
@@ -90,12 +104,14 @@ const adminUpdateBody = Joi.object({
   display_order: Joi.number().integer(),
   partner_name: Joi.string().max(120).allow('', null),
   revenue_share_pct: Joi.number().min(0).max(100),
+  grants_features: Joi.array().items(Joi.string().min(1).max(60)).max(50),
+  grantsFeatures: Joi.array().items(Joi.string().min(1).max(60)).max(50),
 }).min(1);
 
 const adminUpdate = [
   validate({ body: adminUpdateBody }),
   asyncHandler(async (req, res) => {
-    const a = await addons.updateAddon(req.params.slug, req.body);
+    const a = await addons.updateAddon(req.params.slug, _normalizeGrants(req.body));
     res.json({ addon: a });
   }),
 ];

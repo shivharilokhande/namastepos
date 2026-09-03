@@ -142,6 +142,42 @@ router.post  ('/customers/:businessId/addons/:slug/detach',
                 (req) => ({ type: 'business', id: req.params.businessId })),
               addonController.adminDetachFromCustomer);
 
+// ── Per-business feature overrides (FF-315, wired 2026-09-03) ──────────
+// Dark-launch / comp / kill a single feature for a single tenant without
+// moving them off their plan. Same guards + audit as other customer writes.
+// PUT replaces the whole set: { overrides: [{ featureKey, mode }] }.
+router.get   ('/customers/:businessId/feature-overrides',
+              requirePermission('customers.read'),
+              c.listFeatureOverrides);
+router.put   ('/customers/:businessId/feature-overrides',
+              requirePermission('customers.write'),
+              audit.middlewareLog('customers', 'feature-overrides-set',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              ...c.setFeatureOverrides);
+router.delete('/customers/:businessId/feature-overrides/:featureKey',
+              requirePermission('customers.write'),
+              audit.middlewareLog('customers', 'feature-override-delete',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              c.deleteFeatureOverride);
+
+// ── Custom per-customer plans (2026-09-03) ─────────────────────────────
+// One bespoke plan per tenant (tier 'custom-<first8>', is_public=FALSE,
+// business_id set). PUT upserts plan + features (+razorpay ids when priced)
+// and optionally assigns it; DELETE 409s while the subscription points at it.
+router.get   ('/customers/:businessId/custom-plan',
+              requirePermission('plans.read'),
+              c.getCustomPlan);
+router.put   ('/customers/:businessId/custom-plan',
+              requirePermission('plans.change'),
+              audit.middlewareLog('plans', 'custom-plan-set',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              ...c.putCustomPlan);
+router.delete('/customers/:businessId/custom-plan',
+              requirePermission('plans.change'),
+              audit.middlewareLog('plans', 'custom-plan-delete',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              c.deleteCustomPlan);
+
 // ── Plans ──────────────────────────────────────────────────────────────
 router.get   ('/plans',         requirePermission('plans.read'), c.listPlans);
 router.put   ('/plans/:tier',   requirePermission('plans.change'),

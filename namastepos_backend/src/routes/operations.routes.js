@@ -274,10 +274,20 @@ const expenseRowSchema = Joi.object({
  * Runs `handler` for each row, collecting a per-row report. Row numbers are
  * 1-based CSV *file* lines (data starts at line 2, after the header) so the
  * error table matches what the user sees in Excel/Sheets.
+ *
+ * Migration wizard (2026-09-03): handlers may now return
+ *   { skipped: true, warning }  — row was an idempotent no-op (e.g. a
+ *                                 sales day already imported); NOT counted
+ *                                 as imported, reported under `warnings`.
+ *   { warnings: [string] }      — row imported, with non-fatal notes (e.g.
+ *                                 opening balances skipped on a re-run).
+ * The response gains a `warnings: [{ row, warning }]` array — additive, so
+ * existing callers of { imported, failed } are unaffected.
  */
 async function runImport(rows, schema, handler) {
   let imported = 0;
   const failed = [];
+  const warnings = [];
   for (let i = 0; i < rows.length; i++) {
     const rowNo = i + 2;
     // stripUnknown: CSVs often carry extra columns (totals, remarks) — drop
@@ -285,7 +295,14 @@ async function runImport(rows, schema, handler) {
     const { value, error } = schema.validate(rows[i], { stripUnknown: true });
     if (error) { failed.push({ row: rowNo, error: error.message }); continue; }
     try {
-      await handler(value);
+      const out = await handler(value);
+      if (out && out.skipped) {
+        warnings.push({ row: rowNo, warning: out.warning || 'Skipped' });
+        continue;
+      }
+      if (out && Array.isArray(out.warnings)) {
+        for (const w of out.warnings) warnings.push({ row: rowNo, warning: w });
+      }
       imported++;
     } catch (err) {
       // Service errors (Conflict on duplicate name, NotFound, …) become
@@ -293,7 +310,7 @@ async function runImport(rows, schema, handler) {
       failed.push({ row: rowNo, error: err.message || 'Import failed' });
     }
   }
-  return { imported, failed };
+  return { imported, failed, warnings };
 }
 
 router.post('/imports/ingredients',
@@ -334,6 +351,64 @@ router.post('/imports/expenses',
   asyncHandler(async (req, res) => {
     const result = await runImport(req.body.rows, expenseRowSchema, (row) =>
       expenseSvc.create(req.params.businessId, row));
+    res.json(result);
+  })
+);
+
+// ── "Switch to NamastePOS" migration imports (2026-09-03) ───────────────
+// Customers (+ opening loyalty/wallet balances) and aggregate sales history
+// exported from a previous POS. Ungated (like /imports/expenses — neither
+// path matches a featureGate rule) because migration is the very first
+// thing a switcher does, before they've picked a plan tier. Idempotency
+// mechanics live in migrationImportService — see the header there.
+const migrationSvc = require('../services/migrationImportService');
+
+const customerImportRowSchema = Joi.object({
+  phone: Joi.string().pattern(/^[0-9]{10}$/).required()
+    .messages({ 'string.pattern.base': 'phone must be a 10-digit mobile number' }),
+  name: Joi.string().max(255).allow('', null),
+  email: Joi.string().email().allow('', null),
+  tags: Joi.string().max(500).allow('', null),          // comma/;/| separated
+  whatsappOptIn: Joi.boolean()
+    .truthy('yes', 'y', 'Y', 'Yes', 'YES', '1')
+    .falsy('no', 'n', 'N', 'No', 'NO', '0'),
+  loyaltyPoints: Joi.number().integer().min(0),
+  walletBalanceInr: Joi.number().min(0),
+  notes: Joi.string().max(1000).allow('', null),
+});
+
+router.post('/imports/customers',
+  requireRole(['business_owner', 'staff_manager']),
+  validate({ body: importRowsBody }),
+  asyncHandler(async (req, res) => {
+    const result = await runImport(req.body.rows, customerImportRowSchema, (row) =>
+      migrationSvc.importCustomerRow(req.params.businessId, row));
+    res.json(result);
+  })
+);
+
+// Date is a plain YYYY-MM-DD string (not Joi.date()) so there's no timezone
+// re-interpretation — the service pins it to noon IST and enforces past-only.
+const salesHistoryRowSchema = Joi.object({
+  date: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required()
+    .messages({ 'string.pattern.base': 'date must be YYYY-MM-DD' }),
+  orders: Joi.number().integer().min(1).required(),
+  grossInr: Joi.number().min(0).required(),
+  discountInr: Joi.number().min(0),
+  taxInr: Joi.number().min(0),
+});
+
+// Cap 1100 rows (3 years of daily aggregates) instead of the usual 1000.
+const salesHistoryBody = Joi.object({
+  rows: Joi.array().items(Joi.object().unknown(true)).min(1).max(1100).required(),
+});
+
+router.post('/imports/sales-history',
+  requireRole(['business_owner', 'staff_manager']),
+  validate({ body: salesHistoryBody }),
+  asyncHandler(async (req, res) => {
+    const result = await runImport(req.body.rows, salesHistoryRowSchema, (row) =>
+      migrationSvc.importSalesRow(req.params.businessId, row));
     res.json(result);
   })
 );

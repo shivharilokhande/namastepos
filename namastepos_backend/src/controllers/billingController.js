@@ -24,8 +24,23 @@ module.exports = {
   // matrix (keyed by tier_kind). This way the dashboard + mobile show the
   // exact same features the super-admin configured; no more hardcoded
   // marketing copy that drifts from the actual gating.
-  plans: asyncHandler(async (_req, res) => {
-    const all = await sub.listPlans();
+  plans: asyncHandler(async (req, res) => {
+    // 2026-09-03 custom plans: this route is public (no auth middleware), but
+    // when the caller DOES send a valid tenant Bearer token we include that
+    // tenant's own custom plan alongside the public catalog so their
+    // BillingPage shows the plan they're on. Anonymous callers and other
+    // tenants never see it. Best-effort decode — a bad/absent token just
+    // yields the public list.
+    let forBusinessId = null;
+    try {
+      const header = req.headers.authorization || '';
+      if (header.startsWith('Bearer ')) {
+        const { verifyAccessToken } = require('../utils/jwt');
+        const payload = verifyAccessToken(header.slice('Bearer '.length).trim());
+        if (payload && !payload.isSuperAdmin && payload.bid) forBusinessId = payload.bid;
+      }
+    } catch (_) { /* anonymous — public list only */ }
+    const all = await sub.listPlans({ forBusinessId });
     // Push 18b: features are stored per-plan keyed by `plan.tier`, with a
     // fallback to `tier_kind` defaults (starter/pro/enterprise) when a plan
     // has no overrides. Pass `p.tier` first so the admin-picker selections

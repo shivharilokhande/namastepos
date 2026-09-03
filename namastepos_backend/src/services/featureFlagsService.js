@@ -1,33 +1,25 @@
 // NamastePOS — Per-business feature flag overrides (FF-315).
 //
-// Base features come from `plans.features` (per-tier) + the addons
-// system. This service layers **overrides** on top so we can flip a
-// single feature on for a single business without changing their
-// plan. Used to dark-launch risky features to 5 friendly cafes
-// before opening to the full base.
+// Base features come from the plan_features matrix + the addons system
+// (including addons.grants_features). This service layers **overrides**
+// on top so we can flip a single feature on/off for a single business
+// without changing their plan. Used to dark-launch risky features to 5
+// friendly cafes before opening to the full base, or to comp/kill one
+// feature for one tenant.
 //
-// Precedence (highest wins):
-//   business_feature_overrides.enabled  → forces the value
-//   plan_features + active addons       → the default
+// 2026-09-03 (plans/addons audit #1): the overrides are now actually
+// ENFORCED — featureService._load merges business_feature_overrides after
+// the plan+addon merge (enabled=TRUE adds the key, FALSE removes it), so
+// requireFeature / featureGate / /auth/me all respect them. The old
+// `resolve()` helper here was dead code AND buggy (it indexed the
+// planSummary features ARRAY as a map, so it always returned false for
+// plan features) — deleted; use featureService.hasFeature instead.
 //
-// Read via `resolve(businessId, featureKey)` — returns bool. Write
-// via `override()` from the super-admin panel only.
+// Every write invalidates the per-business feature cache so the change is
+// live on the next request instead of after the 60s TTL.
 
-const { query } = require('../config/db');
+const { query, withTransaction } = require('../config/db');
 const featureService = require('./featureService');
-
-async function resolve(businessId, featureKey) {
-  const override = await query(
-    `SELECT enabled FROM business_feature_overrides
-      WHERE business_id = $1 AND feature_key = $2 LIMIT 1`,
-    [businessId, featureKey]
-  );
-  if (override.rowCount > 0) return override.rows[0].enabled;
-  // Fall through to the base plan/addon check.
-  const plan = await featureService.planSummary(businessId).catch(() => null);
-  if (!plan) return false;
-  return Boolean(plan.features?.[featureKey]);
-}
 
 async function override(businessId, featureKey, enabled, { reason, adminId } = {}) {
   await query(
@@ -41,6 +33,37 @@ async function override(businessId, featureKey, enabled, { reason, adminId } = {
            set_at = NOW()`,
     [businessId, featureKey, enabled, reason || null, adminId || null]
   );
+  featureService.clearCache(businessId);
+}
+
+/**
+ * Replace the tenant's whole override set in one transaction.
+ * `overrides` is [{ featureKey, mode: 'enable'|'disable', reason? }].
+ */
+async function replaceAll(businessId, overrides, { adminId } = {}) {
+  const rows = (overrides || []).filter((o) => o && o.featureKey);
+  await withTransaction(async (client) => {
+    await client.query(
+      `DELETE FROM business_feature_overrides WHERE business_id = $1`,
+      [businessId]
+    );
+    for (const o of rows) {
+      await client.query(
+        `INSERT INTO business_feature_overrides
+           (business_id, feature_key, enabled, reason, set_by_admin)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (business_id, feature_key) DO UPDATE
+           SET enabled = EXCLUDED.enabled,
+               reason  = EXCLUDED.reason,
+               set_by_admin = EXCLUDED.set_by_admin,
+               set_at = NOW()`,
+        [businessId, o.featureKey, o.mode === 'enable',
+         o.reason || null, adminId || null]
+      );
+    }
+  });
+  featureService.clearCache(businessId);
+  return list(businessId);
 }
 
 async function list(businessId) {
@@ -51,7 +74,15 @@ async function list(businessId) {
       ORDER BY set_at DESC`,
     [businessId]
   );
-  return r.rows;
+  return r.rows.map((row) => ({
+    featureKey: row.feature_key,
+    feature_key: row.feature_key, // back-compat: pre-2026-09-03 raw-row shape
+    mode: row.enabled ? 'enable' : 'disable',
+    enabled: row.enabled,
+    reason: row.reason,
+    setAt: row.set_at,
+    set_at: row.set_at,
+  }));
 }
 
 async function remove(businessId, featureKey) {
@@ -60,6 +91,7 @@ async function remove(businessId, featureKey) {
       WHERE business_id = $1 AND feature_key = $2`,
     [businessId, featureKey]
   );
+  featureService.clearCache(businessId);
 }
 
-module.exports = { resolve, override, list, remove };
+module.exports = { override, replaceAll, list, remove };

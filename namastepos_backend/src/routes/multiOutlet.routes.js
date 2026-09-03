@@ -11,10 +11,42 @@ const validate = require('../middleware/validate');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { Forbidden } = require('../utils/errors');
 const multiOutlet = require('../services/multiOutletService');
+const features = require('../services/featureService');
 const { query } = require('../config/db');
 
 const router = express.Router();
 router.use(requireAuth);
+
+// 2026-09-03 (plans/addons audit #3a): this router is mounted at
+// /v1/outlet-groups — OUTSIDE /v1/businesses/:businessId — so the global
+// featureGate middleware never saw it and any Starter tenant could create
+// outlet groups. Gate the whole surface on the 'multi_outlet' feature,
+// mirroring featureGate's 402 FEATURE_LOCKED shape. Super-admin tokens
+// (read-only support tooling) skip the plan check.
+router.use(async (req, res, next) => {
+  if (req.user?.isSuperAdmin) return next();
+  const businessId = req.user?.businessId;
+  if (!businessId) return next(); // no tenant context — role checks below reject
+  try {
+    const ok = await features.hasFeature(businessId, 'multi_outlet');
+    if (ok) return next();
+    const resolved = await features.resolveTierKind(businessId);
+    const currentTier = resolved.tier_kind;
+    const requiredTier = features.nextTierUp(currentTier);
+    return res.status(402).json({
+      error: 'FEATURE_LOCKED',
+      feature: 'multi_outlet',
+      currentTier,
+      requiredTier,
+      message: requiredTier
+        ? `Upgrade to ${requiredTier} to unlock this feature.`
+        : 'This feature is not included in your plan.',
+      upgradeUrl: '/billing',
+    });
+  } catch (err) {
+    return next(err);
+  }
+});
 
 // Security fix — before Push 20+, any authenticated user (including staff
 // cashiers) could list/create/manipulate any group. This middleware locks

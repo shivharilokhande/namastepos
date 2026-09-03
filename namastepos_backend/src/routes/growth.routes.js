@@ -39,10 +39,18 @@ router.post('/promo/evaluate',
   asyncHandler(async (req, res) =>
     res.json(await promo.evaluate({ ...req.body, businessId: req.params.businessId }))));
 
-// ── FF-315 Feature-flag overrides (owner-scoped read; write is admin-only elsewhere) ──
+// ── FF-315 Feature-flag overrides (owner-scoped read; write is admin-only
+// via /v1/admin/customers/:businessId/feature-overrides) ──────────────────
+// 2026-09-03: also return the REAL merged feature set (plan + addons +
+// overrides, straight from featureService) so the client can render what is
+// actually enforced rather than re-deriving it.
 router.get('/feature-overrides',
-  asyncHandler(async (req, res) =>
-    res.json({ overrides: await featureFlags.list(req.params.businessId) })));
+  asyncHandler(async (req, res) => {
+    const overrides = await featureFlags.list(req.params.businessId);
+    const summary = await require('../services/featureService')
+      .planSummary(req.params.businessId);
+    res.json({ overrides, features: summary.features, tier: summary.tier });
+  }));
 
 // ── Membership plans + subscriptions ─────────────────────────────────────
 router.get ('/memberships', asyncHandler(async (req, res) =>
