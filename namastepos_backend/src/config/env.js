@@ -172,6 +172,25 @@ const env = {
   // default, migration 002). Single source of truth now lives here.
   TRIAL_DAYS: parseInt(required('TRIAL_DAYS', '7'), 10),
 
+  // NP-112 (2026-09-03): server-side order tax/discount enforcement mode.
+  //   'log'     (default) — accept client-sent tax/discount, but warn when
+  //             the tax differs > ₹1 from the menu-derived GST or a discount
+  //             exceeds the approval threshold with no manager approval.
+  //   'enforce' — persist the server-computed tax and 403
+  //             (DISCOUNT_APPROVAL_REQUIRED) unapproved high discounts.
+  // Rollout: run 'log' first, review the warns, then flip to 'enforce'.
+  // NB: orderService reads process.env at call time (so tests can flip it
+  // per-test); this entry documents the knob on the config surface.
+  ORDER_TAX_ENFORCE: process.env.ORDER_TAX_ENFORCE || 'log',
+
+  // NP-121 (2026-09-03): revenue-integrity nightly cron. DEFAULT OFF —
+  // runs only when REVENUE_INTEGRITY_CRON=true. When enabled,
+  // PLATFORM_ALERT_EMAIL (the founder's inbox) is REQUIRED — the job
+  // fails loudly at start rather than silently checking and telling
+  // no one. Emails go through the existing emailService (Brevo/SMTP).
+  REVENUE_INTEGRITY_CRON: process.env.REVENUE_INTEGRITY_CRON === 'true',
+  PLATFORM_ALERT_EMAIL: process.env.PLATFORM_ALERT_EMAIL || '',
+
   // Aggregator partner API hosts — env-driven so staging can point at
   // sandbox endpoints instead of live partner APIs.
   ZOMATO_API_BASE: process.env.ZOMATO_API_BASE || 'https://partner-api.zomato.com/v1',

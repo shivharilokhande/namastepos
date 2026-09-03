@@ -85,8 +85,28 @@ async function subscribe(businessId, body) {
   // (incomeStatementService 'Membership sales' other-income line).
   const {
     customerId, membershipId, paymentMethod = 'cash', paymentBreakdown = null,
+    // NP-116 (2026-09-03): optional idempotency key. A retried subscribe with
+    // the same clientKey returns the ORIGINAL sale (one subscription row, one
+    // wallet debit) instead of selling twice — same pattern as orders.client_id.
+    // Backed by migration 070 (client_key column + partial unique index).
+    clientKey = null,
   } = body;
-  return withTransaction(async (client) => {
+  const findByClientKey = async (q) => {
+    const dup = await q(
+      `SELECT * FROM membership_subscriptions
+        WHERE business_id = $1 AND client_key = $2 LIMIT 1`,
+      [businessId, clientKey]
+    );
+    return dup.rows[0] || null;
+  };
+  const sell = () => withTransaction(async (client) => {
+    // Idempotency: same clientKey within the same business → return the
+    // stored sale. Checked inside the txn; the partial unique index closes
+    // the concurrent-retry race (23505 handled below).
+    if (clientKey) {
+      const existing = await findByClientKey((sql, vals) => client.query(sql, vals));
+      if (existing) return existing;
+    }
     const m = await client.query(
       `SELECT * FROM memberships WHERE business_id = $1 AND id = $2`,
       [businessId, membershipId]
@@ -144,13 +164,26 @@ async function subscribe(businessId, body) {
     const ins = await client.query(
       `INSERT INTO membership_subscriptions
          (business_id, customer_id, membership_id, expires_at,
-          amount_paid_paise, remaining, payment_method)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) RETURNING *`,
+          amount_paid_paise, remaining, payment_method, client_key)
+       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8) RETURNING *`,
       [businessId, customerId, membershipId, expires, pricePaise, bundle,
-        recordedMethod]
+        recordedMethod, clientKey]
     );
     return ins.rows[0];
   });
+  try {
+    return await sell();
+  } catch (err) {
+    // NP-116: a concurrent retry lost the (business_id, client_key) unique
+    // race — its txn rolled back (so its wallet debit never landed); return
+    // the winner's sale (same shape as a fresh insert).
+    if (err.code === '23505' && clientKey
+        && err.constraint === 'uq_membership_subs_client_key') {
+      const existing = await findByClientKey(query);
+      if (existing) return existing;
+    }
+    throw err;
+  }
 }
 
 // ── Membership cancel → refund (2026-08-25, founder) ─────────────────────

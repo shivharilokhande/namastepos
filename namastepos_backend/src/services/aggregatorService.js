@@ -268,7 +268,7 @@ async function processIncomingOrder(businessId, provider, payload) {
     paymentMethod: norm.paymentMethod,
     customerPhone: norm.customerPhone,
     customerName: norm.customerName,
-  });
+  }, { trustedChannel: true }); // NP-112: platform tax is authoritative here
 
   // Stamp external ref so we don't re-ingest
   await query(

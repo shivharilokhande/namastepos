@@ -33,6 +33,12 @@ const createBody = Joi.object({
   customerPhone: Joi.string().max(20).allow('', null),
   customerName: Joi.string().max(255).allow('', null),
   items: Joi.array().items(orderItem).min(1).required(),
+  // NP-112 (2026-09-03): `tax` and `discount` are CLIENT-ASSERTED and no
+  // longer trusted as-is. orderService.create recomputes the expected GST
+  // from menu_items.gst_pct and requires a manager approval (FF-502
+  // /discount-approvals) for discounts above the per-business threshold —
+  // behaviour is gated by the ORDER_TAX_ENFORCE env ('log' default,
+  // 'enforce' to override/403). Kept in the schema for back-compat.
   tax: Joi.number().min(0).default(0),
   discount: Joi.number().min(0).default(0),
   // Food-coupon code applied at POS (2026-09-01). The discount amount rides in

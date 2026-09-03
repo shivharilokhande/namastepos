@@ -1384,6 +1384,10 @@ class ApiService {
     required String membershipId,
     String paymentMethod = 'cash',
     List<Map<String, dynamic>>? paymentBreakdown,
+    // NP-116: idempotency key. Caller mints ONE UUID per purchase attempt and
+    // reuses it on a retry of the SAME attempt, so a committed-but-timed-out
+    // sale isn't double-sold when the cashier retries. Backend dedupes on it.
+    String? clientKey,
   }) async {
     final r = await _wrap(() => _dio.post(
           '/businesses/$businessId/memberships/subscribe',
@@ -1391,6 +1395,7 @@ class ApiService {
             'customerId': customerId,
             'membershipId': membershipId,
             'paymentMethod': paymentMethod,
+            if (clientKey != null) 'clientKey': clientKey,
             if (paymentBreakdown != null && paymentBreakdown.isNotEmpty)
               'paymentBreakdown': paymentBreakdown,
           },

@@ -73,17 +73,121 @@ async function _attemptCount(raw) {
   return (p.attempt_count || 0) + 1;
 }
 
+// NP-111 follow-up: async refunds (razorpay_refund_id stamped, status still
+// 'pending') were finished ONLY by the refund.processed/refund.failed
+// webhook. A missed/out-of-order webhook left them pending until the 48h
+// integrity alert. This poller asks Razorpay directly for rows > 10 min old.
+function _rzGetRefund(refundId) {
+  return new Promise((resolve, reject) => {
+    const auth = Buffer
+      .from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`)
+      .toString('base64');
+    const req = https.request({
+      hostname: 'api.razorpay.com',
+      path: `/v1/refunds/${refundId}`,
+      method: 'GET',
+      headers: { Authorization: `Basic ${auth}` },
+    }, (res) => {
+      let chunks = '';
+      res.on('data', (c) => { chunks += c; });
+      res.on('end', () => {
+        try {
+          const json = chunks ? JSON.parse(chunks) : {};
+          if (res.statusCode >= 300) {
+            return reject(Object.assign(
+              new Error(json.error?.description || `Razorpay HTTP ${res.statusCode}`),
+              { statusCode: res.statusCode, body: json, isTransient: res.statusCode >= 500 }
+            ));
+          }
+          resolve(json);
+        } catch (e) { reject(e); }
+      });
+    });
+    req.on('error', (e) => reject(Object.assign(e, { isTransient: true })));
+    req.end();
+  });
+}
+
+async function pollAsyncPending() {
+  const due = await query(
+    `SELECT id, business_id, razorpay_refund_id
+       FROM refunds
+      WHERE status = 'pending'
+        AND razorpay_refund_id IS NOT NULL
+        AND created_at < NOW() - INTERVAL '10 minutes'
+      ORDER BY created_at
+      LIMIT $1`,
+    [MAX_BATCH]
+  );
+  let settled = 0;
+  for (const row of due.rows) {
+    try {
+      const rz = await _rzGetRefund(row.razorpay_refund_id);
+      if (rz.status === 'processed') {
+        settled += 1;
+        await query(
+          `UPDATE refunds
+              SET status = 'processed', processed_at = NOW(),
+                  raw_payload = COALESCE(raw_payload, '{}'::jsonb)
+                                || jsonb_build_object('poller_ok', TRUE, 'rz', $1::jsonb)
+            WHERE id = $2 AND status = 'pending'`,
+          [rz, row.id]
+        );
+      } else if (rz.status === 'failed') {
+        settled += 1;
+        await query(
+          `UPDATE refunds
+              SET status = 'failed',
+                  raw_payload = COALESCE(raw_payload, '{}'::jsonb)
+                                || jsonb_build_object('poller_reason', 'gateway reports failed',
+                                                      'rz', $1::jsonb)
+            WHERE id = $2 AND status = 'pending'`,
+          [rz, row.id]
+        );
+      }
+      // still 'pending' at the gateway → leave it; next tick re-polls.
+    } catch (err) {
+      // Transient or lookup error — never change state on a failed poll.
+      logger.warn(`[refund-reconciler] poll ${row.razorpay_refund_id} failed: ${err.message}`);
+    }
+  }
+  if (settled) logger.info(`[refund-reconciler] poller settled=${settled}`);
+  return { settled };
+}
+
 async function tick() {
   // Only draw refunds that:
   //   • are actually pending
   //   • have an order + a payment method that means gateway
   //   • are older than 30s (avoid racing with the initial insert)
+  // NP-111 (2026-09-03):
+  //   • `AND r.razorpay_refund_id IS NULL` — refundService now submits the
+  //     gateway refund inline and stamps the refund id when Razorpay reports
+  //     it async; re-submitting such a row here would double-refund.
+  //   • order refunds carry NO payment_id (they link via order_id), so the
+  //     old `p.id = r.payment_id` join always came up empty and every one of
+  //     them was mis-marked failed. Resolve the payment through the order
+  //     (guest checkout writes payments.order_id; session settle-all writes
+  //     payments.notes->>'sessionId') with payment_id kept as first choice.
   const due = await query(
-    `SELECT r.*, o.payment_method, p.razorpay_payment_id, p.amount_paise AS payment_amount
+    `SELECT r.*, o.payment_method,
+            COALESCE(p.razorpay_payment_id, po.razorpay_payment_id) AS razorpay_payment_id
        FROM refunds r
        JOIN orders o ON o.id = r.order_id
   LEFT JOIN payments p ON p.id = r.payment_id
+  LEFT JOIN LATERAL (
+        SELECT pp.razorpay_payment_id
+          FROM payments pp
+         WHERE pp.business_id = r.business_id
+           AND pp.razorpay_payment_id IS NOT NULL
+           AND (pp.order_id = r.order_id
+                OR (o.table_session_id IS NOT NULL
+                    AND pp.notes->>'sessionId' = o.table_session_id::text))
+         ORDER BY pp.created_at DESC
+         LIMIT 1
+       ) po ON TRUE
       WHERE r.status = 'pending'
+        AND r.razorpay_refund_id IS NULL
         AND r.created_at < NOW() - INTERVAL '30 seconds'
         AND o.payment_method IN ('card', 'online')
       ORDER BY r.created_at
@@ -91,7 +195,13 @@ async function tick() {
     [MAX_BATCH]
   );
 
-  if (due.rowCount === 0) return { processed: 0, failed: 0, deferred: 0 };
+  if (due.rowCount === 0) {
+    // Still poll async-pending rows even when nothing new is due.
+    try { await pollAsyncPending(); } catch (e) {
+      logger.warn(`[refund-reconciler] pollAsyncPending failed: ${e.message}`);
+    }
+    return { processed: 0, failed: 0, deferred: 0 };
+  }
 
   let processed = 0;
   let failed = 0;
@@ -107,7 +217,8 @@ async function tick() {
             SET status = 'failed',
                 raw_payload = COALESCE(raw_payload, '{}'::jsonb)
                               || jsonb_build_object('reconciler_reason',
-                                    'no razorpay_payment_id on payment row')
+                                    'no razorpay_payment_id on payment row',
+                                    'manualRequired', TRUE)
           WHERE id = $1`,
         [row.id]
       );
@@ -118,6 +229,23 @@ async function tick() {
       const rz = await rzRefund(
         row.razorpay_payment_id, row.amount_paise, row.reason
       );
+      // NP-111: only claim 'processed' when Razorpay says so. A refund the
+      // API reports as 'pending' is genuinely async — stamp the refund id
+      // (which also removes it from this drainer's WHERE) and let the
+      // refund.processed / refund.failed webhook finish it.
+      if (rz.body.status === 'pending') {
+        deferred += 1;
+        await query(
+          `UPDATE refunds
+              SET razorpay_refund_id = $1,
+                  raw_payload = COALESCE(raw_payload, '{}'::jsonb)
+                                || jsonb_build_object('gatewayAsync', TRUE,
+                                                      'rz', $2::jsonb)
+            WHERE id = $3`,
+          [rz.body.id || null, rz.body, row.id]
+        );
+        continue;
+      }
       processed += 1;
       await query(
         `UPDATE refunds
@@ -169,7 +297,11 @@ async function tick() {
       `[refund-reconciler] processed=${processed} failed=${failed} deferred=${deferred}`
     );
   }
+  // NP-111 follow-up: settle async-pending rows the webhook never finished.
+  try { await pollAsyncPending(); } catch (e) {
+    logger.warn(`[refund-reconciler] pollAsyncPending failed: ${e.message}`);
+  }
   return { processed, failed, deferred };
 }
 
-module.exports = { tick };
+module.exports = { tick, pollAsyncPending };

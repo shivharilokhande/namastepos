@@ -19,10 +19,36 @@ class OrdersProvider extends ChangeNotifier {
   final List<Order> _orders = [];
   String? _businessId;
   bool _loading = false;
+  // NP-115: the business id of the CURRENT auth session, synced from
+  // AuthProvider via the ChangeNotifierProxyProvider in main.dart. Null when
+  // signed out. Used to (a) wipe tenant state on logout/switch and (b) refuse
+  // loads/fallbacks for a business that isn't the signed-in one.
+  String? _authBusinessId;
 
   List<CartItem> get cart => List.unmodifiable(_cart);
   List<Order> get orders => List.unmodifiable(_orders);
   bool get loading => _loading;
+
+  /// NP-115 — called from main.dart whenever AuthProvider notifies. When the
+  /// session's business changes (logout, "use another account", restaurant
+  /// switch) any state held for a different tenant is wiped so it can never
+  /// leak into the next session.
+  void syncAuthSession(String? authBusinessId) {
+    if (_authBusinessId == authBusinessId) return;
+    _authBusinessId = authBusinessId;
+    if (_businessId != null && _businessId != authBusinessId) resetForLogout();
+  }
+
+  /// NP-115 — clears all tenant-scoped in-memory state.
+  void resetForLogout() {
+    _orders.clear();
+    _cart.clear();
+    _businessId = null;
+    _loading = false;
+    // May run during a ProxyProvider `update` (build phase) — defer the
+    // notification so we don't markNeedsBuild mid-build.
+    Future.microtask(notifyListeners);
+  }
 
   double get cartSubtotal =>
       _cart.fold<double>(0, (sum, ci) => sum + ci.lineTotal);
@@ -33,6 +59,13 @@ class OrdersProvider extends ChangeNotifier {
       _orders.where((o) => o.status == s).toList();
 
   Future<void> load(String businessId, {DateTime? day}) async {
+    // NP-115: refuse to load a business that isn't the signed-in one — a
+    // stale caller (screen unmounting during logout, queued microtask)
+    // must not repopulate the store with another tenant's data.
+    if (businessId != _authBusinessId) {
+      debugPrint('ORDERS load skipped: $businessId != auth $_authBusinessId');
+      return;
+    }
     _businessId = businessId;
     _loading = true; notifyListeners();
     // Backend is the source of truth — pull today's orders from the API.
@@ -46,6 +79,9 @@ class OrdersProvider extends ChangeNotifier {
           .map(Order.fromBackend)
           .toList();
       debugPrint('ORDERS load: backend returned ${list.length} orders for biz $businessId');
+      // NP-115: the session changed (logout / switch) while the fetch was in
+      // flight — discard the result instead of repopulating the cleared store.
+      if (businessId != _authBusinessId) { _loading = false; return; }
       // 2026-08-31 review fix: capture local orders that were created offline
       // and haven't synced yet BEFORE purging — otherwise purgeAll deletes them
       // and, because the outbox hasn't drained, they're not in the server list
@@ -70,6 +106,13 @@ class OrdersProvider extends ChangeNotifier {
       // never saw. Now we print the error so we can diagnose, and only
       // fall back to local cache if it's plausibly a network outage.
       debugPrint('ORDERS load failed for biz $businessId: $e');
+      // NP-115: never fall back to the local cache for a business that no
+      // longer matches the session (e.g. a 403 after a restaurant switch) —
+      // that would resurrect the OLD tenant's orders on screen.
+      if (businessId != _authBusinessId) {
+        _loading = false; notifyListeners();
+        return;
+      }
       final cached = await OrderRepo.instance.list(businessId, day: day ?? DateTime.now());
       debugPrint('ORDERS load fallback: showing ${cached.length} cached orders');
       _orders
@@ -80,7 +123,10 @@ class OrdersProvider extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
-    if (_businessId != null) await load(_businessId!);
+    // NP-115: no-op when signed out or when the held data belongs to a
+    // business other than the current session's.
+    if (_businessId == null || _businessId != _authBusinessId) return;
+    await load(_businessId!);
   }
 
   // ── Cart operations ─────────────────────────────────────────────────────
@@ -409,6 +455,8 @@ class OrdersProvider extends ChangeNotifier {
   /// backend (e.g. created offline and never synced). Exposed via the
   /// Orders tab's "Clean local cache" action.
   Future<void> rebuildFromBackend(String businessId) async {
+    // NP-115: same tenant guard as load().
+    if (businessId != _authBusinessId) return;
     _loading = true; notifyListeners();
     try {
       await OrderRepo.instance.purgeAll(businessId);

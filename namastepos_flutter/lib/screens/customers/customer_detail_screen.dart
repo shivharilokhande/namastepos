@@ -15,6 +15,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../constants/colors.dart';
 import '../../models/customer.dart';
@@ -63,6 +64,16 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   // Guards double-taps on the cancel-membership button while the
   // subscription-id lookup / cancel POST is in flight.
   bool _cancelBusy = false;
+
+  // NP-116: guards double-taps on "Add membership" while the buy flow /
+  // subscribe POST is in flight (same pattern as _cancelBusy).
+  bool _buyBusy = false;
+  // NP-116: idempotency key, one UUID per purchase ATTEMPT (customer + plan +
+  // tender). Kept on failure so an in-screen retry of the SAME attempt reuses
+  // it — a committed-but-timed-out POST retried can't double-sell. Cleared on
+  // success; a different plan/tender is a new attempt and mints a new key.
+  String? _buyClientKey;
+  String? _buyAttemptSig;
 
   @override
   void initState() {
@@ -128,18 +139,22 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
 
   Future<void> _addMembership() async {
     final biz = context.read<AuthProvider>().business;
-    if (biz == null) return;
+    // NP-116: ignore re-taps while a buy flow is already in flight.
+    if (biz == null || _buyBusy) return;
     final messenger = ScaffoldMessenger.of(context);
+    setState(() => _buyBusy = true);
     List<dynamic> plans = [];
     try {
       plans = await ApiService.instance.listMemberships(biz.id);
     } catch (e) {
+      if (mounted) setState(() => _buyBusy = false);
       messenger.showSnackBar(
           SnackBar(content: Text(humanizeError(e))));
       return;
     }
     if (!mounted) return;
     if (plans.isEmpty) {
+      setState(() => _buyBusy = false);
       messenger.showSnackBar(const SnackBar(
         content: Text('No membership plans yet — create one below.'),
       ));
@@ -184,8 +199,12 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         ),
       ),
     );
-    if (picked == null || !mounted) return;
+    if (picked == null || !mounted) {
+      if (mounted) setState(() => _buyBusy = false);
+      return;
+    }
     if (picked['__create__'] == true) {
+      setState(() => _buyBusy = false); // release before the nested flow
       final created = await showCreateMembershipPlanDialog(context);
       if (created && mounted) await _addMembership(); // reopen picker
       return;
@@ -196,7 +215,19 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     // no more silent hardcoded 'cash'.
     final priceInr = ((picked['price_paise'] ?? 0) as num) / 100;
     final method = await _pickPaymentMethod(priceInr);
-    if (method == null || !mounted) return;
+    if (method == null || !mounted) {
+      if (mounted) setState(() => _buyBusy = false);
+      return;
+    }
+
+    // NP-116: one idempotency key per purchase attempt. A retry of the SAME
+    // attempt (same customer + plan + tender, after a failure/timeout) reuses
+    // the previous key so the backend can dedupe; anything else mints fresh.
+    final attemptSig = '${widget.customer.id}|${picked['id']}|$method';
+    if (_buyClientKey == null || _buyAttemptSig != attemptSig) {
+      _buyClientKey = const Uuid().v4();
+      _buyAttemptSig = attemptSig;
+    }
 
     try {
       await ApiService.instance.subscribeMembership(
@@ -204,7 +235,11 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
         customerId: widget.customer.id,
         membershipId: picked['id'].toString(),
         paymentMethod: method,
+        clientKey: _buyClientKey,
       );
+      // Success — this attempt is done; the next sale must get a new key.
+      _buyClientKey = null;
+      _buyAttemptSig = null;
       messenger.showSnackBar(SnackBar(
         content: Text('${picked['name']} sold — '
             '${AppFmt.money(priceInr, decimals: true)} by '
@@ -213,9 +248,12 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       ));
       await _load();
     } catch (e) {
+      // Failure/timeout: keep _buyClientKey so a retry can't double-sell.
       messenger.showSnackBar(SnackBar(
           content: Text(humanizeError(e)),
           backgroundColor: AppColors.error));
+    } finally {
+      if (mounted) setState(() => _buyBusy = false);
     }
   }
 
@@ -594,9 +632,17 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                     ),
                   ] else
                     OutlinedButton.icon(
-                      icon: const Icon(Icons.card_membership, size: 18),
+                      // NP-116: progress + disabled while the buy flow is in
+                      // flight so a double-tap can't start a second sale.
+                      icon: _buyBusy
+                          ? const SizedBox(
+                              height: 16,
+                              width: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2))
+                          : const Icon(Icons.card_membership, size: 18),
                       label: const Text('Add membership'),
-                      onPressed: _addMembership,
+                      onPressed: _buyBusy ? null : _addMembership,
                     ),
                   const SizedBox(height: 16),
                   // Order history

@@ -203,6 +203,10 @@ class AuthProvider extends ChangeNotifier {
   Future<void> signOutFromLock() async {
     await AuthService.instance.logoutFull();
     _business = null; _role = null; _permissions = const [];
+    // NP-114: reset the plan too — without this the previous account's paid
+    // entitlements stayed in RAM (login paths only overwrite _plan when the
+    // response carries one, and the cached plan is deleted on logout).
+    _plan = PlanInfo.starterDefault();
     _mpinSet = false;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
@@ -415,6 +419,8 @@ class AuthProvider extends ChangeNotifier {
     _business = null;
     _role = null;
     _permissions = const [];
+    // NP-114: drop the old account's plan from RAM (see signOutFromLock).
+    _plan = PlanInfo.starterDefault();
     _status = AuthStatus.unauthenticated;
     notifyListeners();
   }

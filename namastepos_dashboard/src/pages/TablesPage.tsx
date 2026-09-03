@@ -618,7 +618,7 @@ function printSessionBill(session: any, mergedLines: MergedBillLine[]) {
 
 function SessionDialog({ sessionId, onClose, onClosed }: any) {
   const qc = useQueryClient();
-  const { data: session } = useQuery({
+  const { data: session, error: sessionError } = useQuery({
     queryKey: ['session', sessionId],
     queryFn: () => ffApi.sessionDetail(sessionId),
     refetchInterval: 5000, // keep the running bill fresh
@@ -794,7 +794,47 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
     abandon.mutate();
   };
 
-  if (!session) return null;
+  // NP-118: a bare `return null` here rendered NOTHING when the session fetch
+  // failed — the cashier tapped an occupied table and got a dead click. Keep
+  // the dialog shell mounted: loading state while pending, the API error with
+  // a "Refresh tables" escape hatch on failure, and a plain-words message when
+  // the session is simply gone (404 / already settled elsewhere).
+  if (!session) {
+    const status = (sessionError as any)?.response?.status;
+    const gone = status === 404
+      || (!!sessionError && /settled|closed|not found/i.test(apiError(sessionError)));
+    const refreshAndClose = () => {
+      qc.invalidateQueries({ queryKey: ['ops-tables'] });
+      qc.invalidateQueries({ queryKey: ['session', sessionId] });
+      onClose();
+    };
+    return (
+      <Dialog open onOpenChange={(o) => { if (!o) (gone ? refreshAndClose() : onClose()); }}>
+        <DialogContent className="max-w-xl w-[95vw]">
+          <DialogHeader>
+            <DialogTitle>Table session</DialogTitle>
+          </DialogHeader>
+          {!sessionError ? (
+            <div className="py-8 text-center text-sm text-muted-foreground">
+              Loading session…
+            </div>
+          ) : gone ? (
+            <div className="py-6 text-center space-y-3">
+              <p className="text-sm">This table was already settled.</p>
+              <Button className="w-full" onClick={refreshAndClose}>Close</Button>
+            </div>
+          ) : (
+            <div className="py-6 text-center space-y-3">
+              <p className="text-sm text-destructive">{apiError(sessionError)}</p>
+              <Button variant="outline" className="w-full" onClick={refreshAndClose}>
+                Refresh tables
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const items = session.items || [];
   const orders = session.orders || [];

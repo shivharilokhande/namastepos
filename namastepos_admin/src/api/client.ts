@@ -40,27 +40,62 @@ function clearSession() {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+// NP-113: report the probe outcome to Sentry (lazy + guarded — the module
+// no-ops when VITE_SENTRY_DSN is unset, and a failed import must never
+// break login).
+function reportAuthProbe(mode: 'cookie' | 'bearer-fallback', err: unknown) {
+  import('../lib/sentry')
+    .then((m) => m.captureError(err, { admin_auth_mode: mode }))
+    .catch(() => { /* sentry unavailable — ignore */ });
+}
+
 /**
  * Establish a session after a successful login. Prefers the httpOnly cookie;
  * falls back to storing the Bearer token only if the cookie doesn't work.
+ *
+ * NP-113: the fallback used to fire on ANY probe failure (network blip, 5xx,
+ * timeout), silently persisting the JWT in localStorage. Now the probe is
+ * retried once after a short backoff, and Bearer-fallback engages ONLY on a
+ * definitive 401 (a response arrived and the cookie was not accepted).
+ * Transient failures stay in cookie mode with a non-fatal warning.
  */
 export async function establishSession(token: string): Promise<void> {
-  try {
-    // Probe with the cookie only (raw axios → bypasses our interceptors, so a
-    // 401 here doesn't trigger the global redirect). No Authorization header.
-    await axios.get(`${API}/admin/auth/me`, { withCredentials: true });
-    localStorage.setItem(FLAG_KEY, '1');
-    localStorage.removeItem(TOKEN_KEY); // credential lives in the cookie
-  } catch {
-    // Cookie didn't round-trip — keep working via Bearer (legacy path).
-    // TODO (post cookie-auth prod verification): once we've confirmed the
-    // httpOnly ff_admin cookie round-trips in production, REMOVE this fallback.
-    // It re-introduces the XSS token-exposure the cookie redesign removed by
-    // persisting the JWT in localStorage. Kept only as a zero-lockout safety net
-    // during rollout. See reference_namastepos_compliance_console memory.
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(FLAG_KEY, '1');
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      // Probe with the cookie only (raw axios → bypasses our interceptors, so a
+      // 401 here doesn't trigger the global redirect). No Authorization header.
+      await axios.get(`${API}/admin/auth/me`, { withCredentials: true, timeout: 10_000 });
+      localStorage.setItem(FLAG_KEY, '1');
+      localStorage.removeItem(TOKEN_KEY); // credential lives in the cookie
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (axios.isAxiosError(e) && e.response?.status === 401) {
+        // Definitive: the server answered and rejected the cookie — keep
+        // working via Bearer (legacy path).
+        // TODO (post cookie-auth prod verification): once we've confirmed the
+        // httpOnly ff_admin cookie round-trips in production, REMOVE this fallback.
+        // It re-introduces the XSS token-exposure the cookie redesign removed by
+        // persisting the JWT in localStorage. Kept only as a zero-lockout safety net
+        // during rollout. See reference_namastepos_compliance_console memory.
+        localStorage.setItem(TOKEN_KEY, token);
+        localStorage.setItem(FLAG_KEY, '1');
+        reportAuthProbe('bearer-fallback', e);
+        return;
+      }
+      // Transient (network error / 5xx / timeout) — retry once, then give up
+      // WITHOUT falling back to Bearer.
+      if (attempt === 0) await new Promise((r) => setTimeout(r, 1500));
+    }
   }
+  console.warn(
+    '[admin-auth] cookie probe failed transiently after retry — staying in cookie mode',
+    lastErr
+  );
+  localStorage.setItem(FLAG_KEY, '1');
+  localStorage.removeItem(TOKEN_KEY);
+  reportAuthProbe('cookie', lastErr);
 }
 
 // Back-compat shim used by LoginPage's "Back"/cancel + old callers: passing a

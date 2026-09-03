@@ -323,12 +323,44 @@ async function refundOrder({
   // worker to complete it — refunds sat forever, owners had no
   // recourse. For the cash-book path (payment_method='cash'|'upi',
   // no Razorpay involvement) we mark 'processed' immediately since
-  // there's nothing to reconcile with an external gateway. For
-  // gateway-backed methods ('online'|'card') we keep 'pending' but
-  // TODO: enqueue Razorpay refund call. Owners can see the status
-  // via GET /admin/refunds.
+  // there's nothing to reconcile with an external gateway.
+  // NP-111 (2026-09-03): for gateway-backed methods ('online'|'card')
+  // the old TODO ("enqueue Razorpay refund call") never happened inline —
+  // rows sat 'pending'. Now:
+  //   • resolve the Razorpay payment behind the order up-front (guest
+  //     checkout records it on payments.order_id; session settle-all
+  //     records it under payments.notes->>'sessionId');
+  //   • with a razorpay_payment_id → insert 'pending' and call Razorpay's
+  //     refund API right after commit (below, in the .then) — 'processed'
+  //     on success, 'failed' with the error on failure, and 'pending' only
+  //     while Razorpay itself reports the refund as genuinely async (the
+  //     refund.processed/refund.failed webhook or the reconciler finishes it);
+  //   • with NO razorpay_payment_id the gateway call can never succeed —
+  //     insert 'failed' + manualRequired so the UI never claims initiated
+  //     (refund_status is an ENUM, so 'manual_required' itself isn't a
+  //     legal value; the reason lives in raw_payload).
   const isCashBook = ['cash', 'upi'].includes(order.payment_method);
-  const finalStatus = isCashBook ? 'processed' : 'pending';
+  const isGateway = ['online', 'card'].includes(order.payment_method);
+  let rzPaymentId = null;
+  if (isGateway) {
+    const payQ = await client.query(
+      `SELECT razorpay_payment_id
+         FROM payments
+        WHERE business_id = $1
+          AND razorpay_payment_id IS NOT NULL
+          AND (order_id = $2
+               OR ($3::text IS NOT NULL AND notes->>'sessionId' = $3::text))
+        ORDER BY created_at DESC
+        LIMIT 1`,
+      [businessId, orderId, order.table_session_id || null],
+    );
+    rzPaymentId = payQ.rows[0]?.razorpay_payment_id || null;
+  }
+  let finalStatus;
+  if (isCashBook) finalStatus = 'processed';
+  else if (isGateway) finalStatus = rzPaymentId ? 'pending' : 'failed';
+  else finalStatus = 'pending';
+  const manualRequired = isGateway && !rzPaymentId;
   const refundRow = await client.query(
     `INSERT INTO refunds
        (business_id, order_id, amount_paise, currency, reason, status, raw_payload)
@@ -346,6 +378,11 @@ async function refundOrder({
         itemIds: itemIds.length > 0 ? itemIds : undefined,
         items: (items && items.length > 0) ? items : undefined,
         cogsPaise: cogsPaise || undefined,
+        razorpayPaymentId: rzPaymentId || undefined,
+        manualRequired: manualRequired || undefined,
+        manualReason: manualRequired
+          ? 'No Razorpay payment id recorded for this order — refund at the gateway manually'
+          : undefined,
       }),
     ],
   );
@@ -391,8 +428,11 @@ async function refundOrder({
     refund: serialize(refundRow.rows[0]),
     _cogsPaise: cogsPaise,
     _pointsReversed,
+    // NP-111: gateway call happens post-commit (below) so a Razorpay
+    // timeout can't hold the order row locked / roll back the record.
+    _gatewayRzPaymentId: (isGateway && rzPaymentId) ? rzPaymentId : null,
   };
-  }).then(async ({ refund, _cogsPaise, _pointsReversed }) => {
+  }).then(async ({ refund, _cogsPaise, _pointsReversed, _gatewayRzPaymentId }) => {
     // 2026-08-23 (founder): when prepared food is refunded, its making
     // cost is a real loss — mirror it into expenses (category
     // 'refund_cogs', added in migration 055) so daily reports and the
@@ -411,8 +451,76 @@ async function refundOrder({
         console.warn(`[refund] cogs expense mirror failed: ${e?.message}`);
       }
     }
+    // NP-111 (2026-09-03): execute the gateway refund inline instead of
+    // leaving the row 'pending' for a worker that never came. Reuses this
+    // file's ONE rzCall (initiate() uses the same one) — via
+    // module.exports._rzCall so tests can mock the HTTP hop.
+    if (_gatewayRzPaymentId) {
+      try {
+        const rz = await module.exports._rzCall(
+          'POST', `/v1/payments/${_gatewayRzPaymentId}/refund`,
+          { amount: refund.amountPaise, notes: { reason: reason || '' } },
+        );
+        if (rz.status === 'pending') {
+          // Genuinely async at the gateway (normal-speed refund still being
+          // routed). Keep our row 'pending' but stamp the refund id so the
+          // refund.processed / refund.failed webhook (razorpayService) — or
+          // the 5-min reconciler — can finish it. The reconciler skips rows
+          // that already carry a razorpay_refund_id, so no double submit.
+          await query(
+            `UPDATE refunds
+                SET razorpay_refund_id = $1,
+                    raw_payload = COALESCE(raw_payload, '{}'::jsonb)
+                                  || jsonb_build_object('gatewayAsync', TRUE, 'rz', $2::jsonb)
+              WHERE id = $3`,
+            [rz.id, rz, refund.id],
+          );
+          refund.razorpayRefundId = rz.id;
+        } else if (rz.status === 'failed') {
+          await query(
+            `UPDATE refunds
+                SET status = 'failed', razorpay_refund_id = $1,
+                    raw_payload = COALESCE(raw_payload, '{}'::jsonb)
+                                  || jsonb_build_object('rz', $2::jsonb)
+              WHERE id = $3`,
+            [rz.id, rz, refund.id],
+          );
+          refund.status = 'failed';
+          refund.razorpayRefundId = rz.id;
+          throw new BadRequest('Razorpay reported the refund as failed — check the gateway dashboard');
+        } else {
+          await query(
+            `UPDATE refunds
+                SET status = 'processed', processed_at = NOW(), razorpay_refund_id = $1,
+                    raw_payload = COALESCE(raw_payload, '{}'::jsonb)
+                                  || jsonb_build_object('rz', $2::jsonb)
+              WHERE id = $3`,
+            [rz.id, rz, refund.id],
+          );
+          refund.status = 'processed';
+          refund.razorpayRefundId = rz.id;
+        }
+      } catch (err) {
+        if (err instanceof BadRequest) throw err; // already recorded above
+        await query(
+          `UPDATE refunds
+              SET status = 'failed',
+                  raw_payload = COALESCE(raw_payload, '{}'::jsonb)
+                                || jsonb_build_object('gatewayError', $1::text)
+            WHERE id = $2`,
+          [err.message || 'unknown', refund.id],
+        );
+        logger.error(`[refund] gateway refund failed for ${refund.id}: ${err.message}`);
+        throw new BadRequest(`Razorpay refund failed: ${err.message}`);
+      }
+    }
     return refund;
   });
 }
 
-module.exports = { list, initiate, refundOrder, serialize };
+module.exports = {
+  list, initiate, refundOrder, serialize,
+  // NP-111: exported for tests to mock the Razorpay HTTP hop; production
+  // code paths call this exact reference.
+  _rzCall: rzCall,
+};

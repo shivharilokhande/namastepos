@@ -198,16 +198,41 @@ export function OrdersPage() {
   // to flip EVERY pending KOT, otherwise the collapse logic keeps the
   // bill in Pending (worst-status wins). For plain orders this just
   // updates the one row.
-  const updateBill = async (o: any, s: string) => {
-    const ids = (o.isBill && Array.isArray(o.kots) && o.kots.length > 0)
+  // NP-117: was a bare async Promise.all — double-taps double-fired the PUTs
+  // and a partial failure half-flipped the bill with one generic toast. Now a
+  // mutation (buttons disable on isPending) over allSettled: partial failures
+  // name the failed KOTs and offer a Retry that re-fires ONLY the failed
+  // subset; the orders query refreshes on settle either way.
+  const billUpdate = useMutation<
+    { ids: string[]; s: string; results: PromiseSettledResult<unknown>[] },
+    Error,
+    { ids: string[]; s: string }
+  >({
+    mutationFn: async ({ ids, s }) => ({
+      ids, s,
+      results: await Promise.allSettled(ids.map((id) => ffApi.updateOrderStatus(id, s))),
+    }),
+    onSuccess: ({ ids, s, results }) => {
+      const failedIds = ids.filter((_, i) => results[i].status === 'rejected');
+      if (failedIds.length === 0) return;
+      const firstErr = results.find(
+        (r): r is PromiseRejectedResult => r.status === 'rejected'
+      )!.reason;
+      const labels = failedIds.map((id) => `#${String(id).slice(0, 6)}`).join(', ');
+      toast.error(
+        `${failedIds.length} of ${ids.length} KOTs failed (${labels}): ${apiError(firstErr)}`,
+        { action: { label: 'Retry', onClick: () => billUpdate.mutate({ ids: failedIds, s }) } },
+      );
+    },
+    // allSettled never rejects, but keep the page's standard error surface.
+    onError: (e) => toast.error(apiError(e)),
+    onSettled: () => { qc.invalidateQueries({ queryKey: ['orders'] }); },
+  });
+  const updateBill = (o: any, s: string) => {
+    const ids: string[] = (o.isBill && Array.isArray(o.kots) && o.kots.length > 0)
       ? o.kots.map((k: any) => k.id).filter(Boolean)
       : [o.id];
-    try {
-      await Promise.all(ids.map((id: string) => ffApi.updateOrderStatus(id, s)));
-      qc.invalidateQueries({ queryKey: ['orders'] });
-    } catch (e) {
-      toast.error(apiError(e));
-    }
+    billUpdate.mutate({ ids, s });
   };
 
   // Per-channel counts shown on the tab chips
@@ -364,8 +389,8 @@ export function OrdersPage() {
                 {o.status === 'pending' && (
                   <div className="mt-3 flex gap-2">
                     <Button size="sm" className="flex-1"
-                      onClick={() => updateBill(o, 'ready')}>
-                      Mark ready
+                      onClick={() => updateBill(o, 'ready')} disabled={billUpdate.isPending}>
+                      {billUpdate.isPending ? 'Marking…' : 'Mark ready'}
                     </Button>
                     <Button size="sm" variant="ghost"
                       onClick={() => setCancelling(o)}>
@@ -375,8 +400,8 @@ export function OrdersPage() {
                 )}
                 {o.status === 'ready' && (
                   <Button size="sm" className="mt-3 w-full"
-                    onClick={() => updateBill(o, 'collected')}>
-                    Mark collected
+                    onClick={() => updateBill(o, 'collected')} disabled={billUpdate.isPending}>
+                    {billUpdate.isPending ? 'Marking…' : 'Mark collected'}
                   </Button>
                 )}
                 {/* FF-903-b — assign a driver on a ready order. Visible

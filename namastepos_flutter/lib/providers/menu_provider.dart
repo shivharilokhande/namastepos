@@ -21,6 +21,28 @@ class MenuProvider extends ChangeNotifier {
   String _selectedCategory = 'All';
   String? _businessId;
   String? _error;
+  // NP-115: business id of the CURRENT auth session (synced from AuthProvider
+  // via the ChangeNotifierProxyProvider in main.dart). Null when signed out.
+  String? _authBusinessId;
+
+  /// NP-115 — see OrdersProvider.syncAuthSession. Wipes tenant state when the
+  /// session's business changes (logout / account switch / restaurant switch).
+  void syncAuthSession(String? authBusinessId) {
+    if (_authBusinessId == authBusinessId) return;
+    _authBusinessId = authBusinessId;
+    if (_businessId != null && _businessId != authBusinessId) resetForLogout();
+  }
+
+  /// NP-115 — clears all tenant-scoped in-memory state.
+  void resetForLogout() {
+    _items.clear();
+    _businessId = null;
+    _loading = false;
+    _error = null;
+    _selectedCategory = 'All';
+    // May run during a ProxyProvider `update` (build phase) — defer.
+    Future.microtask(notifyListeners);
+  }
 
   List<MenuItem> get items => List.unmodifiable(_items);
   bool get loading => _loading;
@@ -50,6 +72,11 @@ class MenuProvider extends ChangeNotifier {
   }
 
   Future<void> load(String businessId) async {
+    // NP-115: refuse to load a business that isn't the signed-in one.
+    if (businessId != _authBusinessId) {
+      debugPrint('MENU load skipped: $businessId != auth $_authBusinessId');
+      return;
+    }
     _businessId = businessId;
     _loading = true;
     _error = null;
@@ -61,12 +88,17 @@ class MenuProvider extends ChangeNotifier {
       final remote = raw.cast<Map<String, dynamic>>()
           .map(MenuItem.fromBackend)
           .toList();
+      // NP-115: session changed mid-fetch — discard rather than repopulate.
+      if (businessId != _authBusinessId) { _loading = false; return; }
       // Replace local cache wholesale so deletions on backend reflect here.
       await MenuRepo.instance.replaceAll(businessId, remote);
       _items
         ..clear()
         ..addAll(remote);
     } catch (e) {
+      // NP-115: never serve the local cache for a business that no longer
+      // matches the session (e.g. 403 after a restaurant switch).
+      if (businessId != _authBusinessId) { _loading = false; return; }
       // 2. Backend unreachable → fall back to local cache (offline mode).
       _error = 'Couldn\'t reach server — showing cached menu';
       final cached = await MenuRepo.instance.listForBusiness(businessId, onlyActive: false);
@@ -98,7 +130,9 @@ class MenuProvider extends ChangeNotifier {
   }
 
   Future<void> refresh() async {
-    if (_businessId != null) await load(_businessId!);
+    // NP-115: no-op when signed out or holding another tenant's data.
+    if (_businessId == null || _businessId != _authBusinessId) return;
+    await load(_businessId!);
   }
 
   MenuItem? byId(String id) {

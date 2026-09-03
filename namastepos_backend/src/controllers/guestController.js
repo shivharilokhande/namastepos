@@ -210,7 +210,7 @@ const placeOrder = [
       items: req.body.items,
       paymentMethod: 'unpaid',  // settle later at the counter
       allowMemberBenefits,
-    });
+    }, { trustedChannel: true }); // NP-112: server-routed guest flow — tax settled at counter
 
     // Link the order to the session + table (orderService doesn't know about these)
     await query(

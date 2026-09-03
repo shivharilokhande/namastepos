@@ -393,6 +393,40 @@ async function handleWebhook(payload, headerEventId) {
         }
         break;
       }
+      // NP-111 (2026-09-03): gateway refunds are created inline by
+      // refundService (or drained by refundReconcileService); a refund
+      // Razorpay reports as async stays 'pending' with its
+      // razorpay_refund_id stamped, and these events finish it.
+      case 'refund.processed': {
+        const rf = payload.payload.refund.entity;
+        const r = await query(
+          `UPDATE refunds
+              SET status = 'processed',
+                  processed_at = COALESCE(processed_at, NOW()),
+                  raw_payload = COALESCE(raw_payload, '{}'::jsonb)
+                                || jsonb_build_object('webhook_refund', $2::jsonb)
+            WHERE razorpay_refund_id = $1 AND status <> 'processed'`,
+          [rf.id, rf]
+        );
+        if (r.rowCount === 0) {
+          logger.info(`refund.processed for unknown/already-settled refund ${rf.id}`);
+        }
+        break;
+      }
+      case 'refund.failed': {
+        const rf = payload.payload.refund.entity;
+        // Only downgrade rows still awaiting the gateway — never flip a
+        // 'processed' row back on a stale/out-of-order delivery.
+        await query(
+          `UPDATE refunds
+              SET status = 'failed',
+                  raw_payload = COALESCE(raw_payload, '{}'::jsonb)
+                                || jsonb_build_object('webhook_refund', $2::jsonb)
+            WHERE razorpay_refund_id = $1 AND status = 'pending'`,
+          [rf.id, rf]
+        );
+        break;
+      }
       default:
         logger.info(`Unhandled Razorpay event: ${event}`);
     }

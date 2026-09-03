@@ -12,6 +12,7 @@
 
 const { query, getClient } = require('../config/db');
 const logger = require('../config/logger');
+const env = require('../config/env'); // NP-121: gates the revenue-integrity sweep
 
 // Design-debt hardening (2026-08-24): the scheduler is meant to run on one
 // instance (server.js gates it to PM2 instance 0). But if that gating is ever
@@ -186,6 +187,18 @@ async function _runOnce() {
         await require('./retentionService').sweep();
       } catch (e) {
         logger.warn(`[retention] nightly sweep failed: ${e.message}`);
+      }
+      // NP-121 (2026-09-03): revenue-integrity sweep — plan-price drift,
+      // refunds stuck pending >48h, webhook deliveries dead in-flight >1h.
+      // DEFAULT OFF: runs only when REVENUE_INTEGRITY_CRON=true. Emails
+      // PLATFORM_ALERT_EMAIL only when something actually drifted; a
+      // missing recipient while enabled is a loud error (service throws).
+      if (env.REVENUE_INTEGRITY_CRON) {
+        try {
+          await require('./revenueIntegrityService').runDaily();
+        } catch (e) {
+          logger.error(`[revenue-integrity] nightly sweep failed: ${e.message}`);
+        }
       }
     }
   } catch (err) {

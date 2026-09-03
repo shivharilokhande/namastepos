@@ -535,6 +535,10 @@ router.post('/memberships/subscribe',
   validate({ body: Joi.object({
     customerId: Joi.string().uuid().required(),
     membershipId: Joi.string().uuid().required(),
+    // NP-116 (2026-09-03): optional idempotency key — a retried subscribe
+    // with the same clientKey returns the original sale instead of selling
+    // (and wallet-debiting) twice. Same pattern as orders.clientId.
+    clientKey: Joi.string().max(64).allow(null),
     // 2026-08-25 (founder): membership sell is a real payment now —
     // 'wallet' debits the customer wallet atomically with the sale, and an
     // optional paymentBreakdown splits the plan price across 1-3 tenders

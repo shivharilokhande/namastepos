@@ -98,13 +98,39 @@ Future<void> main() async {
       MultiProvider(
         providers: [
           ChangeNotifierProvider(create: (_) => AuthProvider()),
-          ChangeNotifierProvider(create: (_) => MenuProvider()),
-          ChangeNotifierProvider(create: (_) => OrdersProvider()),
-          ChangeNotifierProvider(create: (_) => InventoryProvider()),
-          ChangeNotifierProvider(create: (_) => ExpensesProvider()),
+          // NP-115: every provider holding tenant data is a ProxyProvider on
+          // AuthProvider. `update` fires on every auth notifyListeners and
+          // pushes the session's business id into the provider; when it
+          // changes (logout, "use another account", DPDP erasure, restaurant
+          // switch) the provider wipes its in-memory tenant state, so the
+          // previous restaurant's orders/cart/menu/tables can never leak
+          // into the next session. SettingsProvider is device-level, not
+          // tenant-scoped, so it stays a plain provider.
+          ChangeNotifierProxyProvider<AuthProvider, MenuProvider>(
+            create: (_) => MenuProvider(),
+            update: (_, auth, p) => p!..syncAuthSession(auth.business?.id),
+          ),
+          ChangeNotifierProxyProvider<AuthProvider, OrdersProvider>(
+            create: (_) => OrdersProvider(),
+            update: (_, auth, p) => p!..syncAuthSession(auth.business?.id),
+          ),
+          ChangeNotifierProxyProvider<AuthProvider, InventoryProvider>(
+            create: (_) => InventoryProvider(),
+            update: (_, auth, p) => p!..syncAuthSession(auth.business?.id),
+          ),
+          ChangeNotifierProxyProvider<AuthProvider, ExpensesProvider>(
+            create: (_) => ExpensesProvider(),
+            update: (_, auth, p) => p!..syncAuthSession(auth.business?.id),
+          ),
           ChangeNotifierProvider(create: (_) => SettingsProvider()),
-          ChangeNotifierProvider(create: (_) => SubscriptionProvider()),
-          ChangeNotifierProvider(create: (_) => TablesProvider()),
+          ChangeNotifierProxyProvider<AuthProvider, SubscriptionProvider>(
+            create: (_) => SubscriptionProvider(),
+            update: (_, auth, p) => p!..syncAuthSession(auth.business?.id),
+          ),
+          ChangeNotifierProxyProvider<AuthProvider, TablesProvider>(
+            create: (_) => TablesProvider(),
+            update: (_, auth, p) => p!..syncAuthSession(auth.business?.id),
+          ),
         ],
         child: const NamastePOSApp(),
       ),

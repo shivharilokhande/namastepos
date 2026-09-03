@@ -101,7 +101,8 @@ export function initSentry() {
   });
 }
 
-// Optional escape hatch for manual capture.
-export function captureError(e: unknown) {
-  Sentry.captureException(e);
+// Optional escape hatch for manual capture. Optional `tags` land on the
+// event (e.g. NP-113 tags the admin auth mode chosen after the cookie probe).
+export function captureError(e: unknown, tags?: Record<string, string>) {
+  Sentry.captureException(e, tags ? { tags } : undefined);
 }

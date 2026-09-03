@@ -5,7 +5,7 @@
 // Supports idempotency via client_id (so a mobile retry never duplicates).
 
 const { query, withTransaction } = require('../config/db');
-const { NotFound, BadRequest, Conflict } = require('../utils/errors');
+const { NotFound, BadRequest, Conflict, HttpError } = require('../utils/errors');
 const sub = require('./subscriptionService');
 const customers = require('./customerService');
 const loyalty = require('./loyaltyService');
@@ -114,7 +114,12 @@ async function nextOrderNo(client, businessId) {
   return r.rows[0].last_order_no;
 }
 
-async function create(businessId, body) {
+async function create(businessId, body, opts = {}) {
+  // NP-112 follow-up: `trustedChannel` is set ONLY by server-side callers
+  // (aggregatorService, guest QR flow) whose tax is platform-authoritative.
+  // It must never be derivable from the client body — a cashier tagging an
+  // order source:'other' must NOT bypass tax/discount enforcement.
+  const trustedChannel = opts.trustedChannel === true;
   // P0 fix (2026-08-22): destructured `tax` was `const`; line 289 tried
   // to reassign it when item-level GST was passed → TypeError on any
   // order that used per-item GST but omitted `body.tax`. Split into
@@ -437,6 +442,116 @@ async function create(businessId, body) {
       if (!Number(tax)) tax = r.totalGst;
     }
 
+    // ── NP-112: server-side tax recompute (env-gated rollout) ────────────
+    // Both `body.tax` and per-item gst_pct come from the CLIENT and are
+    // forgeable — a cashier could zero GST at the till. Recompute the
+    // expected GST from the MENU's own config (menu_items.gst_pct,
+    // migration 017 — NOT NULL, default 5) using the SAME semantics as the
+    // item-GST branch above (computeGstBreakdown over raw line amounts,
+    // intra-state CGST+SGST unless isInterState). Then:
+    //   ORDER_TAX_ENFORCE=log      (default) accept the client value, but
+    //                              warn when it differs by more than ₹1.
+    //   ORDER_TAX_ENFORCE=enforce  persist the server-computed tax (and its
+    //                              CGST/SGST/IGST split); the client's is
+    //                              ignored.
+    // Aggregator / online-channel orders (zomato/swiggy/other, or any
+    // `channel` tag such as 'qr') carry PLATFORM-computed tax that is
+    // authoritative — those stay log-only regardless of mode. Unmapped
+    // aggregator lines (menuItemId=null) have no menu config and are
+    // excluded from the recompute.
+    const taxEnforceMode = process.env.ORDER_TAX_ENFORCE || 'log';
+    // NP-112 follow-up: authoritative ONLY for trusted server-side callers —
+    // client-supplied source/channel strings no longer grant the exemption.
+    const channelTaxAuthoritative = trustedChannel;
+    let serverGst = null;
+    if (menuIds.length > 0) {
+      const gstCfg = await client.query(
+        `SELECT id, gst_pct FROM menu_items
+          WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+        [businessId, menuIds],
+      );
+      const pctById = new Map(gstCfg.rows.map((r) => [r.id, parseFloat(r.gst_pct || 0)]));
+      const mapped = items.filter((it) => it.menuItemId && pctById.has(it.menuItemId));
+      if (mapped.length > 0) {
+        serverGst = computeGstBreakdown({
+          orderItems: mapped.map((it) => ({
+            price: it.price, qty: it.qty, gst_pct: pctById.get(it.menuItemId),
+          })),
+          isInterState: isInterState === true,
+        });
+      }
+    }
+    if (serverGst && Math.abs(Number(tax) - serverGst.totalGst) > 1) {
+      const logger = require('../config/logger');
+      if (taxEnforceMode === 'enforce' && !channelTaxAuthoritative) {
+        logger.warn(
+          `[order] ORDER_TAX_ENFORCE=enforce — overriding client tax ₹${Number(tax)} `
+          + `with server-computed ₹${serverGst.totalGst} (business ${businessId}, source ${source})`,
+        );
+        // `total` above was built from the CLIENT's body.tax — swap that
+        // component for the server figure so subtotal+tax−discount still
+        // reconciles. (The item-GST replacement above never fed `total`.)
+        total = Math.max(0, round2(total - round2(Number(body.tax || 0)) + serverGst.totalGst));
+        tax = serverGst.totalGst;
+        gstBreakdown = serverGst.breakdown;
+        cgst = serverGst.cgst; sgst = serverGst.sgst; igst = serverGst.igst;
+      } else {
+        logger.warn(
+          `[order] tax mismatch (mode=${taxEnforceMode}`
+          + `${channelTaxAuthoritative ? ', channel-authoritative' : ''}) — client sent `
+          + `₹${Number(tax)}, server computed ₹${serverGst.totalGst} `
+          + `(business ${businessId}, source ${source})`,
+        );
+      }
+    }
+
+    // ── NP-112: high discounts need a manager approval (env-gated) ───────
+    // The /discount-approvals workflow (FF-502) logs a manager-PIN approval
+    // but create() never consulted it — a cashier could discount any bill to
+    // ₹0. Above the per-business threshold (discountApprovalService, default
+    // ₹100) we now require an UNCLAIMED approval row for this business with
+    // the EXACT discount amount, logged in the last 15 minutes; it is
+    // claimed after insert by stamping our order id on it (one approval =
+    // one order). Gated by the same ORDER_TAX_ENFORCE env: 'log' only warns,
+    // 'enforce' → 403 DISCOUNT_APPROVAL_REQUIRED. Channel orders
+    // (aggregator/QR) carry platform-computed discounts — log-only
+    // regardless of mode. Only the cashier-entered `discount` is checked:
+    // membership-bundle, loyalty and settle-time (tableService) discounts
+    // are server-computed and never pass through here.
+    let claimedApprovalId = null;
+    const clientDiscountPaise = Math.round(Number(discount) * 100);
+    if (clientDiscountPaise > 0) {
+      const thresholdPaise = await require('./discountApprovalService')
+        .getThresholdPaise(businessId);
+      if (clientDiscountPaise > thresholdPaise) {
+        const appr = await client.query(
+          `SELECT id FROM discount_approvals
+            WHERE business_id = $1 AND order_id IS NULL
+              AND amount_paise = $2
+              AND approved_at > NOW() - INTERVAL '15 minutes'
+            ORDER BY approved_at DESC LIMIT 1
+            FOR UPDATE SKIP LOCKED`,
+          [businessId, clientDiscountPaise],
+        );
+        if (appr.rowCount > 0) {
+          claimedApprovalId = appr.rows[0].id;
+        } else if (taxEnforceMode === 'enforce' && !channelTaxAuthoritative) {
+          throw new HttpError(
+            403,
+            `Discount ₹${Number(discount)} exceeds the approval threshold `
+            + `₹${thresholdPaise / 100} — manager approval required`,
+            'DISCOUNT_APPROVAL_REQUIRED',
+          );
+        } else {
+          require('../config/logger').warn(
+            `[order] discount ₹${Number(discount)} above approval threshold `
+            + `₹${thresholdPaise / 100} with no approval (mode=${taxEnforceMode}, `
+            + `business ${businessId}, source ${source})`,
+          );
+        }
+      }
+    }
+
     // FF-302 round-off (paise → INR)
     let roundOff = 0;
     if (roundOffEnabled !== false && roundOffMode !== 'none') {
@@ -519,6 +634,16 @@ async function create(businessId, body) {
           channel],
       );
       orderRow = ins.rows[0];
+
+      // NP-112: claim the manager approval this order consumed so the same
+      // approval can't authorise a second over-threshold discount, and the
+      // audit trail links approval → order.
+      if (claimedApprovalId) {
+        await client.query(
+          'UPDATE discount_approvals SET order_id = $1 WHERE id = $2',
+          [orderRow.id, claimedApprovalId],
+        );
+      }
 
       // Membership redemption audit rows (2026-08-23)
       if (_membershipRedeem) {
