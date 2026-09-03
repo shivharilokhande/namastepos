@@ -9,6 +9,7 @@
 const https = require('https');
 const env = require('../config/env');
 const { query, withTransaction } = require('../config/db');
+const logger = require('../config/logger');
 const { NotFound, BadRequest, Conflict, Forbidden } = require('../utils/errors');
 
 // ── Razorpay helper (mirrors razorpayService for addon-scoped calls) ───
@@ -235,6 +236,88 @@ async function hasAddon(businessId, slug) {
  * Start a paid subscription for an addon. Returns Razorpay checkout payload
  * so the dashboard can open Checkout.js.
  */
+const KIND_ORDER = { starter: 0, pro: 1, enterprise: 2 };
+
+/**
+ * 2026-09-03 (founder bug: multi-outlet sold on a Growth plan).
+ * Eligibility is judged ONLY on tier_kind rank (starter < pro < enterprise).
+ *
+ * The old check resolved `required_plan_tier` ('pro') as a PLAN TIER CODE —
+ * and the live config has a plan whose code is literally 'pro' — so the
+ * requirement collapsed to that single plan's kind+price, which a mid-tier
+ * plan could satisfy. Price is no longer part of the test at all: a cheap
+ * enterprise-kind plan should still qualify, and an expensive starter should
+ * not. `addons.required_tier_kind` (migration 078) is the source of truth,
+ * with a defensive fallback for rows an older admin build wrote.
+ */
+function requiredKindOf(addon) {
+  if (addon.required_tier_kind) return addon.required_tier_kind;
+  const legacy = addon.required_plan_tier ? String(addon.required_plan_tier) : null;
+  if (!legacy) return null;
+  if (KIND_ORDER[legacy] !== undefined) return legacy;
+  if (legacy === 'free' || legacy === 'basic') return 'starter';
+  return null; // unknown custom code — do not block the sale on a guess
+}
+
+/** { ok, requiredKind, currentKind, currentPlanName } for an addon + tenant. */
+async function checkPlanEligibility(businessId, addon) {
+  const requiredKind = requiredKindOf(addon);
+  if (!requiredKind) return { ok: true, requiredKind: null };
+  const cur = await query(
+    `SELECT p.tier, p.tier_kind, p.name
+       FROM subscriptions s JOIN plans p ON p.id = s.plan_id
+      WHERE s.business_id = $1
+        AND (s.status = 'active'
+             OR (s.status = 'trialing'
+                 AND (s.trial_ends_at IS NULL OR s.trial_ends_at > NOW())))
+      ORDER BY s.updated_at DESC NULLS LAST
+      LIMIT 1`,
+    [businessId]
+  );
+  const currentKind = cur.rows[0]?.tier_kind || 'starter';
+  return {
+    ok: (KIND_ORDER[currentKind] ?? 0) >= (KIND_ORDER[requiredKind] ?? 0),
+    requiredKind,
+    currentKind,
+    currentPlanName: cur.rows[0]?.name || null,
+  };
+}
+
+/**
+ * Cancel addons the tenant is no longer entitled to after a downgrade
+ * (audit gap: eligibility was checked only at purchase, so a downgraded
+ * tenant kept an enterprise-only addon forever). Called from the plan-change
+ * paths. Returns the slugs revoked.
+ */
+async function revokeIneligibleAddons(businessId) {
+  const active = await query(
+    `SELECT ba.id, a.slug, a.name, a.required_tier_kind, a.required_plan_tier
+       FROM business_addons ba
+       JOIN addons a ON a.id = ba.addon_id
+      WHERE ba.business_id = $1 AND ba.status IN ('active', 'trialing')`,
+    [businessId]
+  );
+  const revoked = [];
+  for (const row of active.rows) {
+    // eslint-disable-next-line no-await-in-loop
+    const gate = await checkPlanEligibility(businessId, row);
+    if (gate.ok) continue;
+    // eslint-disable-next-line no-await-in-loop
+    await query(
+      `UPDATE business_addons
+          SET status = 'cancelled', cancelled_at = NOW(), current_period_end = NOW()
+        WHERE id = $1`,
+      [row.id]
+    );
+    revoked.push(row.slug);
+  }
+  if (revoked.length > 0) {
+    try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
+    logger.info(`[addons] revoked ineligible after plan change (${businessId}): ${revoked.join(', ')}`);
+  }
+  return revoked;
+}
+
 async function subscribe(businessId, slug) {
   const addon = await getBySlug(slug);
 
@@ -242,25 +325,12 @@ async function subscribe(businessId, slug) {
   // so we can't compare by hardcoded order. Compare by `tier_kind` ordering
   // (starter < pro < enterprise) which is the canonical scale, falling back
   // to "any non-free" for legacy plans that lack tier_kind.
-  if (addon.required_plan_tier) {
-    const planCheck = await query(
-      `SELECT p.tier, p.tier_kind, p.price_inr_paise
-         FROM subscriptions s JOIN plans p ON p.id = s.plan_id
-        WHERE s.business_id = $1`, [businessId]
+  const gate = await checkPlanEligibility(businessId, addon);
+  if (!gate.ok) {
+    throw new Forbidden(
+      `This addon requires a ${gate.requiredKind} plan or higher `
+      + `(this customer is on ${gate.currentPlanName || gate.currentKind}).`
     );
-    const required = await query(
-      `SELECT tier_kind, price_inr_paise FROM plans WHERE tier = $1 LIMIT 1`,
-      [addon.required_plan_tier]
-    );
-    const kindOrder = { starter: 0, pro: 1, enterprise: 2 };
-    const curKind = planCheck.rows[0]?.tier_kind || 'starter';
-    const curPaise = planCheck.rows[0]?.price_inr_paise ?? 0;
-    const reqKind = required.rows[0]?.tier_kind || 'starter';
-    const reqPaise = required.rows[0]?.price_inr_paise ?? 0;
-    const ok = kindOrder[curKind] >= kindOrder[reqKind] && curPaise >= reqPaise;
-    if (!ok) {
-      throw new Forbidden(`This addon requires ${addon.required_plan_tier} plan or higher`);
-    }
   }
 
   // Already active?
@@ -613,5 +683,6 @@ module.exports = {
   listActiveForBusiness, listAllForBusiness, hasAddon,
   subscribe, forceActivate, confirmPayment, cancel, detach, resume, updateSettings,
   handleRazorpayEvent, notifyExpiringActivations,
+  checkPlanEligibility, revokeIneligibleAddons, requiredKindOf,
   serializeAddon, serializeActivation,
 };

@@ -25,6 +25,10 @@ router.use(requireAuth);
 // (read-only support tooling) skip the plan check.
 router.use(async (req, res, next) => {
   if (req.user?.isSuperAdmin) return next();
+  // 2026-09-03: /my-outlets is the dashboard's outlet SWITCHER feed. Every
+  // tenant needs it (a single-outlet tenant simply gets one row), so it is
+  // exempt from the paid gate — only creating additional outlets is gated.
+  if (req.path === '/my-outlets') return next();
   const businessId = req.user?.businessId;
   if (!businessId) return next(); // no tenant context — role checks below reject
   try {
@@ -97,6 +101,41 @@ async function assertOwnsBusiness(userId, businessId) {
 // Owner can only see groups they own. Super-admin has a separate route.
 router.get ('/', requireOwner, asyncHandler(async (req, res) =>
   res.json({ groups: await multiOutlet.listGroupsForOwner(req.user.businessId) })));
+
+// ── 2026-09-03 — outlets the SIGNED-IN USER can switch into ─────────────
+// Deliberately NOT behind the multi_outlet plan gate (see the router-level
+// gate above): a single-outlet tenant must still be able to list "just me",
+// so the dashboard switcher renders for everyone and only the CREATE action
+// needs the paid capability.
+router.get('/my-outlets', asyncHandler(async (req, res) => {
+  res.json({
+    outlets: await multiOutlet.listOutletsForUser(req.user.id, req.user.businessId),
+  });
+}));
+
+/**
+ * Provision a NEW outlet (own businesses row → own menu/staff/orders/
+ * settings; nothing shared but the group rollup). Owner-only + multi_outlet.
+ */
+router.post('/outlets/provision', requireOwner,
+  validate({ body: Joi.object({
+    name: Joi.string().min(1).max(120).required(),
+    label: Joi.string().max(80).allow('', null),
+    city: Joi.string().max(80).allow('', null),
+    groupId: Joi.string().uuid().allow(null),
+  })}),
+  asyncHandler(async (req, res) => {
+    const out = await multiOutlet.provisionOutlet({
+      ownerUserId: req.user.id,
+      parentBusinessId: req.user.businessId,
+      groupId: req.body.groupId || null,
+      name: req.body.name,
+      label: req.body.label,
+      city: req.body.city,
+    });
+    res.status(201).json(out);
+  })
+);
 
 router.post('/', requireOwner,
   validate({ body: Joi.object({

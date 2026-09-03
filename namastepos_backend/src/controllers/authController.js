@@ -570,6 +570,16 @@ const changePassword = asyncHandler(async (req, res) => {
   res.json({ success: true });
 });
 
+/**
+ * Switch the active business/OUTLET. auth.switchBusiness re-verifies the
+ * business_users membership server-side, so a session for outlet A can never
+ * be traded for outlet B without a live membership row.
+ *
+ * 2026-09-03 — the outlet switcher needs the new plan + role in the same
+ * round trip (the target outlet may sit on a different plan), and honours the
+ * cookie-auth mode so switching doesn't silently drop a cookie session back
+ * to a body token.
+ */
 const switchBusiness = asyncHandler(async (req, res) => {
   const user = await auth.getUserById(req.user.id);
   const tokens = await auth.switchBusiness(
@@ -577,11 +587,20 @@ const switchBusiness = asyncHandler(async (req, res) => {
     { userAgent: req.headers['user-agent'], ip: req.ip }
   );
   const business = await auth.getBusinessById(req.body.businessId);
-  res.json({
+  let plan = null;
+  try { plan = await require('../services/featureService').planSummary(req.body.businessId); }
+  catch (_) { /* non-fatal — dashboard refetches /auth/me anyway */ }
+  const memberships = await auth.listMembershipsForUser(req.user.id);
+  const active = memberships.find((m) => m.businessId === req.body.businessId);
+  const payload = _applyRefreshCookie(req, res, {
     token: tokens.accessToken,
     refreshToken: tokens.refreshToken,
     business: auth.serializeBusiness(business),
+    role: active?.role || null,
+    plan,
+    memberships,
   });
+  res.json(payload);
 });
 
 module.exports = {

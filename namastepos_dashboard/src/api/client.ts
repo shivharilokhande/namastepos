@@ -157,6 +157,36 @@ export function getBusinessCache(): any | null {
 }
 
 /**
+ * Wipe every persisted value that belonged to the business we are LEAVING.
+ * Called by the outlet switcher (see hooks/useOutletSwitch) so nothing from
+ * outlet A can bleed into outlet B.
+ *
+ * Storage audit 2026-09-03 — the only business-keyed value this app persists
+ * today is BUSINESS_KEY (`ff_dash_business`), which the switcher immediately
+ * re-keys via setBusinessCache(newBusiness). Every other `ff_*` / `np_*`
+ * localStorage key is a per-USER preference that must SURVIVE a switch:
+ * `ff_locale`, `np_nav_group_<group>`, `ff_cookie_decision_v1`,
+ * `ff_anon_session_id`, `ff_seen_feature_tour_v2`, `ff_billing_period_user`.
+ * So we (a) drop BUSINESS_KEY, (b) drop any key that embeds the outgoing
+ * business id — future-proofing for per-outlet keys such as `ff_cart_<bid>`
+ * or printer prefs — and (c) empty our sessionStorage namespace, which by
+ * construction only ever holds transient per-outlet drafts.
+ */
+export function clearBusinessScopedStorage(prevBusinessId?: string | null) {
+  try {
+    localStorage.removeItem(BUSINESS_KEY);
+    if (prevBusinessId) {
+      for (const k of Object.keys(localStorage)) {
+        if (k.includes(prevBusinessId)) localStorage.removeItem(k);
+      }
+    }
+    for (const k of Object.keys(sessionStorage)) {
+      if (k.startsWith('ff_') || k.startsWith('np_')) sessionStorage.removeItem(k);
+    }
+  } catch (_) { /* storage disabled / private mode */ }
+}
+
+/**
  * Detects impersonation by decoding the JWT payload and checking the `imp` flag
  * (super admin issues tokens with imp: true on impersonate).
  */

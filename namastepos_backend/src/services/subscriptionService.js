@@ -329,6 +329,21 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
       });
     } catch (_) { /* non-fatal */ }
   }
+  // 2026-09-03 — a downgrade must also drop addons the new plan can't hold
+  // (e.g. multi-outlet is Pro+; dropping to a starter plan revokes it).
+  try {
+    const revoked = await require('./addonService').revokeIneligibleAddons(businessId);
+    if (revoked.length > 0) {
+      await require('./crmService').logActivity({
+        businessId, kind: 'plan_change',
+        title: `Add-ons revoked on plan change: ${revoked.join(', ')}`,
+        meta: { revoked, newTier }, actorType: 'system',
+      }).catch(() => {});
+    }
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[changePlan] revokeIneligibleAddons failed:', e?.message);
+  }
   const out = serializeSubscription(r.rows[0], plan);
   out.prorationInr = prorationPaise / 100;
   return out;

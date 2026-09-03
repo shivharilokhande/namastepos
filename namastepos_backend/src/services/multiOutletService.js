@@ -22,6 +22,126 @@ async function createGroup(name, parentBusinessId) {
   return r.rows[0];
 }
 
+/**
+ * 2026-09-03 — PROVISION a brand-new outlet (founder request: "create another
+ * outlet" from the dashboard). An outlet is its own `businesses` row, so it
+ * starts EMPTY: its own menu, tables, staff, orders, settings, printers,
+ * customers and reports. Nothing is copied and nothing is shared except the
+ * group rollup — that is what guarantees the data can never mix.
+ *
+ * The caller (group owner) is added as business_owner of the new outlet so
+ * they can switch into it, and it inherits the parent's subscription tier by
+ * being placed on the same plan (billing stays one subscription per outlet
+ * row, matching how the rest of the system counts limits).
+ */
+async function provisionOutlet({ ownerUserId, parentBusinessId, groupId, name, label, city }) {
+  const { NotFound: NF, BadRequest: BR } = require('../utils/errors');
+  if (!name || !String(name).trim()) throw new BR('Outlet name is required');
+
+  // Resolve (or create) the group this outlet belongs to.
+  let gid = groupId || null;
+  if (!gid) {
+    const existing = await query(
+      `SELECT outlet_group_id FROM businesses WHERE id = $1`, [parentBusinessId]
+    );
+    gid = existing.rows[0]?.outlet_group_id || null;
+  }
+  if (!gid) {
+    const parent = await query(`SELECT name FROM businesses WHERE id = $1`, [parentBusinessId]);
+    if (parent.rowCount === 0) throw new NF('Parent business not found');
+    const g = await createGroup(`${parent.rows[0].name} Group`, parentBusinessId);
+    gid = g.id;
+    // The parent becomes the first outlet in its own group.
+    await query(
+      `UPDATE businesses SET outlet_group_id = $1 WHERE id = $2 AND outlet_group_id IS NULL`,
+      [gid, parentBusinessId]
+    );
+  }
+
+  const parent = await query(
+    `SELECT b.email, b.google_sub, b.display_name, b.photo_url, b.city, b.category,
+            s.plan_id
+       FROM businesses b
+       LEFT JOIN subscriptions s ON s.business_id = b.id
+      WHERE b.id = $1`,
+    [parentBusinessId]
+  );
+  if (parent.rowCount === 0) throw new NF('Parent business not found');
+  const p = parent.rows[0];
+
+  return withTransaction(async (client) => {
+    // `businesses.email` and `google_sub` are both UNIQUE, so an outlet cannot
+    // reuse the parent's. Derive a plus-addressed alias (RFC 5233 subaddress —
+    // real mail still lands in the owner's inbox) and a synthetic google_sub;
+    // the OWNER's login is unaffected because sign-in resolves the user by
+    // `users.email` and then the business_users membership, not by this column.
+    const stamp = Date.now().toString(36);
+    const outletEmail = p.email
+      ? p.email.replace(/^([^@]+)@/, `$1+outlet-${stamp}@`)
+      : `outlet-${stamp}@namastepos.local`;
+    const ins = await client.query(
+      `INSERT INTO businesses
+         (google_sub, email, display_name, photo_url, name, city, category,
+          onboarded, outlet_group_id, outlet_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, $9)
+       RETURNING *`,
+      [`outlet-${gid}-${stamp}`, outletEmail, p.display_name, p.photo_url,
+       String(name).trim(), city || p.city || null, p.category || null,
+       gid, (label || String(name)).trim().slice(0, 80)]
+    );
+    const outlet = ins.rows[0];
+
+    // The group owner owns the new outlet too (so they can switch into it).
+    await client.query(
+      `INSERT INTO business_users (business_id, user_id, role)
+       VALUES ($1, $2, 'business_owner')
+       ON CONFLICT (business_id, user_id) DO NOTHING`,
+      [outlet.id, ownerUserId]
+    );
+
+    // Mirror the parent's plan so gating/limits behave from day one.
+    await client.query(
+      `INSERT INTO subscriptions (business_id, plan_id, status, current_period_end)
+       VALUES ($1, COALESCE($2, (SELECT id FROM plans WHERE tier = 'free')),
+               'active', NOW() + INTERVAL '30 days')
+       ON CONFLICT (business_id) DO NOTHING`,
+      [outlet.id, p.plan_id || null]
+    );
+
+    return { outlet, groupId: gid };
+  });
+}
+
+/**
+ * Every outlet the signed-in user can act in (for the dashboard switcher).
+ * Membership comes from business_users, so a manager who only belongs to one
+ * branch sees only that branch.
+ */
+async function listOutletsForUser(userId, currentBusinessId) {
+  const r = await query(
+    `SELECT b.id, b.name, b.outlet_label, b.city, b.outlet_group_id,
+            bu.role, og.name AS group_name,
+            (og.parent_business_id = b.id) AS is_parent
+       FROM business_users bu
+       JOIN businesses b ON b.id = bu.business_id
+       LEFT JOIN outlet_groups og ON og.id = b.outlet_group_id
+      WHERE bu.user_id = $1 AND bu.is_active = TRUE AND b.deleted_at IS NULL
+      ORDER BY (og.parent_business_id = b.id) DESC NULLS LAST, b.created_at ASC`,
+    [userId]
+  );
+  return r.rows.map((row) => ({
+    businessId: row.id,
+    name: row.name,
+    outletLabel: row.outlet_label || row.name,
+    city: row.city,
+    groupId: row.outlet_group_id,
+    groupName: row.group_name,
+    isParent: !!row.is_parent,
+    role: row.role,
+    current: row.id === currentBusinessId,
+  }));
+}
+
 async function addOutlet(groupId, businessId, label) {
   await query(
     `UPDATE businesses SET outlet_group_id = $1, outlet_label = $2
@@ -167,6 +287,7 @@ async function listGroupsForOwner(businessId) {
 
 module.exports = {
   listGroups, listGroupsForOwner, createGroup, addOutlet, groupRollup,
+  provisionOutlet, listOutletsForUser,
   transferStock, receiveTransfer,
   setFranchisePrice, listFranchisePrices,
 };

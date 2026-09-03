@@ -74,6 +74,8 @@ const RefundsPage = lazy(() => import('./pages/RefundsPage').then(m => ({ defaul
 const InventoryPage = lazy(() => import('./pages/InventoryPage').then(m => ({ default: m.InventoryPage })));
 const PrintersPage = lazy(() => import('./pages/PrintersPage').then(m => ({ default: m.PrintersPage })));
 const ModifierGroupsPage = lazy(() => import('./pages/ModifierGroupsPage').then(m => ({ default: m.ModifierGroupsPage })));
+// Multi-outlet (2026-09-03): outlet list + switch + group revenue rollup.
+const OutletsPage = lazy(() => import('./pages/OutletsPage').then(m => ({ default: m.OutletsPage })));
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   if (!getToken()) return <Navigate to="/login" replace />;
@@ -139,6 +141,7 @@ export default function App() {
         <Route path="invoices" element={<InvoicesPage />} />
         <Route path="refunds"  element={<RefundsPage />} />
         <Route path="staff"    element={<StaffPage />} />
+        <Route path="outlets"  element={<OutletsPage />} />
         <Route path="customers"   element={<CustomersPage />} />
         <Route path="memberships" element={<MembershipsPage />} />
         <Route path="reviews"     element={<ReviewsPage />} />

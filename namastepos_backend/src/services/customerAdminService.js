@@ -157,6 +157,14 @@ async function setPlanManually(businessId, tier, { reason = 'admin-manual', bill
     // eslint-disable-next-line no-console
     console.warn('[setPlanManually] complyStaffLimit failed:', e?.message);
   }
+  // 2026-09-03 — same rule as the tenant path: revoke addons the new plan
+  // is not entitled to (multi-outlet is Pro+, etc).
+  try {
+    await require('./addonService').revokeIneligibleAddons(businessId);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[setPlanManually] revokeIneligibleAddons failed:', e?.message);
+  }
   return r.rows[0];
 }
 

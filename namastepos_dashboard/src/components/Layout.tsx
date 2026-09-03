@@ -11,10 +11,11 @@ import {
   Activity, TrendingUp, Star, BookOpen, Ticket, Calendar as CalIcon,
   MessageSquare, Upload, Landmark, FileText, Repeat, Zap,
   ShieldCheck, Inbox, TrendingDown, HelpCircle, Undo2, ChevronDown,
-  LifeBuoy, Gift, ArrowRightLeft,
+  LifeBuoy, Gift, ArrowRightLeft, Building2,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { ImpersonationBanner } from './ImpersonationBanner';
+import { OutletSwitcher } from './OutletSwitcher';
 import { api, setSession, setBusinessCache, getBusinessCache } from '@/api/client';
 import { cn } from '@/lib/utils';
 import { usePlan } from '@/hooks/usePlan';
@@ -135,6 +136,11 @@ const navGroups: { name: string; items: NavItem[] }[] = [
   {
     name: 'Team & setup',
     items: [
+      // Outlets (2026-09-03): manage/switch outlets + the consolidated group
+      // rollup. Gated on `multi_outlet` exactly like the backend's
+      // /outlet-groups router (only its /my-outlets feed is exempt, which is
+      // what powers the always-visible switcher above the nav).
+      { to: '/outlets',   icon: Building2,       label: 'Outlets',          feature: 'multi_outlet' },
       { to: '/staff',     icon: Users,           label: 'Staff',            feature: 'staff_lite' },
       { to: '/printers',  icon: ReceiptText,     label: 'Printers',         feature: null },
       { to: '/bill-template', icon: ReceiptText, label: 'Receipt template', feature: null },
@@ -312,6 +318,11 @@ export function Layout() {
           <div className="text-xs text-muted-foreground truncate">{business?.email}</div>
         </div>
       </div>
+      {/* Outlet switcher (2026-09-03) — founder's explicit placement: top-left,
+          directly BELOW the business name. Renders for every tenant (the
+          my-outlets feed is ungated); single-outlet owners get the one row
+          plus "+ Create new outlet", which upsells on a 402 FEATURE_LOCKED. */}
+      <OutletSwitcher onNavigate={() => setMobileOpen(false)} />
       {/* Plan badge — tap to upgrade */}
       <NavLink
         to="/billing"

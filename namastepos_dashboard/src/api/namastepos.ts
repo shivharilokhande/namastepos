@@ -17,6 +17,48 @@ function _triggerBlobDownload(data: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// ── Multi-outlet types (2026-09-03) ──────────────────────────────────────
+// One row per business the SIGNED-IN user holds an active business_users
+// row for. GET /outlet-groups/my-outlets is deliberately NOT plan-gated,
+// so a single-outlet tenant still gets exactly one row.
+export interface MyOutlet {
+  businessId: string;
+  name: string;
+  outletLabel: string;
+  city: string | null;
+  groupId: string | null;
+  groupName: string | null;
+  isParent: boolean;
+  role: string;
+  current: boolean;
+}
+
+export interface SwitchBusinessResult {
+  token: string;
+  // Blank in cookie-auth mode (the backend Set-Cookie's `ff_refresh`
+  // instead) — see client.ts `X-Auth-Mode: cookie`.
+  refreshToken?: string | null;
+  business: any;
+  role: string | null;
+  plan: { tierKind: string; features: string[] } | null;
+  memberships: { businessId: string; role: string }[];
+}
+
+export interface ProvisionOutletResult {
+  outlet: { id: string; name: string; outlet_label: string | null; city: string | null };
+  groupId: string;
+}
+
+export interface OutletRollup {
+  outlets: {
+    businessId: string;
+    name: string;
+    outletLabel: string | null;
+    metrics: { orders: number; gross: number; food_cost_paise: number | string };
+  }[];
+  totals: { orders: number; grossInr: number; foodCostInr: number };
+}
+
 export const ffApi = {
   // Auth
   googleLogin: (idToken: string) =>
@@ -223,7 +265,20 @@ export const ffApi = {
   // Multi-outlet
   listOutletGroups: () => api.get('/outlet-groups').then((r) => r.data.groups),
   createOutletGroup: (body: any) => api.post('/outlet-groups', body).then((r) => r.data.group),
-  outletRollup: (groupId: string, params: any) => api.get(`/outlet-groups/${groupId}/rollup`, { params }).then((r) => r.data.rollup),
+  outletRollup: (groupId: string, params: { startDate?: string; endDate?: string }): Promise<OutletRollup> =>
+    api.get(`/outlet-groups/${groupId}/rollup`, { params }).then((r) => r.data.rollup),
+  // Outlet switcher feed — ungated, every tenant gets at least their own row.
+  myOutlets: (): Promise<MyOutlet[]> =>
+    api.get('/outlet-groups/my-outlets').then((r) => r.data.outlets),
+  // Owner-only + gated on the `multi_outlet` feature → 402 FEATURE_LOCKED
+  // when the plan/addon doesn't include it (the caller shows the upsell).
+  provisionOutlet: (body: { name: string; label?: string; city?: string }): Promise<ProvisionOutletResult> =>
+    api.post('/outlet-groups/outlets/provision', body).then((r) => r.data),
+  // Trades the current session for one scoped to `businessId`. The shared
+  // axios instance already carries `X-Auth-Mode: cookie` + withCredentials,
+  // so a cookie session stays a cookie session across the switch.
+  switchBusiness: (businessId: string): Promise<SwitchBusinessResult> =>
+    api.post('/auth/switch-business', { businessId }).then((r) => r.data),
   // Retail
   listRetailItems: (params?: any) => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/retail/items`, { params }).then((r) => r.data.items); },
   createRetailItem: (body: any) => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/retail/items`, body).then((r) => r.data.item); },
