@@ -31,8 +31,40 @@ async function _planRowFor(businessId) {
   return r.rowCount > 0 ? r.rows[0] : null;
 }
 
+/**
+ * 2026-09-03 — custom plans are "base plan + extras".
+ * The EFFECTIVE feature set (what plan_features holds and gating reads) is
+ * base-plan features ∪ extras. We also return the two halves separately so
+ * the admin editor can show inherited keys as locked and extras as editable.
+ */
+async function _basePlanRow(baseTier) {
+  if (!baseTier) return null;
+  const r = await query(
+    `SELECT * FROM plans WHERE tier = $1 AND is_public = TRUE LIMIT 1`,
+    [baseTier]
+  );
+  return r.rowCount > 0 ? r.rows[0] : null;
+}
+
+/** Features a base plan grants (empty when standalone). */
+async function _baseFeatureKeys(baseTier) {
+  const base = await _basePlanRow(baseTier);
+  if (!base) return [];
+  return features.listTierFeatures(base.tier, base.tier_kind);
+}
+
+function _extrasOf(row) {
+  const raw = row.features;
+  const obj = typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw || {});
+  return Array.isArray(obj.extraFeatureKeys) ? obj.extraFeatureKeys : [];
+}
+
 async function _serializeWithFeatures(row) {
   const plan = sub.serializePlan(row);
+  plan.basePlanTier = row.base_plan_tier || null;
+  plan.extraFeatureKeys = _extrasOf(row);
+  plan.inheritedFeatureKeys = await _baseFeatureKeys(row.base_plan_tier);
+  // Effective = what gating actually enforces (persisted in plan_features).
   plan.featureKeys = await features.listTierFeatures(row.tier, row.tier_kind);
   return plan;
 }
@@ -63,12 +95,41 @@ async function upsertForBusiness(businessId, body) {
   if (biz.rowCount === 0) throw new NotFound('Customer not found');
 
   const tier = customTierFor(businessId);
-  const yearly = body.priceYearlyPaise === undefined ? null : body.priceYearlyPaise;
+
+  // ── Base plan (e.g. "growth") + extras ────────────────────────────────
+  // basePlanTier must be a PUBLIC plan; extras are the keys the customer
+  // asked for that no addon sells. Legacy callers may still send a flat
+  // featureKeys[] — treat those as extras with no base.
+  const baseTier = body.basePlanTier || null;
+  const base = await _basePlanRow(baseTier);
+  if (baseTier && !base) throw new NotFound(`Base plan '${baseTier}' not found or not public`);
+  const extras = Array.from(new Set(
+    (body.extraFeatureKeys || body.featureKeys || []).filter(Boolean)
+  ));
+  const inherited = base ? await features.listTierFeatures(base.tier, base.tier_kind) : [];
+  const effective = Array.from(new Set([...inherited, ...extras]));
+
+  // Price/limits/tierKind default to the base plan's when not overridden, so
+  // "Growth + 2 features" needs only the extras typed in.
+  const priceInr = body.priceInrPaise !== undefined && body.priceInrPaise !== null
+    ? body.priceInrPaise
+    : (base ? base.price_inr_paise : 0);
+  const yearly = body.priceYearlyPaise !== undefined
+    ? body.priceYearlyPaise
+    : (base ? base.price_yearly_paise : null);
+  const tierKind = body.tierKind || (base ? base.tier_kind : 'pro');
+  const baseLimits = base
+    ? (typeof base.limits === 'string' ? JSON.parse(base.limits || '{}') : (base.limits || {}))
+    : {};
+  // Explicit custom limits win; anything omitted inherits the base plan's.
+  const limits = { ...baseLimits, ...(body.limits || {}) };
+
   const r = await query(
     `INSERT INTO plans
        (tier, tier_kind, name, price_inr_paise, price_yearly_paise,
-        billing_period, is_active, limits, features, is_public, business_id)
-     VALUES ($1, $2, $3, $4, $5, 'monthly', TRUE, $6, '{}'::jsonb, FALSE, $7)
+        billing_period, is_active, limits, features, is_public, business_id,
+        base_plan_tier)
+     VALUES ($1, $2, $3, $4, $5, 'monthly', TRUE, $6, $7, FALSE, $8, $9)
      ON CONFLICT (tier) DO UPDATE
        SET tier_kind = EXCLUDED.tier_kind,
            name = EXCLUDED.name,
@@ -76,17 +137,21 @@ async function upsertForBusiness(businessId, body) {
            price_yearly_paise = EXCLUDED.price_yearly_paise,
            is_active = TRUE,
            limits = EXCLUDED.limits,
+           features = EXCLUDED.features,
            is_public = FALSE,
-           business_id = EXCLUDED.business_id
+           business_id = EXCLUDED.business_id,
+           base_plan_tier = EXCLUDED.base_plan_tier
      RETURNING *`,
-    [tier, body.tierKind, body.name, body.priceInrPaise, yearly,
-     JSON.stringify(body.limits || {}), businessId]
+    [tier, tierKind, body.name, priceInr, yearly,
+     JSON.stringify(limits), JSON.stringify({ extraFeatureKeys: extras }),
+     businessId, baseTier]
   );
   const row = r.rows[0];
 
-  // Replace the plan's feature set (plan_features keyed by tier code).
+  // Persist the EFFECTIVE set (base ∪ extras) — gating reads plan_features,
+  // so inheritance is resolved once here rather than on every request.
   // setTierFeatures also clears all feature caches.
-  await features.setTierFeatures(tier, body.featureKeys || []);
+  await features.setTierFeatures(tier, effective);
 
   // Mint/refresh Razorpay plan ids when priced (best-effort — a gateway
   // hiccup must not lose the admin's save; retry happens on next update).
@@ -119,10 +184,22 @@ async function upsertForBusiness(businessId, body) {
   return { plan, subscription };
 }
 
-/** Delete the tenant's custom plan. 409 while any subscription points at it. */
-async function removeForBusiness(businessId) {
+/**
+ * Delete the tenant's custom plan.
+ * 409 while assigned — unless { force: true }, which first moves the customer
+ * back to the plan the custom one extended (base plan) or 'free', so the admin
+ * can remove a custom plan in one click without stranding the tenant.
+ */
+async function removeForBusiness(businessId, { force = false } = {}) {
   const row = await _planRowFor(businessId);
   if (!row) throw new NotFound('No custom plan for this customer');
+  let movedTo = null;
+  if (force) {
+    const fallback = row.base_plan_tier || 'free';
+    movedTo = fallback;
+    await require('./customerAdminService')
+      .setPlanManually(businessId, fallback, { billingPeriod: 'monthly' });
+  }
   const used = await query(
     `SELECT COUNT(*)::int AS c FROM subscriptions WHERE plan_id = $1`,
     [row.id]
@@ -137,7 +214,7 @@ async function removeForBusiness(businessId) {
   await query(`DELETE FROM plan_features WHERE tier_kind = $1`, [row.tier]);
   await query(`DELETE FROM plans WHERE id = $1`, [row.id]);
   try { features.clearAllCaches(); } catch (_) { /* non-fatal */ }
-  return { deleted: true, tier: row.tier };
+  return { deleted: true, tier: row.tier, movedTo };
 }
 
 module.exports = { customTierFor, getForBusiness, upsertForBusiness, removeForBusiness };

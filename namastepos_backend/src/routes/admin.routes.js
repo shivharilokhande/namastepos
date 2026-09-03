@@ -69,6 +69,42 @@ router.post  ('/auth/2fa/disable',
 router.get   ('/metrics',           requirePermission('reports.read'), c.metrics);
 router.get   ('/health/db',         requirePermission('reports.read'), c.dbHealth);
 
+// ── Home dashboard + ops panel (2026-09-03) ────────────────────────────
+// /overview is the admin landing page: SaaS vitals + a "needs attention"
+// work queue in one aggregate call. /health/platform is the read-only ops
+// card (DB latency, Redis, cron last-run, migrations, webhook failures).
+// Both are reads → reports.read (every admin role has it).
+router.get   ('/overview',          requirePermission('reports.read'), c.overview);
+router.get   ('/health/platform',   requirePermission('reports.read'), c.platformHealth);
+
+// ── Usage vs plan limits ───────────────────────────────────────────────
+// Surfaces the counters subscriptionService.enforceLimit/incrementUsage
+// already maintain, with over-limit flags for upsell + support triage.
+router.get   ('/reports/usage',     requirePermission('reports.read'), c.platformUsage);
+
+// ── Dunning / billing ops ──────────────────────────────────────────────
+// Reads are finance-grade (revenue.read → finance + super_admin only), and
+// so are the three recovery actions: each one moves money or forgives a
+// charge. Every mutation is audited.
+router.get   ('/dunning',           requirePermission('revenue.read'),  c.dunningQueue);
+router.get   ('/dunning/:businessId/timeline',
+              requirePermission('revenue.read'),  c.dunningTimeline);
+router.post  ('/dunning/:businessId/retry',
+              requirePermission('revenue.write'),
+              audit.middlewareLog('dunning', 'retry',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              c.dunningRetry);
+router.post  ('/dunning/:businessId/waive',
+              requirePermission('revenue.write'),
+              audit.middlewareLog('dunning', 'waive',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              ...c.dunningWaive);
+router.post  ('/dunning/:businessId/mark-paid',
+              requirePermission('revenue.write'),
+              audit.middlewareLog('dunning', 'mark-paid',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              ...c.dunningMarkPaid);
+
 // ── Customers ──────────────────────────────────────────────────────────
 router.get   ('/customers',                     requirePermission('customers.read'), c.listCustomers);
 router.get   ('/customers/:businessId',         requirePermission('customers.read'), c.getCustomer);
@@ -110,6 +146,55 @@ router.post  ('/customers/:businessId/impersonation-code', requirePermission('cu
 
 router.post  ('/customers/:businessId/notes',     requirePermission('notes.write'), ...c.addNote);
 router.delete('/customers/:businessId/notes/:noteId', requirePermission('notes.write'), c.deleteNote);
+
+// ── Customer lifecycle actions (2026-09-03) ────────────────────────────
+// Reads: usage vs plan limits, and what the platform has emailed this
+// tenant. Writes: the actions a support/CS team needs that previously had
+// no endpoint. Every write is audited; the destructive ones are locked to
+// the narrowest role that should hold them.
+router.get   ('/customers/:businessId/usage',
+              requirePermission('customers.read'), c.customerUsage);
+router.get   ('/customers/:businessId/notifications',
+              requirePermission('customers.read'), c.customerNotifications);
+
+// Cancelling stops billing and cancels the gateway mandate → finance-grade
+// (revenue.write). Suspend/restore stays on customers.write for support:
+// that's a service pause, not a billing decision.
+router.post  ('/customers/:businessId/cancel-subscription',
+              requirePermission('revenue.write'),
+              audit.middlewareLog('customers', 'cancel-subscription',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              ...c.cancelSubscription);
+
+router.post  ('/customers/:businessId/owner-email',
+              requirePermission('customers.write'),
+              audit.middlewareLog('customers', 'owner-email-change',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              ...c.changeOwnerEmail);
+router.post  ('/customers/:businessId/reset-owner-credentials',
+              requirePermission('customers.write'),
+              audit.middlewareLog('customers', 'reset-owner-credentials',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              c.resetOwnerCredentials);
+router.post  ('/customers/:businessId/resend-welcome',
+              requirePermission('customers.write'),
+              audit.middlewareLog('customers', 'resend-welcome',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              c.resendWelcome);
+router.patch ('/customers/:businessId/account',
+              requirePermission('customers.write'),
+              audit.middlewareLog('customers', 'account-fields',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              ...c.setAccountFields);
+
+// DPDP erasure is irreversible and scrubs personal data across users +
+// business. Locked to settings.write (super_admin only), same bar as the
+// retention sweep in the compliance block below.
+router.post  ('/customers/:businessId/anonymise',
+              requirePermission('settings.write'),
+              audit.middlewareLog('customers', 'anonymise',
+                (req) => ({ type: 'business', id: req.params.businessId })),
+              ...c.anonymiseCustomer);
 
 // Push 20b — bulk menu CSV/JSON import for a specific customer
 router.post  ('/customers/:businessId/menu/bulk',

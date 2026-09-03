@@ -94,6 +94,121 @@ export interface Metrics {
   gmv30dInr: number;
 }
 
+// ── Platform ops (2026-09-03 — SaaS control plane) ──────────────────────
+
+export interface AttentionItem {
+  kind: 'past_due' | 'stuck_refund' | 'expiring_addon' | 'p1_ticket' | 'trial_ending';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  businessId: string | null;
+  businessName: string | null;
+  label: string;
+  detail: string | null;
+  at: string | null;
+}
+
+export interface Overview {
+  mrrInr: number;
+  arrInr: number;
+  counts: {
+    customers: number; active: number; trialing: number; pastDue: number;
+    paused: number; cancelled: number; signups7d: number; signups30d: number;
+    churned30d: number; openTickets: number; p1Tickets: number;
+    failedPayments24h: number; pendingRefunds: number; orders30d: number;
+  };
+  revenue: {
+    thisMonthInr: number; lastMonthInr: number;
+    refundsThisMonthInr: number; gmv30dInr: number;
+  };
+  addons: {
+    activeActivations: number; tenantsWithAddon: number;
+    liveTenants: number; attachRatePct: number;
+  };
+  plans: { tier: string; name: string; count: number }[];
+  signupTrend: { date: string; count: number }[];
+  mrrTrend: { month: string; inr: number }[];
+  needsAttention: AttentionItem[];
+}
+
+export interface UsageMetric {
+  metric: string;
+  used: number;
+  limit: number;          // -1 = unlimited
+  unlimited: boolean;
+  utilisationPct: number | null;
+  over: boolean;
+  near: boolean;
+}
+export interface UsageRow {
+  businessId: string;
+  businessName: string;
+  subscriptionStatus: string | null;
+  planTier: string | null;
+  planName: string | null;
+  metrics: UsageMetric[];
+  overLimitCount: number;
+  nearLimitCount: number;
+  maxUtilisationPct: number;
+}
+
+export interface DunningRow {
+  subscriptionId: string;
+  businessId: string;
+  businessName: string;
+  businessEmail: string | null;
+  accountOwnerEmail: string | null;
+  status: string;
+  dunningAttempts: number;
+  lastDunningAt: string | null;
+  currentPeriodEnd: string | null;
+  billingPeriod: string;
+  razorpaySubscriptionId: string | null;
+  planTier: string | null;
+  planName: string | null;
+  amountAtRiskInr: number;
+  lifetimeFailures: number;
+}
+export interface DunningEvent {
+  id: string;
+  event: string;
+  attemptNo: number | null;
+  reason: string | null;
+  emailed: boolean;
+  at: string;
+}
+
+export interface NotificationRow {
+  id: string;
+  channel: 'email';
+  template: string;
+  recipient: string;
+  subject: string;
+  status: 'queued' | 'sent' | 'failed' | 'suppressed' | string;
+  providerId: string | null;
+  error: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  userEmail: string | null;
+}
+
+export interface CronJobStat {
+  at: string; ms: number; ok: boolean; error: string | null;
+}
+export interface PlatformHealth {
+  api: { ok: boolean; env: string; uptimeSec: number };
+  db: { ok: boolean; latencyMs: number | null; error: string | null; connections: number | null };
+  redis: { configured: boolean; ready: boolean; mode: string };
+  migrations: { applied: number | null; lastAppliedAt: string | null };
+  webhooks: {
+    received24h: number | null; errored24h: number | null;
+    unprocessed24h: number | null; lastEventAt: string | null;
+  };
+  cron: {
+    running: boolean; startedAt: string | null; lastTickAt: string | null;
+    lastTickMs: number | null; ticks: number; skippedTicks: number;
+    jobs: Record<string, CronJobStat>;
+  };
+}
+
 // ── Endpoints ────────────────────────────────────────────────────────────
 export const adminApi = {
   // Login may return either a token (no 2FA) or a 2FA challenge for enrolled
@@ -162,6 +277,41 @@ export const adminApi = {
     api.post<{ note: any }>(`/admin/customers/${id}/notes`, { body, pinned }).then((r) => r.data.note),
   deleteNote: (id: string, noteId: string) =>
     api.delete(`/admin/customers/${id}/notes/${noteId}`).then((r) => r.data),
+
+  // ── Customer lifecycle (2026-09-03) ──────────────────────────────────
+  // `immediate: false` (the default) keeps service until the paid period
+  // ends and cancels the gateway mandate at cycle end.
+  cancelSubscription: (id: string, body: { immediate?: boolean; reason?: string } = {}) =>
+    api.post<{ subscription: any }>(`/admin/customers/${id}/cancel-subscription`, body)
+       .then((r) => r.data.subscription),
+  changeOwnerEmail: (id: string, email: string) =>
+    api.post<{ business: any }>(`/admin/customers/${id}/owner-email`, { email })
+       .then((r) => r.data.business),
+  // NamastePOS has no password-reset link (owners use Google Sign-In); this
+  // clears the owner's MPIN + lockout and revokes live sessions.
+  resetOwnerCredentials: (id: string) =>
+    api.post<{ mpinCleared: boolean; sessionsRevoked: number }>(
+      `/admin/customers/${id}/reset-owner-credentials`).then((r) => r.data),
+  resendWelcome: (id: string) =>
+    api.post<{ recipient: string; status: string }>(`/admin/customers/${id}/resend-welcome`)
+       .then((r) => r.data),
+  setAccountFields: (id: string, body: {
+    accountOwnerEmail?: string | null;
+    tags?: string[];
+    lifecycleStage?: 'trial' | 'active' | 'at_risk' | 'churned' | null;
+  }) =>
+    api.patch<{ business: any }>(`/admin/customers/${id}/account`, body)
+       .then((r) => r.data.business),
+  anonymiseCustomer: (id: string, reason: string) =>
+    api.post(`/admin/customers/${id}/anonymise`, { confirm: 'ANONYMISE', reason })
+       .then((r) => r.data),
+
+  // Usage vs plan limits + platform → tenant email log
+  customerUsage: (id: string) =>
+    api.get<{ usage: UsageRow }>(`/admin/customers/${id}/usage`).then((r) => r.data.usage),
+  customerNotifications: (id: string, params: { limit?: number; offset?: number; status?: string } = {}) =>
+    api.get<{ channel: string; rows: NotificationRow[]; total: number }>(
+      `/admin/customers/${id}/notifications`, { params }).then((r) => r.data),
 
   // Plans
   listPlans: () => api.get<{ plans: Plan[] }>('/admin/plans').then((r) => r.data.plans),
@@ -325,6 +475,31 @@ export const adminApi = {
   // Headline metrics
   metrics: () => api.get<Metrics>('/admin/metrics').then((r) => r.data),
 
+  // ── Platform ops (2026-09-03) ────────────────────────────────────────
+  // One aggregate call behind the admin home page.
+  overview: () => api.get<Overview>('/admin/overview').then((r) => r.data),
+  platformHealth: () => api.get<PlatformHealth>('/admin/health/platform').then((r) => r.data),
+  platformUsage: (params: { overLimitOnly?: boolean; limit?: number; offset?: number } = {}) =>
+    api.get<{ rows: UsageRow[]; total: number; limit: number; offset: number }>(
+      '/admin/reports/usage', { params }).then((r) => r.data),
+
+  // Dunning / billing ops — reads are revenue.read, actions are revenue.write
+  // (finance + super_admin only), and every action is audited server-side.
+  dunningQueue: (params: { includeRecovered?: boolean; limit?: number } = {}) =>
+    api.get<{ rows: DunningRow[]; summary: { count: number; amountAtRiskInr: number; atRiskOfChurn: number } }>(
+      '/admin/dunning', { params }).then((r) => r.data),
+  dunningTimeline: (businessId: string) =>
+    api.get<{ events: DunningEvent[] }>(`/admin/dunning/${businessId}/timeline`)
+       .then((r) => r.data.events),
+  dunningRetry: (businessId: string) =>
+    api.post<{ emailed: boolean; attemptNo: number; recipient: string | null }>(
+      `/admin/dunning/${businessId}/retry`).then((r) => r.data),
+  dunningWaive: (businessId: string, reason: string) =>
+    api.post<{ subscription: any }>(`/admin/dunning/${businessId}/waive`, { reason })
+       .then((r) => r.data.subscription),
+  dunningMarkPaid: (businessId: string, body: { amountPaise?: number; reference?: string } = {}) =>
+    api.post<{ invoice: any }>(`/admin/dunning/${businessId}/mark-paid`, body).then((r) => r.data),
+
   // ── FF-402 CRM primitives ────────────────────────────────────────────
   crmActivities: (businessId: string, params: { limit?: number; kind?: string } = {}) =>
     api.get<{ activities: any[] }>(`/admin/customers/${businessId}/crm/activities`, { params })
@@ -368,9 +543,15 @@ export const adminApi = {
   // Global feature-key catalog. The backend may return {keys:[{key,label?}]}
   // OR a plain string array — normalise both to FeatureKey[] here so pages
   // never have to care.
+  // FIX 2026-09-03: pointed at a non-existent /admin/feature-keys — the custom
+  // plan feature picker and the overrides dropdown both rendered empty
+  // ("No feature keys available"). The real endpoint is /admin/feature-catalog
+  // → { features: string[] }.
   listFeatureKeys: () =>
-    api.get<any>('/admin/feature-keys').then((r) => {
-      const raw = Array.isArray(r.data) ? r.data : (r.data?.keys ?? []);
+    api.get<any>('/admin/feature-catalog').then((r) => {
+      const raw = Array.isArray(r.data)
+        ? r.data
+        : (r.data?.features ?? r.data?.keys ?? []);
       return (raw as any[]).map((k): FeatureKey =>
         typeof k === 'string' ? { key: k } : { key: k.key, label: k.label });
     }),
@@ -389,8 +570,11 @@ export const adminApi = {
   saveCustomPlan: (businessId: string, body: CustomPlanInput) =>
     api.put<CustomPlanResponse>(`/admin/customers/${businessId}/custom-plan`, body).then((r) => r.data),
   // 409 when the plan is currently assigned to the customer.
-  deleteCustomPlan: (businessId: string) =>
-    api.delete(`/admin/customers/${businessId}/custom-plan`).then((r) => r.data),
+  // force=true → backend moves the customer back to the base plan (or free)
+  // before deleting, so removal works even while the plan is assigned.
+  deleteCustomPlan: (businessId: string, force = false) =>
+    api.delete(`/admin/customers/${businessId}/custom-plan${force ? '?force=true' : ''}`)
+       .then((r) => r.data),
 };
 
 // ── DPDP / Compliance ──────────────────────────────────────────────────
@@ -454,15 +638,23 @@ export interface CustomPlan {
   limits: CustomPlanLimits;
   tierKind: 'starter' | 'pro' | 'enterprise';
   assigned: boolean;
+  // 2026-09-03 — "base plan + extras": the public plan this one extends,
+  // the extras layered on top, and the base's keys (shown locked in the UI).
+  basePlanTier?: string | null;
+  extraFeatureKeys?: string[];
+  inheritedFeatureKeys?: string[];
+  featureKeys?: string[];   // effective = inherited ∪ extras
 }
 export interface CustomPlanResponse { plan: CustomPlan | null; featureKeys?: string[] }
 export interface CustomPlanInput {
   name: string;
-  priceInrPaise: number;
-  priceYearlyPaise: number | null;
-  limits: CustomPlanLimits;
-  featureKeys: string[];
-  tierKind: 'starter' | 'pro' | 'enterprise';
+  basePlanTier?: string | null;
+  priceInrPaise?: number;
+  priceYearlyPaise?: number | null;
+  limits?: CustomPlanLimits;
+  extraFeatureKeys?: string[];
+  featureKeys?: string[];    // legacy flat list — treated as extras
+  tierKind?: 'starter' | 'pro' | 'enterprise';
   assign: boolean;
 }
 

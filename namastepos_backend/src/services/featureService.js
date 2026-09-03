@@ -310,8 +310,16 @@ async function setTierFeatures(tierKind, featureKeys) {
   return keys;
 }
 
+// Ops visibility (2026-09-03): the admin health panel needs to say whether
+// cross-instance cache invalidation is actually live, not just configured.
+// Read-only, no side effects.
+function cacheStatus() {
+  return { redisConfigured: !!env.REDIS_URL, redisReady: _redisReady };
+}
+
 module.exports = {
   resolveTierKind,
+  cacheStatus,
   hasFeature,
   planSummary,
   clearCache,

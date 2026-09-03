@@ -18,6 +18,10 @@ import {
 import { adminApi, FeatureKey, FeatureOverride, CustomPlanLimits } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR, formatDate, formatDateTime } from '@/lib/utils';
+// 2026-09-03 — reuse the usage card and the dunning timeline rather than
+// duplicating them here; both are exported from their own pages.
+import { CustomerUsageCard } from './UsagePage';
+import { DunningTimeline } from './BillingOpsPage';
 // FF-402 — reuse the visual chips from the CRM page so the tenant
 // list, drilldown, and CRM tab all render lifecycle/health consistently.
 import { HealthPill, LifecycleBadge } from './CrmPage';
@@ -25,7 +29,14 @@ import { HealthPill, LifecycleBadge } from './CrmPage';
 // FF-402 — 'crm' tab groups the activity feed + tenant tasks + health.
 // Plans-addons migration — 'plan & features' tab: per-customer custom plan
 // editor + feature overrides.
-const TABS = ['overview', 'crm', 'plan & features', 'addons', 'menu', 'orders', 'staff', 'invoices', 'notes', 'audit'] as const;
+// 2026-09-03 — three tabs added for the SaaS control plane:
+//   'lifecycle' → account ownership/tags + every lifecycle action (cancel,
+//                 owner email, MPIN reset, resend welcome, DPDP erasure)
+//                 plus this tenant's dunning history.
+//   'usage'     → consumption vs plan caps.
+//   'messages'  → what the platform has emailed this tenant, and whether it
+//                 actually landed.
+const TABS = ['overview', 'crm', 'lifecycle', 'plan & features', 'addons', 'usage', 'menu', 'orders', 'staff', 'invoices', 'messages', 'notes', 'audit'] as const;
 type Tab = typeof TABS[number];
 
 // Push 20c — CSV writer shared by orders/invoices/payments export buttons.
@@ -173,12 +184,15 @@ export function CustomerDetailPage() {
 
       {tab === 'overview' && <OverviewTab business={b} subscription={s} payments={payments} />}
       {tab === 'crm' && <CrmTab businessId={id!} business={b} />}
+      {tab === 'lifecycle' && <LifecycleTab businessId={id!} business={b} subscription={s} />}
       {tab === 'plan & features' && <PlanFeaturesTab businessId={id!} />}
       {tab === 'addons' && <AddonsTab businessId={id!} />}
+      {tab === 'usage' && <CustomerUsageCard businessId={id!} />}
       {tab === 'menu' && <MenuTab menu={menu} businessId={id!} />}
       {tab === 'orders' && <OrdersTab orders={orders} />}
       {tab === 'staff' && <StaffTab staff={staff} />}
       {tab === 'invoices' && <InvoicesTab invoices={invoices} businessId={id!} />}
+      {tab === 'messages' && <MessagesTab businessId={id!} />}
       {tab === 'notes' && <NotesTab notes={notes} businessId={id!} />}
       {tab === 'audit' && <AuditTab businessId={id!} />}
 
@@ -656,6 +670,19 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
     Object.fromEntries(CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, '-1'])));
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
+  // 2026-09-03 — a custom plan EXTENDS a public plan ("Growth + 2 extras").
+  const [basePlanTier, setBasePlanTier] = useState<string>('');
+
+  // Public plans available as a base.
+  const { data: publicPlans } = useQuery({
+    queryKey: ['plans-public'],
+    queryFn: adminApi.listPlans,
+  });
+  const bases = (publicPlans ?? []).filter(
+    (p: any) => p.isPublic !== false && !String(p.tier).startsWith('custom-'));
+  const base = bases.find((p: any) => p.tier === basePlanTier) || null;
+  // Keys the base plan already grants — shown checked + locked.
+  const inherited = new Set<string>(plan?.inheritedFeatureKeys ?? []);
 
   // Seed the form from the server copy whenever it (re)loads.
   useEffect(() => {
@@ -665,19 +692,37 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
     setPriceMonthly(String((p.priceInrPaise ?? 0) / 100));
     setPriceYearly(p.priceYearlyPaise != null ? String(p.priceYearlyPaise / 100) : '');
     setTierKind((p.tierKind as CustomTierKind) || 'pro');
+    setBasePlanTier(p.basePlanTier || '');
     setLimits(Object.fromEntries(
       CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, String(p.limits?.[k] ?? -1)])));
-    setSelected(new Set(data.featureKeys ?? []));
+    // FIX: the endpoint returns { plan } — extras live on the plan itself, so
+    // `data.featureKeys` was always undefined and the picker rendered empty.
+    setSelected(new Set(p.extraFeatureKeys ?? p.featureKeys ?? []));
     setEditing(true);
   }, [data]);
 
+  // Picking a base pre-fills price/limits/tier from it (editable afterwards).
+  const applyBase = (tier: string) => {
+    setBasePlanTier(tier);
+    const b = bases.find((p: any) => p.tier === tier);
+    if (!b) return;
+    if (!name.trim()) setName(`${b.name} + extras`);
+    setPriceMonthly(String((b.priceInrPaise ?? 0) / 100));
+    setPriceYearly(b.priceYearlyInrPaise != null ? String(b.priceYearlyInrPaise / 100) : '');
+    if (b.tierKind) setTierKind(b.tierKind as CustomTierKind);
+    setLimits(Object.fromEntries(
+      CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, String(b.limits?.[k] ?? -1)])));
+  };
+
   const buildBody = (assign: boolean) => ({
     name: name.trim(),
+    basePlanTier: basePlanTier || null,
     priceInrPaise: Math.round(Number(priceMonthly || 0) * 100),
     priceYearlyPaise: priceYearly.trim() === '' ? null : Math.round(Number(priceYearly) * 100),
     limits: Object.fromEntries(
       CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, Number(limits[k] ?? -1)])) as unknown as CustomPlanLimits,
-    featureKeys: Array.from(selected),
+    // Only the EXTRAS travel — the backend unions them with the base plan's.
+    extraFeatureKeys: Array.from(selected).filter((k) => !inherited.has(k)),
     tierKind,
     assign,
   });
@@ -692,7 +737,9 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
     onError: (e) => toast.error(apiError(e)),
   });
   const remove = useMutation({
-    mutationFn: () => adminApi.deleteCustomPlan(businessId),
+    // force=true moves the customer back to the base plan (or free) first, so
+    // removal is one click even while the custom plan is assigned.
+    mutationFn: (force: boolean) => adminApi.deleteCustomPlan(businessId, force),
     onSuccess: () => {
       toast.success('Custom plan deleted');
       setEditing(false);
@@ -726,16 +773,18 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
           </CardDescription>
         </div>
         {plan && (
-          // Tooltip via title attr — Delete stays visible but disabled while assigned.
-          <span title={plan.assigned ? 'Unassign first — move the customer to another plan before deleting' : undefined}>
-            <Button size="sm" variant="ghost" className="text-destructive"
-              disabled={plan.assigned || busy}
-              onClick={() => {
-                if (confirm(`Delete the custom plan "${plan.name}"?`)) remove.mutate();
-              }}>
-              <Trash2 className="h-4 w-4 mr-1" /> Delete
-            </Button>
-          </span>
+          <Button size="sm" variant="outline" className="text-destructive border-destructive/40"
+            disabled={busy}
+            onClick={() => {
+              const fallback = plan.basePlanTier || 'free';
+              const msg = plan.assigned
+                ? `Remove the custom plan "${plan.name}"?\n\nThis customer will be moved to "${fallback}".`
+                : `Remove the custom plan "${plan.name}"?`;
+              if (confirm(msg)) remove.mutate(!!plan.assigned);
+            }}>
+            <Trash2 className="h-4 w-4 mr-1" />
+            {remove.isPending ? 'Removing…' : 'Remove custom plan'}
+          </Button>
         )}
       </CardHeader>
       <CardContent className="space-y-4">
@@ -765,12 +814,34 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
                   onChange={(e) => setPriceYearly(e.target.value)} />
               </div>
             </div>
-            <div>
-              <Label>Tier kind</Label>
-              <select value={tierKind} onChange={(e) => setTierKind(e.target.value as CustomTierKind)}
-                className="h-10 w-full md:w-56 rounded-md border border-input bg-background px-3 text-sm">
-                {CUSTOM_TIER_KINDS.map((tk) => <option key={tk} value={tk}>{tk}</option>)}
-              </select>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label>Base plan</Label>
+                <select value={basePlanTier} onChange={(e) => applyBase(e.target.value)}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
+                  <option value="">None — standalone plan</option>
+                  {bases.map((p: any) => (
+                    <option key={p.tier} value={p.tier}>
+                      {p.name} (₹{p.priceInr}/mo)
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {base
+                    ? `Inherits everything in ${base.name} — tick only the EXTRA features below. Later changes to ${base.name} flow through automatically.`
+                    : 'Pick the plan the customer wanted (e.g. Growth), then add the extras they need.'}
+                </p>
+              </div>
+              <div>
+                <Label>Tier kind</Label>
+                <select value={tierKind} onChange={(e) => setTierKind(e.target.value as CustomTierKind)}
+                  className="h-10 w-full md:w-56 rounded-md border border-input bg-background px-3 text-sm">
+                  {CUSTOM_TIER_KINDS.map((tk) => <option key={tk} value={tk}>{tk}</option>)}
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Drives upgrade CTAs + addon eligibility. Inherited from the base plan.
+                </p>
+              </div>
             </div>
             <div>
               <div className="text-sm font-semibold mb-2">
@@ -789,14 +860,20 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
             <div>
               <div className="flex items-center justify-between mb-2">
                 <div className="text-sm font-semibold">
-                  Features <span className="text-xs font-normal text-muted-foreground">({selected.size} selected)</span>
+                  {base ? 'Extra features' : 'Features'}{' '}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    ({Array.from(selected).filter((k) => !inherited.has(k)).length} extra
+                    {base ? ` · ${inherited.size} inherited from ${base.name}` : ''})
+                  </span>
                 </div>
                 <Input className="w-48 h-8" placeholder="Filter features…"
                   value={search} onChange={(e) => setSearch(e.target.value)} />
               </div>
               <div className="border rounded-md p-3 max-h-72 overflow-y-auto space-y-3">
                 {featureKeys.length === 0 && (
-                  <div className="text-sm text-muted-foreground">No feature keys available.</div>
+                  <div className="text-sm text-muted-foreground">
+                    No feature keys available — check that the admin API is reachable.
+                  </div>
                 )}
                 {groups.map(([groupName, keys]) => (
                   <div key={groupName}>
@@ -804,14 +881,22 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
                       {groupName}
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-1">
-                      {keys.map((f) => (
-                        <label key={f.key}
-                          className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/50 cursor-pointer text-sm">
-                          <input type="checkbox" checked={selected.has(f.key)}
-                            onChange={() => toggle(f.key)} />
-                          <span className="font-mono text-[12px]">{f.label || f.key}</span>
-                        </label>
-                      ))}
+                      {keys.map((f) => {
+                        const inh = inherited.has(f.key);
+                        return (
+                          <label key={f.key}
+                            title={inh ? `Granted by ${base?.name} — included automatically` : undefined}
+                            className={`flex items-center gap-2 px-2 py-1 rounded text-sm ${
+                              inh ? 'opacity-70' : 'hover:bg-muted/50 cursor-pointer'}`}>
+                            <input type="checkbox" checked={inh || selected.has(f.key)}
+                              disabled={inh} onChange={() => !inh && toggle(f.key)} />
+                            <span className="font-mono text-[12px]">{f.label || f.key}</span>
+                            {inh && (
+                              <span className="text-[10px] uppercase tracking-wide text-emerald-700">base</span>
+                            )}
+                          </label>
+                        );
+                      })}
                     </div>
                   </div>
                 ))}
@@ -1462,6 +1547,423 @@ function AuditTab({ businessId }: { businessId: string }) {
             ))}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Lifecycle tab (2026-09-03) ─────────────────────────────────────────
+//
+// Everything that changes the STATE of the account rather than its data:
+// who owns it internally, what segment it's in, and the six lifecycle
+// actions. Suspend / restore / extend trial / change plan stay in the page
+// header where they already were — this tab holds what had no home.
+//
+// Each destructive action states plainly what it does BEFORE it's clicked;
+// the DPDP erasure additionally requires typing the tenant name, because an
+// accidental click there is unrecoverable.
+function LifecycleTab({ businessId, business, subscription }: {
+  businessId: string; business: any; subscription: any;
+}) {
+  const qc = useQueryClient();
+  const refresh = () => {
+    qc.invalidateQueries({ queryKey: ['drilldown', businessId] });
+    qc.invalidateQueries({ queryKey: ['overview'] });
+  };
+
+  return (
+    <div className="space-y-4">
+      <AccountOwnershipCard businessId={businessId} business={business} onSaved={refresh} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Owner access</CardTitle>
+          <CardDescription>
+            Login identity and device credentials for this tenant's owner.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <OwnerEmailRow businessId={businessId} current={business.email} onSaved={refresh} />
+          <ResetCredentialsRow businessId={businessId} />
+          <ResendWelcomeRow businessId={businessId} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Subscription</CardTitle>
+          <CardDescription>
+            Current status: <strong>{subscription?.status || 'none'}</strong>
+            {subscription?.cancel_at_period_end ? ' · cancels at period end' : ''}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <CancelSubscriptionRow businessId={businessId} subscription={subscription} onDone={refresh} />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Payment recovery history</CardTitle>
+          <CardDescription>Every failed charge, nudge, waiver and recovery.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <DunningTimeline businessId={businessId} />
+        </CardContent>
+      </Card>
+
+      <DangerZoneCard businessId={businessId} business={business} />
+    </div>
+  );
+}
+
+function AccountOwnershipCard({ businessId, business, onSaved }: {
+  businessId: string; business: any; onSaved: () => void;
+}) {
+  const [owner, setOwner] = useState<string>(business.account_owner_email || '');
+  const [tagText, setTagText] = useState<string>((business.tags || []).join(', '));
+
+  const save = useMutation({
+    mutationFn: () => adminApi.setAccountFields(businessId, {
+      accountOwnerEmail: owner.trim() || null,
+      tags: tagText.split(',').map((t) => t.trim()).filter(Boolean),
+    }),
+    onSuccess: () => { toast.success('Account details saved'); onSaved(); },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Account ownership</CardTitle>
+        <CardDescription>
+          Who on our side owns this relationship, and how it's segmented.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label className="text-sm">Account owner (internal email)</Label>
+            <Input value={owner} onChange={(e) => setOwner(e.target.value)}
+                   placeholder="ae@namastepos.in" />
+          </div>
+          <div>
+            <Label className="text-sm">Tags (comma separated)</Label>
+            <Input value={tagText} onChange={(e) => setTagText(e.target.value)}
+                   placeholder="chain, high-touch, pilot" />
+          </div>
+        </div>
+        {(business.tags || []).length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {(business.tags || []).map((t: string) => (
+              <Badge key={t} variant="muted" className="text-[10px]">{t}</Badge>
+            ))}
+          </div>
+        )}
+        <div className="flex justify-end">
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending ? 'Saving…' : 'Save account details'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OwnerEmailRow({ businessId, current, onSaved }: {
+  businessId: string; current: string; onSaved: () => void;
+}) {
+  const [email, setEmail] = useState('');
+  const m = useMutation({
+    mutationFn: () => adminApi.changeOwnerEmail(businessId, email.trim()),
+    onSuccess: () => {
+      toast.success('Owner email changed — live sessions revoked');
+      setEmail(''); onSaved();
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  return (
+    <div className="space-y-2">
+      <div className="text-sm font-medium">Change owner email</div>
+      <p className="text-xs text-muted-foreground">
+        Updates the business record and the owner's user row, then revokes every live
+        session — the login identity itself has changed. Current: <strong>{current}</strong>
+      </p>
+      <div className="flex items-end gap-2">
+        <div className="flex-1 max-w-sm">
+          <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                 placeholder="new-owner@restaurant.com" />
+        </div>
+        <Button variant="outline" onClick={() => m.mutate()}
+                disabled={m.isPending || !email.includes('@')}>
+          {m.isPending ? 'Changing…' : 'Change email'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ResetCredentialsRow({ businessId }: { businessId: string }) {
+  const m = useMutation({
+    mutationFn: () => adminApi.resetOwnerCredentials(businessId),
+    onSuccess: (r) => toast.success(
+      `MPIN cleared · ${r.sessionsRevoked} session(s) revoked. The owner signs in with Google and sets a new MPIN.`),
+    onError: (e) => toast.error(apiError(e)),
+  });
+  return (
+    <div className="space-y-2 border-t pt-4">
+      <div className="text-sm font-medium">Reset owner MPIN</div>
+      <p className="text-xs text-muted-foreground">
+        NamastePOS has no password to reset — owners sign in with Google and unlock the
+        app with an MPIN. This clears that MPIN plus any brute-force lockout and revokes
+        live sessions. Staff PINs are not touched.
+      </p>
+      <Button variant="outline" onClick={() => m.mutate()} disabled={m.isPending}>
+        {m.isPending ? 'Resetting…' : 'Reset MPIN & revoke sessions'}
+      </Button>
+    </div>
+  );
+}
+
+function ResendWelcomeRow({ businessId }: { businessId: string }) {
+  const m = useMutation({
+    mutationFn: () => adminApi.resendWelcome(businessId),
+    onSuccess: (r) => toast.success(`Welcome email re-sent to ${r.recipient} (${r.status})`),
+    onError: (e) => toast.error(apiError(e)),
+  });
+  return (
+    <div className="space-y-2 border-t pt-4">
+      <div className="text-sm font-medium">Re-send welcome email</div>
+      <p className="text-xs text-muted-foreground">
+        Sends the day-0 onboarding email again. It's logged separately from the original
+        so the Messages tab shows both.
+      </p>
+      <Button variant="outline" onClick={() => m.mutate()} disabled={m.isPending}>
+        {m.isPending ? 'Sending…' : 'Re-send welcome email'}
+      </Button>
+    </div>
+  );
+}
+
+function CancelSubscriptionRow({ businessId, subscription, onDone }: {
+  businessId: string; subscription: any; onDone: () => void;
+}) {
+  const [immediate, setImmediate] = useState(false);
+  const [reason, setReason] = useState('');
+  const m = useMutation({
+    mutationFn: () => adminApi.cancelSubscription(businessId, {
+      immediate, reason: reason.trim() || undefined,
+    }),
+    onSuccess: () => {
+      toast.success(immediate
+        ? 'Subscription cancelled immediately'
+        : 'Cancelling at period end — the gateway mandate is stopped');
+      setReason(''); setImmediate(false); onDone();
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const alreadyCancelled = subscription?.status === 'cancelled';
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Cancels the Razorpay mandate so nothing is auto-charged again. By default service
+        continues until the paid period ends — cutting off a period the customer already
+        paid for invites a chargeback.
+      </p>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={immediate}
+               onChange={(e) => setImmediate(e.target.checked)} />
+        Cancel immediately (fraud / never paid / explicit customer demand)
+      </label>
+      <div className="max-w-sm">
+        <Label className="text-sm">Reason (optional, goes on the CRM timeline)</Label>
+        <Input value={reason} onChange={(e) => setReason(e.target.value)}
+               placeholder="e.g. closing the restaurant" />
+      </div>
+      <Button variant={immediate ? 'destructive' : 'outline'}
+              onClick={() => m.mutate()} disabled={m.isPending || alreadyCancelled}>
+        {alreadyCancelled ? 'Already cancelled'
+          : m.isPending ? 'Cancelling…'
+          : immediate ? 'Cancel now' : 'Cancel at period end'}
+      </Button>
+    </div>
+  );
+}
+
+function DangerZoneCard({ businessId, business }: { businessId: string; business: any }) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const [confirmName, setConfirmName] = useState('');
+  const [reason, setReason] = useState('');
+
+  const softDelete = useMutation({
+    mutationFn: () => adminApi.deleteCustomer(businessId),
+    onSuccess: () => {
+      toast.success('Customer soft-deleted — financial history retained');
+      qc.invalidateQueries({ queryKey: ['customers'] });
+      navigate('/customers');
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const anonymise = useMutation({
+    mutationFn: () => adminApi.anonymiseCustomer(businessId, reason.trim()),
+    onSuccess: (r: any) => {
+      toast.success(`DPDP erasure complete — ${r.usersErased} user(s) anonymised`);
+      qc.invalidateQueries({ queryKey: ['customers'] });
+      navigate('/customers');
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const nameMatches = confirmName.trim() === (business.name || '').trim();
+
+  return (
+    <Card className="border-destructive/40">
+      <CardHeader>
+        <CardTitle className="text-base text-destructive">Danger zone</CardTitle>
+        <CardDescription>
+          Both actions below hide the tenant from every read path. Neither drops orders,
+          invoices or payments — we still owe GST returns on historical revenue, and DPDP
+          allows retaining transaction records after erasing identifiers.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="space-y-2">
+          <div className="text-sm font-medium">Soft-delete</div>
+          <p className="text-xs text-muted-foreground">
+            Marks the business deleted and cancels its subscription. Personal data is kept,
+            so this is reversible by a DBA if it was a mistake.
+          </p>
+          <Button variant="outline" onClick={() => softDelete.mutate()}
+                  disabled={softDelete.isPending || !!business.deleted_at}>
+            {business.deleted_at ? 'Already deleted'
+              : softDelete.isPending ? 'Deleting…' : 'Soft-delete customer'}
+          </Button>
+        </div>
+
+        <div className="space-y-3 border-t pt-4">
+          <div className="text-sm font-medium text-destructive">
+            DPDP erasure (irreversible)
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Anonymises every user attached to this tenant (identifiers replaced with hashed
+            tokens, marketing consent withdrawn, a completed DSR recorded for each), scrubs
+            the business's own identifiers, and soft-deletes it. Use this only for a genuine
+            erasure request. <strong>This cannot be undone.</strong>
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <Label className="text-sm">Reason (recorded on the DSR trail)</Label>
+              <Input value={reason} onChange={(e) => setReason(e.target.value)}
+                     placeholder="e.g. DSR-2026-014 erasure request" />
+            </div>
+            <div>
+              <Label className="text-sm">
+                Type <span className="font-mono">{business.name}</span> to confirm
+              </Label>
+              <Input value={confirmName} onChange={(e) => setConfirmName(e.target.value)}
+                     placeholder={business.name} />
+            </div>
+          </div>
+          <Button variant="destructive" onClick={() => anonymise.mutate()}
+                  disabled={anonymise.isPending || !nameMatches || reason.trim().length < 3}>
+            <Trash2 className="mr-2 h-4 w-4" />
+            {anonymise.isPending ? 'Erasing…' : 'Anonymise & erase personal data'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Messages tab (2026-09-03) ──────────────────────────────────────────
+//
+// Sourced from email_dispatch_log, which is the ONLY platform→tenant
+// dispatch log that exists. Push notifications and WhatsApp sends are not
+// logged anywhere per-message, so they can't be shown here — see the note
+// in the empty/footer state rather than implying we know.
+function MessagesTab({ businessId }: { businessId: string }) {
+  const [status, setStatus] = useState('');
+  const { data, isLoading } = useQuery({
+    queryKey: ['customer-notifications', businessId, status],
+    queryFn: () => adminApi.customerNotifications(businessId, {
+      limit: 100, status: status || undefined,
+    }),
+  });
+
+  const rows = data?.rows || [];
+  const variant = (s: string) => (s === 'sent' ? 'success'
+    : s === 'failed' ? 'destructive'
+    : s === 'suppressed' ? 'muted' : 'warning');
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <CardTitle className="text-base">Emails sent to this tenant</CardTitle>
+            <CardDescription>
+              {isLoading ? 'Loading…' : `${data?.total ?? 0} recorded dispatches`}
+            </CardDescription>
+          </div>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}
+                  className="h-10 rounded-md border border-input bg-background px-3 text-sm">
+            <option value="">All statuses</option>
+            <option value="sent">Sent</option>
+            <option value="failed">Failed</option>
+            <option value="queued">Queued</option>
+            <option value="suppressed">Suppressed</option>
+          </select>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Template</TableHead>
+              <TableHead>Subject</TableHead>
+              <TableHead>Recipient</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Sent</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {isLoading && (
+              <TableRow><TableCell colSpan={5} className="text-muted-foreground">Loading…</TableCell></TableRow>
+            )}
+            {!isLoading && rows.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                  No emails recorded for this tenant.
+                </TableCell>
+              </TableRow>
+            )}
+            {rows.map((r) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-mono text-xs">{r.template}</TableCell>
+                <TableCell className="max-w-xs truncate text-sm">{r.subject}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{r.recipient}</TableCell>
+                <TableCell>
+                  <Badge variant={variant(r.status) as any} className="text-[10px]">{r.status}</Badge>
+                  {r.error && (
+                    <div className="mt-0.5 max-w-xs truncate text-[10px] text-destructive"
+                         title={r.error}>{r.error}</div>
+                  )}
+                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">
+                  {r.sentAt ? formatDateTime(r.sentAt) : formatDateTime(r.createdAt)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <p className="mt-4 text-xs text-muted-foreground">
+          Email only. Push notifications and WhatsApp messages are sent without a
+          per-message dispatch log, so they cannot be shown here yet.
+        </p>
       </CardContent>
     </Card>
   );

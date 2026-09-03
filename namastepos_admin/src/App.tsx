@@ -3,8 +3,14 @@ import { isAuthed } from './api/client';
 import { Layout } from './components/Layout';
 
 import { LoginPage } from './pages/LoginPage';
+// 2026-09-03 — OverviewPage replaces DashboardPage as the landing route: it
+// answers "what needs doing today" rather than only "how big are we". The
+// old two-chart dashboard stays reachable at /charts.
+import { OverviewPage } from './pages/OverviewPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { MetricsPage } from './pages/MetricsPage';
+import { BillingOpsPage } from './pages/BillingOpsPage';
+import { UsagePage } from './pages/UsagePage';
 import { CustomersPage } from './pages/CustomersPage';
 import { CustomerDetailPage } from './pages/CustomerDetailPage';
 import { PlansPage } from './pages/PlansPage';
@@ -36,8 +42,11 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
-        <Route index element={<DashboardPage />} />
+        <Route index element={<OverviewPage />} />
+        <Route path="charts"        element={<DashboardPage />} />
         <Route path="metrics"       element={<MetricsPage />} />
+        <Route path="billing-ops"   element={<BillingOpsPage />} />
+        <Route path="usage"         element={<UsagePage />} />
         <Route path="customers"     element={<CustomersPage />} />
         <Route path="customers/:id" element={<CustomerDetailPage />} />
         <Route path="plans"         element={<PlansPage />} />

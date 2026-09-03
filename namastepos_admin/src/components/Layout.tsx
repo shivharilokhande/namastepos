@@ -3,6 +3,7 @@ import {
   LayoutDashboard, Users, CreditCard, BarChart3, LogOut, Utensils,
   Tag, Receipt, FileText, Shield, Settings, ScrollText, UsersRound,
   TrendingUp, Package, LifeBuoy, Send, Gift, ShieldCheck,
+  AlertTriangle, Gauge, PieChart,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
@@ -40,9 +41,10 @@ function roleCan(role: string | undefined, need?: string): boolean {
 
 const SECTIONS: Section[] = [
   { label: 'Overview', items: [
-    { to: '/',          icon: LayoutDashboard, label: 'Dashboard' },
+    { to: '/',          icon: LayoutDashboard, label: 'Overview' },
     { to: '/reports',   icon: TrendingUp,      label: 'Reports',  needs: 'reports.read' },
     { to: '/metrics',   icon: BarChart3,       label: 'Metrics',  needs: 'reports.read' },
+    { to: '/charts',    icon: PieChart,        label: 'Charts',   needs: 'reports.read' },
   ]},
   { label: 'Customers', items: [
     { to: '/customers', icon: Users,           label: 'Customers', needs: 'customers.read' },
@@ -51,9 +53,14 @@ const SECTIONS: Section[] = [
     { to: '/support',   icon: LifeBuoy,        label: 'Support',   needs: 'compliance.read' },
     { to: '/broadcast', icon: Send,            label: 'Broadcast', needs: 'compliance.write' },
     { to: '/referrals', icon: Gift,            label: 'Referrals', needs: 'reports.read' },
+    // Usage vs plan caps — upsell candidates + support triage in one table.
+    { to: '/usage',     icon: Gauge,           label: 'Usage & limits', needs: 'reports.read' },
   ]},
   { label: 'Revenue', items: [
     { to: '/subscriptions', icon: CreditCard,  label: 'Subscriptions', needs: 'revenue.read' },
+    // Dunning work queue. The three recovery actions are revenue.write, so
+    // gate the nav on revenue.read (finance + super_admin) to match.
+    { to: '/billing-ops', icon: AlertTriangle, label: 'Billing ops',  needs: 'revenue.read' },
     { to: '/plans',     icon: CreditCard,      label: 'Plans',    needs: 'plans.read' },
     { to: '/addons',    icon: Package,         label: 'Add-ons',  needs: 'plans.read' },
     { to: '/coupons',   icon: Tag,             label: 'Coupons',  needs: 'coupons.read' },

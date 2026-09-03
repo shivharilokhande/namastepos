@@ -748,7 +748,13 @@ const getCustomPlan = asyncHandler(async (req, res) => {
 
 const putCustomPlanBody = Joi.object({
   name: Joi.string().min(1).max(60).required(),
-  priceInrPaise: Joi.number().integer().min(0).required(),
+  // 2026-09-03 — "base plan + extras". basePlanTier is a PUBLIC plan the
+  // custom plan extends (e.g. growth); price/limits/tierKind inherit from it
+  // when omitted, and extraFeatureKeys are layered on top of its features.
+  basePlanTier: Joi.string().pattern(/^[a-z][a-z0-9_-]{1,39}$/).allow(null, ''),
+  extraFeatureKeys: Joi.array().items(Joi.string().min(1).max(60)).max(100),
+  // Optional now (inherited from the base plan when omitted).
+  priceInrPaise: Joi.number().integer().min(0),
   priceYearlyPaise: Joi.number().integer().min(0).allow(null),
   limits: Joi.object({
     staff: Joi.number().integer().min(-1),
@@ -757,9 +763,18 @@ const putCustomPlanBody = Joi.object({
     menu_items: Joi.number().integer().min(-1),
     monthly_orders: Joi.number().integer().min(-1),
   }).unknown(true).default({}),
-  featureKeys: Joi.array().items(Joi.string().min(1).max(60)).max(100).default([]),
-  tierKind: Joi.string().valid('starter', 'pro', 'enterprise').required(),
+  // Legacy flat list (pre-base-plan callers) — treated as extras.
+  featureKeys: Joi.array().items(Joi.string().min(1).max(60)).max(100),
+  tierKind: Joi.string().valid('starter', 'pro', 'enterprise'),
   assign: Joi.boolean().default(false),
+}).custom((v, helpers) => {
+  // Standalone custom plans (no base) must still state a price + tier kind.
+  if (!v.basePlanTier && (v.priceInrPaise === undefined || !v.tierKind)) {
+    return helpers.message(
+      'priceInrPaise and tierKind are required when no basePlanTier is given'
+    );
+  }
+  return v;
 });
 const putCustomPlan = [
   validate({ body: putCustomPlanBody }),
@@ -779,8 +794,149 @@ const putCustomPlan = [
 ];
 
 const deleteCustomPlan = asyncHandler(async (req, res) => {
-  res.json(await customPlans.removeForBusiness(req.params.businessId));
+  // ?force=true moves the customer back to the base plan (or free) first, so
+  // "Remove custom plan" is one click even while it's assigned.
+  const force = req.query.force === 'true' || req.query.force === '1';
+  const out = await customPlans.removeForBusiness(req.params.businessId, { force });
+  if (out.deleted) {
+    require('../services/crmService').logActivity({
+      businessId: req.params.businessId, kind: 'plan_change',
+      title: `Custom plan removed${out.movedTo ? ` — moved to ${out.movedTo}` : ''}`,
+      meta: { tier: out.tier, movedTo: out.movedTo || null },
+      actorType: 'admin', actorEmail: req.user?.email,
+    }).catch(() => {});
+  }
+  res.json(out);
 });
+
+// ── Platform ops: overview / usage / dunning / notifications / health ───
+// (2026-09-03 — SaaS control-plane gaps)
+const ops = require('../services/platformOpsService');
+
+// The admin home. One aggregate call so the landing page is a single round
+// trip from the browser's point of view.
+const overview = asyncHandler(async (_req, res) => res.json(await ops.overview()));
+
+const platformHealth = asyncHandler(async (_req, res) => res.json(await ops.platformHealth()));
+
+// ── Usage vs plan limits ────────────────────────────────────────────────
+const customerUsage = asyncHandler(async (req, res) => {
+  res.json({ usage: await ops.usageForBusiness(req.params.businessId) });
+});
+const platformUsage = asyncHandler(async (req, res) => {
+  res.json(await ops.platformUsage({
+    overLimitOnly: req.query.overLimitOnly === 'true',
+    limit: req.query.limit, offset: req.query.offset,
+  }));
+});
+
+// ── Dunning / billing ops ───────────────────────────────────────────────
+const dunningQueue = asyncHandler(async (req, res) => {
+  res.json(await ops.dunningQueue({
+    includeRecovered: req.query.includeRecovered === 'true',
+    limit: req.query.limit,
+  }));
+});
+const dunningTimeline = asyncHandler(async (req, res) => {
+  res.json({ events: await ops.dunningTimeline(req.params.businessId, { limit: req.query.limit }) });
+});
+const dunningRetry = asyncHandler(async (req, res) => {
+  res.json(await ops.dunningRetry(req.params.businessId, { adminId: req.user?.id }));
+});
+
+const dunningWaiveBody = Joi.object({
+  reason: Joi.string().trim().min(3).max(500).required(),
+});
+const dunningWaive = [
+  validate({ body: dunningWaiveBody }),
+  asyncHandler(async (req, res) => {
+    res.json({ subscription: await ops.dunningWaive(req.params.businessId, {
+      reason: req.body.reason, adminId: req.user?.id,
+    })});
+  }),
+];
+
+const dunningMarkPaidBody = Joi.object({
+  // Omit to bill the plan price; pass paise for a partial settlement.
+  amountPaise: Joi.number().integer().min(1).max(100_000_000),
+  reference: Joi.string().trim().max(120).allow('', null),
+});
+const dunningMarkPaid = [
+  validate({ body: dunningMarkPaidBody }),
+  asyncHandler(async (req, res) => {
+    res.status(201).json(await ops.dunningMarkPaid(req.params.businessId, {
+      amountPaise: req.body.amountPaise,
+      reference: req.body.reference,
+      adminId: req.user?.id,
+    }));
+  }),
+];
+
+// ── Notification (email) log ────────────────────────────────────────────
+const customerNotifications = asyncHandler(async (req, res) => {
+  res.json(await ops.notificationLog(req.params.businessId, {
+    limit: req.query.limit, offset: req.query.offset, status: req.query.status,
+  }));
+});
+
+// ── Customer lifecycle actions ──────────────────────────────────────────
+const cancelSubscriptionBody = Joi.object({
+  // Default false: never cut service the customer already paid for.
+  immediate: Joi.boolean().default(false),
+  reason: Joi.string().trim().max(500).allow('', null),
+});
+const cancelSubscription = [
+  validate({ body: cancelSubscriptionBody }),
+  asyncHandler(async (req, res) => {
+    res.json({ subscription: await adminCust.cancelSubscription(req.params.businessId, {
+      immediate: req.body.immediate, reason: req.body.reason,
+    })});
+  }),
+];
+
+const changeOwnerEmailBody = Joi.object({
+  email: Joi.string().email().required(),
+});
+const changeOwnerEmail = [
+  validate({ body: changeOwnerEmailBody }),
+  asyncHandler(async (req, res) => {
+    res.json({ business: await adminCust.changeOwnerEmail(req.params.businessId, req.body.email) });
+  }),
+];
+
+const resetOwnerCredentials = asyncHandler(async (req, res) => {
+  res.json(await adminCust.resetOwnerCredentials(req.params.businessId));
+});
+
+const resendWelcome = asyncHandler(async (req, res) => {
+  res.json(await adminCust.resendWelcomeEmail(req.params.businessId));
+});
+
+const accountFieldsBody = Joi.object({
+  accountOwnerEmail: Joi.string().email().allow('', null),
+  tags: Joi.array().items(Joi.string().trim().max(40)).max(20),
+  lifecycleStage: Joi.string().valid('trial', 'active', 'at_risk', 'churned').allow(null),
+  // Partial patch: a field left out must NOT be blanked (Joi-fork lesson).
+}).min(1).prefs({ noDefaults: true });
+const setAccountFields = [
+  validate({ body: accountFieldsBody }),
+  asyncHandler(async (req, res) => {
+    res.json({ business: await adminCust.setAccountFields(req.params.businessId, req.body) });
+  }),
+];
+
+const anonymiseBody = Joi.object({
+  confirm: Joi.string().valid('ANONYMISE').required(),
+  reason: Joi.string().trim().min(3).max(500).required(),
+});
+const anonymiseCustomer = [
+  validate({ body: anonymiseBody }),
+  asyncHandler(async (req, res) => {
+    res.json(await adminCust.anonymiseCustomer(req.params.businessId, {
+      confirm: req.body.confirm, reason: req.body.reason, adminId: req.user?.id,
+    }));
+  }),
+];
 
 module.exports = {
   login, logout, me,
@@ -812,4 +968,12 @@ module.exports = {
   // 2026-09-03 — feature overrides + custom plans
   listFeatureOverrides, setFeatureOverrides, deleteFeatureOverride,
   getCustomPlan, putCustomPlan, deleteCustomPlan,
+  // 2026-09-03 — SaaS control plane: overview, usage, dunning ops,
+  // notification log, health panel, customer lifecycle actions
+  overview, platformHealth,
+  customerUsage, platformUsage,
+  dunningQueue, dunningTimeline, dunningRetry, dunningWaive, dunningMarkPaid,
+  customerNotifications,
+  cancelSubscription, changeOwnerEmail, resetOwnerCredentials,
+  resendWelcome, setAccountFields, anonymiseCustomer,
 };

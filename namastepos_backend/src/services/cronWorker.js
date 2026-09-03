@@ -46,6 +46,46 @@ let _refundTicksSinceLast = 0;    // 5 min (Day-1 reconciler)
 let timer = null;
 let isRunning = false;
 
+// ── Ops visibility (2026-09-03) ─────────────────────────────────────────
+// The admin health panel needs "when did each job last run, and did it
+// work". There is no cron-run table (and inventing one for a 60s tick would
+// be a write amplification we don't want), so we keep the last outcome per
+// job in process memory. It resets on deploy — which is exactly the window
+// an operator cares about ("is the worker alive on THIS instance?").
+const _lastRun = Object.create(null);   // job name → { at, ms, ok, error }
+let _lastTickAt = null;
+let _lastTickMs = null;
+let _startedAt = null;
+let _ticks = 0;
+let _skippedTicks = 0;
+
+async function _track(name, fn) {
+  const t0 = Date.now();
+  try {
+    const out = await fn();
+    _lastRun[name] = { at: new Date().toISOString(), ms: Date.now() - t0, ok: true, error: null };
+    return out;
+  } catch (e) {
+    _lastRun[name] = {
+      at: new Date().toISOString(), ms: Date.now() - t0, ok: false, error: e.message,
+    };
+    throw e;   // preserve the existing per-job .catch() logging
+  }
+}
+
+/** Read-only snapshot for the admin health panel. */
+function stats() {
+  return {
+    running: !!timer,
+    startedAt: _startedAt,
+    lastTickAt: _lastTickAt,
+    lastTickMs: _lastTickMs,
+    ticks: _ticks,
+    skippedTicks: _skippedTicks,
+    jobs: { ..._lastRun },
+  };
+}
+
 async function _runOnce() {
   if (isRunning) return;               // in-process guard (same instance)
   isRunning = true;
@@ -59,7 +99,16 @@ async function _runOnce() {
     const r = await lockClient.query('SELECT pg_try_advisory_lock($1) AS ok', [CRON_LOCK_KEY]);
     haveLock = r.rows[0] && r.rows[0].ok === true;
     if (!haveLock) {
+      // Bug fix (2026-09-03): this branch used to `return` straight out of
+      // _runOnce, leaving `isRunning = true` and the pooled client checked
+      // out FOREVER — so a follower instance that lost the advisory lock
+      // once never ran another tick (and leaked one pool connection). Only
+      // reachable on multi-instance deploys, which is exactly where the
+      // advisory lock matters. Release + clear the guard before bailing.
+      _skippedTicks += 1;
       logger.info('Cron tick skipped — another instance holds the scheduler lock');
+      try { lockClient.release(); } catch (_) {}
+      isRunning = false;
       return;
     }
   } catch (e) {
@@ -71,53 +120,55 @@ async function _runOnce() {
     return;
   }
 
+  const tickStartedAt = Date.now();
   try {
     // P2 fix (2026-08-22): each job catches its own errors so one
     // failure can't starve the later jobs (or the tick counters below).
-    await drainScheduledMessages().catch((e) =>
+    await _track('scheduled-messages', () => drainScheduledMessages()).catch((e) =>
       logger.warn(`[scheduled-messages] tick error: ${e.message}`));
-    await drainOutboundWaMessages().catch((e) =>
+    await _track('wa-outbound', () => drainOutboundWaMessages()).catch((e) =>
       logger.warn(`[wa-outbound] tick error: ${e.message}`));
-    await dueRecurringInvoices().catch((e) =>
+    await _track('recurring-invoices', () => dueRecurringInvoices()).catch((e) =>
       logger.warn(`[recurring-invoices] tick error: ${e.message}`));
-    await autoRestock86().catch((e) =>
+    await _track('auto-restock', () => autoRestock86()).catch((e) =>
       logger.warn(`[auto-restock] tick error: ${e.message}`));
     // FF-248 anomaly scan every 15 ticks (~15 min at 60s cadence).
     if (++_anomalyTicksSinceLast >= 15) {
       _anomalyTicksSinceLast = 0;
-      await anomaly.tick();
+      await _track('anomaly-scan', () => anomaly.tick()).catch((e) =>
+        logger.warn(`[anomaly] tick error: ${e.message}`));
     }
     // FF-1002 NPS post-meal ping — every 15 ticks (~15 min).
     if (++_npsTicksSinceLast >= 15) {
       _npsTicksSinceLast = 0;
-      await nps.scheduleTick().catch((e) =>
+      await _track('nps', () => nps.scheduleTick()).catch((e) =>
         logger.warn(`[nps] tick error: ${e.message}`));
     }
     // FF-334 late aggregator delivery — every 5 ticks (~5 min).
     if (++_lateTicksSinceLast >= 5) {
       _lateTicksSinceLast = 0;
-      await lateDelivery.scan().catch((e) =>
+      await _track('late-delivery', () => lateDelivery.scan()).catch((e) =>
         logger.warn(`[late-delivery] tick error: ${e.message}`));
     }
     // FF-326 / FF-336 owner digests — every 60 ticks (~1 h) so both
     // the "am I at 9am now?" checks in ownerDigestService fire hourly.
     if (++_digestTicksSinceLast >= 60) {
       _digestTicksSinceLast = 0;
-      await ownerDigest.dailyTick().catch((e) =>
+      await _track('digest-daily', () => ownerDigest.dailyTick()).catch((e) =>
         logger.warn(`[digest daily] ${e.message}`));
-      await ownerDigest.weeklyTick().catch((e) =>
+      await _track('digest-weekly', () => ownerDigest.weeklyTick()).catch((e) =>
         logger.warn(`[digest weekly] ${e.message}`));
     }
     // FF-333 referral awarding — every 360 ticks (~6 h).
     if (++_referralTicksSinceLast >= 360) {
       _referralTicksSinceLast = 0;
-      await referral.awardEligible().catch((e) =>
+      await _track('referral-award', () => referral.awardEligible()).catch((e) =>
         logger.warn(`[referral] ${e.message}`));
     }
     // Day-1 CTO ask — drain pending gateway refunds every 5 ticks (~5 min).
     if (++_refundTicksSinceLast >= 5) {
       _refundTicksSinceLast = 0;
-      await refundReconcile.tick().catch((e) =>
+      await _track('refund-reconciler', () => refundReconcile.tick()).catch((e) =>
         logger.warn(`[refund-reconciler] tick error: ${e.message}`));
     }
     // Heavy jobs fire in the 02:00 IST slot (quietest hour for Indian
@@ -132,7 +183,7 @@ async function _runOnce() {
     // the heavy block 5×/night (02:00–02:04), duplicating CRM activity rows.
     // Pin to a single minute so it runs exactly once.
     if (istHour === 2 && istMin === 2) {
-      await refreshAllBusinessAnalytics();
+      await _track('analytics-refresh', () => refreshAllBusinessAnalytics());
       // FF-402f — self-heal stale billing periods. If an active sub's
       // `current_period_end` is in the past (Razorpay webhook dropped,
       // support toggled a plan without rolling forward, etc.) we push
@@ -196,7 +247,7 @@ async function _runOnce() {
       // default to disabled, so this is a no-op until a super-admin configures
       // retention.* in the admin Compliance → Retention tab.
       try {
-        await require('./retentionService').sweep();
+        await _track('retention-sweep', () => require('./retentionService').sweep());
       } catch (e) {
         logger.warn(`[retention] nightly sweep failed: ${e.message}`);
       }
@@ -207,7 +258,7 @@ async function _runOnce() {
       // missing recipient while enabled is a loud error (service throws).
       if (env.REVENUE_INTEGRITY_CRON) {
         try {
-          await require('./revenueIntegrityService').runDaily();
+          await _track('revenue-integrity', () => require('./revenueIntegrityService').runDaily());
         } catch (e) {
           logger.error(`[revenue-integrity] nightly sweep failed: ${e.message}`);
         }
@@ -216,6 +267,9 @@ async function _runOnce() {
   } catch (err) {
     logger.error(`Cron worker run failed: ${err.message}`);
   } finally {
+    _ticks += 1;
+    _lastTickAt = new Date().toISOString();
+    _lastTickMs = Date.now() - tickStartedAt;
     // Release the advisory lock + its connection before clearing the guard.
     if (lockClient) {
       try { await lockClient.query('SELECT pg_advisory_unlock($1)', [CRON_LOCK_KEY]); } catch (_) {}
@@ -382,6 +436,7 @@ async function refreshAllBusinessAnalytics() {
 function start({ intervalMs = 60 * 1000 } = {}) {
   if (timer) return;
   timer = setInterval(_runOnce, intervalMs);
+  _startedAt = new Date().toISOString();
   logger.info(`Cron worker started — interval ${intervalMs}ms`);
 }
 
@@ -389,4 +444,4 @@ function stop() {
   if (timer) { clearInterval(timer); timer = null; }
 }
 
-module.exports = { start, stop, _runOnce };
+module.exports = { start, stop, stats, _runOnce };
