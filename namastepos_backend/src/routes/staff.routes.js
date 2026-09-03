@@ -8,8 +8,12 @@ const sub = require('../services/subscriptionService');
 const router = express.Router({ mergeParams: true });
 router.use(requireAuth, requireBusinessOwnership);
 
-// Anyone in the business can list members; only owners/managers mutate.
-router.get('/',             c.list);
+// NP-201: staff management is an owner/manager surface. The list exposes the
+// whole team's names, roles and per-member permission sets — a `staff_kitchen`
+// cook has no business enumerating it, and the mobile drawer already hides the
+// Staff screen from everyone but the owner. Mutations were gated; the list was
+// not, so it answered any authenticated member.
+router.get('/',             requireRole(['business_owner', 'staff_manager']), c.list);
 router.get('/invites',      requireRole(['business_owner','staff_manager']), c.invites);
 router.post('/invites',     requireRole(['business_owner','staff_manager']),
                             sub.enforceLimit('staff'), ...c.invite);

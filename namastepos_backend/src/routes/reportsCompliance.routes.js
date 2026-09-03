@@ -11,7 +11,7 @@ const express = require('express');
 const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, requireStaffPerm } = require('../middleware/auth');
 
 const actionCenter = require('../services/actionCenterService');
 const leakage = require('../services/revenueLeakageService');
@@ -23,25 +23,38 @@ const accountingExport = require('../services/accountingExportService');
 
 const router = express.Router({ mergeParams: true });
 
+// NP-201: every GET in this file was authenticated-only. GSTR-1/3B filings,
+// menu-engineering margins, the action centre, e-way bills and the Tally/Zoho
+// ledger exports are all owner/accountant material, but any active member —
+// a `staff_kitchen` cook included — could fetch them straight from the API.
+// Reports gate on `reports`, statutory/accounting output on `tax_invoices`
+// (the key the owner already grants to whoever handles GST).
+const canReports = requireStaffPerm('reports');
+const canTax = requireStaffPerm('tax_invoices');
+
 // ── Action Center (FF-244) ─────────────────────────────────────────────
 router.get('/action-center',
+  canReports,
   asyncHandler(async (req, res) =>
     res.json(await actionCenter.fetch(req.params.businessId))));
 
 // ── FF-1002 NPS ─────────────────────────────────────────────────────────
 router.get('/reports/nps',
+  canReports,
   asyncHandler(async (req, res) =>
     res.json(await nps.summary(req.params.businessId,
       parseInt(req.query.days, 10) || 30))));
 
 // ── FF-1106 Menu engineering ────────────────────────────────────────────
 router.get('/reports/menu-engineering',
+  canReports,
   asyncHandler(async (req, res) =>
     res.json(await menuEng.classify(req.params.businessId,
       req.query.from, req.query.to))));
 
 // ── FF-1103 E-way bill ──────────────────────────────────────────────────
 router.get('/eway-bills',
+  canTax,
   asyncHandler(async (req, res) =>
     res.json({ bills: await eway.list(req.params.businessId) })));
 router.post('/eway-bills',
@@ -65,11 +78,13 @@ router.post('/eway-bills/:id/cancel',
 
 // ── FF-314 GSTR-1 / GSTR-3B CSV ─────────────────────────────────────────
 router.get('/reports/gstr1.csv',
+  canTax,
   asyncHandler(async (req, res) => {
     const csv = await gstr.gstr1(req.params.businessId, req.query.from, req.query.to);
     res.type('text/csv').attachment(`gstr1-${req.query.from}-to-${req.query.to}.csv`).send(csv);
   }));
 router.get('/reports/gstr3b.csv',
+  canTax,
   asyncHandler(async (req, res) => {
     const csv = await gstr.gstr3b(req.params.businessId, req.query.from, req.query.to);
     res.type('text/csv').attachment(`gstr3b-${req.query.from}-to-${req.query.to}.csv`).send(csv);
@@ -85,7 +100,9 @@ router.get('/reports/leakage',
     ))));
 
 // ── Accounting export + e-invoice ────────────────────────────────────────
+// Ledger exports dump every voucher in the window — owner/manager only.
 router.post('/exports/tally',
+  requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({ startDate: Joi.date().iso().required(), endDate: Joi.date().iso().required() })}),
   asyncHandler(async (req, res) => {
     const r = await accountingExport.tallyExport(req.params.businessId, req.body);
@@ -93,20 +110,26 @@ router.post('/exports/tally',
   })
 );
 router.post('/exports/zoho',
+  requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({ startDate: Joi.date().iso().required(), endDate: Joi.date().iso().required() })}),
   asyncHandler(async (req, res) => {
     const csv = await accountingExport.zohoCsv(req.params.businessId, req.body);
     res.set('Content-Type', 'text/csv').send(csv);
   })
 );
-router.get ('/exports', asyncHandler(async (req, res) =>
+router.get ('/exports', canTax, asyncHandler(async (req, res) =>
   res.json({ exports: await accountingExport.listExports(req.params.businessId) })));
 // WHY (2026-08-25): the POST below stores the IRN in einvoice_irns but
 // nothing ever read it back — the founder saw "IRN generated · 580ce2…"
 // and the IRN then vanished. Read-only list (same ungated GET shape as
 // /exports above) so Orders + Tax Invoices pages can badge e-invoiced rows.
-router.get ('/einvoice', asyncHandler(async (req, res) =>
-  res.json({ irns: await accountingExport.listIrns(req.params.businessId) })));
+// NP-201: any-of `tax_invoices` OR `orders` — this only badges rows that are
+// already visible on the Orders / Tax Invoices pages, so gating it on
+// tax_invoices alone would blank the badges for a captain who can legitimately
+// see the orders. Kitchen (neither permission) is now refused.
+router.get ('/einvoice', requireStaffPerm(['tax_invoices', 'orders']),
+  asyncHandler(async (req, res) =>
+    res.json({ irns: await accountingExport.listIrns(req.params.businessId) })));
 router.post('/einvoice/:orderId',
   requireRole(['business_owner','staff_manager']),
   asyncHandler(async (req, res) =>
@@ -118,6 +141,7 @@ router.post('/einvoice/:orderId',
 // `eway` service with a different validator). This variant is the
 // accounting-export flavour used by the Tally / GSTR pipeline.
 router.post('/accounting/eway-bills',
+  requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({
     invoiceId: Joi.string().uuid().required(),
     vehicleNo: Joi.string().required(),

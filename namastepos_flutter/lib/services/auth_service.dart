@@ -149,24 +149,12 @@ class AuthService {
 
     try {
       final data = await _api.signInWithGoogle(idToken);
-      final jwt = data['token'] as String?;
-      final refresh = data['refreshToken'] as String?;
-      if (jwt != null && refresh != null) {
-        await _api.setTokens(jwt: jwt, refresh: refresh);
-      }
-      final business = Business.fromMap(data['business'] as Map<String, dynamic>);
-      await _persistBusiness(business);
-      // Persist plan + role + perms same as email/PIN paths so bootstrap
-      // sees them on next cold start.
-      final p = data['plan'];
-      if (p != null) await _secure.write(key: _kPlan, value: jsonEncode(p));
-      final role = data['role'] as String?;
-      if (role != null) await _secure.write(key: _kRole, value: role);
-      final perms = data['permissions'];
-      if (perms is List) {
-        await _secure.write(key: _kPerms, value: jsonEncode(perms));
-      }
-      return business;
+      // NP-201: route through the SHARED persistence helper instead of an
+      // inline copy. The inline version only ever WROTE role/perms (never
+      // deleted them), so a Google login whose response omitted `role` left
+      // the previous session's cached role in the keychain. One code path =
+      // one fail-closed policy for every login.
+      return _persistSessionPayload(data);
     } on ApiException {
       // Bug fix (2026-08-20): the earlier "fall back to Demo Stall on
       // ANY ApiException" hid real errors — a 401 / audience-mismatch /
@@ -187,19 +175,9 @@ class AuthService {
   /// (which itself is gated by FF_DEV_LOGIN=1 in env). No Google involvement.
   Future<Business> signInWithEmail(String email, {String? name}) async {
     final data = await _api.devLogin(email, name: name);
-    final jwt = data['token'] as String?;
-    final refresh = data['refreshToken'] as String?;
-    if (jwt != null && refresh != null) {
-      await _api.setTokens(jwt: jwt, refresh: refresh);
-    }
-    final business = Business.fromMap(data['business'] as Map<String, dynamic>);
-    await _persistBusiness(business);
-    // Stash plan separately so AuthProvider can pull it on next read.
-    final p = data['plan'];
-    if (p != null) {
-      await _secure.write(key: _kPlan, value: jsonEncode(p));
-    }
-    return business;
+    // NP-201: was persisting ONLY the plan — role/perms from a previous
+    // session survived a dev login untouched. Shared helper now clears them.
+    return _persistSessionPayload(data);
   }
 
   /// Hits /auth/me to refresh user/business/plan from the backend. Also
@@ -214,13 +192,25 @@ class AuthService {
     if (p != null) {
       await _secure.write(key: _kPlan, value: jsonEncode(p));
     }
+    // NP-201: delete-when-absent, same policy as _persistSessionPayload.
+    // /auth/me always carries `role`; an absent one means we cannot vouch
+    // for this session's privileges, so we must not keep the old value.
     final role = data['role'] as String?;
-    if (role != null) {
+    if (role != null && role.isNotEmpty) {
       await _secure.write(key: _kRole, value: role);
+    } else {
+      await _secure.delete(key: _kRole);
     }
+    // `permissions: null` from /auth/me means "owner — all permissions", and
+    // for a staff row it means the server could not resolve an explicit list.
+    // Either way the cached staff list is no longer valid: drop it. Owners
+    // short-circuit on role, and staff degrade to DEFAULT_PERMS_BY_ROLE via
+    // RolePerms.can() — never to "everything".
     final perms = data['permissions'];
     if (perms is List) {
       await _secure.write(key: _kPerms, value: jsonEncode(perms));
+    } else {
+      await _secure.delete(key: _kPerms);
     }
     return data;
   }
@@ -265,7 +255,15 @@ class AuthService {
     return _persistSessionPayload(data);
   }
 
-  /// Shared post-login persistence (token + biz + plan).
+  /// Shared post-login persistence (token + biz + plan + role + perms).
+  ///
+  /// NP-201 (staff privilege leak): this helper is now the ONLY place any
+  /// login path caches role/permissions, and it treats an absent field as
+  /// "this session has no role/permissions" — i.e. it DELETES the key
+  /// rather than leaving the previous session's value behind. Combined with
+  /// the fail-closed `AuthProvider.role` getter, a stale `business_owner`
+  /// role can no longer leak into a later staff PIN session on the same
+  /// device.
   Future<Business> _persistSessionPayload(Map<String, dynamic> data) async {
     final jwt = data['token'] as String?;
     final refresh = data['refreshToken'] as String?;
@@ -286,13 +284,24 @@ class AuthService {
     // Push 14b: cache role for the drawer/nav role-gating to consume on
     // cold start. The role field is the authoritative source of what
     // screens this user can see.
+    // NP-201: DELETE when absent. Previously `if (role != null) write` meant
+    // a login response without `role` silently inherited the last session's
+    // role — an owner's `business_owner` survived into a staff PIN login and
+    // (with the old fail-open getter) unlocked the entire owner UI.
     final role = data['role'] as String?;
-    if (role != null) await _secure.write(key: _kRole, value: role);
+    if (role != null && role.isNotEmpty) {
+      await _secure.write(key: _kRole, value: role);
+    } else {
+      await _secure.delete(key: _kRole);
+    }
     // Push 14c: cache the permission list. Mobile drawer + bottom nav
     // gate on this when present (falls back to role defaults otherwise).
+    // NP-201: same delete-when-absent rule, for the same reason.
     final perms = data['permissions'];
     if (perms is List) {
       await _secure.write(key: _kPerms, value: jsonEncode(perms));
+    } else {
+      await _secure.delete(key: _kPerms);
     }
     return business;
   }

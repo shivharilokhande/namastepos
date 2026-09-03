@@ -9,6 +9,24 @@ export interface Admin {
   isActive: boolean; lastLoginAt?: string; createdAt: string;
 }
 
+// 2026-09-03 — multi-outlet visibility. An outlet is its own `businesses` row
+// linked by outlet_group_id; the group's HQ is outlet_groups.parent_business_id.
+// null on the Customer means "standalone single-outlet business".
+export interface OutletInfo {
+  groupId: string;
+  groupName: string | null;
+  isParent: boolean;        // this business IS the group's HQ
+  siblingCount: number;     // other businesses in the group
+  parentBusinessId: string | null;
+  parentName: string | null;
+  label: string | null;     // short branch name, e.g. "Andheri West"
+}
+
+export interface OutletSibling {
+  id: string; name: string; label: string | null;
+  city: string | null; isParent: boolean;
+}
+
 export interface Customer {
   id: string; name: string; email: string; phone?: string;
   city?: string; category?: string; createdAt: string;
@@ -22,6 +40,33 @@ export interface Customer {
   // FF-402 — CRM primitives cached on businesses.
   lifecycleStage?: 'trial' | 'active' | 'at_risk' | 'churned' | null;
   healthScore?: number | null;
+  outlet?: OutletInfo | null;
+}
+
+// ── Tenant-privacy shapes (2026-09-03) ──────────────────────────────────
+// The customer drilldown no longer returns the tenant's order ledger. Support
+// gets AGGREGATES only. Do not add per-order fields here — the server does not
+// send them and re-adding the UI would just invite someone to re-add the query.
+export interface OrderStats {
+  orderCount: number;
+  cancelledCount: number;
+  grossVolumeInr: number;
+  avgTicketInr: number;
+  firstOrderAt: string | null;
+  lastOrderAt: string | null;
+  revenueByMonth: { month: string; orders: number; revenueInr: number }[];
+}
+
+// One tenant order, super-admin only, audit-logged, diner PII masked.
+export interface SupportOrder {
+  id: string; orderNo: number; status: string; source: string;
+  subtotal: number | null; tax: number | null; discount: number | null;
+  total: number | null;
+  paymentMethod: string | null; cancelReason: string | null;
+  createdAt: string; updatedAt: string;
+  diner: { initials: string | null; phoneLast4: string | null };
+  items: { name: string; qty: number; price: number | null; note: string | null }[];
+  privacyNotice: string;
 }
 
 export interface Plan {
@@ -247,6 +292,16 @@ export const adminApi = {
     api.get<{ customer: any }>(`/admin/customers/${id}`).then((r) => r.data.customer),
   drilldown: (id: string) =>
     api.get<any>(`/admin/customers/${id}/drilldown`).then((r) => r.data),
+
+  // TENANT PRIVACY (2026-09-03): the one admin path to a single tenant order.
+  // 403 for anyone who is not super_admin, diner PII masked server-side, and
+  // every call lands in the audit log. There is deliberately NO list/search
+  // counterpart — the order id has to come from the ticket.
+  customerOrder: (businessId: string, orderId: string, reason?: string) =>
+    api.get<{ order: SupportOrder }>(
+      `/admin/customers/${businessId}/order/${orderId}`,
+      { params: reason ? { reason } : undefined },
+    ).then((r) => r.data.order),
 
   // GST-compliant subscription invoice PDF — generated on demand by the
   // backend and returned as a blob so we can open it with the admin's auth.

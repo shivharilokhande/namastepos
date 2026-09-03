@@ -329,6 +329,14 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
       });
     } catch (_) { /* non-fatal */ }
   }
+  // 2026-09-03 — if this business is a group HQ, push the same entitlement to
+  // every outlet so branches never lag behind the plan the owner paid for.
+  try {
+    await require('./multiOutletService').syncPlanToOutlets(businessId);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[changePlan] syncPlanToOutlets failed:', e?.message);
+  }
   // 2026-09-03 — a downgrade must also drop addons the new plan can't hold
   // (e.g. multi-outlet is Pro+; dropping to a starter plan revokes it).
   try {

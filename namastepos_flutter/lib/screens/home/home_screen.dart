@@ -192,7 +192,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         context.read<MenuProvider>().load(biz.id);
         context.read<OrdersProvider>().load(biz.id);
         context.read<TablesProvider>().load(biz.id);
-        context.read<ExpensesProvider>().load(biz.id);
+        // NP-201: /expenses is now permission-gated server-side, so firing
+        // this fan-out for a cook or a waiter just buys a guaranteed 403 and
+        // an error state in a provider nothing on their screen reads. Only
+        // load it for someone who can actually see expenses.
+        if (auth.canDo('expenses') || auth.canDo('expense_register')) {
+          context.read<ExpensesProvider>().load(biz.id);
+        }
         context.read<SubscriptionProvider>().load(biz.id);
       });
     }
@@ -222,11 +228,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (role == 'business_owner') return _defaultScreens;
     final hasHome = perms.contains('home');
     final hasKds = perms.contains('kds');
-    final Widget homeTab = hasHome
-        ? const DashboardScreen()
-        : hasKds
-            ? const _KitchenTab()
-            : const _WelcomeFallback();
+    // NP-201: DashboardScreen is a MONEY screen — today's revenue, COGS,
+    // profit, margin %, expenses and cash-in-drawer, plus an Add-expense
+    // action. A `staff_kitchen` cook's default grants are ['home','kds'], so
+    // the old `hasHome ? Dashboard : hasKds ? Kitchen` order sent every
+    // kitchen user to the P&L dashboard and left the KDS board reachable
+    // only through the drawer — the opposite of this method's own stated
+    // intent. Kitchen-shaped access (kds, and no reports permission) now
+    // lands on the KDS board. Manager/cashier keep the dashboard via
+    // `reports`; captain/waiter (no kds) are unaffected.
+    final canSeeMoney = perms.contains('reports') ||
+        perms.contains('pnl_statement') ||
+        perms.contains('income_register') ||
+        perms.contains('expense_register');
+    final Widget homeTab = (hasKds && !canSeeMoney)
+        ? const _KitchenTab()
+        : hasHome
+            ? const DashboardScreen()
+            : hasKds
+                ? const _KitchenTab()
+                : const _WelcomeFallback();
     return [
       homeTab,
       const PosScreen(),

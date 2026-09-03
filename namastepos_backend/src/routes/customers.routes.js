@@ -5,11 +5,20 @@ const express = require('express');
 const c = require('../controllers/customerController');
 const { requireAuth, requireBusinessOwnership, requireRole } = require('../middleware/auth');
 const requireAddon = require('../middleware/requireAddon');
+const noPlatformStaff = require('../middleware/noPlatformStaff');
 
 const router = express.Router({ mergeParams: true });
 // 2026-09-03: plan-granted 'loyalty' (or an admin override) opens the CRM
 // too — the addon is one way to get the feature, not the only way.
-router.use(requireAuth, requireBusinessOwnership,
+//
+// TENANT PRIVACY (2026-09-03, founder-driven): this router returns the
+// restaurant's END-CUSTOMERS — diner names, phones, loyalty points, wallet
+// balances. requireBusinessOwnership lets a plain super-admin token read any
+// tenant route, so without noPlatformStaff every NamastePOS staff member could
+// list any restaurant's diners with no ticket and no audit trail.
+// noPlatformStaff blocks the plain admin token and still allows an audited
+// impersonation session. See middleware/noPlatformStaff.js.
+router.use(requireAuth, requireBusinessOwnership, noPlatformStaff,
            requireAddon('loyalty', { orFeature: 'loyalty' }));
 
 // Customer CRUD

@@ -8,6 +8,7 @@ import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../services/offline_outbox.dart';
+import '../utils/role_permissions.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated, locked }
 
@@ -49,14 +50,41 @@ class AuthProvider extends ChangeNotifier {
   /// Current user's role in the active business. Used to gate drawer +
   /// bottom-nav items so Captain doesn't see Menu editor, Kitchen doesn't
   /// see Billing, etc. Owner = unrestricted.
-  String get role => _role ?? 'business_owner';
+  ///
+  /// NP-201 — FAIL CLOSED. This used to default to `business_owner`, so any
+  /// session with a missing or not-yet-hydrated role (a staff PIN login whose
+  /// response omitted `role`, a cold start before /auth/me answers, a stale
+  /// keychain read) rendered the FULL owner UI: Reports, Plans & billing,
+  /// Marketplace, Staff management, owner Settings. The founder hit exactly
+  /// this with a `staff_kitchen` member. An unknown role is now the empty
+  /// string, which matches no owner branch and grants no permission — the
+  /// user lands on the least-privilege surface until a real role arrives.
+  ///
+  /// Every gate in the app compares against the literal 'business_owner', so
+  /// '' is inert everywhere by construction. Never reintroduce a default.
+  String get role => _role ?? '';
+
+  /// Whether we actually know who this user is yet. UI that wants to show a
+  /// "loading" state instead of a stripped-down one can check this.
+  bool get roleKnown => (_role ?? '').isNotEmpty;
+
   /// Push 14c — explicit permission list for the current user. Owner gets
   /// an empty list here and code should special-case `role == business_owner`
   /// to mean "all permissions". For staff, this is the authoritative
   /// allowlist (overrides role defaults if non-empty).
   List<String> get permissions => _permissions;
+
+  /// NP-201: single permission oracle, delegating to [RolePerms.can] so the
+  /// drawer, the bottom nav and imperative callers can never disagree.
+  ///
+  ///   owner                       → true
+  ///   explicit permission list    → list membership ONLY
+  ///   staff, empty list           → that role's defaults
+  ///   unknown role, empty list    → DENY
+  ///
+  /// An empty list is "no explicit grants", never "all grants".
   bool canDo(String permission) =>
-      role == 'business_owner' || _permissions.contains(permission);
+      RolePerms.can(role, permission, permissions: _permissions);
   bool get loading => _loading;
   String? get error => _error;
 
@@ -94,6 +122,14 @@ class AuthProvider extends ChangeNotifier {
           _permissions = next;
           changed = true;
         }
+      } else if (me != null && _permissions.isNotEmpty) {
+        // NP-201: `permissions: null` means "owner — all" (role short-circuits
+        // everywhere) or "server could not resolve a list". In neither case is
+        // the previously cached list still authoritative, so drop it rather
+        // than keeping a possibly-wider set. Staff then fall back to their
+        // role's defaults via RolePerms.can(), never to "everything".
+        _permissions = const [];
+        changed = true;
       }
       if (changed) notifyListeners();
     } catch (_) { /* swallow — non-fatal */ }
@@ -145,6 +181,16 @@ class AuthProvider extends ChangeNotifier {
     // the operator on the login screen with no internet; the next real request
     // refreshes the token or fires onAuthExpired if it's genuinely dead.
     final outcome = await AuthService.instance.tryRefreshSession();
+    // NP-201: with the role getter failing closed, a session whose role was
+    // never cached (an install that predates role caching, or a login path
+    // that used to skip it) would flash the least-privilege UI for the frame
+    // or two before HomeScreen's refreshPlan() lands. Hydrate role/permissions
+    // here FIRST when we don't know them, so an owner never sees a stripped
+    // app on launch and a staff member never sees more than they should.
+    // Still fail-closed: if /auth/me can't be reached the role stays unknown.
+    if (outcome != false && _role == null) {
+      await refreshPlan();
+    }
     _status = (outcome == false) ? AuthStatus.unauthenticated : AuthStatus.authenticated;
     if (outcome != false) _postLogin();
     notifyListeners();
@@ -163,6 +209,9 @@ class AuthProvider extends ChangeNotifier {
     if (outcome == false) {
       _status = AuthStatus.unauthenticated;
     } else {
+      // NP-201: same as _bootstrap — hydrate an unknown role before showing
+      // the app so the fail-closed getter never strips a legitimate owner.
+      if (_role == null) await refreshPlan();
       _status = AuthStatus.authenticated;
       _postLogin();
     }
@@ -350,6 +399,13 @@ class AuthProvider extends ChangeNotifier {
       if (p != null) _plan = PlanInfo.fromMap(p);
       _role = await AuthService.instance.cachedRole();
       _permissions = await AuthService.instance.cachedPermissions() ?? const [];
+      // NP-201: staff PIN login is THE path where a wrong role is dangerous
+      // (a cook getting the owner UI). Hydrate role + permissions straight
+      // from /auth/me before we hand control to HomeScreen, so the first
+      // frame is never rendered off a partial login payload. Best-effort:
+      // refreshPlan() swallows network errors, and a failure now leaves the
+      // fail-closed role from the login response (or '' → least privilege).
+      await refreshPlan();
       _loading = false; notifyListeners();
       _postLogin();
       return true;

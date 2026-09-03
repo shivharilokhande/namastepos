@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Pause, Play, UserCheck, Calendar, ArrowUpRight, Pin, Trash2, FileText,
-  Upload, Download,
+  Upload, Download, ShieldAlert,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -15,7 +15,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { adminApi, FeatureKey, FeatureOverride, CustomPlanLimits } from '@/api/admin';
+import {
+  adminApi, FeatureKey, FeatureOverride, CustomPlanLimits,
+  OrderStats, OutletSibling, SupportOrder,
+} from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR, formatDate, formatDateTime } from '@/lib/utils';
 // 2026-09-03 — reuse the usage card and the dunning timeline rather than
@@ -36,7 +39,13 @@ import { HealthPill, LifecycleBadge } from './CrmPage';
 //   'usage'     → consumption vs plan caps.
 //   'messages'  → what the platform has emailed this tenant, and whether it
 //                 actually landed.
-const TABS = ['overview', 'crm', 'lifecycle', 'plan & features', 'addons', 'usage', 'menu', 'orders', 'staff', 'invoices', 'messages', 'notes', 'audit'] as const;
+// TENANT PRIVACY (2026-09-03): the 'orders' tab is gone. It used to list the
+// restaurant's own bills, which NamastePOS staff have no business browsing.
+// It is replaced by 'volume' — aggregates the server now returns as
+// `orderStats`. Do not re-add an order table here; the API no longer sends
+// order rows, and the redaction is enforced server-side either way (see the
+// policy block in customerAdminService.drilldown).
+const TABS = ['overview', 'crm', 'lifecycle', 'plan & features', 'addons', 'usage', 'menu', 'volume', 'staff', 'invoices', 'messages', 'notes', 'audit'] as const;
 type Tab = typeof TABS[number];
 
 // Push 20c — CSV writer shared by orders/invoices/payments export buttons.
@@ -127,7 +136,8 @@ export function CustomerDetailPage() {
     business: b,
     subscription: s,
     menu = [],
-    orders = [],
+    // TENANT PRIVACY: `orderStats` replaced the removed `orders` array.
+    orderStats = null,
     staff = [],
     invoices = [],
     payments = [],
@@ -142,8 +152,16 @@ export function CustomerDetailPage() {
 
       <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">{b.name}</h1>
+          <h1 className="text-2xl font-bold tracking-tight">
+            {b.name}
+            {b.outlet?.label && (
+              <span className="ml-2 text-base font-normal text-muted-foreground">
+                · {b.outlet.label}
+              </span>
+            )}
+          </h1>
           <p className="text-muted-foreground">{b.email} · {b.phone || 'no phone'}</p>
+          <OutletBanner outlet={b.outlet} siblings={b.outletSiblings || []} />
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button variant="outline" onClick={() => setExtending(true)}>
@@ -174,7 +192,6 @@ export function CustomerDetailPage() {
               tab === t ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}>
             {t} {t === 'menu' && `(${menu.length})`}
-            {t === 'orders' && `(${orders.length})`}
             {t === 'staff' && `(${staff.length})`}
             {t === 'invoices' && `(${invoices.length})`}
             {t === 'notes' && `(${notes.length})`}
@@ -189,7 +206,7 @@ export function CustomerDetailPage() {
       {tab === 'addons' && <AddonsTab businessId={id!} />}
       {tab === 'usage' && <CustomerUsageCard businessId={id!} />}
       {tab === 'menu' && <MenuTab menu={menu} businessId={id!} />}
-      {tab === 'orders' && <OrdersTab orders={orders} />}
+      {tab === 'volume' && <VolumeTab stats={orderStats} businessId={id!} />}
       {tab === 'staff' && <StaffTab staff={staff} />}
       {tab === 'invoices' && <InvoicesTab invoices={invoices} businessId={id!} />}
       {tab === 'messages' && <MessagesTab businessId={id!} />}
@@ -1196,40 +1213,261 @@ function parseCsv(text: string): any[] {
     });
 }
 
-function OrdersTab({ orders }: any) {
-  const exportOrders = () =>
-    downloadCsv(
-      `orders-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Order #', 'Date', 'Status', 'Source', 'Total (INR)'],
-      orders.map((o: any) => [o.order_no, o.created_at, o.status, o.source, parseFloat(o.total)])
-    );
+// ── Outlet banner (2026-09-03) ──────────────────────────────────────────
+// Every outlet is its own tenant row, so without this the operator has no way
+// to tell an HQ from one of its branches. HQ → lists its outlets; outlet →
+// links back to the HQ.
+function OutletBanner({ outlet, siblings }: { outlet: any; siblings: OutletSibling[] }) {
+  const navigate = useNavigate();
+  if (!outlet) return null;
+
+  // For an outlet, "siblings" means the other BRANCHES — the HQ is already
+  // named in the sentence above, so listing it again reads as a duplicate.
+  const branches = siblings.filter((sib) => !sib.isParent);
+
+  const linkTo = (bid: string) => (
+    <button type="button" className="underline font-medium hover:opacity-80"
+            onClick={() => navigate(`/customers/${bid}`)}>
+      {outlet.parentName || 'the HQ account'}
+    </button>
+  );
+
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <Button size="sm" variant="outline" disabled={orders.length === 0} onClick={exportOrders}>
-          <Download className="h-4 w-4 mr-2" /> Export CSV
-        </Button>
-      </div>
-      <Card><CardContent className="p-0"><Table>
-        <TableHeader><TableRow>
-          <TableHead>Order #</TableHead><TableHead>Date</TableHead>
-          <TableHead>Status</TableHead><TableHead>Source</TableHead>
-          <TableHead className="text-right">Total</TableHead>
-        </TableRow></TableHeader>
-        <TableBody>
-          {orders.length === 0 && <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">No orders</TableCell></TableRow>}
-          {orders.map((o: any) => (
-            <TableRow key={o.id}>
-              <TableCell className="font-medium">#{o.order_no}</TableCell>
-              <TableCell>{formatDateTime(o.created_at)}</TableCell>
-              <TableCell><Badge variant={o.status === 'collected' ? 'success' : o.status === 'cancelled' ? 'destructive' : 'warning'}>{o.status}</Badge></TableCell>
-              <TableCell className="capitalize">{o.source}</TableCell>
-              <TableCell className="text-right font-medium">{formatINR(parseFloat(o.total))}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table></CardContent></Card>
+    <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+      {outlet.isParent ? (
+        <>
+          <div className="font-medium">
+            HQ of {outlet.siblingCount} outlet{outlet.siblingCount === 1 ? '' : 's'}
+            {outlet.groupName ? ` — ${outlet.groupName} group` : ''}
+          </div>
+          {siblings.length > 0 && (
+            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+              {siblings.map((sib) => (
+                <li key={sib.id}>
+                  <button type="button" className="underline hover:opacity-80"
+                          onClick={() => navigate(`/customers/${sib.id}`)}>
+                    {sib.label || sib.name}
+                  </button>
+                  {sib.city ? <span className="text-muted-foreground"> · {sib.city}</span> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <>
+          <div>
+            Part of{' '}
+            {outlet.parentBusinessId
+              ? linkTo(outlet.parentBusinessId)
+              : <span className="font-medium">{outlet.groupName || 'an outlet group'}</span>}
+            {' '}group — <span className="font-medium">this is an outlet</span>
+            {outlet.label ? ` (${outlet.label})` : ''}.
+          </div>
+          {branches.length > 0 && (
+            <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+              <li className="text-muted-foreground">Sibling outlets:</li>
+              {branches.map((sib) => (
+                <li key={sib.id}>
+                  <button type="button" className="underline hover:opacity-80"
+                          onClick={() => navigate(`/customers/${sib.id}`)}>
+                    {sib.label || sib.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
     </div>
+  );
+}
+
+// ── Volume tab (replaces the removed order ledger) ──────────────────────
+//
+// TENANT PRIVACY (2026-09-03, founder-driven): NamastePOS staff must not be
+// able to browse a restaurant's own sales. The old table of the tenant's last
+// 50 bills is gone — the server no longer returns order rows at all. What
+// remains is what support and billing actually need: is this tenant using the
+// product, how big are they, and when did they last transact.
+//
+// If you are here because a ticket needs ONE specific order, use the
+// super-admin-only lookup below (GET /admin/customers/:id/order/:orderId).
+// It masks the diner's name and phone and writes an audit row. Do not
+// re-introduce a list or an export of tenant orders.
+function VolumeTab({ stats, businessId }: { stats: OrderStats | null; businessId: string }) {
+  if (!stats) {
+    return (
+      <Card><CardContent className="py-10 text-center text-muted-foreground">
+        Order volume is unavailable for this customer.
+      </CardContent></Card>
+    );
+  }
+  const months = stats.revenueByMonth || [];
+  const peak = months.reduce((m, x) => Math.max(m, x.revenueInr || 0), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard label="Orders (lifetime)" value={(stats.orderCount || 0).toLocaleString('en-IN')}
+                  sub={`${(stats.cancelledCount || 0).toLocaleString('en-IN')} cancelled`} />
+        <StatCard label="Gross volume" value={formatINR(stats.grossVolumeInr || 0)}
+                  sub="Tenant's own sales — aggregate only" />
+        <StatCard label="Average ticket" value={formatINR(stats.avgTicketInr || 0)} />
+        <StatCard label="Last order"
+                  value={stats.lastOrderAt ? formatDate(stats.lastOrderAt) : 'never'}
+                  sub={stats.firstOrderAt ? `first ${formatDate(stats.firstOrderAt)}` : undefined} />
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Volume by month</CardTitle>
+          <CardDescription>
+            Last 12 months. Aggregates only — individual bills, line items and
+            diner details are not available to platform staff by policy.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader><TableRow>
+              <TableHead>Month</TableHead>
+              <TableHead className="text-right">Orders</TableHead>
+              <TableHead className="text-right">Revenue</TableHead>
+              <TableHead className="w-1/3"></TableHead>
+            </TableRow></TableHeader>
+            <TableBody>
+              {months.length === 0 && (
+                <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
+                  No orders in the last 12 months
+                </TableCell></TableRow>
+              )}
+              {months.map((m) => (
+                <TableRow key={m.month}>
+                  <TableCell className="font-medium">{m.month}</TableCell>
+                  <TableCell className="text-right">{m.orders.toLocaleString('en-IN')}</TableCell>
+                  <TableCell className="text-right font-medium">{formatINR(m.revenueInr)}</TableCell>
+                  <TableCell>
+                    <div className="h-2 rounded bg-primary/20">
+                      <div className="h-2 rounded bg-primary"
+                           style={{ width: peak > 0 ? `${Math.round((m.revenueInr / peak) * 100)}%` : '0%' }} />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+
+      <SupportOrderLookup businessId={businessId} />
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+        <div className="text-2xl font-bold mt-1">{value}</div>
+        {sub && <div className="text-xs text-muted-foreground mt-1">{sub}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Single-order lookup for "my order vanished" tickets. Super-admin only —
+// anyone else gets a 403 from the server, which we surface as-is rather than
+// hiding the control (hiding it would suggest the data is merely unavailable
+// in the UI, when it is actually forbidden). Diner name/phone arrive already
+// masked; the request is written to the audit log server-side.
+function SupportOrderLookup({ businessId }: { businessId: string }) {
+  const [orderId, setOrderId] = useState('');
+  const [reason, setReason] = useState('');
+  const [order, setOrder] = useState<SupportOrder | null>(null);
+
+  const lookup = useMutation({
+    mutationFn: () => adminApi.customerOrder(businessId, orderId.trim(), reason.trim() || undefined),
+    onSuccess: (o) => setOrder(o),
+    onError: (e) => { setOrder(null); toast.error(apiError(e)); },
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <ShieldAlert className="h-4 w-4 text-amber-600" /> Single-order lookup
+        </CardTitle>
+        <CardDescription>
+          Super-admin only. For a ticket that names one order. Diner name and
+          phone are masked, and every lookup is recorded in the audit log.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="md:col-span-2">
+            <Label className="text-xs">Order ID (UUID, from the ticket)</Label>
+            <Input value={orderId} placeholder="e.g. 5f1c…" onChange={(e) => setOrderId(e.target.value)} />
+          </div>
+          <div>
+            <Label className="text-xs">Reason / ticket ref</Label>
+            <Input value={reason} placeholder="TKT-1234" onChange={(e) => setReason(e.target.value)} />
+          </div>
+        </div>
+        <Button size="sm" disabled={!orderId.trim() || lookup.isPending}
+                onClick={() => lookup.mutate()}>
+          {lookup.isPending ? 'Looking up…' : 'Look up order'}
+        </Button>
+
+        {order && (
+          <div className="rounded-md border p-3 text-sm space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">#{order.orderNo}</span>
+              <Badge variant={order.status === 'cancelled' ? 'destructive' : 'muted'}>
+                {order.status}
+              </Badge>
+              <span className="capitalize text-muted-foreground">{order.source}</span>
+              <span className="text-muted-foreground">{formatDateTime(order.createdAt)}</span>
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Diner: {order.diner?.initials || '—'} · {order.diner?.phoneLast4 || '—'} (masked)
+            </div>
+            <Table>
+              <TableHeader><TableRow>
+                <TableHead>Item</TableHead>
+                <TableHead className="text-right">Qty</TableHead>
+                <TableHead className="text-right">Price</TableHead>
+              </TableRow></TableHeader>
+              <TableBody>
+                {order.items.length === 0 && (
+                  <TableRow><TableCell colSpan={3} className="text-center py-4 text-muted-foreground">
+                    No line items
+                  </TableCell></TableRow>
+                )}
+                {order.items.map((it, i) => (
+                  <TableRow key={`${it.name}-${i}`}>
+                    <TableCell>{it.name}{it.note ? ` (${it.note})` : ''}</TableCell>
+                    <TableCell className="text-right">{it.qty}</TableCell>
+                    <TableCell className="text-right">
+                      {it.price == null ? '—' : formatINR(it.price)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <div className="flex justify-end gap-4 text-sm">
+              <span className="text-muted-foreground">
+                {order.paymentMethod ? `paid by ${order.paymentMethod}` : 'payment mode unknown'}
+              </span>
+              <span className="font-semibold">
+                {order.total == null ? '—' : formatINR(order.total)}
+              </span>
+            </div>
+            <div className="text-[11px] text-muted-foreground">{order.privacyNotice}</div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

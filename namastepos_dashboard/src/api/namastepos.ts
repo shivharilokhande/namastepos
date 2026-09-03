@@ -279,6 +279,16 @@ export const ffApi = {
   // so a cookie session stays a cookie session across the switch.
   switchBusiness: (businessId: string): Promise<SwitchBusinessResult> =>
     api.post('/auth/switch-business', { businessId }).then((r) => r.data),
+  // Deleting an outlet is HQ-owner-only and email-OTP verified (2 steps).
+  requestOutletDeleteOtp: (businessId: string): Promise<{
+    requestId: string; sentTo: string; expiresAt: string;
+  }> =>
+    api.post(`/outlet-groups/outlets/${businessId}/delete/request-otp`).then((r) => r.data),
+  deleteOutlet: (businessId: string, requestId: string, code: string): Promise<{
+    deleted: boolean; businessId: string;
+  }> =>
+    api.post(`/outlet-groups/outlets/${businessId}/delete`, { requestId, code })
+       .then((r) => r.data),
   // Retail
   listRetailItems: (params?: any) => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/retail/items`, { params }).then((r) => r.data.items); },
   createRetailItem: (body: any) => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/retail/items`, body).then((r) => r.data.item); },

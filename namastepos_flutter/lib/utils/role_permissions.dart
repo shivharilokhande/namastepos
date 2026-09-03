@@ -20,8 +20,14 @@ class RolePerms {
   /// from AuthProvider). If non-empty, it's the authoritative allowlist.
   /// If null/empty, fall back to the role's hardcoded defaults below —
   /// keeps legacy logins working before the column is populated.
+  /// NP-201: an UNKNOWN role (empty string — see `AuthProvider.role`, which
+  /// no longer defaults to owner) grants nothing. Only the literal
+  /// 'business_owner' unlocks everything; every other value must earn each
+  /// area from an explicit permission list or from [_MAP]. Do not add a
+  /// permissive default here.
   static bool can(String role, String area, {List<String>? permissions}) {
     if (role == 'business_owner') return true;
+    if (role.isEmpty) return false; // role not yet known → least privilege
     if (permissions != null && permissions.isNotEmpty) {
       return permissions.contains(area);
     }
@@ -37,6 +43,10 @@ class RolePerms {
       'menu_editor', 'modifier_groups', 'customers', 'reservations',
       'reviews', 'wastage', 'daily_closing', 'kds', 'captain', 'driver',
       'memberships', 'surge', 'qr_codes', 'bill_template',
+      // NP-201: mirror staffService.DEFAULT_PERMS_BY_ROLE — a manager books
+      // and reviews expenses. Only used when the server sends no explicit
+      // list, but the two tables must not disagree.
+      'expenses', 'expense_register',
       // Manager CAN'T do plans & billing (money decisions) or staff create.
     },
     'staff_captain': {

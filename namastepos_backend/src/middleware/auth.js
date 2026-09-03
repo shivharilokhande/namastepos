@@ -163,24 +163,38 @@ async function requireBusinessOwnership(req, _res, next) {
  * on every request — short enough that an owner clicking "Remove staff"
  * sees the change within half a minute.
  */
-const _roleCache = new Map(); // key → { role, expiresAt }
+const _roleCache = new Map(); // key → { membership: {role, permissions}|null, expiresAt }
 const ROLE_CACHE_TTL_MS = 30 * 1000;
 
-async function _currentRole(userId, businessId) {
+/**
+ * Live membership lookup (role + explicit permission list), 30s-cached per
+ * (userId, businessId). NP-201: this used to select only `role`; it now also
+ * carries `permissions` so requireStaffPerm can authorise without a second
+ * query — one round-trip serves both the role gate and the permission gate.
+ * Returns null when the user is not an active member.
+ */
+async function _currentMembership(userId, businessId) {
   const key = `${userId}:${businessId}`;
   const cached = _roleCache.get(key);
-  if (cached && cached.expiresAt > Date.now()) return cached.role;
+  if (cached && cached.expiresAt > Date.now()) return cached.membership;
 
   const { query } = require('../config/db');
   const r = await query(
-    `SELECT role FROM business_users
+    `SELECT role, permissions FROM business_users
       WHERE user_id = $1 AND business_id = $2 AND is_active = TRUE
       LIMIT 1`,
     [userId, businessId]
   );
-  const role = r.rowCount > 0 ? r.rows[0].role : null;
-  _roleCache.set(key, { role, expiresAt: Date.now() + ROLE_CACHE_TTL_MS });
-  return role;
+  const membership = r.rowCount > 0
+    ? { role: r.rows[0].role, permissions: r.rows[0].permissions }
+    : null;
+  _roleCache.set(key, { membership, expiresAt: Date.now() + ROLE_CACHE_TTL_MS });
+  return membership;
+}
+
+async function _currentRole(userId, businessId) {
+  const m = await _currentMembership(userId, businessId);
+  return m ? m.role : null;
 }
 
 function requireRole(allowed) {
@@ -223,6 +237,87 @@ function requireRole(allowed) {
 }
 
 /**
+ * NP-201 — tenant permission gate (defence in depth).
+ *
+ * The mobile app hides screens a staff role shouldn't have, but UI hiding is
+ * not security: before this middleware existed, ANY authenticated member of a
+ * business — including a `staff_kitchen` cook — could call the tenant reports,
+ * expenses, billing-invoice and staff-list endpoints directly and get 200s.
+ * `requireRole` only covers routes that named a role list, and the read paths
+ * mostly named none.
+ *
+ * Semantics:
+ *   • `business_owner`               → always allowed
+ *   • super admin                    → allowed (requireBusinessOwnership has
+ *                                      already forced their session read-only)
+ *   • impersonation                  → GET/HEAD only, mirroring requireRole
+ *   • staff with an explicit
+ *     `business_users.permissions`   → that list is authoritative
+ *   • staff with an empty list       → DEFAULT_PERMS_BY_ROLE[role]
+ *   • anything else                  → 403
+ *
+ * Pass one permission or several; several means "any of these" (e.g. the
+ * reports surface accepts `reports` OR the specific register permission).
+ * The membership lookup shares the 30s role cache, so gating a route costs no
+ * extra query on a warm cache and one cheap indexed lookup otherwise.
+ *
+ * Permission keys are the same keyspace the owner toggles per-staff:
+ * see staffService.PERMISSION_KEYS / DEFAULT_PERMS_BY_ROLE.
+ */
+function requireStaffPerm(perm) {
+  const need = Array.isArray(perm) ? perm : [perm];
+  return async (req, _res, next) => {
+    try {
+      if (req.user?.isSuperAdmin) return next();
+      if (!req.user) {
+        return next(new Forbidden(`Requires permission: ${need.join(' or ')}`));
+      }
+      // Impersonation tokens carry a non-UUID uid, so the membership lookup
+      // would blow up (22P02). Reads are already read-only by design.
+      if (req.user.impersonator) {
+        if (req.method === 'GET' || req.method === 'HEAD') return next();
+        return next(new Forbidden('Impersonation is read-only. Exit impersonation to make changes.'));
+      }
+
+      const businessId = req.params.businessId || req.user.businessId;
+      if (!businessId) return next(new Forbidden('Missing businessId'));
+      if (!req.user.id) {
+        return next(new Forbidden(`Requires permission: ${need.join(' or ')}`));
+      }
+
+      const membership = await _currentMembership(req.user.id, businessId);
+      if (!membership) {
+        return next(new Forbidden('You are no longer a member of this business'));
+      }
+      // Downstream handlers see the live role, not the (possibly stale) JWT one.
+      req.user.role = membership.role;
+      if (membership.role === 'business_owner') return next();
+
+      const { DEFAULT_PERMS_BY_ROLE } = require('../services/staffService');
+      const raw = membership.permissions;
+      let explicit = [];
+      if (Array.isArray(raw)) {
+        explicit = raw;
+      } else if (raw) {
+        // jsonb normally arrives parsed; a text column or a legacy row can
+        // still hand us a string. Anything that isn't an array is treated as
+        // "no explicit grants" — never as a pass.
+        try { explicit = JSON.parse(raw); } catch (_) { explicit = []; }
+        if (!Array.isArray(explicit)) explicit = [];
+      }
+      const granted = explicit.length > 0
+        ? explicit
+        : (DEFAULT_PERMS_BY_ROLE[membership.role] || []);
+
+      if (need.some((p) => granted.includes(p))) return next();
+      return next(new Forbidden(`Requires permission: ${need.join(' or ')}`));
+    } catch (err) {
+      return next(err);
+    }
+  };
+}
+
+/**
  * P0-1: Block writes when the request is being made via a super-admin
  * impersonation token. Impersonation is for *viewing* a customer's data
  * (support, debugging) — it must not mutate.
@@ -244,5 +339,6 @@ module.exports = {
   requireSuperAdmin,
   requireBusinessOwnership,
   requireRole,
+  requireStaffPerm,
   requireNotImpersonating,
 };

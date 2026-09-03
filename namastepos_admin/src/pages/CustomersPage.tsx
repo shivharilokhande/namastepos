@@ -12,7 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import { adminApi } from '@/api/admin';
+import { adminApi, Customer } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR, formatDate } from '@/lib/utils';
 import { useDebounce } from '@/hooks/useDebounce';
@@ -58,6 +58,51 @@ export function CustomersPage() {
         <span className={`inline-block w-2 h-2 rounded-full ${c}`} />
         <span className="font-mono">{score}</span>
       </span>
+    );
+  };
+
+  // 2026-09-03 — outlet visibility. Each outlet is its own tenant row, so
+  // without this column an HQ and its five branches look like six unrelated
+  // customers. "Outlet of X" links to the HQ's own detail page; stopPropagation
+  // keeps the row's own navigate() from hijacking the click.
+  const OutletCell = ({ c }: { c: Customer }) => {
+    const o = c.outlet;
+    if (!o) {
+      return <span className="text-xs text-muted-foreground">Single outlet</span>;
+    }
+    if (o.isParent) {
+      return (
+        <div className="flex flex-col gap-0.5">
+          <Badge variant="default" className="w-fit">
+            HQ ({o.siblingCount} outlet{o.siblingCount === 1 ? '' : 's'})
+          </Badge>
+          {o.groupName && (
+            <span className="text-[10px] text-muted-foreground">{o.groupName}</span>
+          )}
+        </div>
+      );
+    }
+    return (
+      <div className="flex flex-col gap-0.5">
+        <Badge variant="secondary" className="w-fit">Outlet</Badge>
+        <span className="text-[10px] text-muted-foreground">
+          {o.parentBusinessId ? (
+            <>
+              of{' '}
+              <button
+                type="button"
+                className="underline hover:text-foreground"
+                onClick={(e) => { e.stopPropagation(); navigate(`/customers/${o.parentBusinessId}`); }}
+              >
+                {o.parentName || 'HQ'}
+              </button>
+            </>
+          ) : (
+            <>in {o.groupName || 'group'}</>
+          )}
+          {o.label ? ` · ${o.label}` : ''}
+        </span>
+      </div>
     );
   };
 
@@ -107,6 +152,8 @@ export function CustomersPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Business</TableHead>
+                {/* 2026-09-03 — HQ / outlet / standalone at a glance */}
+                <TableHead>Outlet</TableHead>
                 <TableHead>Plan</TableHead>
                 <TableHead>Status</TableHead>
                 {/* FF-402 — CRM lifecycle + health chip */}
@@ -119,10 +166,10 @@ export function CustomersPage() {
             </TableHeader>
             <TableBody>
               {isLoading && (
-                <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>
               )}
               {!isLoading && data?.customers.length === 0 && (
-                <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">No customers yet.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">No customers yet.</TableCell></TableRow>
               )}
               {data?.customers.map((c) => (
                 <TableRow key={c.id} className="cursor-pointer"
@@ -131,6 +178,7 @@ export function CustomersPage() {
                     <div className="font-medium">{c.name}</div>
                     <div className="text-xs text-muted-foreground">{c.email}</div>
                   </TableCell>
+                  <TableCell><OutletCell c={c} /></TableCell>
                   <TableCell>
                     {c.plan ? (
                       // Push 18a — `tier` is now free-text; bucket by `tierKind`

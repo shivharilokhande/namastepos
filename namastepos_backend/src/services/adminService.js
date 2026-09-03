@@ -15,7 +15,87 @@ const { query } = require('../config/db');
 const { issueAccessToken } = require('../utils/jwt');
 const { NotFound, Unauthorized } = require('../utils/errors');
 
+// ── TENANT-DATA PRIVACY POLICY (2026-09-03, founder-driven) ─────────────
+//
+// NamastePOS staff must NOT be able to browse a restaurant's own commercial
+// data. As the platform we may see:
+//   • what the tenant owes US — subscription invoices, plan/limits, dunning,
+//     payment status of OUR charges, refunds of OUR charges;
+//   • non-identifying volume / health metrics (order counts, GMV, health
+//     score, usage counters) needed for support + billing decisions.
+// We may NOT see:
+//   • the tenant's own sales ledger (individual orders, line items, bills),
+//   • their end-customers' (diners') names / phones / emails / loyalty or
+//     wallet balances,
+//   • their money detail — bank account, e-invoice portal credentials.
+// Redaction happens on the SERVER. Do not "helpfully" restore these fields
+// because a UI looks empty; the UI is not the control.
+//
+// Columns on `businesses` that must never leave the admin API:
+const TENANT_MONEY_SECRET_COLUMNS = [
+  'bank_account',          // payout account number — full number enables fraud
+  'bank_ifsc',             // only useful together with the account number
+  'einvoice_user_id',      // NIC e-invoice portal login
+  'einvoice_password_enc', // encrypted, but still a credential — never ship it
+];
+
+/**
+ * Strip / mask the tenant's own money detail from a raw `businesses` row.
+ * `bank_account` survives as a last-4 hint (`bankAccountLast4`) so support can
+ * confirm "yes, the account ending 4321 is the one on file" during a payout
+ * ticket without ever seeing the full number.
+ * See TENANT-DATA PRIVACY POLICY above before changing this.
+ */
+function redactBusinessRow(row) {
+  if (!row) return row;
+  const out = { ...row };
+  const acct = row.bank_account ? String(row.bank_account) : '';
+  for (const col of TENANT_MONEY_SECRET_COLUMNS) delete out[col];
+  out.bankAccountLast4 = acct ? acct.slice(-4) : null;
+  out.bankDetailsOnFile = Boolean(acct);
+  return out;
+}
+
 // ── Customers (businesses) ───────────────────────────────────────────────
+
+/**
+ * Shape the outlet-group columns selected by listCustomers / getCustomer into
+ * one nullable block. An outlet is its own `businesses` row linked by
+ * `businesses.outlet_group_id` → `outlet_groups.parent_business_id`, so the
+ * SAME group can contain one HQ and N outlets.
+ *   isParent      → this business IS the group's HQ
+ *   siblingCount  → other businesses in the group (HQ: how many outlets it has)
+ */
+function outletBlock(row, businessId) {
+  if (!row.outlet_group_id) return null;
+  const groupSize = parseInt(row.outlet_group_size, 10) || 1;
+  return {
+    groupId: row.outlet_group_id,
+    groupName: row.outlet_group_name || null,
+    isParent: Boolean(row.outlet_parent_business_id
+      && String(row.outlet_parent_business_id) === String(businessId)),
+    siblingCount: Math.max(0, groupSize - 1),
+    parentBusinessId: row.outlet_parent_business_id || null,
+    parentName: row.outlet_parent_name || null,
+    label: row.outlet_label || null,
+  };
+}
+
+// Shared SELECT list + JOINs so listCustomers, getCustomer and the drilldown
+// all describe an outlet identically. One round trip — the count is a
+// correlated subquery, not a second query, because listCustomers is paginated.
+const OUTLET_SELECT = `
+            b.outlet_group_id,
+            b.outlet_label,
+            og.name              AS outlet_group_name,
+            og.parent_business_id AS outlet_parent_business_id,
+            pb.name              AS outlet_parent_name,
+            (SELECT COUNT(*) FROM businesses ob
+              WHERE ob.outlet_group_id = b.outlet_group_id
+                AND ob.deleted_at IS NULL) AS outlet_group_size`;
+const OUTLET_JOIN = `
+  LEFT JOIN outlet_groups og ON og.id = b.outlet_group_id
+  LEFT JOIN businesses pb ON pb.id = og.parent_business_id`;
 
 async function listCustomers({ search, plan, status, limit = 50, offset = 0 } = {}) {
   const where = ['1=1'];
@@ -44,10 +124,12 @@ async function listCustomers({ search, plan, status, limit = 50, offset = 0 } = 
               WHERE o.business_id = b.id AND o.status <> 'cancelled') AS total_revenue,
             (SELECT COUNT(*) FROM business_users bu
               WHERE bu.business_id = b.id AND bu.is_active) AS staff_count,
+            ${OUTLET_SELECT},
             COUNT(*) OVER ()::int AS _total
        FROM businesses b
   LEFT JOIN subscriptions s ON s.business_id = b.id
   LEFT JOIN plans p ON p.id = s.plan_id
+            ${OUTLET_JOIN}
       WHERE ${where.join(' AND ')} AND b.deleted_at IS NULL
    ORDER BY b.created_at DESC
       LIMIT $${idx++} OFFSET $${idx}`,
@@ -71,6 +153,11 @@ async function listCustomers({ search, plan, status, limit = 50, offset = 0 } = 
       // FF-402 — CRM primitives cached on businesses (nightly + on-demand)
       lifecycleStage: row.lifecycle_stage,
       healthScore: row.health_score,
+      // 2026-09-03 — multi-outlet visibility. null when the tenant is a
+      // standalone single-outlet business. totalOrders/totalRevenue above stay
+      // AGGREGATES only (allowed by the privacy policy at the top of this
+      // file) — never expand this list into per-order rows.
+      outlet: outletBlock(row, row.id),
     })),
     total,
     limit, offset,
@@ -81,15 +168,43 @@ async function getCustomer(businessId) {
   const r = await query(
     `SELECT b.*, p.tier AS plan_tier, p.name AS plan_name,
             s.status AS sub_status, s.trial_ends_at, s.current_period_end,
-            s.cancel_at_period_end, s.cancelled_at
+            s.cancel_at_period_end, s.cancelled_at,
+            ${OUTLET_SELECT}
        FROM businesses b
   LEFT JOIN subscriptions s ON s.business_id = b.id
   LEFT JOIN plans p ON p.id = s.plan_id
+            ${OUTLET_JOIN}
       WHERE b.id = $1 LIMIT 1`,
     [businessId]
   );
   if (r.rowCount === 0) throw new NotFound('Customer not found');
-  return r.rows[0];
+  // PRIVACY (see policy at top of file): `SELECT b.*` used to hand every admin
+  // with customers.read the tenant's payout bank account + IFSC + e-invoice
+  // portal credentials. redactBusinessRow() drops them and leaves a last-4
+  // hint. Response shape is otherwise unchanged (extra keys only).
+  return { ...redactBusinessRow(r.rows[0]), outlet: outletBlock(r.rows[0], businessId) };
+}
+
+/**
+ * Outlet siblings for the customer-detail header: every OTHER business in the
+ * same group. Deliberately identity-only (id / name / label / isParent) — no
+ * revenue, no order counts, nothing commercial.
+ */
+async function outletSiblings(businessId) {
+  const r = await query(
+    `SELECT ob.id, ob.name, ob.outlet_label, ob.city,
+            (og.parent_business_id = ob.id) AS is_parent
+       FROM businesses b
+       JOIN outlet_groups og ON og.id = b.outlet_group_id
+       JOIN businesses ob ON ob.outlet_group_id = og.id
+      WHERE b.id = $1 AND ob.id <> b.id AND ob.deleted_at IS NULL
+      ORDER BY is_parent DESC NULLS LAST, ob.name ASC`,
+    [businessId]
+  );
+  return r.rows.map((x) => ({
+    id: x.id, name: x.name, label: x.outlet_label || null,
+    city: x.city || null, isParent: Boolean(x.is_parent),
+  }));
 }
 
 async function suspend(businessId) {
@@ -169,7 +284,12 @@ async function impersonate(businessId) {
     email: r.rows[0].email,
     imp: true,
   });
-  return { accessToken, business: r.rows[0] };
+  // PRIVACY: this business row is echoed to the ADMIN console (and, via the
+  // one-time-code exchange, to the dashboard's bootstrap). `SELECT *` included
+  // the tenant's payout bank account + e-invoice credentials; neither caller
+  // reads them (the dashboard's Settings page sources bank details from
+  // /auth/me). See the policy at the top of this file.
+  return { accessToken, business: redactBusinessRow(r.rows[0]) };
 }
 
 // ── One-time impersonation handoff codes (NP-126, 2026-09-03) ────────────
@@ -227,4 +347,8 @@ module.exports = {
   listCustomers, getCustomer, suspend, restore,
   metrics, impersonate,
   createImpersonationCode, exchangeImpersonationCode,
+  // Shared by customerAdminService.drilldown so the outlet block and the
+  // money-detail redaction are described in exactly one place.
+  outletBlock, outletSiblings, redactBusinessRow,
+  OUTLET_SELECT, OUTLET_JOIN, TENANT_MONEY_SECRET_COLUMNS,
 };

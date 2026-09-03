@@ -110,6 +110,16 @@ router.get   ('/customers',                     requirePermission('customers.rea
 router.get   ('/customers/:businessId',         requirePermission('customers.read'), c.getCustomer);
 router.get   ('/customers/:businessId/drilldown', requirePermission('customers.read'), c.drilldown);
 router.get   ('/customers/:businessId/audit',     requirePermission('customers.read'), c.tenantAudit);
+// ── Tenant-privacy escape hatch (2026-09-03, founder-driven) ───────────
+// The drilldown above no longer returns the tenant's order ledger — only
+// aggregates (see customerAdminService.drilldown). This single-order lookup
+// is the one exception, for tickets that name a specific order.
+//   • settings.write → super_admin ONLY (support/finance/sales cannot call it)
+//   • diner name/phone masked server-side (initials / last 4)
+//   • the controller awaits an audit_log row before replying
+// Deliberately NOT a list endpoint: you must already know the order id.
+router.get   ('/customers/:businessId/order/:orderId',
+              requirePermission('settings.write'), c.customerOrderForSupport);
 router.get   ('/customers/:businessId/invoices/:invoiceId/pdf', requirePermission('customers.read'), c.invoicePdf);
 router.post  ('/customers',                     requirePermission('customers.write'),
               audit.middlewareLog('customers', 'create', (req, b) => ({ type: 'business', id: b.business?.id })),

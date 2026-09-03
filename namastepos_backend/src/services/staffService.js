@@ -44,6 +44,12 @@ const PERMISSION_KEYS = [
   'surge', 'qr_codes',
   'bill_template', 'thermal_printer', 'aggregators',
   'whatsapp_marketing', 'auto_whatsapp_order',
+  // NP-201: 'expenses' (booking petty cash) was already a key the mobile
+  // drawer gated on (role_permissions.dart granted it to cashiers) but it was
+  // missing from the backend keyspace, so the /expenses endpoints had nothing
+  // to authorise against and ran wide open. Added here so the owner can toggle
+  // it per-staff and requireStaffPerm has a key to check.
+  'expenses',
 ];
 
 const DEFAULT_PERMS_BY_ROLE = {
@@ -58,6 +64,7 @@ const DEFAULT_PERMS_BY_ROLE = {
     'surge', 'qr_codes',
     'bill_template', 'thermal_printer', 'aggregators',
     'whatsapp_marketing', 'auto_whatsapp_order',
+    'expenses',
   ],
   // Captain → just POS + Orders + Tables. NO reports / no invoices /
   // no P&L (was leaking via the loose 'orders OR reports' drawer gate).
@@ -72,6 +79,8 @@ const DEFAULT_PERMS_BY_ROLE = {
     'home', 'pos', 'orders', 'reports',
     'tax_invoices', 'invoice_register',
     'customers', 'bill_template',
+    // FF-332 / NP-201: cashiers book petty cash at the register.
+    'expenses',
   ],
   staff_kitchen: [
     'home', 'kds',

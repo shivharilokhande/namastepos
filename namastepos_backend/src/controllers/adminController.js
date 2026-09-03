@@ -182,6 +182,37 @@ const drilldown = asyncHandler(async (req, res) => {
   res.json(await adminCust.drilldown(req.params.businessId));
 });
 
+// ── Single-order support lookup (tenant-privacy escape hatch) ────────────
+//
+// GET /v1/admin/customers/:businessId/order/:orderId
+//
+// The drilldown no longer returns the tenant's order ledger (see the policy
+// block in customerAdminService.drilldown). This is the deliberately narrow
+// replacement for the one legitimate support scenario: a ticket naming a
+// specific order. It is NOT a list, NOT searchable, and requires the exact
+// order id — the agent must already have it from the tenant.
+//
+// The audit row is written with `await` BEFORE the response, not via
+// audit.middlewareLog (which fires after res.json and is never awaited). For
+// an endpoint whose whole justification is "every look is recorded", the
+// record must not be able to lose a race with the reply.
+const customerOrderForSupport = asyncHandler(async (req, res) => {
+  const { businessId, orderId } = req.params;
+  const order = await adminCust.singleOrderForSupport(businessId, orderId);
+  await audit.log({
+    module: 'customers',
+    action: 'tenant-order-lookup',
+    entityType: 'order',
+    entityId: orderId,
+    payload: { reason: req.query.reason || null, ticketId: req.query.ticketId || null },
+    adminId: req.user?.id,
+    businessId,
+    ip: req.ip,
+    userAgent: req.headers['user-agent'],
+  });
+  res.json({ order });
+});
+
 // GST-compliant subscription invoice PDF for a customer's invoice — generated
 // on demand (no dependency on Razorpay hosting a PDF). Scoped to the business
 // so the id in the path must belong to that customer.
@@ -943,6 +974,7 @@ module.exports = {
   twoFaVerify, twoFaEnrolStart, twoFaEnrolConfirm, twoFaDisable,
   teamList, teamCreate, teamUpdate, teamDeactivate,
   listCustomers, getCustomer, drilldown, invoicePdf,
+  customerOrderForSupport,
   createCustomer, updateCustomer,
   extendTrial, setPlanManually,
   suspend, restore, impersonate, createImpersonationCode, deleteCustomer,

@@ -22,9 +22,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
+import { toast } from 'sonner';
 import { CreateOutletDialog, OutletUpsellDialog } from '@/components/OutletSwitcher';
-import { ffApi } from '@/api/namastepos';
-import { getBusinessCache } from '@/api/client';
+import { ffApi, type MyOutlet } from '@/api/namastepos';
+import { getBusinessCache, apiError } from '@/api/client';
 import { featureLockedInfo, useMyOutlets, useOutletSwitch } from '@/hooks/useOutletSwitch';
 import { formatINR } from '@/lib/utils';
 
@@ -47,10 +51,14 @@ export function OutletsPage() {
   const [from, setFrom] = useState(daysAgo(30));
   const [to, setTo] = useState(daysAgo(0));
 
+  const [deleting, setDeleting] = useState<MyOutlet | null>(null);
+
   const outlets = outletsQ.data || [];
   const current = outlets.find((o) => o.current) || null;
   const isOwner = (current?.role || getBusinessCache()?.role) === 'business_owner';
   const groupId = current?.groupId || null;
+  // Deleting a branch is HQ-only: you must be signed into the primary outlet.
+  const isHq = !!current?.isParent;
 
   // Owner + a group + multi_outlet. The last one we can't know locally, so
   // we just call it and treat a 402 as "locked" (see below) — one source of
@@ -119,15 +127,29 @@ export function OutletsPage() {
                   <TableCell>{o.city || '—'}</TableCell>
                   <TableCell>{ROLE_LABEL[o.role] || o.role}</TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={o.current || switcher.isPending}
-                      onClick={() => switcher.mutate(o)}
-                    >
-                      {switcher.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      {o.current ? 'You are here' : 'Switch'}
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={o.current || switcher.isPending}
+                        onClick={() => switcher.mutate(o)}
+                      >
+                        {switcher.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        {o.current ? 'You are here' : 'Switch'}
+                      </Button>
+                      {/* Only the HQ owner may delete a branch, never the HQ
+                          itself, and only after an emailed OTP. */}
+                      {isOwner && isHq && !o.isParent && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-destructive"
+                          onClick={() => setDeleting(o)}
+                        >
+                          Delete
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -231,6 +253,91 @@ export function OutletsPage() {
         onOpenChange={(v) => setUpsell((u) => ({ ...u, open: v }))}
         requiredTier={upsell.requiredTier}
       />
+      <DeleteOutletDialog
+        outlet={deleting}
+        onClose={() => setDeleting(null)}
+        onDeleted={() => { setDeleting(null); outletsQ.refetch(); }}
+      />
     </div>
+  );
+}
+
+/**
+ * Two-step outlet deletion: mail a code to the HQ owner, then confirm.
+ * Destroying a branch's orders/menu/staff/reports needs proof of inbox
+ * control, so the code is mandatory — there is no "just confirm" path.
+ */
+function DeleteOutletDialog({
+  outlet, onClose, onDeleted,
+}: { outlet: MyOutlet | null; onClose: () => void; onDeleted: () => void }) {
+  const [sent, setSent] = useState<{ requestId: string; sentTo: string } | null>(null);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const label = outlet?.outletLabel || outlet?.name || '';
+
+  const close = () => { setSent(null); setCode(''); setBusy(false); onClose(); };
+
+  const sendCode = async () => {
+    if (!outlet) return;
+    setBusy(true);
+    try {
+      const r = await ffApi.requestOutletDeleteOtp(outlet.businessId);
+      setSent({ requestId: r.requestId, sentTo: r.sentTo });
+      toast.success(`Code sent to ${r.sentTo}`);
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  const confirm = async () => {
+    if (!outlet || !sent) return;
+    setBusy(true);
+    try {
+      await ffApi.deleteOutlet(outlet.businessId, sent.requestId, code.trim());
+      toast.success(`"${label}" deleted`);
+      onDeleted();
+      setSent(null); setCode('');
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Dialog open={!!outlet} onOpenChange={(v) => { if (!v) close(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete outlet “{label}”?</DialogTitle>
+          <DialogDescription>
+            This removes the outlet from your group. Its orders, menu, staff and
+            reports stop being accessible and its subscription is cancelled.
+            Records are retained for GST/audit but the outlet cannot be restored
+            from here. Other outlets are unaffected.
+          </DialogDescription>
+        </DialogHeader>
+        {!sent ? (
+          <p className="text-sm text-muted-foreground">
+            For safety we’ll email a 6-digit code to the primary owner’s address.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            <Label htmlFor="otp">Enter the code sent to {sent.sentTo}</Label>
+            <Input id="otp" inputMode="numeric" autoComplete="one-time-code"
+              maxLength={6} placeholder="123456"
+              value={code} onChange={(e) => setCode(e.target.value)} />
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={close} disabled={busy}>Cancel</Button>
+          {!sent ? (
+            <Button variant="destructive" onClick={sendCode} disabled={busy}>
+              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Email me a code
+            </Button>
+          ) : (
+            <Button variant="destructive" onClick={confirm}
+              disabled={busy || code.trim().length < 4}>
+              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Delete outlet
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

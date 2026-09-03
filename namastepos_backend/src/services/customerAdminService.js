@@ -67,18 +67,26 @@ async function createCustomer({
 // ── Edit business fields ────────────────────────────────────────────────
 
 async function updateCustomer(businessId, patch) {
+  // TENANT PRIVACY (2026-09-03): `bank_account` and `bank_ifsc` were writable
+  // here. That let any admin with customers.write REWRITE a restaurant's
+  // payout account — a payout-redirection primitive sitting in the support
+  // console — and the `RETURNING *` handed the current values straight back.
+  // The tenant owns their own bank details in their dashboard settings; the
+  // platform has no reason to set them. Do not re-add these keys.
   const fields = [
     'name', 'phone', 'city', 'category', 'gstin', 'address',
-    'upi_id', 'bank_account', 'bank_ifsc', 'logo_url', 'onboarded',
+    'upi_id', 'logo_url', 'onboarded',
     'display_name', 'photo_url',
   ];
   const sets = []; const values = []; let idx = 1;
   for (const f of fields) {
     if (patch[f] !== undefined) { sets.push(`${f} = $${idx++}`); values.push(patch[f]); }
   }
+  // Redacted on the way out too (see adminService.redactBusinessRow) —
+  // otherwise a no-op PATCH is a read of the fields we just removed.
   if (sets.length === 0) {
     const r = await query(`SELECT * FROM businesses WHERE id = $1`, [businessId]);
-    return r.rows[0];
+    return require('./adminService').redactBusinessRow(r.rows[0]);
   }
   values.push(businessId);
   const r = await query(
@@ -86,7 +94,7 @@ async function updateCustomer(businessId, patch) {
     values
   );
   if (r.rowCount === 0) throw new NotFound('Customer not found');
-  return r.rows[0];
+  return require('./adminService').redactBusinessRow(r.rows[0]);
 }
 
 // ── Trial / plan manual change ──────────────────────────────────────────
@@ -157,6 +165,13 @@ async function setPlanManually(businessId, tier, { reason = 'admin-manual', bill
     // eslint-disable-next-line no-console
     console.warn('[setPlanManually] complyStaffLimit failed:', e?.message);
   }
+  // 2026-09-03 — HQ plan changes propagate to the group's outlets.
+  try {
+    await require('./multiOutletService').syncPlanToOutlets(businessId);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[setPlanManually] syncPlanToOutlets failed:', e?.message);
+  }
   // 2026-09-03 — same rule as the tenant path: revoke addons the new plan
   // is not entitled to (multi-outlet is Pro+, etc).
   try {
@@ -169,48 +184,205 @@ async function setPlanManually(businessId, tier, { reason = 'admin-manual', bill
 }
 
 // ── Drill-down ──────────────────────────────────────────────────────────
+//
+// ╔═══════════════════════════════════════════════════════════════════════╗
+// ║ TENANT-DATA PRIVACY — READ BEFORE ADDING FIELDS HERE (2026-09-03)     ║
+// ╠═══════════════════════════════════════════════════════════════════════╣
+// ║ This endpoint used to return the tenant's last 50 ORDERS as individual ║
+// ║ rows. That is the restaurant's own sales ledger and NamastePOS staff   ║
+// ║ have no business browsing it — founder decision, and the right one     ║
+// ║ under DPDP (we are a data processor for the tenant's diner data, not a ║
+// ║ controller). It now returns `orderStats` AGGREGATES only.              ║
+// ║                                                                       ║
+// ║ ALLOWED here: what the tenant owes US (subscription invoices, plan,    ║
+// ║   dunning, payment status of OUR charges), non-identifying volume /    ║
+// ║   health metrics, their staff roster (our contractual counterparties), ║
+// ║   support notes, audit trail.                                         ║
+// ║ FORBIDDEN here: individual orders / bills / KOTs, order line items,    ║
+// ║   diner (end-customer) names / phones / emails, loyalty or wallet      ║
+// ║   balances, tenant expenses / income statement / their GST filings,    ║
+// ║   tenant payout bank details or e-invoice credentials.                 ║
+// ║                                                                       ║
+// ║ Need ONE order for a "my order vanished" ticket? Use the narrow,       ║
+// ║ super-admin-only, audit-logged singleOrderForSupport() below. Do NOT   ║
+// ║ reopen the ledger here.                                               ║
+// ╚═══════════════════════════════════════════════════════════════════════╝
+
+const adminLegacy = require('./adminService');
 
 async function drilldown(businessId) {
-  const biz = await query(`SELECT * FROM businesses WHERE id = $1`, [businessId]);
+  // PRIVACY: `SELECT *` on businesses shipped bank_account / bank_ifsc /
+  // einvoice_* credentials. redactBusinessRow() strips them (last-4 hint only).
+  const biz = await query(
+    `SELECT b.*, ${adminLegacy.OUTLET_SELECT}
+       FROM businesses b ${adminLegacy.OUTLET_JOIN}
+      WHERE b.id = $1`,
+    [businessId]
+  );
   if (biz.rowCount === 0) throw new NotFound('Customer not found');
 
-  const [sub, staff, menu, orders, invoices, payments, notes] = await Promise.all([
-    query(`SELECT s.*, p.tier, p.name AS plan_name, p.price_inr_paise
-             FROM subscriptions s JOIN plans p ON p.id = s.plan_id
-            WHERE s.business_id = $1`, [businessId]),
-    query(`SELECT bu.*, u.email, u.display_name
-             FROM business_users bu JOIN users u ON u.id = bu.user_id
-            WHERE bu.business_id = $1 AND bu.is_active = TRUE`, [businessId]),
-    query(`SELECT id, name, category, price, stock, is_active
-             FROM menu_items WHERE business_id = $1 ORDER BY category, name`, [businessId]),
-    query(`SELECT id, order_no, status, total, source, created_at
-             FROM orders WHERE business_id = $1
-            ORDER BY created_at DESC LIMIT 50`, [businessId]),
-    query(`SELECT * FROM invoices WHERE business_id = $1
-            ORDER BY created_at DESC LIMIT 50`, [businessId]),
-    query(`SELECT * FROM payments WHERE business_id = $1
-            ORDER BY created_at DESC LIMIT 50`, [businessId]),
-    query(`SELECT n.*, au.email AS admin_email
-             FROM support_notes n JOIN admin_users au ON au.id = n.admin_id
-            WHERE n.business_id = $1
-            ORDER BY n.pinned DESC, n.created_at DESC`, [businessId]),
-  ]);
+  const [sub, staff, menu, orderAgg, revByMonth, invoices, payments, notes, siblings] =
+    await Promise.all([
+      query(`SELECT s.*, p.tier, p.name AS plan_name, p.price_inr_paise
+               FROM subscriptions s JOIN plans p ON p.id = s.plan_id
+              WHERE s.business_id = $1`, [businessId]),
+      query(`SELECT bu.*, u.email, u.display_name
+               FROM business_users bu JOIN users u ON u.id = bu.user_id
+              WHERE bu.business_id = $1 AND bu.is_active = TRUE`, [businessId]),
+      query(`SELECT id, name, category, price, stock, is_active
+               FROM menu_items WHERE business_id = $1 ORDER BY category, name`, [businessId]),
+      // AGGREGATES ONLY — no ids, no order numbers, no diner columns. Enough
+      // to answer "are they actually using it / how big are they / when did
+      // they last transact", which is all support and billing need.
+      query(`SELECT (COUNT(*) FILTER (WHERE status <> 'cancelled'))::int AS order_count,
+                    (COUNT(*) FILTER (WHERE status = 'cancelled'))::int  AS cancelled_count,
+                    (COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled'), 0))::float
+                                                                        AS gross_volume,
+                    MAX(created_at) FILTER (WHERE status <> 'cancelled') AS last_order_at,
+                    MIN(created_at) FILTER (WHERE status <> 'cancelled') AS first_order_at
+               FROM orders WHERE business_id = $1`, [businessId]),
+      query(`SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS month,
+                    COUNT(*)::int                    AS orders,
+                    COALESCE(SUM(total), 0)::float   AS revenue
+               FROM orders
+              WHERE business_id = $1
+                AND status <> 'cancelled'
+                AND created_at >= date_trunc('month', NOW()) - INTERVAL '11 months'
+              GROUP BY 1 ORDER BY 1 ASC`, [businessId]),
+      // OUR subscription invoices to the tenant — deliberately kept in full.
+      query(`SELECT * FROM invoices WHERE business_id = $1
+              ORDER BY created_at DESC LIMIT 50`, [businessId]),
+      // OUR subscription charges. Explicit column list: `SELECT *` also
+      // returned `raw_payload`, the whole Razorpay object (payer contact,
+      // card metadata). The UI never used it.
+      query(`SELECT id, invoice_id, amount_paise, currency, method,
+                    razorpay_payment_id, status, failure_reason, created_at
+               FROM payments WHERE business_id = $1
+              ORDER BY created_at DESC LIMIT 50`, [businessId]),
+      query(`SELECT n.*, au.email AS admin_email
+               FROM support_notes n JOIN admin_users au ON au.id = n.admin_id
+              WHERE n.business_id = $1
+              ORDER BY n.pinned DESC, n.created_at DESC`, [businessId]),
+      adminLegacy.outletSiblings(businessId),
+    ]);
+
+  const agg = orderAgg.rows[0] || {};
+  const orderCount = agg.order_count || 0;
+  const grossVolume = agg.gross_volume || 0;
 
   return {
-    business: biz.rows[0],
+    business: {
+      ...adminLegacy.redactBusinessRow(biz.rows[0]),
+      // 2026-09-03 — outlet visibility (HQ / outlet / standalone).
+      outlet: adminLegacy.outletBlock(biz.rows[0], businessId),
+      outletSiblings: siblings,
+    },
     subscription: sub.rows[0] || null,
     staff: staff.rows.map((s) => ({
       userId: s.user_id, email: s.email, displayName: s.display_name,
       role: s.role, joinedAt: s.joined_at,
     })),
     menu: menu.rows,
-    orders: orders.rows,
+    // REPLACES the removed `orders` array. Back-compat note: `orders` is gone
+    // on purpose — an old client that reads it gets undefined, which is the
+    // intended outcome. Do not re-add it.
+    orderStats: {
+      orderCount,
+      cancelledCount: agg.cancelled_count || 0,
+      grossVolumeInr: grossVolume,
+      avgTicketInr: orderCount > 0 ? Math.round((grossVolume / orderCount) * 100) / 100 : 0,
+      firstOrderAt: agg.first_order_at || null,
+      lastOrderAt: agg.last_order_at || null,
+      revenueByMonth: revByMonth.rows.map((m) => ({
+        month: m.month, orders: m.orders, revenueInr: m.revenue,
+      })),
+    },
     invoices: invoices.rows,
     payments: payments.rows,
     notes: notes.rows.map((n) => ({
       id: n.id, body: n.body, pinned: n.pinned,
       adminEmail: n.admin_email, createdAt: n.created_at,
     })),
+  };
+}
+
+// ── Single-order support lookup (narrow escape hatch) ───────────────────
+//
+// POLICY: this is the ONLY admin path to a tenant order, and it exists for one
+// scenario — a ticket like "order #412 vanished from my bill". Constraints
+// that must survive any refactor:
+//   • one order, addressed by BOTH businessId and orderId (tenant-scoped);
+//   • no listing, no searching, no date range — you must already know the id;
+//   • gated on `settings.write`, i.e. super_admin only (see adminRbac.js);
+//   • every call writes an audit_log row BEFORE the response is sent;
+//   • diner PII is masked here, server-side: name → initials, phone → last 4.
+// The founder may decide to delete this endpoint entirely; nothing else in the
+// product depends on it.
+
+/** "Rahul Sharma" → "R.S." · "" / null → null. Never returns a full name. */
+function maskName(name) {
+  if (!name) return null;
+  const initials = String(name).trim().split(/\s+/)
+    .filter(Boolean).map((w) => w[0].toUpperCase());
+  return initials.length ? `${initials.join('.')}.` : null;
+}
+
+/** "+919812345678" → "••••5678". Never returns dialable digits. */
+function maskPhone(phone) {
+  if (!phone) return null;
+  const digits = String(phone).replace(/\D/g, '');
+  return digits.length >= 4 ? `••••${digits.slice(-4)}` : '••••';
+}
+
+async function singleOrderForSupport(businessId, orderId) {
+  // Tenant-scoped by BOTH ids — a super-admin with an order UUID from another
+  // tenant still gets a 404, which keeps the audit trail honest.
+  const r = await query(
+    // Explicit column list. NOTE what is deliberately absent: `customer_id`
+    // (the FK into the tenant's own diner CRM — following it would hand over
+    // the diner's full profile) and every aggregator payload column.
+    `SELECT id, order_no, status, source, subtotal, tax, discount, total,
+            payment_method, cancel_reason, customer_name, customer_phone,
+            created_at, updated_at
+       FROM orders WHERE id = $1 AND business_id = $2 LIMIT 1`,
+    [orderId, businessId]
+  );
+  if (r.rowCount === 0) throw new NotFound('Order not found for this customer');
+  const o = r.rows[0];
+
+  const items = await query(
+    `SELECT name, qty, price, note FROM order_items WHERE order_id = $1
+      ORDER BY name ASC`,
+    [orderId]
+  );
+
+  return {
+    id: o.id,
+    orderNo: o.order_no,
+    status: o.status,
+    source: o.source,
+    subtotal: o.subtotal == null ? null : parseFloat(o.subtotal),
+    tax: o.tax == null ? null : parseFloat(o.tax),
+    discount: o.discount == null ? null : parseFloat(o.discount),
+    total: o.total == null ? null : parseFloat(o.total),
+    paymentMethod: o.payment_method || null,
+    cancelReason: o.cancel_reason || null,
+    createdAt: o.created_at,
+    updatedAt: o.updated_at,
+    // MASKED — see policy above. `customerName` / `customerPhone` must never
+    // appear in this response, only these derived, non-identifying forms.
+    diner: {
+      initials: maskName(o.customer_name),
+      phoneLast4: maskPhone(o.customer_phone),
+    },
+    items: items.rows.map((i) => ({
+      name: i.name,
+      qty: i.qty,
+      price: i.price == null ? null : parseFloat(i.price),
+      note: i.note || null,
+    })),
+    privacyNotice: 'Diner name and phone are masked by policy. '
+      + 'This lookup is super-admin only and is recorded in the audit log.',
   };
 }
 
@@ -557,6 +729,10 @@ module.exports = {
   createCustomer, updateCustomer,
   extendTrial, setPlanManually,
   drilldown, addNote, deleteNote, deleteCustomer,
+  // 2026-09-03 tenant-privacy: the ONLY admin path to a single tenant order.
+  // Super-admin only + audit-logged at the controller. See the policy block
+  // above singleOrderForSupport before wiring this anywhere else.
+  singleOrderForSupport, maskName, maskPhone,
   // 2026-09-03 lifecycle actions
   cancelSubscription, changeOwnerEmail, resetOwnerCredentials,
   resendWelcomeEmail, setAccountFields, anonymiseCustomer,

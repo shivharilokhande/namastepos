@@ -3,7 +3,7 @@
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const c = require('../controllers/authController');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const env = require('../config/env');
 
 const router = express.Router();
@@ -64,7 +64,16 @@ router.post ('/impersonation-exchange', impersonationExchangeLimiter, ...c.imper
 router.post ('/logout',          requireAuth,  c.logout);
 router.get  ('/me',              requireAuth,  c.me);
 router.post ('/change-password', requireAuth,  ...c.changePassword); // founder bug #1
-router.patch('/me',              requireAuth,  ...c.patchMe);
+// NP-201: patchMe already refused anyone but owner/manager and kept
+// OWNER_ONLY_FIELDS owner-only — but it judged that on `req.user.role`, i.e.
+// the role baked into the JWT at login. A staff member demoted from manager
+// kept editing the business profile until their 24h token expired. requireRole
+// re-reads the live business_users row (30s cache) and rewrites req.user.role,
+// so the controller's OWNER_ONLY_FIELDS check now runs against the live role
+// too. Kept the in-controller checks: they are the field-level policy.
+router.patch('/me',              requireAuth,
+                                 requireRole(['business_owner', 'staff_manager']),
+                                 ...c.patchMe);
 router.post ('/switch-business', requireAuth,  ...c.switchBusiness);
 
 module.exports = router;

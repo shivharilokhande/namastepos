@@ -123,6 +123,8 @@ router.post('/outlets/provision', requireOwner,
     label: Joi.string().max(80).allow('', null),
     city: Joi.string().max(80).allow('', null),
     groupId: Joi.string().uuid().allow(null),
+    // Seed the HQ's staff (same roles + permissions) into the new branch.
+    copyStaff: Joi.boolean().default(true),
   })}),
   asyncHandler(async (req, res) => {
     const out = await multiOutlet.provisionOutlet({
@@ -132,8 +134,41 @@ router.post('/outlets/provision', requireOwner,
       name: req.body.name,
       label: req.body.label,
       city: req.body.city,
+      copyStaff: req.body.copyStaff !== false,
     });
+    // The new outlet inherits the HQ's plan + feature overrides.
+    try { await multiOutlet.syncPlanToOutlets(req.user.businessId); } catch (_) { /* non-fatal */ }
     res.status(201).json(out);
+  })
+);
+
+// ── Delete an outlet (primary/HQ owner only, email-OTP verified) ─────────
+// Step 1: mail a 6-digit code to the owner's address.
+router.post('/outlets/:businessId/delete/request-otp', requireOwner,
+  asyncHandler(async (req, res) => {
+    res.json(await multiOutlet.requestOutletDeleteOtp({
+      userId: req.user.id,
+      callerBusinessId: req.user.businessId,
+      targetBusinessId: req.params.businessId,
+    }));
+  })
+);
+
+// Step 2: confirm with the code. Soft-deletes the outlet (history retained for
+// GST/audit); it vanishes from the switcher, rollups and every listing.
+router.post('/outlets/:businessId/delete', requireOwner,
+  validate({ body: Joi.object({
+    requestId: Joi.string().uuid().required(),
+    code: Joi.string().min(4).max(10).required(),
+  })}),
+  asyncHandler(async (req, res) => {
+    res.json(await multiOutlet.deleteOutletWithOtp({
+      userId: req.user.id,
+      callerBusinessId: req.user.businessId,
+      targetBusinessId: req.params.businessId,
+      requestId: req.body.requestId,
+      code: req.body.code,
+    }));
   })
 );
 

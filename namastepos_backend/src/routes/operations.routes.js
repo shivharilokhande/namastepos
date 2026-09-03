@@ -11,7 +11,7 @@ const express = require('express');
 const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const { requireRole } = require('../middleware/auth');
+const { requireRole, requireStaffPerm } = require('../middleware/auth');
 
 const dailyClosing = require('../services/dailyClosingService');
 const wastage = require('../services/wastageService');
@@ -58,12 +58,21 @@ router.get('/shifts/payroll.csv',
   }));
 
 // ── Daily closing / Z-report ─────────────────────────────────────────────
+// NP-201: the Z-report preview and the closing history are cash-position
+// data (expected cash, variance, tender split). The POST/reopen writes were
+// role-gated but both reads answered any authenticated member, so a kitchen
+// cook could read the day's till. Gate on the `daily_closing` permission the
+// owner already toggles per-staff (manager has it by default; cashier does
+// not, matching DEFAULT_PERMS_BY_ROLE).
+const canDailyClosing = requireStaffPerm('daily_closing');
+
 router.get ('/daily-closings/preview',
+  canDailyClosing,
   asyncHandler(async (req, res) =>
     res.json({ preview: await dailyClosing.preview(req.params.businessId, req.query.date) })
   )
 );
-router.get ('/daily-closings', asyncHandler(async (req, res) =>
+router.get ('/daily-closings', canDailyClosing, asyncHandler(async (req, res) =>
   res.json({ closings: await dailyClosing.list(req.params.businessId) })));
 router.post('/daily-closings',
   requireRole(['business_owner','staff_manager']),
