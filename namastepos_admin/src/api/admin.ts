@@ -204,8 +204,14 @@ export const adminApi = {
   // GST
   gstSummary: (month: string) =>
     api.get<{ summary: any }>('/admin/gst/summary', { params: { month } }).then((r) => r.data.summary),
-  gstr1CsvUrl: (month: string) =>
-    `${(api.defaults.baseURL || '').replace(/\/v1$/, '/v1')}/admin/gst/gstr1.csv?month=${month}`,
+  // NP-107: fetch the CSV through the shared axios instance so cookie-mode
+  // auth (ff_admin cookie + CSRF interceptor) works — the old raw-URL +
+  // getAdminToken() path sent no credentials in cookie mode and saved the
+  // 401 JSON body as a .csv. Axios rejects on non-2xx, so callers never
+  // save an error body.
+  gstr1Csv: (month: string) =>
+    api.get<Blob>('/admin/gst/gstr1.csv', { params: { month }, responseType: 'blob' })
+      .then((r) => r.data),
   gstr3b: (month: string) =>
     api.get('/admin/gst/gstr3b', { params: { month } }).then((r) => r.data.gstr3b),
   // Push 19d — HSN-wise summary + B2B/B2C split

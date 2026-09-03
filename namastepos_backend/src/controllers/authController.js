@@ -583,6 +583,17 @@ module.exports = {
   passwordLogin: [validate(passwordLoginSchema), passwordLogin],
   pinLogin: [validate(pinLoginSchema), pinLogin],
   staffPicker: [validate(staffPickerSchema), asyncHandler(async (req, res) => {
+    // NP-102 (2026-09-03): requireAuth alone still let ANY signed-in tenant
+    // pull ANY other tenant's roster (userId + role + name) by posting a
+    // foreign businessId — a cross-tenant IDOR that hands out valid userIds
+    // for PIN brute-forcing. Owner and staff tokens both carry the active
+    // business as `bid` → req.user.businessId (see middleware/auth.js), so
+    // scope the lookup to the caller's own business. Super-admin tokens have
+    // no businessId and are rejected too — admin roster access goes through
+    // the audited /admin surface, not this mobile picker.
+    if (!req.user.businessId || req.user.businessId !== req.body.businessId) {
+      throw new Forbidden('You can only list staff for your own business');
+    }
     const staff = require('../services/staffService');
     res.json({ staff: await staff.listForPicker(req.body.businessId) });
   })],

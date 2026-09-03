@@ -195,6 +195,10 @@ class AuthProvider extends ChangeNotifier {
 
   Future<void> dismissMpinPrompt() => AuthService.instance.dismissMpinPrompt();
 
+  /// NP-104: full sign-out + local wipe for flows where the account/business
+  /// is gone for good (e.g. DPDP account erasure). Same as signOutFromLock.
+  Future<void> logoutFull() => signOutFromLock();
+
   /// Sign out from the MPIN lock screen ("Use another account").
   Future<void> signOutFromLock() async {
     await AuthService.instance.logoutFull();

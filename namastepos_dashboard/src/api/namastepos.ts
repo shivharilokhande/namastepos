@@ -331,6 +331,20 @@ export const ffApi = {
     );
     _triggerBlobDownload(r.data, `invoice_register_${startDate}_${endDate}.${format}`);
   },
+  // NP-106 — GSTR-1 / GSTR-3B CSVs. These used to be opened via
+  // window.open(), which can't attach the Authorization header, so the
+  // auth-gated route always 401'd (and the browser saved the JSON error
+  // body as a .csv). Fetch through axios as a blob like the register
+  // exports above. NOTE: the backend reads `from`/`to` here, not
+  // startDate/endDate (see sprintsAll.routes.js).
+  downloadGstr: async (report: 'gstr1' | 'gstr3b', from: string, to: string) => {
+    const b = getBusinessCache();
+    const r = await api.get(
+      `/businesses/${b.id}/reports/${report}.csv`,
+      { params: { from, to }, responseType: 'blob' }
+    );
+    _triggerBlobDownload(r.data, `${report}_${from}_${to}.csv`);
+  },
   // Push 15c — Tax invoices (GST Rule 46)
   listTaxInvoices: (params: { startDate?: string; endDate?: string; status?: string } = {}) => {
     const b = getBusinessCache();

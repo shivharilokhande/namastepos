@@ -6,9 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { toast } from 'sonner';
 import { adminApi } from '@/api/admin';
 import { formatINR, formatDate } from '@/lib/utils';
-import { getAdminToken } from '@/api/client';
+import { apiError } from '@/api/client';
 
 export function GstPage() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
@@ -27,16 +28,18 @@ export function GstPage() {
   });
 
   const downloadCsv = async () => {
-    // Use fetch so we can attach the admin JWT (axios already does that, but we need a Blob)
-    const token = getAdminToken();
-    const res = await fetch(adminApi.gstr1CsvUrl(month), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `gstr1-${month}.csv`;
-    a.click(); URL.revokeObjectURL(url);
+    // NP-107: go through the shared axios instance — in cookie mode
+    // getAdminToken() is null, so the old raw fetch sent no credentials
+    // and (with no res.ok check) saved the 401 JSON as a .csv. Axios
+    // attaches the cookie/CSRF (or Bearer fallback) and rejects on
+    // non-2xx, so an error becomes a toast, never a file.
+    try {
+      const blob = await adminApi.gstr1Csv(month);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `gstr1-${month}.csv`;
+      a.click(); URL.revokeObjectURL(url);
+    } catch (e) { toast.error(apiError(e)); }
   };
 
   return (

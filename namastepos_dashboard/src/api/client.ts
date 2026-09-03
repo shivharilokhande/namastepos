@@ -56,9 +56,14 @@ export function getToken() { return accessToken; }
 
 // e2e / debugging hook: the Playwright suite used to read the access token
 // from localStorage. Expose a read-only getter so it can still fetch the
-// in-memory token. This is not a new attack surface — any script already
-// executing in the page can import getToken() from this module directly.
-if (typeof window !== 'undefined') (window as any).__ffGetToken = () => accessToken;
+// in-memory token. DEV-only (NP-105): in production third-party scripts
+// (Crisp, Razorpay) run on the authed origin and could call this global,
+// undoing the L-1 in-memory-token migration. Vite tree-shakes this branch
+// out of prod bundles; the e2e helpers already use `__ffGetToken?.()` so
+// they tolerate its absence.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  (window as any).__ffGetToken = () => accessToken;
+}
 
 let bootstrapped = false;
 

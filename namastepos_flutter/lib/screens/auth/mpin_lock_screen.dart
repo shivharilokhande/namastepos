@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/offline_outbox.dart';
 
 class MpinLockScreen extends StatefulWidget {
   const MpinLockScreen({super.key});
@@ -43,12 +44,70 @@ class _MpinLockScreenState extends State<MpinLockScreen> {
     if (!mounted) return;
     setState(() { _pin = ''; _busy = false; });
     if (_fails >= _maxFails) {
+      // Forced security sign-out — no dialog here (a confirm prompt would
+      // let whoever is brute-forcing the MPIN stall the lockout). Attempt a
+      // silent best-effort drain so queued orders aren't lost with the wipe.
+      try { await OfflineOutbox().drainOnce(); } catch (_) {}
       await auth.signOutFromLock();
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text('Wrong MPIN — ${_maxFails - _fails} tries left'),
     ));
+  }
+
+  /// NP-104: full sign-out now wipes the local DB + outbox, so if unsent
+  /// orders are still queued the user must explicitly choose their fate.
+  Future<void> _useAnotherAccount() async {
+    final auth = context.read<AuthProvider>();
+    int pending = 0;
+    try { pending = await OfflineOutbox().activePendingCount(); } catch (_) {}
+    if (!mounted) return;
+    if (pending == 0) {
+      await auth.signOutFromLock();
+      return;
+    }
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unsent orders'),
+        content: Text('$pending unsent order(s) will be discarded — sync now?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'cancel'),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'discard'),
+            child: const Text('Discard and sign out',
+                style: TextStyle(color: AppColors.error)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, 'sync'),
+            child: const Text('Sync now'),
+          ),
+        ],
+      ),
+    );
+    if (!mounted || choice == null || choice == 'cancel') return;
+    if (choice == 'discard') {
+      await auth.signOutFromLock();
+      return;
+    }
+    // Sync now: drain, then re-check before wiping.
+    setState(() => _busy = true);
+    try { await OfflineOutbox().drainOnce(); } catch (_) {}
+    int left = 0;
+    try { left = await OfflineOutbox().activePendingCount(); } catch (_) {}
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (left == 0) {
+      await auth.signOutFromLock();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('$left order(s) still unsent — check your connection and try again'),
+      ));
+    }
   }
 
   @override
@@ -83,7 +142,7 @@ class _MpinLockScreenState extends State<MpinLockScreen> {
             const Spacer(),
             _keypad(),
             TextButton(
-              onPressed: _busy ? null : () => context.read<AuthProvider>().signOutFromLock(),
+              onPressed: _busy ? null : _useAnotherAccount,
               child: const Text('Use another account'),
             ),
             const SizedBox(height: 8),

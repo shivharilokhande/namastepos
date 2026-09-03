@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { ffApi } from '@/api/namastepos';
-import { api, apiError, getBusinessCache } from '@/api/client';
+import { apiError } from '@/api/client';
 import { formatINR } from '@/lib/utils';
 
 type TabId = 'pnl' | 'income' | 'expense' | 'invoices' | 'daily' | 'monthly' | 'tips';
@@ -110,6 +110,18 @@ export function ReportsPage() {
     } catch (e) { toast.error(apiError(e)); }
     finally { setExporting(null); }
   };
+  // NP-106: these were window.open() links, which can't send the
+  // Authorization header — the auth-gated route 401'd and the browser
+  // saved the JSON error as a .csv. Same axios+blob path as the
+  // register exports above; errors surface as a toast, never a file.
+  const exportGstr = async (report: 'gstr1' | 'gstr3b') => {
+    setExporting('csv');
+    try {
+      await ffApi.downloadGstr(report, pnlStart, pnlEnd);
+      toast.success('CSV ready');
+    } catch (e) { toast.error(apiError(e)); }
+    finally { setExporting(null); }
+  };
 
   const daily = useQuery({
     queryKey: ['daily', date], queryFn: () => ffApi.dailyReport(date),
@@ -205,23 +217,17 @@ export function ReportsPage() {
               {/* FF-323 — GSTR CSVs for CA. Available on the invoice
                   register tab only, since the columns come from tax
                   invoices. */}
-              {/* Hardcode-audit fix (2026-08-24): was reading the nonexistent
-                  'ff_business' localStorage key (client stores
-                  'ff_dash_business'), so the business id was always '' and
-                  the URL malformed; also bypassed VITE_API_URL. Now uses
-                  the shared client's business cache + resolved base URL. */}
+              {/* NP-106 (2026-09-03): switched from window.open (no auth
+                  header → always 401) to the axios+blob download path the
+                  other exports on this page use. */}
               {tab === 'invoices' && (
                 <>
-                  <Button variant="outline"
-                    onClick={() => window.open(
-                      `${api.defaults.baseURL}/businesses/${getBusinessCache()?.id ?? ''}/reports/gstr1.csv?from=${pnlStart}&to=${pnlEnd}`,
-                      '_blank')}>
+                  <Button variant="outline" disabled={!!exporting}
+                    onClick={() => exportGstr('gstr1')}>
                     <Download className="mr-2 h-4 w-4" /> GSTR-1 CSV
                   </Button>
-                  <Button variant="outline"
-                    onClick={() => window.open(
-                      `${api.defaults.baseURL}/businesses/${getBusinessCache()?.id ?? ''}/reports/gstr3b.csv?from=${pnlStart}&to=${pnlEnd}`,
-                      '_blank')}>
+                  <Button variant="outline" disabled={!!exporting}
+                    onClick={() => exportGstr('gstr3b')}>
                     <Download className="mr-2 h-4 w-4" /> GSTR-3B CSV
                   </Button>
                 </>

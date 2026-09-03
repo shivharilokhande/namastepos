@@ -130,7 +130,10 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     try {
       await ApiService.instance.eraseMyAccount();
       if (!mounted) return;
-      await context.read<AuthProvider>().logout();
+      // NP-104: the account is erased server-side — a plain logout() would
+      // keep the local DB (and with an MPIN set, merely LOCK back into the
+      // dead session). Full sign-out wipes SQLite + outbox + MPIN.
+      await context.read<AuthProvider>().logoutFull();
       if (!mounted) return;
       Navigator.of(context).popUntil((r) => r.isFirst);
       _snack('Account erased');

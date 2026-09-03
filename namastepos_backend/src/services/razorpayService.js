@@ -265,8 +265,19 @@ function verifyWebhookSignature(req) {
 
 // ── Webhook handler ──────────────────────────────────────────────────────
 
-async function handleWebhook(payload) {
-  const eventId = payload.id || `evt-${Date.now()}`;
+async function handleWebhook(payload, headerEventId) {
+  // NP-109 (2026-09-03): Razorpay does NOT put an event id in the payload
+  // body — real deliveries carry it in the `x-razorpay-event-id` HTTP header
+  // (threaded through from billingController.webhook). Keying dedup on
+  // payload.id meant every real delivery fell through to the Date.now()
+  // synthetic and was NEVER deduplicated. Prefer the header, then payload.id
+  // (manual/test posts), and only then a synthetic id — loudly, because a
+  // synthetic id means this delivery cannot be deduplicated at all.
+  let eventId = headerEventId || payload.id;
+  if (!eventId) {
+    eventId = `evt-${Date.now()}`;
+    logger.warn(`Razorpay webhook carries no x-razorpay-event-id header and no payload.id — using synthetic ${eventId}; this delivery CANNOT be deduplicated`);
+  }
   const event = payload.event;
   const isAddon = payload.payload?.subscription?.entity?.notes?.kind === 'addon';
 
@@ -276,18 +287,33 @@ async function handleWebhook(payload) {
   // Hardening (2026-08-30): addon events now run through this SAME dedup gate
   // (they used to be handled before it), so a future non-idempotent addon
   // handler can't double-apply on Razorpay's routine delivery retries.
-  const dup = await query(
-    `SELECT response_body FROM webhook_events WHERE external_id = $1`, [eventId]
-  );
-  if (dup.rowCount > 0) {
-    logger.info(`Razorpay event ${eventId} already processed; replaying response`);
-    return dup.rows[0].response_body || { received: true, replayed: true };
-  }
-  await query(
+  // NP-110 (2026-09-03): the gate used to be SELECT-then-INSERT, so two
+  // concurrent deliveries of the same event could both pass the SELECT and
+  // both run the side effects. The INSERT itself is now the atomic claim:
+  // ON CONFLICT DO NOTHING + RETURNING yields zero rows for every delivery
+  // except the one that won the insert, and losers replay the stored
+  // response (or a stable echo while the winner is still in flight).
+  const claim = await query(
     `INSERT INTO webhook_events (provider, external_id, event_type, payload)
-     VALUES ('razorpay', $1, $2, $3) ON CONFLICT (external_id) DO NOTHING`,
+     VALUES ('razorpay', $1, $2, $3)
+     ON CONFLICT (external_id) DO NOTHING
+     RETURNING id`,
     [eventId, event, payload]
   );
+  if (claim.rowCount === 0) {
+    const dup = await query(
+      `SELECT response_body FROM webhook_events WHERE external_id = $1`, [eventId]
+    );
+    logger.info(`Razorpay event ${eventId} already processed; replaying response`);
+    // NP-110 follow-up: if the winner is still in flight (no stored response yet),
+    // do NOT ack with a 2xx — a 2xx here could stop Razorpay's retries while the
+    // winner may still fail (its error path deletes the dedup row for a real retry).
+    // The controller maps { pending: true } to HTTP 409 so Razorpay retries later.
+    if (!dup.rows[0]?.response_body) {
+      return { received: false, pending: true, replayed: true };
+    }
+    return dup.rows[0].response_body;
+  }
 
   try {
     if (isAddon) {
@@ -443,8 +469,14 @@ async function _onChargeSuccess(sub, pay) {
   // plans.razorpay_plan_id. This is what flips the business onto Pro/
   // Enterprise — deliberately deferred from createSubscription so a
   // dismissed checkout never grants paid features (Push 13.1).
+  // NP-101 (2026-09-03): yearly checkouts charge against the plan's
+  // razorpay_plan_id_yearly (migration 047), so a monthly-only lookup missed
+  // and newPlanId silently fell back to sr.plan_id — yearly subscribers paid
+  // but never got their tier. Match either column.
   const planLookup = await query(
-    `SELECT id FROM plans WHERE razorpay_plan_id = $1 LIMIT 1`,
+    `SELECT id FROM plans
+      WHERE razorpay_plan_id = $1 OR razorpay_plan_id_yearly = $1
+      LIMIT 1`,
     [sub.plan_id]
   );
   const newPlanId = planLookup.rowCount > 0 ? planLookup.rows[0].id : sr.plan_id;

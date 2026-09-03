@@ -92,8 +92,25 @@ class _ConnectivityBannerState extends State<ConnectivityBanner> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('${rows.length} order(s) failed to sync',
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              // NP-103: count badge — status updates dead-letter here too now,
+              // so the header counts every stuck item, not just orders.
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.error,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text('${rows.length}',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 14, fontWeight: FontWeight.w900)),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text('item(s) failed to sync',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+                ),
+              ]),
               const SizedBox(height: 4),
               const Text('These never reached the server. Retry when back online, '
                   'or discard if already handled.',
@@ -154,6 +171,11 @@ class _ConnectivityBannerState extends State<ConnectivityBanner> {
   String _describe(Map<String, dynamic> row) {
     try {
       final body = jsonDecode(row['body'] as String) as Map<String, dynamic>;
+      // NP-103: a dead-lettered row can be a status update, not just a create.
+      final endpoint = row['endpoint'] as String? ?? '';
+      if (endpoint.endsWith('/status')) {
+        return 'Status update → ${body['status'] ?? '?'}';
+      }
       final items = (body['items'] as List?)?.length ?? 0;
       final total = body['total'] ?? body['tax'] ?? '';
       return 'Order · $items item(s)${total != '' ? ' · ₹$total' : ''}';
@@ -208,7 +230,7 @@ class _ConnectivityBannerState extends State<ConnectivityBanner> {
       banner = _bar(
         color: AppColors.error,
         icon: Icons.error_outline,
-        text: '$_failed order(s) failed to sync — tap to review',
+        text: '$_failed item(s) failed to sync — tap to review',
         onTap: _openFailedSheet,
       );
     } else if (_offline) {

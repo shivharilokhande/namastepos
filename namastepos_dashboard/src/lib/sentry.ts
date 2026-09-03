@@ -3,25 +3,17 @@
 // Loaded from main.tsx before React mounts. Reads VITE_SENTRY_DSN from
 // build-time env; when unset, becomes a no-op (dev/local).
 //
-// Soft-imports @sentry/react so a missing dependency doesn't crash the
-// bundle. If Sentry is present + DSN is set, we register:
+// NP-108: this used to soft-import via `try { require('@sentry/react') }`,
+// but `require` doesn't exist in browser ESM, so the catch always fired
+// and init was a permanent no-op. @sentry/react is a declared dependency,
+// so import it statically. If Sentry is present + DSN is set, we register:
 //   - init() with a `beforeSend` PII scrubber (FF-215)
 //   - browserTracing integration (10 % sample in prod, 100 % in dev)
 //
 // PII scrubbing rules match the backend: strip email, phone (Indian
 // mobile), JWTs, and known sensitive request/query keys.
 
-type MinimalSentry = {
-  init(opts: Record<string, unknown>): void;
-  captureException?(e: unknown): void;
-  ErrorBoundary?: unknown;
-  browserTracingIntegration?: () => unknown;
-  replayIntegration?: (opts?: unknown) => unknown;
-};
-
-let sentryMod: MinimalSentry | null = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-try { sentryMod = require('@sentry/react') as any; } catch { /* no-op */ }
+import * as Sentry from '@sentry/react';
 
 const RE_EMAIL = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
 const RE_PHONE = /(?:\+?91[- ]?)?[6-9]\d{9}\b/g;
@@ -93,20 +85,17 @@ function beforeSend(event: any) {
 }
 
 export function initSentry() {
-  if (!sentryMod) return;                             // SDK missing
   const dsn = (import.meta.env.VITE_SENTRY_DSN as string) || '';
   if (!dsn) return;                                   // DSN not set
 
   const mode = (import.meta.env.MODE as string) || 'development';
-  const integrations: unknown[] = [];
-  if (sentryMod.browserTracingIntegration) integrations.push(sentryMod.browserTracingIntegration());
-  sentryMod.init({
+  Sentry.init({
     dsn,
     environment: mode,
     tracesSampleRate: mode === 'production' ? 0.1 : 1.0,
     replaysSessionSampleRate: 0,     // no session replay by default (PII risk)
     replaysOnErrorSampleRate: 0,
-    integrations,
+    integrations: [Sentry.browserTracingIntegration()],
     beforeSend,
     sendDefaultPii: false,
   });
@@ -114,5 +103,5 @@ export function initSentry() {
 
 // Optional escape hatch for manual capture.
 export function captureError(e: unknown) {
-  sentryMod?.captureException?.(e);
+  Sentry.captureException(e);
 }

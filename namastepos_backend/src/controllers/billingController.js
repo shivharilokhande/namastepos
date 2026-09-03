@@ -153,7 +153,12 @@ module.exports = {
     // P1 (Arvind #8): the webhook handler now returns its response body
     // (including replays of already-processed events) so downstream proxies
     // and Razorpay's retry mechanism see a stable result.
-    const result = await razorpay.handleWebhook(req.body);
+    // NP-109: Razorpay sends the event id in this header, not the body —
+    // it is the dedup key for retry-safe processing.
+    const result = await razorpay.handleWebhook(req.body, req.headers['x-razorpay-event-id']);
+    // NP-110 follow-up: concurrent duplicate whose winner is still in flight →
+    // 409 so Razorpay retries (a 2xx would end retries while the winner may fail).
+    if (result && result.pending === true) return res.status(409).json(result);
     res.json(result || { received: true });
   }),
 };

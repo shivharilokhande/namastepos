@@ -31,7 +31,7 @@ class OfflineOutbox {
     _api = api;
     _db = await openDatabase(
       'namastepos_outbox.db',
-      version: 1,
+      version: 2,
       onCreate: (db, v) async {
         await db.execute('''
           CREATE TABLE outbox (
@@ -46,6 +46,31 @@ class OfflineOutbox {
           )
         ''');
       },
+      onUpgrade: (db, oldV, newV) async {
+        // v2 (NP-103, 2026-09-03): enqueue() used to inject `clientId` into
+        // EVERY queued body, but the backend's status-update Joi schema
+        // rejects unknown keys → 400 → dead-letter. Every offline
+        // ready/collected/cancelled was lost forever. One-time heal: strip
+        // clientId from non-create bodies already queued on this device and
+        // give dead-lettered ones a fresh retry budget. Running this in
+        // onUpgrade makes it exactly-once per device by construction.
+        if (oldV < 2) {
+          final rows = await db.query('outbox');
+          for (final row in rows) {
+            final method = row['method'] as String;
+            final endpoint = row['endpoint'] as String;
+            if (_isOrderCreate(method, endpoint)) continue;
+            try {
+              final body = jsonDecode(row['body'] as String) as Map<String, dynamic>;
+              if (!body.containsKey('clientId')) continue;
+              body.remove('clientId');
+              await db.update('outbox',
+                {'body': jsonEncode(body), 'attempts': 0, 'last_error': null},
+                where: 'client_id = ?', whereArgs: [row['client_id']]);
+            } catch (_) { /* unparseable row — leave it for the failed sheet */ }
+          }
+        }
+      },
     );
     // Fix (2026-08-23, flagged by analyze unrelated_type_equality_checks):
     // connectivity_plus v6 emits List<ConnectivityResult>; comparing the
@@ -59,13 +84,26 @@ class OfflineOutbox {
     _drainTimer = Timer.periodic(const Duration(seconds: 30), (_) => drainOnce());
   }
 
+  /// True for the order-create POST — the ONLY request whose Joi schema
+  /// accepts (and whose idempotency relies on) `clientId`. Same discriminator
+  /// _markOrderSynced uses.
+  static bool _isOrderCreate(String method, String endpoint) =>
+      method == 'POST' && endpoint.endsWith('/orders');
+
   Future<String> enqueue({
     required String endpoint,
     required String method,
     required Map<String, dynamic> body,
   }) async {
+    // NP-103: `clientId` belongs in the body ONLY for order creates (backend
+    // idempotency key). Injecting it into status PUTs made their Joi schema
+    // (unknown keys rejected) 400 them straight to dead-letter — every
+    // offline ready/collected/cancelled was silently lost. For non-creates
+    // the UUID is used purely as the local row key.
     final clientId = body['clientId'] as String? ?? _uuid.v4();
-    body['clientId'] = clientId;
+    if (_isOrderCreate(method, endpoint)) {
+      body['clientId'] = clientId;
+    }
     await _db!.insert('outbox', {
       'client_id': clientId,
       'endpoint': endpoint,
@@ -193,6 +231,11 @@ class OfflineOutbox {
     for (final row in rows) {
       try {
         final body = jsonDecode(row['body'] as String) as Map<String, dynamic>;
+        // NP-103 safety net: heal items queued by older builds that injected
+        // clientId into every body — the backend rejects it on non-creates.
+        if (!_isOrderCreate(row['method'] as String, row['endpoint'] as String)) {
+          body.remove('clientId');
+        }
         final r = (row['method'] == 'POST')
             ? await _api!.post(row['endpoint'] as String, data: body)
             : await _api!.put(row['endpoint'] as String, data: body);
@@ -284,6 +327,14 @@ class OfflineOutbox {
   Future<void> discard(String clientId) async {
     if (_db == null) return;
     await _db!.delete('outbox', where: 'client_id = ?', whereArgs: [clientId]);
+  }
+
+  /// NP-104: wipe the entire outbox. Called on full account sign-out
+  /// (logoutFull) so the next tenant on this device can't replay — or even
+  /// see — the previous tenant's queued orders.
+  Future<void> clearAll() async {
+    if (_db == null) return;
+    await _db!.delete('outbox');
   }
 
   Future<void> dispose() async {

@@ -21,6 +21,8 @@ import 'package:uuid/uuid.dart';
 
 import '../models/business.dart';
 import 'api_service.dart';
+import 'database_service.dart';
+import 'offline_outbox.dart';
 
 class AuthService {
   AuthService._();
@@ -349,6 +351,14 @@ class AuthService {
     await _secure.delete(key: _kPlan);
     // Full account switch — now wipe the MPIN too.
     await clearMpin();
+    // NP-104: also wipe the local SQLite caches. Without this the next
+    // account on a shared device inherited the previous tenant's orders,
+    // customers, and queued outbox writes. Plain logout() intentionally does
+    // NOT wipe — it keeps the same business on-device (staff PIN re-login /
+    // MPIN lock flow), so its cache is still that tenant's own data.
+    // Best-effort: a wipe failure must never block the sign-out itself.
+    try { await DatabaseService.instance.clearAll(); } catch (_) {}
+    try { await OfflineOutbox().clearAll(); } catch (_) {}
   }
 
   Future<void> _persistBusiness(Business b) async {
