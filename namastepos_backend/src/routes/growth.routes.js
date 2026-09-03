@@ -23,7 +23,7 @@ const router = express.Router({ mergeParams: true });
 
 // ── FF-333 referral ────────────────────────────────────────────────────
 router.get('/referral',
-  asyncHandler(async (req, res) => {
+requireRole(['business_owner', 'staff_manager']),   asyncHandler(async (req, res) => {
     const code = await referral.myCode(req.params.businessId);
     const stats = await referral.stats(req.params.businessId);
     res.json({ code, stats });
@@ -57,7 +57,7 @@ router.get ('/memberships', asyncHandler(async (req, res) =>
   res.json({ memberships: await membership.listMemberships(req.params.businessId) })));
 // 2026-08-26: roster of customers who hold a membership (name/phone/plan/
 // amount/status/expiry) for the Members list on mobile + web.
-router.get ('/memberships/subscribers', asyncHandler(async (req, res) =>
+router.get ('/memberships/subscribers', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) =>
   res.json({ subscribers: await membership.listSubscribers(req.params.businessId) })));
 router.post('/memberships',
   requireRole(['business_owner']),
@@ -154,7 +154,7 @@ router.put ('/site',
 );
 
 // ── WhatsApp campaigns ──────────────────────────────────────────────────
-router.get ('/wa/campaigns', asyncHandler(async (req, res) =>
+router.get ('/wa/campaigns', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) =>
   res.json({ campaigns: await whatsapp.listCampaigns(req.params.businessId) })));
 router.post('/wa/campaigns',
   requireRole(['business_owner','staff_manager']),

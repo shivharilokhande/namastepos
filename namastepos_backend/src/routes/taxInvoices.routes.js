@@ -11,10 +11,10 @@ const { requireAuth, requireBusinessOwnership, requireRole } = require('../middl
 const router = express.Router({ mergeParams: true });
 router.use(requireAuth, requireBusinessOwnership);
 
-router.get(    '/',                  c.list);
+router.get(    '/', requireRole(['business_owner', 'staff_manager', 'staff_cashier']),                  c.list);
 router.post(   '/',                  requireRole(['business_owner', 'staff_manager', 'staff_cashier']), ...c.issue);
-router.get(    '/:invoiceId',        c.getOne);
-router.get(    '/:invoiceId/pdf',    c.pdf);
+router.get(    '/:invoiceId', requireRole(['business_owner', 'staff_manager', 'staff_cashier']),        c.getOne);
+router.get(    '/:invoiceId/pdf', requireRole(['business_owner', 'staff_manager', 'staff_cashier']),    c.pdf);
 router.post(   '/:invoiceId/cancel', requireRole(['business_owner']), ...c.cancel);
 
 module.exports = router;

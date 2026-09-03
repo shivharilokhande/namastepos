@@ -68,7 +68,7 @@ router.get('/refunds',
 
 // ── FF-1005 Gift cards + wallet ────────────────────────────────────────
 router.get('/gift-cards',
-  asyncHandler(async (req, res) =>
+requireRole(['business_owner', 'staff_manager']),   asyncHandler(async (req, res) =>
     res.json({ cards: await giftCard.listGiftCards(req.params.businessId) })));
 router.post('/gift-cards',
   requireRole(['business_owner', 'staff_manager']),
@@ -102,7 +102,7 @@ router.post('/customers/:customerId/wallet/topup',
 // above; any authenticated staff member settling a bill needs to see the
 // balance before offering "pay by wallet".
 router.get('/customers/:customerId/wallet',
-  asyncHandler(async (req, res) =>
+requireRole(['business_owner', 'staff_manager', 'staff_cashier']),   asyncHandler(async (req, res) =>
     res.json(await giftCard.getWallet(
       req.params.businessId, req.params.customerId))));
 
@@ -160,7 +160,7 @@ const goneDualLedger = (_req, res) => res.status(410).json({
   error: 'GONE',
   message: 'This endpoint was retired — use /gift-cards (canonical ledger).',
 });
-router.get ('/memberships/gift-cards', goneDualLedger);
+router.get ('/memberships/gift-cards', requireRole(['business_owner', 'staff_manager']), goneDualLedger);
 router.post('/memberships/gift-cards', goneDualLedger);
 router.post('/memberships/gift-cards/:code/redeem', goneDualLedger);
 router.post('/wallet/:customerId/topup', goneDualLedger);
@@ -174,7 +174,7 @@ router.post('/tips',
   })}),
   asyncHandler(async (req, res) => res.status(201).json({ tip: await membership.recordTip(req.params.businessId, req.body) }))
 );
-router.get ('/tips/report', asyncHandler(async (req, res) =>
+router.get ('/tips/report', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) =>
   res.json({ report: await membership.tipReport(req.params.businessId, req.query) })));
 
 module.exports = router;

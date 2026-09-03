@@ -22,10 +22,10 @@ router.use(requireAuth, requireBusinessOwnership, noPlatformStaff,
            requireAddon('loyalty', { orFeature: 'loyalty' }));
 
 // Customer CRUD
-router.get   ('/',                   ...c.list);
-router.get   ('/lookup',             c.lookup);       // ?phone=…
+router.get   ('/',                   requireRole(['business_owner', 'staff_manager', 'staff_cashier']), ...c.list);
+router.get   ('/lookup',             requireRole(['business_owner', 'staff_manager', 'staff_cashier']), c.lookup);       // ?phone=…
 router.post  ('/',                   ...c.upsert);
-router.get   ('/:customerId',        c.get);
+router.get   ('/:customerId',        requireRole(['business_owner', 'staff_manager', 'staff_cashier']), c.get);
 router.patch ('/:customerId',        ...c.update);
 router.delete('/:customerId',        requireRole(['business_owner']), c.remove);
 router.post  ('/:customerId/points',

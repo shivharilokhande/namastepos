@@ -279,7 +279,10 @@ describe('platform staff cannot browse a tenant diner CRM', () => {
       .get(`/v1/businesses/${hq.id}/customers`)
       .set(auth(superToken));
     expect(r.status).toBe(403);
-    expect(JSON.stringify(r.body)).toMatch(/end-customer/i);
+    // The systemic gate in requireBusinessOwnership now answers first (platform
+    // staff are denied the tenant API by default); the per-route noPlatformStaff
+    // patch remains as defence in depth. Either message is a valid denial.
+    expect(JSON.stringify(r.body)).toMatch(/end-customer|Platform staff cannot read tenant/i);
   });
 
   it('403s a support admin too', async () => {

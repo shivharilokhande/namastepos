@@ -54,7 +54,7 @@ router.post('/retail/bulk-import',
     res.json(await retail.bulkImport(req.params.businessId, req.body.rows))
   )
 );
-router.get ('/retail/vendors', asyncHandler(async (req, res) =>
+router.get ('/retail/vendors', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) =>
   res.json({ vendors: await retail.listVendors(req.params.businessId) })));
 router.post('/retail/vendors',
   requireRole(['business_owner','staff_manager']),

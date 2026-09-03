@@ -12,7 +12,7 @@ router.use(requireAuth, requireBusinessOwnership, requireAddon('recipe-costing')
 // Ingredients
 router.get   ('/',                            c.list);
 router.post  ('/',                            requireRole(['business_owner','staff_manager']), ...c.create);
-router.get   ('/_report/food-cost',           c.foodCostReport);
+router.get   ('/_report/food-cost',           requireRole(['business_owner', 'staff_manager']), c.foodCostReport);
 router.get   ('/:ingredientId',               c.get);
 router.patch ('/:ingredientId',               requireRole(['business_owner','staff_manager']), ...c.update);
 router.delete('/:ingredientId',               requireRole(['business_owner']), c.remove);

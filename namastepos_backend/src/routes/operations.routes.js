@@ -171,12 +171,12 @@ router.post('/wait-list',
 );
 
 // ── Customer history ─────────────────────────────────────────────────────
-router.get ('/customer-history/:phone', asyncHandler(async (req, res) => {
+router.get ('/customer-history/:phone', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), asyncHandler(async (req, res) => {
   const profile = await customerHistory.profileForCashier(req.params.businessId, req.params.phone);
   if (!profile) return res.status(404).json({ error: 'NOT_FOUND' });
   res.json(profile);
 }));
-router.get ('/customers/:id/reorder-last', asyncHandler(async (req, res) => {
+router.get ('/customers/:id/reorder-last', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), asyncHandler(async (req, res) => {
   const items = await customerHistory.reorderSameAsLast(req.params.businessId, req.params.id);
   res.json({ items });
 }));

@@ -129,6 +129,36 @@ async function requireBusinessOwnership(req, _res, next) {
       if (req.user.enrol2fa === true) {
         return next(new Forbidden('Complete two-factor enrolment before accessing tenant data'));
       }
+      // ── TENANT-DATA PRIVACY (2026-09-03, founder-driven) ────────────────
+      // Read-only was NOT enough. A plain admin token could still GET a
+      // restaurant's entire commercial life through the tenant API — order
+      // ledger with diner names/phones, every report and register, GST tax
+      // invoices, expenses, trial balance / P&L / balance sheet, wallets,
+      // gift cards, membership subscribers, staff PIN roster — with no
+      // ticket, no scope and no audit row, entirely outside the audited
+      // /admin surface. The earlier per-route `noPlatformStaff` patch only
+      // covered the diner CRM.
+      //
+      // Platform staff are therefore DENIED on the tenant API by default.
+      // The two legitimate paths remain open:
+      //   1. /v1/admin/* — RBAC-gated, audited, and deliberately redacted
+      //      (aggregates instead of the sales ledger).
+      //   2. An impersonation session (`imp:true`) — a tenant-scoped token,
+      //      minted per support case, audit-logged, and already read-only.
+      // ALLOW_PLATFORM_READ is a tiny allow-list for genuinely operational,
+      // non-commercial reads. Add to it only with a written reason.
+      const ALLOW_PLATFORM_READ = [
+        /\/health$/,          // liveness probes
+        /\/billing$/,         // tier + status only (no invoice data)
+      ];
+      const path = req.originalUrl.split('?')[0];
+      if (!ALLOW_PLATFORM_READ.some((rx) => rx.test(path))) {
+        return next(new Forbidden(
+          'Platform staff cannot read tenant business data directly. '
+          + 'Use the admin console (aggregated + audited) or start an '
+          + 'impersonation session for this customer.'
+        ));
+      }
       return next();
     }
     const bid = req.params.businessId;

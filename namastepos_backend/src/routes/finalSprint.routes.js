@@ -24,7 +24,7 @@ const router = express.Router({ mergeParams: true });
 router.use(requireAuth, requireBusinessOwnership);
 
 // ── Heat-map endpoint (F40) ──────────────────────────────────────────────
-router.get('/reports/orders-by-hour', asyncHandler(async (req, res) => {
+router.get('/reports/orders-by-hour', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) => {
   const r = await query(
     `SELECT day_of_week, hour_of_day, order_count, revenue_inr
        FROM vw_orders_by_hour WHERE business_id = $1
@@ -35,7 +35,7 @@ router.get('/reports/orders-by-hour', asyncHandler(async (req, res) => {
 }));
 
 // ── Dead-stock report (FF-1105) ──────────────────────────────────────────
-router.get('/reports/dead-stock', asyncHandler(async (req, res) => {
+router.get('/reports/dead-stock', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) => {
   // P2 fix (2026-08-22): ?days=abc → NaN → invalid INTERVAL → 500.
   // Clamp to a sane 1–365 window.
   const daysRaw = parseInt(req.query.days || '30', 10);
@@ -145,7 +145,7 @@ router.post(
 );
 
 // ── Forecast + upsell ────────────────────────────────────────────────────
-router.get('/forecast', asyncHandler(async (req, res) => res.json({ forecast: await forecast.getForecast(req.params.businessId, req.query.date) })));
+router.get('/forecast', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) => res.json({ forecast: await forecast.getForecast(req.params.businessId, req.query.date) })));
 router.post(
   '/forecast/refresh',
   requireRole(['business_owner', 'staff_manager']),
@@ -169,10 +169,12 @@ router.post(
 );
 router.get(
   '/accounting/trial-balance',
+  requireRole(['business_owner', 'staff_manager']),
   asyncHandler(async (req, res) => res.json({ tb: await pnl.trialBalance(req.params.businessId, req.query.asOf) })),
 );
 router.get(
   '/accounting/profit-loss',
+  requireRole(['business_owner', 'staff_manager']),
   validate({ query: Joi.object({
     startDate: Joi.date().iso().required(), endDate: Joi.date().iso().required(),
   }) }),
@@ -180,11 +182,12 @@ router.get(
 );
 router.get(
   '/accounting/balance-sheet',
+  requireRole(['business_owner', 'staff_manager']),
   asyncHandler(async (req, res) => res.json({ bs: await pnl.balanceSheet(req.params.businessId, req.query.asOf) })),
 );
 
 // ── TDS / TCS ────────────────────────────────────────────────────────────
-router.get('/tds-tcs/rules', asyncHandler(async (req, res) => res.json({ rules: await tdsTcs.listRules(req.params.businessId) })));
+router.get('/tds-tcs/rules', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) => res.json({ rules: await tdsTcs.listRules(req.params.businessId) })));
 router.post(
   '/tds-tcs/rules',
   requireRole(['business_owner']),
@@ -228,11 +231,11 @@ router.post(
   requireRole(['business_owner']),
   asyncHandler(async (req, res) => res.json(await bankRecon.autoMatch(req.params.businessId))),
 );
-router.get('/bank/unmatched', asyncHandler(async (req, res) => res.json({ rows: await bankRecon.listUnmatched(req.params.businessId) })));
+router.get('/bank/unmatched', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) => res.json({ rows: await bankRecon.listUnmatched(req.params.businessId) })));
 
 // ── Surge pricing ────────────────────────────────────────────────────────
 router.get('/surge/current', asyncHandler(async (req, res) => res.json({ surge: await surge.currentSurge(req.params.businessId) })));
-router.get('/surge/rules', asyncHandler(async (req, res) => res.json({ rules: await surge.listRules(req.params.businessId) })));
+router.get('/surge/rules', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) => res.json({ rules: await surge.listRules(req.params.businessId) })));
 router.post(
   '/surge/rules',
   requireRole(['business_owner']),
