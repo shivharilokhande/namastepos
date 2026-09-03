@@ -12,7 +12,7 @@
 
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, compute;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -23,6 +23,26 @@ import '../models/business.dart';
 import 'api_service.dart';
 import 'database_service.dart';
 import 'offline_outbox.dart';
+
+/// NP-139: standard PBKDF2-HMAC-SHA256 producing one 32-byte output block
+/// (dkLen = hLen). Top-level so compute() can run it in a background isolate
+/// (isolate entry points can't be instance methods). args = [pin, salt, iters].
+String _pbkdf2Derive(List<Object> args) {
+  final pin = args[0] as String;
+  final salt = args[1] as String;
+  final iterations = args[2] as int;
+  final hmac = Hmac(sha256, utf8.encode(pin));
+  // U1 = PRF(password, salt || INT_32_BE(1))
+  var u = hmac.convert([...utf8.encode(salt), 0, 0, 0, 1]).bytes;
+  final out = List<int>.from(u);
+  for (var i = 1; i < iterations; i++) {
+    u = hmac.convert(u).bytes;
+    for (var j = 0; j < out.length; j++) {
+      out[j] ^= u[j];
+    }
+  }
+  return out.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+}
 
 class AuthService {
   AuthService._();
@@ -391,20 +411,13 @@ class AuthService {
   // next successful unlock, so no existing owner is locked out by this change.
   static const int _mpinIterations = 120000;
 
-  /// Standard PBKDF2-HMAC-SHA256 producing one 32-byte output block (dkLen=hLen).
-  String _pbkdf2(String pin, String salt, int iterations) {
-    final hmac = Hmac(sha256, utf8.encode(pin));
-    // U1 = PRF(password, salt || INT_32_BE(1))
-    var u = hmac.convert([...utf8.encode(salt), 0, 0, 0, 1]).bytes;
-    final out = List<int>.from(u);
-    for (var i = 1; i < iterations; i++) {
-      u = hmac.convert(u).bytes;
-      for (var j = 0; j < out.length; j++) {
-        out[j] ^= u[j];
-      }
-    }
-    return out.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  }
+  /// NP-139: 120k HMAC rounds took long enough to freeze the UI isolate
+  /// (janked the lock-screen dots/spinner on set + every unlock). Run the
+  /// derivation in a background isolate via compute(); the algorithm lives in
+  /// the top-level [_pbkdf2Derive] because isolate entry points must be
+  /// top-level (or static) functions.
+  Future<String> _pbkdf2(String pin, String salt, int iterations) =>
+      compute(_pbkdf2Derive, <Object>[pin, salt, iterations]);
 
   // Legacy (pre-FB-16) hash, kept only to verify + migrate old stored values.
   String _hashMpinLegacy(String pin, String salt) =>
@@ -421,7 +434,7 @@ class AuthService {
       salt = const Uuid().v4();
       await _secure.write(key: _kMpinSalt, value: salt);
     }
-    final hash = _pbkdf2(pin, salt, _mpinIterations);
+    final hash = await _pbkdf2(pin, salt, _mpinIterations);
     await _secure.write(key: _kMpin, value: 'p2\$$_mpinIterations\$$hash');
   }
 
@@ -432,7 +445,7 @@ class AuthService {
     if (stored.startsWith('p2\$')) {
       final parts = stored.split('\$'); // p2 $ iters $ hex
       final iters = int.tryParse(parts.length > 1 ? parts[1] : '') ?? _mpinIterations;
-      return _pbkdf2(pin, salt, iters) == (parts.length > 2 ? parts[2] : '');
+      return await _pbkdf2(pin, salt, iters) == (parts.length > 2 ? parts[2] : '');
     }
     // Legacy bare-hex value — verify with the old algorithm, and if it matches,
     // migrate it to PBKDF2 so the weak hash stops living in the keychain.

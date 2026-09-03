@@ -328,18 +328,22 @@ class ApiService {
   /// stays its own ticket.
   Future<List<dynamic>> listOrders(String businessId,
       {DateTime? date, String? status, String? groupBy,
-       int? limit, int? offset}) async {
+       DateTime? updatedSince, int? limit, int? offset}) async {
     // P1 fix (2026-08-22): backend caps at 100 by default. On a busy
     // lunch service, dine-in + takeaway easily crosses 200 orders and
     // the older ones vanished from the mobile Orders tab. Pass a big
     // limit by default so today's list is complete; callers can override
     // when they need proper pagination.
+    // NP-135: `updatedSince` = delta polling — only orders whose updated_at
+    // is strictly after the timestamp come back (empty = nothing changed).
     final r = await _wrap(() => _dio.get(
           '/businesses/$businessId/orders',
           queryParameters: {
             if (date != null) 'date': date.toIso8601String().substring(0, 10),
             if (status != null) 'status': status,
             if (groupBy != null) 'groupBy': groupBy,
+            if (updatedSince != null)
+              'updatedSince': updatedSince.toUtc().toIso8601String(),
             // P0 fix (2026-08-22): backend Joi caps limit at 500 and
             // rejects (400) anything higher — 1000 broke every orders
             // fetch. 500 is the server-side max.

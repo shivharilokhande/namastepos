@@ -244,8 +244,9 @@ export const adminApi = {
     api.get('/admin/reports/subscriptions', { params }).then((r) => r.data),
 
   // X7 — support / ticketing
-  supportTickets: (params: { status?: string } = {}) =>
-    api.get('/admin/support/tickets', { params }).then((r) => r.data.tickets),
+  // NP-143: paginated — returns { tickets, total } (limit default 50, max 200).
+  supportTickets: (params: { status?: string; limit?: number; offset?: number } = {}) =>
+    api.get('/admin/support/tickets', { params }).then((r) => r.data),
   supportTicket: (id: string) =>
     api.get(`/admin/support/tickets/${id}`).then((r) => r.data.ticket),
   supportCreateTicket: (body: { businessId: string; subject: string; priority?: string; body: string }) =>

@@ -1,6 +1,5 @@
 // Memberships + gift cards + wallet + tips (Sprint 4 / FF-1006, FF-1005, FF-903)
 
-const crypto = require('crypto');
 const { query, withTransaction } = require('../config/db');
 const { NotFound, BadRequest, Conflict } = require('../utils/errors');
 
@@ -340,90 +339,14 @@ async function lastExpiredForCustomer(businessId, customerId) {
   return r.rows[0] || null;
 }
 
-// ── Gift cards ───────────────────────────────────────────────────────────
-function _generateCode() {
-  return 'GC-' + crypto.randomBytes(6).toString('hex').toUpperCase();
-}
-
-async function issueGiftCard(businessId, body) {
-  const { amountInr, purchaserPhone, recipientPhone, expiresAt } = body;
-  if (!amountInr || amountInr <= 0) throw new BadRequest('Amount required');
-  const code = _generateCode();
-  const r = await query(
-    `INSERT INTO gift_cards
-       (business_id, code, initial_paise, remaining_paise,
-        purchaser_phone, recipient_phone, expires_at)
-     VALUES ($1, $2, $3, $3, $4, $5, $6) RETURNING *`,
-    [businessId, code, Math.round(amountInr * 100),
-     purchaserPhone || null, recipientPhone || null, expiresAt || null]
-  );
-  return r.rows[0];
-}
-
-async function listGiftCards(businessId, { activeOnly = true } = {}) {
-  const where = ['business_id = $1'];
-  const values = [businessId];
-  if (activeOnly) where.push('is_active = TRUE AND remaining_paise > 0');
-  const r = await query(
-    `SELECT * FROM gift_cards WHERE ${where.join(' AND ')}
-      ORDER BY created_at DESC LIMIT 100`,
-    values
-  );
-  return r.rows;
-}
-
-async function redeemGiftCard(businessId, code, amountInr, orderId = null) {
-  return withTransaction(async (client) => {
-    const r = await client.query(
-      `SELECT * FROM gift_cards
-        WHERE business_id = $1 AND code = $2 AND is_active = TRUE
-        FOR UPDATE`,
-      [businessId, code]
-    );
-    if (r.rowCount === 0) throw new NotFound('Gift card not found');
-    const gc = r.rows[0];
-    if (gc.expires_at && new Date(gc.expires_at) < new Date()) {
-      throw new BadRequest('Gift card expired');
-    }
-    const amtPaise = Math.round(amountInr * 100);
-    if (gc.remaining_paise < amtPaise) {
-      throw new BadRequest(`Insufficient balance (₹${gc.remaining_paise/100} left)`);
-    }
-    const newBalance = gc.remaining_paise - amtPaise;
-    await client.query(
-      `UPDATE gift_cards SET remaining_paise = $1 WHERE id = $2`,
-      [newBalance, gc.id]
-    );
-    await client.query(
-      `INSERT INTO wallet_transactions
-         (business_id, gift_card_id, kind, amount_paise, balance_after, order_id)
-       VALUES ($1, $2, 'redeem', $3, $4, $5)`,
-      [businessId, gc.id, -amtPaise, newBalance, orderId]
-    );
-    return { redeemedInr: amountInr, balanceInr: newBalance / 100 };
-  });
-}
-
-// ── Customer wallet ──────────────────────────────────────────────────────
-async function walletTopup(businessId, customerId, amountInr) {
-  return withTransaction(async (client) => {
-    const r = await client.query(
-      `UPDATE customers
-          SET wallet_balance_paise = wallet_balance_paise + $1
-        WHERE business_id = $2 AND id = $3
-        RETURNING wallet_balance_paise`,
-      [Math.round(amountInr * 100), businessId, customerId]
-    );
-    if (r.rowCount === 0) throw new NotFound('Customer not found');
-    await client.query(
-      `INSERT INTO wallet_transactions
-         (business_id, customer_id, kind, amount_paise, balance_after)
-       VALUES ($1, $2, 'topup', $3, $4)`,
-      [businessId, customerId, Math.round(amountInr * 100), r.rows[0].wallet_balance_paise]
-    );
-    return r.rows[0].wallet_balance_paise;
-  });
-}
+// ── Gift cards / wallet ──────────────────────────────────────────────────
+// NP-145 (2026-09-03): the dual-ledger gift-card/wallet functions
+// (issueGiftCard, listGiftCards, redeemGiftCard, walletTopup) were removed.
+// Their routes were 410'd in the 2026-08-23 H1 security fix (double-spend:
+// this file wrote remaining_paise + wallet_transactions while the canonical
+// giftCardService writes balance_paise + wallet_ledger) and nothing has
+// referenced them since — grep for `membership.issueGiftCard` etc. finds no
+// callers. giftCardService is the single ledger authority.
 
 // ── Tips ─────────────────────────────────────────────────────────────────
 async function recordTip(businessId, body) {
@@ -499,7 +422,5 @@ module.exports = {
   listSubscribers,
   cancelSubscription,
   activeForCustomer, lastExpiredForCustomer,
-  issueGiftCard, listGiftCards, redeemGiftCard,
-  walletTopup,
   recordTip, tipReport,
 };

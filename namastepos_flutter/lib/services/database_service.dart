@@ -15,7 +15,10 @@ class DatabaseService {
   // MenuProvider seeded (Masala Dosa / Idli etc.). The new architecture
   // makes the backend the source of truth and MenuProvider.replaceAll
   // mirrors backend into local on every refresh.
-  static const int _dbVersion = 2;
+  // v3 (NP-137, 2026-09-03): expenses.clientKey — idempotency tag sent with
+  // the create POST so offline-queued expenses can be retried/reconciled
+  // without ghost duplicates.
+  static const int _dbVersion = 3;
 
   Database? _db;
 
@@ -138,6 +141,7 @@ class DatabaseService {
         date TEXT NOT NULL,
         receiptUrl TEXT,
         synced INTEGER NOT NULL DEFAULT 0,
+        clientKey TEXT,
         createdAt TEXT NOT NULL
       );
     ''');
@@ -233,6 +237,11 @@ class DatabaseService {
         b.delete(t);
       }
       await b.commit(noResult: true);
+    }
+    // v3 (NP-137): additive column — the idempotency key the expense create
+    // POST carries so offline-queued rows can be re-posted/reconciled safely.
+    if (oldV < 3) {
+      await db.execute('ALTER TABLE expenses ADD COLUMN clientKey TEXT');
     }
   }
 

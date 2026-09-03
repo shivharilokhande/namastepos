@@ -5,6 +5,7 @@
 // just increments qty (same behavior as iPad-based POS apps). A floating
 // cart drawer can be expanded to edit qty, remove lines, or add notes.
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -363,11 +364,19 @@ class _MenuItemTile extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 6),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
-                      child: Image.network(
-                        fullImageUrl(item.imageUrl!),
+                      // NP-140: CachedNetworkImage — Image.network re-fetched
+                      // and decoded the FULL-RES upload for every tile on
+                      // every grid rebuild. Disk-cached + decoded at ~2× the
+                      // tile's logical width (grid tile ≈ half screen ≈
+                      // 180-200 lp) so scrolling stops churning memory.
+                      child: CachedNetworkImage(
+                        imageUrl: fullImageUrl(item.imageUrl!),
                         width: double.infinity,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        memCacheWidth: 400,
+                        placeholder: (_, __) =>
+                            Container(color: AppColors.background),
+                        errorWidget: (_, __, ___) => const SizedBox.shrink(),
                       ),
                     ),
                   ),

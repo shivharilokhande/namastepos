@@ -87,10 +87,13 @@ class ExpensesProvider extends ChangeNotifier {
       date: date ?? DateTime.now(),
       createdAt: DateTime.now(),
     );
-    await ExpenseRepo.instance.create(e);
-    _expenses.insert(0, e);
+    // NP-137: insert what the repo actually persisted — a 4xx rejection now
+    // THROWS (no ghost row, caller shows the error) and an offline create
+    // comes back synced=false so the list can badge it "not synced".
+    final created = await ExpenseRepo.instance.create(e);
+    _expenses.insert(0, created);
     notifyListeners();
-    return e;
+    return created;
   }
 
   Future<void> delete(String id) async {

@@ -37,12 +37,14 @@ class _OrdersScreenState extends State<OrdersScreen>
     WidgetsBinding.instance.addObserver(this);
     // Web-side status changes (dashboard marks an order ready or
     // collected) previously stayed invisible on mobile until pull-to-
-    // refresh. Poll every 5 seconds while this screen is mounted — same
-    // cadence the dashboard uses. `context.read` is safe in a Timer
-    // callback because we cancel the timer in `dispose`.
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    // refresh. NP-135: poll every 10 seconds with the cheap updatedSince
+    // delta — an idle screen no longer re-downloads + rewrites the
+    // 500-order cache every tick; only actual changes touch SQLite/UI.
+    // `context.read` is safe in a Timer callback because we cancel the
+    // timer in `dispose`.
+    _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       if (!mounted) return;
-      context.read<OrdersProvider>().refresh();
+      context.read<OrdersProvider>().pollDelta();
     });
   }
 

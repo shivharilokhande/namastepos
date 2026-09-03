@@ -108,6 +108,12 @@ const listQuery = Joi.object({
   // mobile + dashboard so a dine-in customer sees ONE bill no matter
   // how many KOTs they sent. Kitchen views (KOT/KDS) keep groupBy=null.
   groupBy: Joi.string().valid('session').allow(null),
+  // NP-135 (2026-09-03): delta polling. Only orders whose updated_at is
+  // STRICTLY AFTER this ISO timestamp are returned — lets the mobile Orders
+  // tab poll cheaply (empty delta = nothing changed = no cache rewrite)
+  // instead of re-downloading 500 rows every tick. Additive: omitted =
+  // exactly the old full-list behaviour.
+  updatedSince: Joi.date().iso(),
   limit: Joi.number().integer().min(1).max(500).default(100),
   offset: Joi.number().integer().min(0).default(0),
 });

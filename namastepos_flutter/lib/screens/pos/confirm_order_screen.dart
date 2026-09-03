@@ -234,8 +234,16 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
     setState(() => _saving = true);
     // Membership upsell fires exactly when payment happens (not on KOT
     // saves — those get the offer at settle).
+    // NP-136: it used to be awaited AFTER `_saving = true` but OUTSIDE the
+    // try/finally below — any throw (lookup 5xx, dialog error) left _saving
+    // stuck true and the Confirm button frozen until an app restart. The
+    // offer is a nice-to-have: log and continue, never block the order.
     if (!kotOnly) {
-      await _maybeOfferMembership();
+      try {
+        await _maybeOfferMembership();
+      } catch (e) {
+        debugPrint('[POS] membership offer failed (non-blocking): $e');
+      }
       if (!mounted) return;
     }
     // P0 fix (2026-08-22): the whole flow (createOrderFromCart +

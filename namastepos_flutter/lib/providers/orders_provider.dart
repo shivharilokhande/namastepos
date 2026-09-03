@@ -24,6 +24,14 @@ class OrdersProvider extends ChangeNotifier {
   // signed out. Used to (a) wipe tenant state on logout/switch and (b) refuse
   // loads/fallbacks for a business that isn't the signed-in one.
   String? _authBusinessId;
+  // NP-135: delta-poll watermark — the newest server `updated_at` we've
+  // applied. Advance-only (a session bill's updatedAt can lag its KOTs', so
+  // load() must never move it backwards past what pollDelta already saw).
+  DateTime? _lastSyncTs;
+  // NP-141: today's Revenue/Orders from /reports/daily — the same numbers the
+  // web dashboard shows. The 500-capped list fold stays as offline fallback.
+  double? _reportRevenue;
+  int? _reportOrderCount;
 
   List<CartItem> get cart => List.unmodifiable(_cart);
   List<Order> get orders => List.unmodifiable(_orders);
@@ -45,6 +53,9 @@ class OrdersProvider extends ChangeNotifier {
     _cart.clear();
     _businessId = null;
     _loading = false;
+    _lastSyncTs = null;
+    _reportRevenue = null;
+    _reportOrderCount = null;
     // May run during a ProxyProvider `update` (build phase) — defer the
     // notification so we don't markNeedsBuild mid-build.
     Future.microtask(notifyListeners);
@@ -100,6 +111,26 @@ class OrdersProvider extends ChangeNotifier {
         ..clear()
         ..addAll(stillPending) // newest (just-created offline) first
         ..addAll(list);
+      // NP-135: advance the delta watermark to the newest SERVER updatedAt
+      // (never local pending rows — client clocks can run ahead of the
+      // server and would make the next delta miss real changes). Advance-
+      // only: a collapsed bill's updatedAt can lag one of its KOTs', and
+      // pollDelta may already have seen a newer raw row.
+      DateTime? maxUpd;
+      for (final o in list) {
+        if (maxUpd == null || o.updatedAt.isAfter(maxUpd)) maxUpd = o.updatedAt;
+      }
+      // Review fix: never seed the watermark from the CLIENT clock — a fast
+      // device clock would make pollDelta miss other-device orders. With no
+      // server rows the watermark stays null and pollDelta falls back to a
+      // full load() until a real server updatedAt arrives.
+      if (maxUpd != null &&
+          (_lastSyncTs == null || maxUpd.isAfter(_lastSyncTs!))) {
+        _lastSyncTs = maxUpd;
+      }
+      // NP-141: refresh the daily-report KPIs alongside (fire-and-forget).
+      // ignore: unawaited_futures
+      _refreshTodayReport(businessId);
     } catch (e) {
       // Used to be `catch (_) {}` — silently masked auth/feature-gate
       // failures and showed stale local-only orders that the dashboard
@@ -127,6 +158,76 @@ class OrdersProvider extends ChangeNotifier {
     // business other than the current session's.
     if (_businessId == null || _businessId != _authBusinessId) return;
     await load(_businessId!);
+  }
+
+  /// NP-135: cheap change-detection poll for the Orders tab. Asks the backend
+  /// only for orders updated after the last watermark (raw KOT rows, no
+  /// session grouping):
+  ///   • empty delta   → nothing changed: no cache rewrite, no notifyListeners
+  ///   • non-session Δ → upsert just those rows (cache + in-memory)
+  ///   • session Δ     → full load(): a delta of one KOT would collapse into
+  ///                     a PARTIAL bill (missing that session's other KOTs)
+  /// Full refresh stays with [refresh] for pull-to-refresh / screen mount.
+  Future<void> pollDelta() async {
+    if (_businessId == null || _businessId != _authBusinessId) return;
+    if (_loading) return; // a full load is already in flight
+    final since = _lastSyncTs;
+    if (since == null) { await load(_businessId!); return; }
+    final businessId = _businessId!;
+    try {
+      // limit 500 (same cap as load()) — the server defaults to 100 and a
+      // >100-row delta would silently drop rows the watermark then skips.
+      final api = await ApiService.instance
+          .listOrders(businessId, updatedSince: since, limit: 500);
+      // NP-115: session changed mid-fetch — discard.
+      if (businessId != _authBusinessId) return;
+      if (api.isEmpty) return; // no changes — the whole point of the delta
+      final changed =
+          api.cast<Map<String, dynamic>>().map(Order.fromBackend).toList();
+      // Advance the watermark FIRST (raw rows carry the true updated_at) so
+      // a session-triggered full load can't leave it stale and re-loop.
+      for (final o in changed) {
+        if (_lastSyncTs == null || o.updatedAt.isAfter(_lastSyncTs!)) {
+          _lastSyncTs = o.updatedAt;
+        }
+      }
+      if (changed.any((o) => o.tableSessionId != null || o.isBill)) {
+        await load(businessId); // dine-in KOT — rebuild the collapsed bills
+        return;
+      }
+      await OrderRepo.instance.upsertOrders(businessId, changed);
+      for (final o in changed) {
+        final idx = _orders.indexWhere((e) => e.id == o.id);
+        if (idx >= 0) {
+          _orders[idx] = o;
+        } else {
+          _orders.insert(0, o);
+        }
+      }
+      notifyListeners();
+    } catch (e) {
+      // Poll is best-effort — offline ticks just show the last-known list.
+      debugPrint('ORDERS pollDelta failed for biz $businessId: $e');
+    }
+  }
+
+  /// NP-141: pull today's Revenue/Orders from the daily report — the same
+  /// endpoint (and numbers) the web dashboard and the Home Collections card
+  /// use — so the Home KPIs stop undercounting once the day crosses the
+  /// 500-order list cap. Silent on failure: the list-fold fallback keeps
+  /// working offline.
+  Future<void> _refreshTodayReport(String businessId) async {
+    try {
+      final r = await ApiService.instance.dailyReport(businessId, DateTime.now());
+      if (businessId != _authBusinessId) return; // NP-115 guard
+      final rev = ((r['revenue'] as Map?)?['total'] as num?)?.toDouble();
+      final cnt = (r['orderCount'] as num?)?.toInt();
+      if (rev != _reportRevenue || cnt != _reportOrderCount) {
+        _reportRevenue = rev;
+        _reportOrderCount = cnt;
+        notifyListeners();
+      }
+    } catch (_) { /* offline — keep the list-fold fallback */ }
   }
 
   // ── Cart operations ─────────────────────────────────────────────────────
@@ -485,15 +586,21 @@ class OrdersProvider extends ChangeNotifier {
     }
   }
 
-  // KPIs for today (for dashboard). IST day-bucketing (2026-08-23):
-  // backend timestamps are UTC — raw day comparison drops orders placed
-  // before 05:30 IST and Postgres-DATE values entirely.
-  double get todayRevenue => _orders
+  // KPIs for today (for dashboard). NP-141: prefer the daily-report figures
+  // (match the web dashboard; not capped at the 500-order list limit); the
+  // IST-bucketed list fold remains ONLY as the offline fallback.
+  // IST day-bucketing (2026-08-23): backend timestamps are UTC — raw day
+  // comparison drops orders placed before 05:30 IST.
+  double get todayRevenue => _reportRevenue ?? _foldTodayRevenue;
+
+  int get todayOrderCount => _reportOrderCount ?? _foldTodayOrderCount;
+
+  double get _foldTodayRevenue => _orders
       .where((o) =>
           AppFmt.isISTToday(o.createdAt) && o.status != OrderStatus.cancelled)
       .fold<double>(0, (sum, o) => sum + o.total);
 
-  int get todayOrderCount => _orders
+  int get _foldTodayOrderCount => _orders
       .where((o) =>
           AppFmt.isISTToday(o.createdAt) && o.status != OrderStatus.cancelled)
       .length;

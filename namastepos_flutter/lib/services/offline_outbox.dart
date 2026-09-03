@@ -9,6 +9,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:sqflite/sqflite.dart';
 import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -26,9 +27,16 @@ class OfflineOutbox {
   StreamSubscription? _connSub;
   Timer? _drainTimer;
   Dio? _api;
+  // NP-134: lightweight auth probe injected from main.dart (the outbox is a
+  // singleton service — it must not depend on ApiService/AuthProvider
+  // directly). Returns true when a refresh token exists, i.e. a session is
+  // recoverable and drained requests can actually be authorised. Null (not
+  // injected, e.g. old tests) = assume signed in, preserving old behaviour.
+  Future<bool> Function()? _hasSession;
 
-  Future<void> init({required Dio api}) async {
+  Future<void> init({required Dio api, Future<bool> Function()? hasSession}) async {
     _api = api;
+    _hasSession = hasSession;
     _db = await openDatabase(
       'namastepos_outbox.db',
       version: 2,
@@ -133,14 +141,13 @@ class OfflineOutbox {
       return r;
     } catch (err) {
       // Loud diagnostic — previously a bare `catch (_) {}` swallowed every
-      // failure (auth, validation, network). Orders ended up in the local
-      // outbox forever while the dashboard saw nothing. Print the body
-      // and the error so the actual cause is visible in `flutter run`.
-      // ignore: avoid_print
-      print('OUTBOX: $method $endpoint FAILED — $err');
+      // failure (auth, validation, network), so orders ended up in the local
+      // outbox forever while the dashboard saw nothing.
+      // NP-138: debugPrint (stripped in release) + NO response bodies —
+      // bodies can carry customer PII; status code + endpoint is enough.
+      debugPrint('OUTBOX: $method $endpoint FAILED — '
+          '${err is DioException ? 'status=${err.response?.statusCode}' : err.runtimeType}');
       if (err is DioException) {
-        // ignore: avoid_print
-        print('OUTBOX status=${err.response?.statusCode} body=${err.response?.data}');
         // H4 fix (2026-08-23, review): a 4xx is a REJECTION, not an
         // outage — retrying a validation-failed order every 30s for
         // 25 min then silently purging it misled the cashier into
@@ -201,6 +208,11 @@ class OfflineOutbox {
       // Skip the (network) reachability probe entirely when nothing is queued —
       // avoids a needless /health ping every 30s on the happy path.
       if (await activePendingCount() == 0) return 0;
+      // NP-134: signed out (no refresh token) → every drained request would
+      // 401 and burn the rows' retry budget while the user simply hasn't
+      // logged back in yet. Skip the whole drain — no attempt increments, no
+      // /health ping. AuthProvider triggers a drain right after login.
+      if (_hasSession != null && !await _hasSession!()) return 0;
       // FB-21: only drain when the server is actually reachable.
       if (!await _reachable()) return 0;
       // FB-22 (2026-09-01): drain the FULL backlog, not just the first 20. Keep
@@ -250,22 +262,37 @@ class OfflineOutbox {
       } catch (err) {
         // Surface drain failures too — these are the queued items that
         // have been failing on every 30s drain since the user first hit
-        // the bug. Without printing them the user never knows their
+        // the bug. Without logging them the user never knows their
         // orders are stuck.
-        // ignore: avoid_print
-        print('OUTBOX DRAIN: ${row['method']} ${row['endpoint']} '
-            '(attempt ${(row['attempts'] as int) + 1}) FAILED — $err');
+        // NP-138: debugPrint + status/endpoint only — never response bodies.
+        debugPrint('OUTBOX DRAIN: ${row['method']} ${row['endpoint']} '
+            '(attempt ${(row['attempts'] as int) + 1}) FAILED — '
+            '${err is DioException ? 'status=${err.response?.statusCode}' : err.runtimeType}');
         int nextAttempts = (row['attempts'] as int) + 1;
         if (err is DioException) {
-          // ignore: avoid_print
-          print('OUTBOX DRAIN status=${err.response?.statusCode} body=${err.response?.data}');
+          final sc = err.response?.statusCode ?? 0;
+          // NP-134: a 401 mid-drain means the session died (interceptor
+          // already tried a refresh and failed). Retrying the rest of the
+          // batch would 401 every row and burn everyone's retry budget while
+          // the user simply isn't logged in. Do NOT increment attempts —
+          // record the reason, stop the batch, and wait for the post-login
+          // drain that AuthProvider fires on every successful sign-in.
+          if (sc == 401) {
+            await _db!.update('outbox',
+              {
+                'last_attempt_at': DateTime.now().millisecondsSinceEpoch,
+                'last_error': 'auth expired (401) — waiting for re-login',
+              },
+              where: 'client_id = ?', whereArgs: [row['client_id']],
+            );
+            break;
+          }
           // 2026-08-31 review fix: a permanent 4xx rejection (validation, a
           // stale points-redeem, a deleted business 404) will NEVER succeed on
           // retry — jump it straight to dead-letter so the cashier is told at
-          // once instead of after 25 min of pointless retries. 401/408/429 are
-          // transient and keep their normal +1 backoff.
-          final sc = err.response?.statusCode ?? 0;
-          if (sc >= 400 && sc < 500 && sc != 401 && sc != 408 && sc != 429) {
+          // once instead of after 25 min of pointless retries. 408/429 are
+          // transient and keep their normal +1 backoff (401 handled above).
+          if (sc >= 400 && sc < 500 && sc != 408 && sc != 429) {
             nextAttempts = _maxAttempts + 1;
           }
         }

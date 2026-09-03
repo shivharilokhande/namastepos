@@ -11,9 +11,17 @@ const support = require('../services/supportService');
 
 router.use(requireAuth, requireBusinessOwnership);
 
-// List this business's tickets
+// List this business's tickets.
+// NP-143: paginated (limit default 50, max 200 — clamped in the service);
+// `tickets` array shape unchanged, `total` added.
 router.get('/', asyncHandler(async (req, res) => {
-  res.json({ tickets: await support.listTickets({ businessId: req.params.businessId, status: req.query.status }) });
+  const { tickets, total } = await support.listTickets({
+    businessId: req.params.businessId,
+    status: req.query.status,
+    limit: req.query.limit,
+    offset: req.query.offset,
+  });
+  res.json({ tickets, total });
 }));
 
 // Raise a ticket

@@ -1135,7 +1135,7 @@ function collapseBySession(orders) {
   return out;
 }
 
-async function list(businessId, { date, status, source, channel, groupBy, limit = 100, offset = 0 } = {}) {
+async function list(businessId, { date, status, source, channel, groupBy, updatedSince, limit = 100, offset = 0 } = {}) {
   const where = ['business_id = $1'];
   const values = [businessId];
   let idx = 2;
@@ -1144,6 +1144,14 @@ async function list(businessId, { date, status, source, channel, groupBy, limit 
     where.push(`created_at::date = $${idx++}::date`);
     values.push(date);
   }
+  // NP-135: delta polling — strictly-after filter on updated_at (set to
+  // NOW() by create/updateStatus). Deliberately NOT applied to the
+  // channelCounts query below: the chips describe the whole status/date set,
+  // and delta callers ignore counts anyway.
+  // date_trunc to ms: the JSON watermark the client echoes back only carries
+  // millisecond precision, while Postgres stores microseconds — comparing raw
+  // would re-match every row against its own truncated timestamp forever.
+  if (updatedSince) { where.push(`date_trunc('milliseconds', updated_at) > $${idx++}`); values.push(updatedSince); }
   // Filter by exact source (dineIn / takeaway / zomato / swiggy / other),
   // or by channel = 'online' (zomato + swiggy) / 'offline' (dineIn + takeaway).
   if (source) { where.push(`source = $${idx++}`); values.push(source); }

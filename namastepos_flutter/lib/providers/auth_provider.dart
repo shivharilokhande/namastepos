@@ -7,6 +7,7 @@ import '../models/plan_info.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
+import '../services/offline_outbox.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated, locked }
 
@@ -223,6 +224,14 @@ class AuthProvider extends ChangeNotifier {
     // ignore: unawaited_futures
     NotificationService.instance.registerFcmToken(biz.id).catchError((e) {
       debugPrint('[auth] fcm register failed (non-fatal): $e');
+    });
+    // NP-134: the outbox skips drains while signed out — kick one off now
+    // that a fresh session exists so queued orders sync immediately instead
+    // of waiting for the next 30s tick. Fire-and-forget, never blocks login.
+    // ignore: unawaited_futures
+    OfflineOutbox().drainOnce().catchError((e) {
+      debugPrint('[auth] post-login outbox drain failed (non-fatal): $e');
+      return 0;
     });
   }
 

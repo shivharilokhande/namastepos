@@ -58,22 +58,36 @@ async function createTicket({ businessId, subject, priority = 'normal', body,
 }
 
 // Admin list with optional status filter + message counts + business name.
-async function listTickets({ status, businessId } = {}) {
+// NP-143 (2026-09-03): the list was unbounded (every ticket, every page load)
+// and counted messages via a correlated subquery per row. Now paginated
+// (limit default 50, max 200) with `total` from COUNT(*) OVER(), and the
+// message counts come from ONE grouped join over support_ticket_messages.
+// Returns { tickets, total } — callers keep the `tickets` array shape.
+async function listTickets({ status, businessId, limit = 50, offset = 0 } = {}) {
+  const lim = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+  const off = Math.max(parseInt(offset, 10) || 0, 0);
   const where = ['1=1']; const vals = []; let i = 1;
   if (status && STATUSES.includes(status)) { where.push(`t.status = $${i++}`); vals.push(status); }
   if (businessId) { where.push(`t.business_id = $${i++}`); vals.push(businessId); }
+  vals.push(lim, off);
   const r = await query(
     `SELECT t.*, b.name AS business_name,
-            (SELECT COUNT(*) FROM support_ticket_messages m WHERE m.ticket_id = t.id) AS message_count
+            COALESCE(mc.message_count, 0) AS message_count,
+            COUNT(*) OVER() AS total_count
        FROM support_tickets t
        JOIN businesses b ON b.id = t.business_id
+  LEFT JOIN (SELECT ticket_id, COUNT(*) AS message_count
+               FROM support_ticket_messages
+              GROUP BY ticket_id) mc ON mc.ticket_id = t.id
       WHERE ${where.join(' AND ')}
       ORDER BY (t.status IN ('open','pending')) DESC,
                CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
-               t.last_reply_at DESC NULLS LAST`,
+               t.last_reply_at DESC NULLS LAST
+      LIMIT $${i++} OFFSET $${i++}`,
     vals
   );
-  return r.rows.map(serializeTicket);
+  const total = r.rows.length > 0 ? parseInt(r.rows[0].total_count, 10) : 0;
+  return { tickets: r.rows.map(serializeTicket), total };
 }
 
 async function getTicket(id) {

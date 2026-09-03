@@ -393,6 +393,31 @@ class OrderRepo {
     } catch (_) { /* cache is a nicety — never fail the fetch over it */ }
   }
 
+  /// NP-135: upsert ONLY the given (changed) orders into the cache — replaces
+  /// each row and its items in one transaction without touching the other
+  /// ~500 cached rows. Used by the Orders-tab delta poll so an idle screen no
+  /// longer rewrites the whole cache every tick; full rewrites stay with
+  /// [replaceCache] (pull-to-refresh / screen mount).
+  Future<void> upsertOrders(String businessId, List<Order> orders) async {
+    if (orders.isEmpty) return;
+    try {
+      final db = await DatabaseService.instance.db;
+      await db.transaction((txn) async {
+        for (final o in orders) {
+          // Drop stale items first — an edited order may have fewer lines.
+          await txn.delete('order_items', where: 'orderId = ?', whereArgs: [o.id]);
+          await txn.insert('orders', o.toMap(),
+              conflictAlgorithm: ConflictAlgorithm.replace);
+          for (final it in o.items) {
+            if (it.id.isEmpty) continue;
+            await txn.insert('order_items', it.toMap(),
+                conflictAlgorithm: ConflictAlgorithm.replace);
+          }
+        }
+      });
+    } catch (_) { /* cache is a nicety — never fail the poll over it */ }
+  }
+
   /// FB-13 (2026-09-01): atomically replace a business's cached orders. The old
   /// load() did purgeAll → cacheAll(server) → cacheAll(pending) as THREE separate
   /// operations; an exception or app-kill between them could leave the cache
@@ -434,21 +459,104 @@ class ExpenseRepo {
   // reached the backend reports. Now: backend is the source of truth;
   // sqflite is the offline cache/fallback.
 
-  Future<Expense> create(Expense e) async {
-    try {
-      await ApiService.instance.createExpense(e.businessId, {
+  /// NP-137: the old swallow-all catch inserted a local row on EVERY failure —
+  /// a 400 (validation) produced a ghost expense the server never had, and a
+  /// timeout-after-commit produced a duplicate on the next sync. Now:
+  ///   • 4xx from the server → rethrow (UI shows the error), NO local insert;
+  ///   • network/timeout/5xx → local insert with synced=0 + clientKey, badged
+  ///     "not synced" and reconciled by [list] on the next online fetch.
+  Map<String, dynamic> _postBody(Expense e) => {
         'category': e.category.name,
         'amount': e.amount,
         if (e.description != null && e.description!.isNotEmpty)
           'description': e.description,
         'date': e.date.toIso8601String().substring(0, 10),
-      });
-    } catch (_) {
-      // Offline — keep the local copy; it still shows in the app.
-    }
+        // Idempotency key (NP-137). The backend stores + dedupes it (mig 073):
+        // a retried POST with the same key returns the original row.
+        'clientKey': e.clientKey ?? e.id,
+      };
+
+  Future<Expense> create(Expense raw) async {
+    // Every mobile-created expense carries a clientKey (= its local uuid id).
+    final e = raw.clientKey == null
+        ? Expense(
+            id: raw.id, businessId: raw.businessId, category: raw.category,
+            amount: raw.amount, description: raw.description, date: raw.date,
+            receiptUrl: raw.receiptUrl, clientKey: raw.id,
+            createdAt: raw.createdAt)
+        : raw;
     final db = await DatabaseService.instance.db;
-    await db.insert('expenses', e.toMap());
-    return e;
+    try {
+      await ApiService.instance.createExpense(e.businessId, _postBody(e));
+      final saved = e.copyWith(synced: true);
+      await db.insert('expenses', saved.toMap());
+      return saved;
+    } on ApiException catch (err) {
+      final sc = err.statusCode ?? 0;
+      if (sc >= 400 && sc < 500) rethrow; // rejected — never a ghost row
+      // Offline / 5xx — keep the local unsynced copy for later reconcile.
+      await db.insert('expenses', e.toMap());
+      return e;
+    } catch (_) {
+      await db.insert('expenses', e.toMap());
+      return e;
+    }
+  }
+
+  static bool _sameDay(DateTime a, DateTime b) =>
+      a.year == b.year && a.month == b.month && a.day == b.day;
+
+  /// NP-137 reconcile — runs after every successful server list() fetch:
+  ///   1. drop local unsynced rows that already match a server row (the POST
+  ///      committed but the response was lost). Matched by clientKey echo
+  ///      (server persists it, mig 073); content-match is legacy fallback;
+  ///   2. re-attempt the POST for the rest (same clientKey rides along);
+  ///   3. return whatever is STILL unsynced so the UI can badge it.
+  Future<List<Expense>> _reconcileUnsynced(
+      String businessId, List<Expense> server) async {
+    final db = await DatabaseService.instance.db;
+    final rows = await db.query('expenses',
+        where: 'businessId = ? AND synced = 0', whereArgs: [businessId],
+        orderBy: 'date DESC, createdAt DESC');
+    if (rows.isEmpty) return const [];
+    final out = <Expense>[];
+    for (final row in rows) {
+      final local = Expense.fromMap(Map<String, dynamic>.from(row));
+      // Prefer the exact clientKey echo (server stores + dedupes it since
+      // mig 073) — content-match stays only as a fallback for rows created
+      // against an older backend that didn't persist the key.
+      final key = local.clientKey ?? local.id;
+      final matched = server.any((s) => s.clientKey == key) ||
+          server.any((s) =>
+              s.clientKey == null &&
+              s.category == local.category &&
+              (s.amount - local.amount).abs() < 0.005 &&
+              _sameDay(s.date, local.date));
+      if (matched) {
+        // Already on the server (timed-out-but-committed create) — drop the
+        // local shadow so it can't double-count.
+        await db.delete('expenses', where: 'id = ?', whereArgs: [local.id]);
+        continue;
+      }
+      try {
+        await ApiService.instance.createExpense(businessId, _postBody(local));
+        await db.update('expenses', {'synced': 1},
+            where: 'id = ?', whereArgs: [local.id]);
+        out.add(local.copyWith(synced: true));
+      } on ApiException catch (err) {
+        final sc = err.statusCode ?? 0;
+        if (sc >= 400 && sc < 500) {
+          // Permanent rejection — a row the server will never accept must not
+          // haunt the list (and retry) forever.
+          await db.delete('expenses', where: 'id = ?', whereArgs: [local.id]);
+        } else {
+          out.add(local); // still offline — keep it, badged "not synced"
+        }
+      } catch (_) {
+        out.add(local);
+      }
+    }
+    return out;
   }
 
   Future<List<Expense>> list(String businessId,
@@ -457,9 +565,16 @@ class ExpenseRepo {
     try {
       final raw = await ApiService.instance
           .listExpenses(businessId, start: start, end: end);
-      var out = raw
-          .map((m) => Expense.fromMap((m as Map).cast<String, dynamic>()))
+      final server = raw
+          // Rows straight from the server ARE synced — without forcing the
+          // flag they'd all wear the "not synced" badge (NP-137).
+          .map((m) => Expense.fromMap(
+              {...(m as Map).cast<String, dynamic>(), 'synced': 1}))
           .toList();
+      // NP-137: drop local unsynced rows the server already has, re-post the
+      // rest, and surface whatever is still local-only (badged in the UI).
+      final pending = await _reconcileUnsynced(businessId, server);
+      var out = [...pending, ...server];
       if (category != null) {
         out = out.where((e) => e.category == category).toList();
       }

@@ -326,17 +326,45 @@ async function autoRestock86() {
   );
 }
 
+// NP-142 (2026-09-03): the nightly analytics refresh used to walk every
+// business strictly serially — 3 sequential awaits per tenant meant the tick
+// duration grew linearly with tenant count and one slow tenant delayed all
+// the rest. Process in small concurrent batches instead. Tuning constants
+// (not env — batching size isn't config/secret, same pattern as CRON_LOCK_KEY):
+const ANALYTICS_BATCH_SIZE = 5;       // tenants refreshed concurrently
+const ANALYTICS_JITTER_MIN_MS = 50;   // per-tenant start jitter so a batch's
+const ANALYTICS_JITTER_MAX_MS = 250;  // first queries don't hit the pool at once
+
+const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function refreshAllBusinessAnalytics() {
+  const startedAt = Date.now();
   const biz = await query(`SELECT id FROM businesses WHERE deleted_at IS NULL`);
-  for (const b of biz.rows) {
-    try {
-      await forecast.refreshForecast(b.id);
-      await upsell.refreshRules(b.id);
-      await bankReconcile.autoMatch(b.id).catch(() => {});
-    } catch (err) {
-      logger.warn(`Analytics refresh failed for ${b.id}: ${err.message}`);
-    }
+  let ok = 0;
+  let failed = 0;
+  for (let i = 0; i < biz.rows.length; i += ANALYTICS_BATCH_SIZE) {
+    const batch = biz.rows.slice(i, i + ANALYTICS_BATCH_SIZE);
+    // Per-tenant failures are isolated inside the map callback (log +
+    // continue), so Promise.all here can never reject the whole batch.
+    await Promise.all(batch.map(async (b) => {
+      const jitter = ANALYTICS_JITTER_MIN_MS + Math.floor(
+        Math.random() * (ANALYTICS_JITTER_MAX_MS - ANALYTICS_JITTER_MIN_MS + 1));
+      await _sleep(jitter);
+      try {
+        await forecast.refreshForecast(b.id);
+        await upsell.refreshRules(b.id);
+        await bankReconcile.autoMatch(b.id).catch(() => {});
+        ok += 1;
+      } catch (err) {
+        failed += 1;
+        logger.warn(`Analytics refresh failed for ${b.id}: ${err.message}`);
+      }
+    }));
   }
+  logger.info(
+    `[analytics-refresh] tick done in ${Date.now() - startedAt}ms — `
+    + `${biz.rows.length} businesses (${ok} ok, ${failed} failed, `
+    + `batch size ${ANALYTICS_BATCH_SIZE})`);
 }
 
 function start({ intervalMs = 60 * 1000 } = {}) {

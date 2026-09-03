@@ -151,6 +151,24 @@ class _ExpenseTile extends StatelessWidget {
                       style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                 Text(AppFmt.date(expense.date),
                     style: const TextStyle(color: AppColors.textHint, fontSize: 11)),
+                // NP-137: expense saved locally while offline — will sync on
+                // the next successful refresh.
+                if (!expense.synced)
+                  Container(
+                    margin: const EdgeInsets.only(top: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text('NOT SYNCED',
+                        style: TextStyle(
+                          color: AppColors.warning,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.4,
+                        )),
+                  ),
               ],
             ),
           ),

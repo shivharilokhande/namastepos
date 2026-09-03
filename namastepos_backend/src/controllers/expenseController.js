@@ -20,6 +20,10 @@ const createBody = Joi.object({
   description: Joi.string().max(500).allow('', null),
   date: Joi.date().iso().required(),
   receiptUrl: Joi.string().uri().allow('', null),
+  // NP-137 (2026-09-03): idempotency key from the mobile offline-expense
+  // queue. Stored + unique per business (mig 073) — a retried POST with the
+  // same key returns the original row instead of duplicating.
+  clientKey: Joi.string().uuid().allow(null),
 });
 
 const listQuery = Joi.object({

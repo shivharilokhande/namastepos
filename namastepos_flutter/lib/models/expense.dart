@@ -86,6 +86,9 @@ class Expense {
   final DateTime date;
   final String? receiptUrl;
   final bool synced;
+  // NP-137: idempotency tag sent with the create POST (backend accepts +
+  // ignores it today). For mobile-created expenses this is the local row id.
+  final String? clientKey;
   final DateTime createdAt;
 
   const Expense({
@@ -97,8 +100,22 @@ class Expense {
     required this.date,
     this.receiptUrl,
     this.synced = false,
+    this.clientKey,
     required this.createdAt,
   });
+
+  Expense copyWith({bool? synced}) => Expense(
+        id: id,
+        businessId: businessId,
+        category: category,
+        amount: amount,
+        description: description,
+        date: date,
+        receiptUrl: receiptUrl,
+        synced: synced ?? this.synced,
+        clientKey: clientKey,
+        createdAt: createdAt,
+      );
 
   factory Expense.fromMap(Map<String, dynamic> m) => Expense(
         id: m['id'] as String,
@@ -109,6 +126,7 @@ class Expense {
         date: DateTime.tryParse(m['date']?.toString() ?? '') ?? DateTime.now(),
         receiptUrl: m['receiptUrl'] as String?,
         synced: (m['synced'] as int? ?? 0) == 1,
+        clientKey: m['clientKey'] as String?,
         createdAt: DateTime.tryParse(m['createdAt']?.toString() ?? '') ??
             DateTime.now(),
       );
@@ -122,6 +140,7 @@ class Expense {
         'date': date.toIso8601String(),
         'receiptUrl': receiptUrl,
         'synced': synced ? 1 : 0,
+        'clientKey': clientKey,
         'createdAt': createdAt.toIso8601String(),
       };
 }

@@ -508,8 +508,18 @@ const reportSubscriptions = asyncHandler(async (req, res) => res.json(
 
 // X7 (2026-08-28) — support / ticketing (admin console side)
 const support = require('../services/supportService');
-const supportList = asyncHandler(async (req, res) =>
-  res.json({ tickets: await support.listTickets({ status: req.query.status, businessId: req.query.businessId }) }));
+// NP-143: paginated (limit default 50, max 200 — clamped in the service).
+// Response stays backward-compatible: `tickets` is still the array; `total`
+// (full match count) is added for the pager.
+const supportList = asyncHandler(async (req, res) => {
+  const { tickets, total } = await support.listTickets({
+    status: req.query.status,
+    businessId: req.query.businessId,
+    limit: req.query.limit,
+    offset: req.query.offset,
+  });
+  res.json({ tickets, total });
+});
 const supportGet = asyncHandler(async (req, res) =>
   res.json({ ticket: await support.getTicket(req.params.ticketId) }));
 const supportCreate = asyncHandler(async (req, res) => res.status(201).json({

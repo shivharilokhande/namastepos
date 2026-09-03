@@ -9,6 +9,7 @@ import '../../constants/colors.dart';
 import '../../models/expense.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expenses_provider.dart';
+import '../../utils/error_humanizer.dart';
 import '../../utils/validators.dart';
 import '../../widgets/primary_button.dart';
 
@@ -37,13 +38,26 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     if (!_form.currentState!.validate()) return;
     final biz = context.read<AuthProvider>().business;
     if (biz == null) return;
-    await context.read<ExpensesProvider>().add(
-          businessId: biz.id,
-          category: _category,
-          amount: double.parse(_amount.text.trim()),
-          description: _desc.text.trim(),
-          date: _date,
-        );
+    // NP-137: a server REJECTION (4xx) now throws instead of silently
+    // creating a ghost local row — surface it and keep the form open.
+    // Offline creates still succeed (saved locally, badged "not synced").
+    try {
+      await context.read<ExpensesProvider>().add(
+            businessId: biz.id,
+            category: _category,
+            amount: double.parse(_amount.text.trim()),
+            description: _desc.text.trim(),
+            date: _date,
+          );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text("Couldn't save expense — " + humanizeError(e)),
+          backgroundColor: AppColors.error,
+        ));
+      }
+      return;
+    }
     if (mounted) Navigator.pop(context);
   }
 

@@ -32,21 +32,29 @@ export function SupportPage() {
   const [status, setStatus] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const { data: tickets = [] } = useQuery<Ticket[]>({
-    queryKey: ['support', status],
-    queryFn: () => adminApi.supportTickets({ status: status || undefined }),
+  // NP-143 — server-side pagination (same Prev/Next pager as CustomersPage).
+  const PAGE_SIZE = 50;
+  const [page, setPage] = useState(0);
+  const { data } = useQuery<{ tickets: Ticket[]; total: number }>({
+    queryKey: ['support', status, page],
+    queryFn: () => adminApi.supportTickets({
+      status: status || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE,
+    }),
   });
+  const tickets = data?.tickets ?? [];
+  const total = data?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Support</h1>
-          <p className="text-muted-foreground">{tickets.length} tickets</p>
+          <p className="text-muted-foreground">{total} tickets</p>
         </div>
         <div className="flex gap-2">
           <select className="h-9 rounded-md border bg-background px-3 text-sm"
-            value={status} onChange={(e) => setStatus(e.target.value)}>
+            value={status} onChange={(e) => { setStatus(e.target.value); setPage(0); }}>
             <option value="">All statuses</option>
             <option value="open">Open</option>
             <option value="pending">Pending</option>
@@ -78,6 +86,21 @@ export function SupportPage() {
           </Card>
         ))}
       </div>
+
+      {total > PAGE_SIZE && (
+        <div className="flex items-center justify-between pt-2 text-sm">
+          <span className="text-muted-foreground">
+            {total === 0 ? 0 : page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" disabled={page <= 0}
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}>Prev</Button>
+            <span className="text-muted-foreground">Page {page + 1} / {pageCount}</span>
+            <Button variant="outline" size="sm" disabled={page + 1 >= pageCount}
+                    onClick={() => setPage((p) => p + 1)}>Next</Button>
+          </div>
+        </div>
+      )}
 
       {openId && <TicketDialog id={openId} onClose={() => setOpenId(null)} />}
       {creating && <NewTicketDialog onClose={() => setCreating(false)} />}

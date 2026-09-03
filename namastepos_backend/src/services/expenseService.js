@@ -14,17 +14,44 @@ function serialize(row) {
     date: row.date,
     receiptUrl: row.receipt_url,
     createdAt: row.created_at,
+    clientKey: row.client_key || null,
   };
 }
 
 async function create(businessId, body) {
-  const { category = 'other', amount, description = null, date, receiptUrl = null } = body;
-  const r = await query(
-    `INSERT INTO expenses (business_id, category, amount, description, date, receipt_url)
-     VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-    [businessId, category, amount, description, date, receiptUrl]
-  );
-  return serialize(r.rows[0]);
+  const {
+    category = 'other', amount, description = null, date, receiptUrl = null,
+    clientKey = null,
+  } = body;
+  // NP-137 follow-up (mig 073): true idempotency on the mobile offline queue's
+  // clientKey — a timeout-committed POST retried later returns the ORIGINAL
+  // row instead of inserting a duplicate.
+  if (clientKey) {
+    const dup = await query(
+      `SELECT * FROM expenses
+        WHERE business_id = $1 AND client_key = $2 AND deleted_at IS NULL`,
+      [businessId, clientKey]
+    );
+    if (dup.rowCount > 0) return serialize(dup.rows[0]);
+  }
+  try {
+    const r = await query(
+      `INSERT INTO expenses (business_id, category, amount, description, date, receipt_url, client_key)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+      [businessId, category, amount, description, date, receiptUrl, clientKey]
+    );
+    return serialize(r.rows[0]);
+  } catch (err) {
+    // Concurrent retry lost the unique-index race — return the winner's row.
+    if (err.code === '23505' && err.constraint === 'uq_expenses_client_key') {
+      const winner = await query(
+        `SELECT * FROM expenses WHERE business_id = $1 AND client_key = $2`,
+        [businessId, clientKey]
+      );
+      if (winner.rowCount > 0) return serialize(winner.rows[0]);
+    }
+    throw err;
+  }
 }
 
 // NP-128 (2026-09-03): the list had no LIMIT — a busy outlet's full expense

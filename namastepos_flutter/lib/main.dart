@@ -92,7 +92,22 @@ Future<void> main() async {
     // Offline outbox — queues writes when connectivity is gone, drains
     // in the background on reconnect / every 30s. Idempotent at backend
     // via orderService.create's client_id uniqueness.
-    await OfflineOutbox().init(api: ApiService.instance.dio);
+    // NP-134: hasSession lets the outbox skip drains while signed out (no
+    // refresh token → every request would 401 and burn retry budget).
+    await OfflineOutbox().init(
+      api: ApiService.instance.dio,
+      hasSession: () async {
+        // Guarded: secure-storage reads have failed before on iOS (-25299,
+        // 2026-09-01). On ANY failure assume a session exists — that is the
+        // pre-NP-134 behaviour and only costs a retried drain, never a crash.
+        try {
+          final r = await ApiService.instance.refreshToken;
+          return r != null && r.isNotEmpty;
+        } catch (_) {
+          return true;
+        }
+      },
+    );
 
     runApp(
       MultiProvider(

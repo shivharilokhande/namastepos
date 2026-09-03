@@ -12,6 +12,7 @@
 // always show the UI and quietly swallow 402 FEATURE_LOCKED responses on
 // save — the base item still saves, the extras just no-op until upgrade.
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
@@ -95,10 +96,14 @@ class _MenuEditorScreenState extends State<MenuEditorScreen> {
       leading: m.imageUrl != null && m.imageUrl!.isNotEmpty
           ? ClipRRect(
               borderRadius: BorderRadius.circular(6),
-              child: Image.network(
-                _fullImage(m.imageUrl!),
+              // NP-140: cached + decoded at ~2× the 44 lp thumb, not full-res.
+              child: CachedNetworkImage(
+                imageUrl: _fullImage(m.imageUrl!),
                 width: 44, height: 44, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _vegDot(m),
+                memCacheWidth: 88,
+                placeholder: (_, __) => Container(
+                    width: 44, height: 44, color: AppColors.background),
+                errorWidget: (_, __, ___) => _vegDot(m),
               ),
             )
           : _vegDot(m),
@@ -537,10 +542,14 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
                         : (_imageUrl.isNotEmpty
                             ? ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: Image.network(
-                                  _fullImage(_imageUrl),
+                                // NP-140: cached + decoded at ~2× the 84 lp box.
+                                child: CachedNetworkImage(
+                                  imageUrl: _fullImage(_imageUrl),
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
+                                  memCacheWidth: 168,
+                                  placeholder: (_, __) => const Center(
+                                      child: CircularProgressIndicator(strokeWidth: 2)),
+                                  errorWidget: (_, __, ___) =>
                                       const Icon(Icons.broken_image, color: AppColors.textHint),
                                 ),
                               )
