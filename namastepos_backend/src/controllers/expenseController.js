@@ -26,6 +26,12 @@ const listQuery = Joi.object({
   startDate: Joi.date().iso(),
   endDate: Joi.date().iso(),
   category: Joi.string().max(50),
+  // NP-128: server-side pagination (mirrors orderController.listQuery).
+  // NO default: fielded mobile builds send no limit and SUM the list for
+  // monthly P&L — a silent default would understate expenses (review HIGH).
+  // Pagination applies only when the client opts in.
+  limit: Joi.number().integer().min(1).max(200),
+  offset: Joi.number().integer().min(0).default(0),
 });
 
 module.exports = {
@@ -40,7 +46,9 @@ module.exports = {
     validate({ query: listQuery }),
     asyncHandler(async (req, res) => {
       const expenses = await expense.list(req.params.businessId, req.query);
-      res.json({ expenses, count: expenses.length });
+      // NP-128: `total` = full match count (page-independent); `count` stays
+      // the page length so the response shape is backward-compatible.
+      res.json({ expenses, count: expenses.length, total: expenses.total ?? expenses.length });
     }),
   ],
   remove: asyncHandler(async (req, res) => {

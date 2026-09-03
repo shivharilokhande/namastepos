@@ -236,11 +236,14 @@ async function redeem(businessId, {
   // and atomic; 0 rows updated = insufficient balance.
   if (giftCardCode) {
     return withTransaction(async (c) => {
+      // NP-124 (2026-09-03): normalize the code the same way findGiftCardByCode
+      // does — codes are stored uppercase (genCode) but cashiers type lowercase,
+      // so the raw `code = $2` match 404'd valid cards at redeem time.
       const gcQ = await c.query(
         `SELECT * FROM gift_cards
           WHERE business_id = $1 AND code = $2
           LIMIT 1 FOR UPDATE`,
-        [businessId, giftCardCode],
+        [businessId, String(giftCardCode).trim().toUpperCase()],
       );
       if (gcQ.rowCount === 0) throw new NotFound('Gift card not found');
       const gc = gcQ.rows[0];
@@ -314,11 +317,13 @@ async function redeemTx(client, businessId, {
   if (paise <= 0) throw new BadRequest('Redeem amount must be > 0');
 
   if (giftCardCode) {
+    // NP-124 (2026-09-03): same normalization as findGiftCardByCode / redeem()
+    // — stored codes are uppercase, cashier input may not be.
     const gcQ = await client.query(
       `SELECT * FROM gift_cards
         WHERE business_id = $1 AND code = $2
         LIMIT 1 FOR UPDATE`,
-      [businessId, giftCardCode],
+      [businessId, String(giftCardCode).trim().toUpperCase()],
     );
     if (gcQ.rowCount === 0) throw new NotFound('Gift card not found');
     const gc = gcQ.rows[0];

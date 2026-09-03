@@ -10,9 +10,10 @@
 // two paths can never diverge. The `super_admins` table is now an unused
 // orphan (safe to drop in a future migration).
 
+const crypto = require('crypto');
 const { query } = require('../config/db');
 const { issueAccessToken } = require('../utils/jwt');
-const { NotFound } = require('../utils/errors');
+const { NotFound, Unauthorized } = require('../utils/errors');
 
 // ── Customers (businesses) ───────────────────────────────────────────────
 
@@ -171,7 +172,59 @@ async function impersonate(businessId) {
   return { accessToken, business: r.rows[0] };
 }
 
+// ── One-time impersonation handoff codes (NP-126, 2026-09-03) ────────────
+//
+// The old flow returns the raw tenant JWT to the admin console, which then
+// passes it to the dashboard in a URL fragment (#imp=) — leak-prone. The new
+// flow mints a single-use 60-second code instead; the dashboard exchanges it
+// server-to-server for the SAME token impersonate() issues. Only the SHA-256
+// hash of the code is stored, mirroring the refresh-token pattern (utils/jwt).
+// The old endpoint stays for back-compat until the web half migrates.
+
+function _hashImpersonationCode(code) {
+  return crypto.createHash('sha256').update(code).digest('hex');
+}
+
+/** Admin-side: mint a one-time code for `businessId`. Returns the raw code ONCE. */
+async function createImpersonationCode(businessId, adminUserId) {
+  const r = await query(`SELECT id FROM businesses WHERE id = $1`, [businessId]);
+  if (r.rowCount === 0) throw new NotFound('Customer not found');
+  const code = crypto.randomBytes(32).toString('base64url'); // 32 bytes entropy
+  const ins = await query(
+    `INSERT INTO impersonation_codes (code_hash, business_id, admin_user_id, expires_at)
+     VALUES ($1, $2, $3, NOW() + INTERVAL '60 seconds')
+     RETURNING expires_at`,
+    [_hashImpersonationCode(code), businessId, adminUserId]
+  );
+  return { code, expiresAt: ins.rows[0].expires_at };
+}
+
+/**
+ * Public exchange: claim the code atomically (single UPDATE — two concurrent
+ * exchanges can never both win) and issue the exact same read-only tenant
+ * token the legacy impersonate() endpoint returns. 401 on unknown / already
+ * used / expired codes — one uniform error so callers can't distinguish.
+ */
+async function exchangeImpersonationCode(code) {
+  if (!code || typeof code !== 'string') {
+    throw new Unauthorized('Invalid or expired impersonation code');
+  }
+  const claim = await query(
+    `UPDATE impersonation_codes
+        SET used_at = NOW()
+      WHERE code_hash = $1 AND used_at IS NULL AND expires_at > NOW()
+      RETURNING business_id`,
+    [_hashImpersonationCode(code)]
+  );
+  if (claim.rowCount === 0) {
+    throw new Unauthorized('Invalid or expired impersonation code');
+  }
+  // Reuse the exact token-issuing path of the legacy flow (short TTL, imp:true).
+  return impersonate(claim.rows[0].business_id);
+}
+
 module.exports = {
   listCustomers, getCustomer, suspend, restore,
   metrics, impersonate,
+  createImpersonationCode, exchangeImpersonationCode,
 };

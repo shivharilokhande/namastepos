@@ -235,11 +235,16 @@ export function OrdersPage() {
     billUpdate.mutate({ ids, s });
   };
 
-  // Per-channel counts shown on the tab chips
-  const counts = orders.reduce(
+  // Per-channel counts shown on the tab chips.
+  // NP-132 (2026-09-03): these were reduced from the CURRENT PAGE only, so
+  // with >50 orders the chips understated every bucket (and 'other' — guest
+  // QR / Dunzo — was miscounted as offline). The server now returns
+  // channelCounts computed over the whole status-filtered set. The reduce
+  // stays only as a fallback for an older backend mid-deploy.
+  const counts = pageData?.channelCounts ?? orders.reduce(
     (acc: any, o: any) => {
-      if (['zomato', 'swiggy'].includes(o.source)) acc.online += 1;
-      else if (['dineIn', 'takeaway'].includes(o.source)) acc.offline += 1;
+      if (['zomato', 'swiggy', 'other'].includes(o.source)) acc.online += 1;
+      else acc.offline += 1;
       acc.all += 1;
       return acc;
     },
@@ -759,7 +764,10 @@ function RefundOrderDialog({
       });
     },
     onSuccess: () => {
-      toast.success(`Refunded ${formatINR(effectiveAmount)}`);
+      // NP-130: refund money always shows paise — formatINR's 0-decimal
+      // default rounded ₹49.50 to "₹50" on the toast/labels while the
+      // backend refunded the exact paise amount.
+      toast.success(`Refunded ${formatINR(effectiveAmount, { decimals: true })}`);
       onRefunded();
     },
     onError: (e) => toast.error(apiError(e)),
@@ -773,7 +781,7 @@ function RefundOrderDialog({
         </DialogHeader>
         <div className="space-y-3">
           <div className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            Original total <span className="font-semibold text-foreground">{formatINR(orderTotal)}</span>
+            Original total <span className="font-semibold text-foreground">{formatINR(orderTotal, { decimals: true })}</span>
             {order.paymentMethod && (
               <> · paid via <span className="font-semibold text-foreground capitalize">{order.paymentMethod}</span></>
             )}
@@ -839,7 +847,7 @@ function RefundOrderDialog({
                       <li key={key} className="flex items-center gap-2 px-3 py-2 text-sm">
                         <div className="min-w-0 flex-1">
                           <div className="truncate font-medium">{orderedQty} × {it.name}</div>
-                          <div className="text-xs text-muted-foreground">{formatINR(unitPrice)} each</div>
+                          <div className="text-xs text-muted-foreground">{formatINR(unitPrice, { decimals: true })} each</div>
                         </div>
                         <div className="flex items-center gap-1">
                           <Button
@@ -864,7 +872,7 @@ function RefundOrderDialog({
                         </div>
                         {/* Live line refund = selected qty × unit price */}
                         <span className="w-16 text-right text-muted-foreground tabular-nums">
-                          {formatINR(sel * unitPrice)}
+                          {formatINR(sel * unitPrice, { decimals: true })}
                         </span>
                       </li>
                     );
@@ -872,7 +880,7 @@ function RefundOrderDialog({
                 </ul>
               )}
               <div className="flex justify-between border-t px-3 py-2 text-sm font-semibold">
-                <span>Selected total</span><span>{formatINR(itemsTotal)}</span>
+                <span>Selected total</span><span>{formatINR(itemsTotal, { decimals: true })}</span>
               </div>
             </div>
           )}
@@ -885,7 +893,7 @@ function RefundOrderDialog({
 
           {!amountValid && (
             <div className="text-xs text-destructive">
-              Refund must be greater than {formatINR(0)} and no more than {formatINR(orderTotal)}.
+              Refund must be greater than {formatINR(0)} and no more than {formatINR(orderTotal, { decimals: true })}.
             </div>
           )}
         </div>
@@ -895,7 +903,7 @@ function RefundOrderDialog({
             onClick={() => refund.mutate()}
             disabled={refund.isPending || !amountValid}
           >
-            {refund.isPending ? 'Refunding…' : `Refund ${formatINR(effectiveAmount || 0)}`}
+            {refund.isPending ? 'Refunding…' : `Refund ${formatINR(effectiveAmount || 0, { decimals: true })}`}
           </Button>
         </DialogFooter>
       </DialogContent>

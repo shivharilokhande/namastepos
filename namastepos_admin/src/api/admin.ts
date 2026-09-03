@@ -149,6 +149,11 @@ export const adminApi = {
     api.post(`/admin/customers/${id}/set-plan`, { tier, billingPeriod }).then((r) => r.data),
   impersonate: (id: string) =>
     api.post<{ accessToken: string; business: any }>(`/admin/customers/${id}/impersonate`).then((r) => r.data),
+  // NP-126 — one-time impersonation code. The dashboard exchanges it via
+  // POST /v1/auth/impersonation-exchange for a real session, so no raw JWT
+  // ever rides in a URL, in browser history, or on the clipboard.
+  impersonationCode: (id: string) =>
+    api.post<{ code: string }>(`/admin/customers/${id}/impersonation-code`).then((r) => r.data),
   addNote: (id: string, body: string, pinned = false) =>
     api.post<{ note: any }>(`/admin/customers/${id}/notes`, { body, pinned }).then((r) => r.data.note),
   deleteNote: (id: string, noteId: string) =>

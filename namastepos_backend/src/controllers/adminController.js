@@ -268,6 +268,15 @@ const restore = asyncHandler(async (req, res) => {
 const impersonate = asyncHandler(async (req, res) => {
   res.json(await adminLegacy.impersonate(req.params.businessId));
 });
+// NP-126 (2026-09-03): one-time handoff code instead of shipping the raw
+// tenant JWT to the browser via #imp=. Same RBAC + audit guards as
+// /impersonate; the dashboard swaps the code at POST /v1/auth/
+// impersonation-exchange within 60s. Raw code is returned exactly once.
+const createImpersonationCode = asyncHandler(async (req, res) => {
+  res.status(201).json(
+    await adminLegacy.createImpersonationCode(req.params.businessId, req.user.id),
+  );
+});
 const deleteCustomer = asyncHandler(async (req, res) => {
   await adminCust.deleteCustomer(req.params.businessId);
   res.json({ success: true });
@@ -695,7 +704,7 @@ module.exports = {
   listCustomers, getCustomer, drilldown, invoicePdf,
   createCustomer, updateCustomer,
   extendTrial, setPlanManually,
-  suspend, restore, impersonate, deleteCustomer,
+  suspend, restore, impersonate, createImpersonationCode, deleteCustomer,
   addNote, deleteNote,
   listPlans, updatePlan, syncRazorpayPlans, createPlan, deletePlan,
   featureCatalog, tierFeatures, setTierFeatures,

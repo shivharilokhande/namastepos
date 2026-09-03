@@ -27,7 +27,12 @@ export function formatINR(n: number, opts: { decimals?: boolean } = {}) {
     style: 'currency',
     currency,
     maximumFractionDigits: opts.decimals ? 2 : 0,
-    minimumFractionDigits: 0,
+    // NP-131 (2026-09-03): decimals mode is used on statutory/money-truth
+    // surfaces (invoices, receipts, refunds). minimumFractionDigits was 0,
+    // so ₹49.50 printed as "₹49.5" and ₹100 as "₹100" — columns didn't
+    // line up and paise looked dropped. decimals:true now ALWAYS shows
+    // both paise digits.
+    minimumFractionDigits: opts.decimals ? 2 : 0,
   }).format(n);
 }
 

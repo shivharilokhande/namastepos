@@ -84,7 +84,29 @@ export async function bootstrapAuth(): Promise<boolean> {
   if (bootstrapped) return !!accessToken;
   bootstrapped = true;
 
-  // 1. Impersonation hand-off via URL hash.
+  // 1a. NP-126 — impersonation via ONE-TIME CODE (`#impc=<code>`): the
+  //     admin app no longer puts a raw JWT in the URL; it sends a short-
+  //     lived single-use code we exchange server-side for a real access
+  //     token. The fragment is stripped BEFORE the network call so the
+  //     code never lingers in the address bar / history.
+  try {
+    const h = window.location.hash || '';
+    const mc = h.match(/[#&]impc=([^&]+)/);
+    if (mc) {
+      const clean = window.location.pathname + window.location.search;
+      window.history.replaceState(null, '', clean);
+      const r = await axios.post(
+        `${api.defaults.baseURL}/auth/impersonation-exchange`,
+        { code: decodeURIComponent(mc[1]) },
+        { withCredentials: true, headers: { 'X-Auth-Mode': 'cookie' } },
+      );
+      const tok = r.data?.accessToken || r.data?.token;
+      if (tok) { accessToken = tok; return true; }
+    }
+  } catch (_) { /* expired/used code → fall through to normal auth */ }
+
+  // 1b. Legacy impersonation hand-off via URL hash (`#imp=<token>`) — kept
+  //     for back-compat with admin builds that predate NP-126.
   try {
     const h = window.location.hash || '';
     const m = h.match(/[#&]imp=([^&]+)/);

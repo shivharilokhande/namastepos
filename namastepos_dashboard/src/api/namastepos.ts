@@ -251,6 +251,12 @@ export const ffApi = {
     const b = getBusinessCache();
     return api.get(`/businesses/${b.id}/expenses`, { params }).then((r) => r.data.expenses);
   },
+  // NP-128 — paged variant: returns { expenses, count, total } for
+  // server-side pagination (mirrors listOrdersPaged).
+  listExpensesPaged: (params: any = {}) => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/expenses`, { params }).then((r) => r.data);
+  },
   createExpense: (body: any) => {
     const b = getBusinessCache();
     return api.post(`/businesses/${b.id}/expenses`, body).then((r) => r.data.expense);

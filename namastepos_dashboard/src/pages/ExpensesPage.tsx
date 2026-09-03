@@ -45,7 +45,17 @@ function categoryLabel(value: string): string {
 
 export function ExpensesPage() {
   const qc = useQueryClient();
-  const { data: expenses = [] } = useQuery({ queryKey: ['expenses'], queryFn: ffApi.listExpenses });
+  // NP-128 (2026-09-03): was an UNBOUNDED fetch of the full expense history.
+  // Server-side pagination now, same pager as OrdersPage (50/page).
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
+  const { data: pageData } = useQuery({
+    queryKey: ['expenses', page],
+    queryFn: () => ffApi.listExpensesPaged({ limit: PAGE_SIZE, offset: page * PAGE_SIZE }),
+  });
+  const expenses = pageData?.expenses ?? [];
+  const total = pageData?.total ?? 0;
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ category: 'ingredients', amount: '', description: '', date: new Date().toISOString().slice(0, 10) });
 
@@ -64,7 +74,7 @@ export function ExpensesPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Expenses</h1>
-          <p className="text-muted-foreground">{expenses.length} entries</p>
+          <p className="text-muted-foreground">{total} entries</p>
         </div>
         <Button onClick={() => setAdding(true)}><Plus className="mr-2 h-4 w-4" /> New expense</Button>
       </div>
@@ -120,6 +130,29 @@ export function ExpensesPage() {
               ))}
             </TableBody>
           </Table>
+          {/* NP-128 — same pager as OrdersPage: bounded fetch, one page at a time. */}
+          {total > PAGE_SIZE && (
+            <div className="flex items-center justify-between border-t px-4 py-3">
+              <div className="text-xs text-muted-foreground">
+                {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, total)} of {total}
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline"
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}>
+                  Previous
+                </Button>
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  Page {page + 1} / {pageCount}
+                </span>
+                <Button size="sm" variant="outline"
+                  disabled={page + 1 >= pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}>
+                  Next
+                </Button>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>

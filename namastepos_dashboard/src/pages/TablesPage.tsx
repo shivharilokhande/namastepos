@@ -491,16 +491,11 @@ function escHtml(s: unknown): string {
 }
 
 // Paise fix (2026-08-25): the printed session bill is titled TAX INVOICE, so
-// its money MUST show 2 decimals — the shared formatINR() defaults to zero
-// decimals (and even with {decimals:true} its minimumFractionDigits is 0), so
-// a ₹49.50 line printed as ₹50 and the columns literally didn't add up on a
-// statutory GST document. This print-only helper mirrors InvoicesPage's inr2;
-// on-screen formatting stays on formatINR and is intentionally left alone.
-const printInr = (n: number | null | undefined) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency', currency: 'INR',
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  }).format(Number(n ?? 0));
+// its money MUST show 2 decimals. NP-131 (2026-09-03): formatINR({decimals:
+// true}) now pins minimumFractionDigits to 2, so this is a null-safe alias
+// over the shared util instead of a duplicated Intl formatter (which also
+// hardcoded en-IN/INR instead of honouring the business currency).
+const printInr = (n: number | null | undefined) => formatINR(Number(n ?? 0), { decimals: true });
 
 // One merged line on the final bill: identical dishes across every KOT of the
 // session collapsed into a single row (same shape SessionDialog's `grouped`

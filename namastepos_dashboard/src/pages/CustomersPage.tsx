@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
 import { formatINR, formatDate } from '@/lib/utils';
+import { useDebounce } from '@/hooks/useDebounce';
 // Bug #7 (2026-08-25): port the mobile customer profile to the web —
 // clicking a row opens this drawer (stats, membership, favourites,
 // order history via GET /customer-history/:phone).
@@ -35,14 +36,17 @@ export function CustomersPage() {
   const [selected, setSelected] = useState<CustomerListRow | null>(null);
   const [page, setPage] = useState(0);
   const PAGE_SIZE = 50;
+  // NP-129: the raw input used to go straight into the queryKey — one
+  // request per keystroke. Only the ~300ms-debounced value hits the server.
+  const debouncedSearch = useDebounce(search, 300);
 
   // Reset to first page whenever the filter/sort changes.
-  useEffect(() => { setPage(0); }, [search, sort]);
+  useEffect(() => { setPage(0); }, [debouncedSearch, sort]);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['customers-crm', search, sort, page],
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ['customers-crm', debouncedSearch, sort, page],
     queryFn: () => ffApi.listCustomers({
-      search: search || undefined, sort,
+      search: debouncedSearch || undefined, sort,
       limit: PAGE_SIZE, offset: page * PAGE_SIZE,
     }),
     retry: false,
@@ -126,7 +130,18 @@ export function CustomersPage() {
             </TableRow></TableHeader>
             <TableBody>
               {isLoading && <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>}
-              {!isLoading && data?.customers.length === 0 && (
+              {/* NP-127 — before this, only the 402 add-on case was handled;
+                  any other API failure rendered as an empty list. Same
+                  error + Retry pattern as PrintersPage. */}
+              {!isLoading && isError && (
+                <TableRow><TableCell colSpan={7} className="text-center py-10">
+                  <p className="text-destructive text-sm">{apiError(error)}</p>
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
+                    Retry
+                  </Button>
+                </TableCell></TableRow>
+              )}
+              {!isLoading && !isError && data?.customers.length === 0 && (
                 <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">No customers yet. They'll appear here when phone numbers are captured at checkout.</TableCell></TableRow>
               )}
               {data?.customers.map((c: any) => {

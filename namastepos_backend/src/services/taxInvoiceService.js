@@ -138,6 +138,28 @@ function _formatInvoiceNo(fyShort, seq) {
   return `INV/${fyShort}/${String(seq).padStart(5, '0')}`;
 }
 
+/**
+ * NP-123 (2026-09-03): the invoice total used to force-round to a whole
+ * rupee (Math.round(beforeRound/100)*100) regardless of the business's
+ * round-off setting — under mode 'none' the customer paid ₹99.75 but the
+ * statutory invoice said ₹100.00, and under 'down' the invoice could
+ * overstate by up to 50p. The order already persists the round-off that
+ * was ACTUALLY applied at billing time (orders.round_off_paise, migration
+ * 014 — 0 under 'none', ≤0 under 'down', ±50p under 'nearest'), so reuse
+ * it: invoice total = beforeRound + the order's persisted round-off, which
+ * equals the amount actually collected. Orders from before migration 014
+ * (or rows missing the column value) fall back to the legacy whole-rupee
+ * behaviour.
+ */
+function _applyOrderRoundOff(beforeRound, persistedRoundOffPaise) {
+  if (persistedRoundOffPaise === null || persistedRoundOffPaise === undefined) {
+    const totalPaise = Math.round(beforeRound / 100) * 100; // legacy fallback
+    return { totalPaise, roundOff: totalPaise - beforeRound };
+  }
+  const roundOff = parseInt(persistedRoundOffPaise, 10) || 0;
+  return { totalPaise: beforeRound + roundOff, roundOff };
+}
+
 // ── Issue ────────────────────────────────────────────────────────────────
 
 /**
@@ -194,8 +216,8 @@ async function issueFromOrder(businessId, orderId, opts = {}) {
     const servicePaise  = parseInt(o.service_charge_paise, 10) || 0;
     const discountPaise = Math.round(parseFloat(o.discount || 0) * 100);
     const beforeRound = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise - discountPaise;
-    const totalPaise  = Math.round(beforeRound / 100) * 100;          // round to whole rupee
-    const roundOff    = totalPaise - beforeRound;
+    // NP-123: honour the round-off actually applied on the order (see helper).
+    const { totalPaise, roundOff } = _applyOrderRoundOff(beforeRound, o.round_off_paise);
 
     const fy = _financialYear(new Date());
     const fyShort = fy.short;
@@ -319,8 +341,19 @@ async function issueFromSession(businessId, sessionId, opts = {}) {
     const servicePaise  = ordersRes.rows.reduce((s, o) => s + (parseInt(o.service_charge_paise, 10) || 0), 0);
     const discountPaise = ordersRes.rows.reduce((s, o) => s + Math.round(parseFloat(o.discount || 0) * 100), 0);
     const beforeRound = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise - discountPaise;
-    const totalPaise  = Math.round(beforeRound / 100) * 100;
-    const roundOff    = totalPaise - beforeRound;
+    // NP-123: sum the round-off actually applied per order (each order's
+    // total already carries its own round-off, so the collected session
+    // total = Σ pre-round + Σ round_off_paise). If ANY order predates the
+    // round_off_paise column, fall back to legacy whole-rupee rounding.
+    const anyMissingRoundOff = ordersRes.rows.some(
+      (o) => o.round_off_paise === null || o.round_off_paise === undefined,
+    );
+    const { totalPaise, roundOff } = _applyOrderRoundOff(
+      beforeRound,
+      anyMissingRoundOff
+        ? null
+        : ordersRes.rows.reduce((s, o) => s + (parseInt(o.round_off_paise, 10) || 0), 0),
+    );
 
     const fy = _financialYear(new Date());
     const seq = await _nextSeq(client, businessId, fy.short);
@@ -422,8 +455,8 @@ async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
   const servicePaise = parseInt(o.service_charge_paise, 10) || 0;
   const discountPaise = Math.round(parseFloat(o.discount || 0) * 100);
   const beforeRound = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise - discountPaise;
-  const totalPaise = Math.round(beforeRound / 100) * 100;
-  const roundOff = totalPaise - beforeRound;
+  // NP-123: honour the round-off actually applied on the order (see helper).
+  const { totalPaise, roundOff } = _applyOrderRoundOff(beforeRound, o.round_off_paise);
   const fy = _financialYear(new Date());
   const seq = await _nextSeq(client, businessId, fy.short);
   const invoiceNo = _formatInvoiceNo(fy.short, seq);

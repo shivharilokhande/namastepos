@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { ffApi } from '@/api/namastepos';
 import { api, apiError, getBusinessCache } from '@/api/client';
+import { formatINR } from '@/lib/utils';
 import { escapeHtml, formatIstDateTime } from '@/lib/receiptPrint';
 
 // WHY (2026-08-25): founder — "IRN generated · 580ce2… but where do those
@@ -34,15 +35,12 @@ type IrnRecord = {
   createdAt?: string | null;
 };
 
-// Invoice money is ALWAYS ₹ with 2 decimals (2026-08-25 founder bug
-// "invoices not proper format"): the shared formatINR() defaults to zero
-// decimals, so a ₹49.50 line printed as ₹50 and a ₹0.40 round-off printed
-// as ₹0 — columns literally didn't add up on a statutory GST document.
-const inr2 = (n: number | null | undefined) =>
-  new Intl.NumberFormat('en-IN', {
-    style: 'currency', currency: 'INR',
-    minimumFractionDigits: 2, maximumFractionDigits: 2,
-  }).format(Number(n ?? 0));
+// Invoice money is ALWAYS 2 decimals (2026-08-25 founder bug "invoices not
+// proper format"). NP-131 (2026-09-03): formatINR({decimals:true}) now pins
+// minimumFractionDigits to 2, so this is just a null-safe alias over the
+// shared util — the duplicated Intl formatter (which also hardcoded en-IN/INR
+// instead of honouring the business currency) is gone.
+const inr2 = (n: number | null | undefined) => formatINR(Number(n ?? 0), { decimals: true });
 
 // Item cell = name + variant when the line carries one (session invoices
 // may add variantLabel later; render it the day it appears).

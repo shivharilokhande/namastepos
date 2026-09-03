@@ -31,6 +31,14 @@ const enumLimiter = env.isProd()
   ? rateLimit({ windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false })
   : (_req, _res, next) => next();
 
+// NP-126 (2026-09-03): the impersonation-code exchange is a public,
+// unauthenticated endpoint guarding single-use 60s codes — 10/min/IP keeps
+// brute-force infeasible (codes carry 256 bits of entropy anyway). Same
+// prod-only gating pattern as the limiters above.
+const impersonationExchangeLimiter = env.isProd()
+  ? rateLimit({ windowMs: 60_000, max: 10, standardHeaders: true, legacyHeaders: false })
+  : (_req, _res, next) => next();
+
 // NOTE: /request-otp and /verify-otp are placeholders for a future
 // phone-based owner sign-in flow. The OTP infrastructure is already in
 // place (services/otpService.js), what's missing is the users.phone
@@ -51,6 +59,8 @@ router.post ('/pin-login',       pinLimiter, ...c.pinLogin);   // Push 14a
 router.post ('/staff-picker',    requireAuth, enumLimiter, ...c.staffPicker); // Push 14b
 router.post ('/staff-resolve',   enumLimiter, ...c.staffResolve); // phone-first staff login
 router.post ('/refresh',         loginLimiter, ...c.refresh);
+// NP-126: one-time admin→dashboard impersonation handoff (see authController).
+router.post ('/impersonation-exchange', impersonationExchangeLimiter, ...c.impersonationExchange);
 router.post ('/logout',          requireAuth,  c.logout);
 router.get  ('/me',              requireAuth,  c.me);
 router.post ('/change-password', requireAuth,  ...c.changePassword); // founder bug #1

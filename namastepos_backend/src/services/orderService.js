@@ -1156,6 +1156,31 @@ async function list(businessId, { date, status, source, channel, groupBy, limit 
   } else if (channel === 'offline') {
     where.push('source IN (\'dineIn\',\'takeaway\')');
   }
+  // NP-132 (2026-09-03): per-channel counts over ALL rows matching the
+  // status/date filter (deliberately NOT the source/channel filter — the
+  // dashboard's All/Online/Offline chips each show their own bucket's size
+  // for the current tab). The old client-side reduce counted only the
+  // fetched page, so chips lied the moment total > one page. Cheap grouped
+  // COUNT on the same (business_id, status/date) filter as the page query.
+  // Bucket rule mirrors the B32 channel filter above: online = zomato/
+  // swiggy/other, offline = dineIn/takeaway.
+  const countWhere = ['business_id = $1'];
+  const countValues = [businessId];
+  let cIdx = 2;
+  if (status) { countWhere.push(`status = $${cIdx++}`); countValues.push(status); }
+  if (date) { countWhere.push(`created_at::date = $${cIdx++}::date`); countValues.push(date); }
+  const cr = await query(
+    `SELECT CASE WHEN source IN ('zomato','swiggy','other') THEN 'online' ELSE 'offline' END AS ch,
+            COUNT(*)::int AS n
+       FROM orders WHERE ${countWhere.join(' AND ')} GROUP BY 1`,
+    countValues,
+  );
+  const channelCounts = { all: 0, online: 0, offline: 0 };
+  for (const row of cr.rows) {
+    channelCounts[row.ch] = row.n;
+    channelCounts.all += row.n;
+  }
+
   const r = await query(
     // _total = full match count (window fn) so the client can paginate without
     // a second COUNT round-trip. Attached to the returned array as `.total`.
@@ -1163,7 +1188,12 @@ async function list(businessId, { date, status, source, channel, groupBy, limit 
      ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx}`,
     [...values, limit, offset],
   );
-  if (r.rowCount === 0) { const empty = []; empty.total = 0; return empty; }
+  if (r.rowCount === 0) {
+    const empty = [];
+    empty.total = 0;
+    empty.channelCounts = channelCounts;
+    return empty;
+  }
   const _total = r.rows[0]._total || 0;
   const ids = r.rows.map((o) => o.id);
   const its = await query(
@@ -1186,9 +1216,11 @@ async function list(businessId, { date, status, source, channel, groupBy, limit 
     // expected, not a bug. (Do NOT swap in a session DISTINCT count here — it
     // would desync from the order-based offset stride.)
     grouped.total = _total;
+    grouped.channelCounts = channelCounts;
     return grouped;
   }
   serialized.total = _total;
+  serialized.channelCounts = channelCounts;
   return serialized;
 }
 

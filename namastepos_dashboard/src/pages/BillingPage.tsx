@@ -20,8 +20,11 @@ declare global {
 // get one; this covers the gap + our test rows). Opens a new tab
 // filled with a self-contained HTML page the user can print or
 // "Save as PDF" via their browser's print dialog.
-function openInvoicePreview(inv: any, sub: any, biz: any) {
-  const w = window.open('', '_blank');
+// NP-133: `win` lets the caller hand in a tab it already opened
+// synchronously inside the click gesture — window.open AFTER an await is
+// popup-blocked, so the invoice-PDF button pre-opens the tab and we fill it.
+function openInvoicePreview(inv: any, sub: any, biz: any, win?: Window | null) {
+  const w = win ?? window.open('', '_blank');
   if (!w) return;
   const line = (label: string, value: string) =>
     `<tr><td style="padding:4px 12px 4px 0;color:#666">${label}</td><td style="padding:4px 0;font-weight:600">${value}</td></tr>`;
@@ -220,7 +223,11 @@ export function BillingPage() {
     localStorage.setItem(LS_KEY, v);
     setBillingPeriod(v);
   };
-  const { data: sub } = useQuery({ queryKey: ['sub'], queryFn: ffApi.subscription });
+  // NP-127: keep isError/refetch — an API failure must render as an error
+  // + Retry, not silently hide the current-plan card (error ≠ empty).
+  const {
+    data: sub, isError: subIsError, error: subError, refetch: refetchSub,
+  } = useQuery({ queryKey: ['sub'], queryFn: ffApi.subscription });
   // FF-402d — one-shot sync from sub.billingPeriod on load.
   const syncedFromSub = useRef(false);
   useEffect(() => {
@@ -240,7 +247,11 @@ export function BillingPage() {
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
-  const { data: invoices = [] } = useQuery({ queryKey: ['invoices'], queryFn: ffApi.invoices });
+  // NP-127: same deal for invoices — the `= []` default made a failed
+  // fetch indistinguishable from "no invoices yet".
+  const {
+    data: invoices = [], isError: invIsError, error: invError, refetch: refetchInvoices,
+  } = useQuery({ queryKey: ['invoices'], queryFn: ffApi.invoices });
   const biz = getBusinessCache() || {};
 
   // Bug #14 (2026-08-25) — RBI e-mandate disclosure. Razorpay subscription
@@ -373,6 +384,21 @@ export function BillingPage() {
             Update payment
           </Button>
         </div>
+      )}
+
+      {/* NP-127 — the current-plan card used to just vanish when the sub
+          fetch failed (looks identical to "no subscription"). Same error +
+          Retry pattern as PrintersPage. */}
+      {subIsError && !sub && (
+        <Card>
+          <CardContent className="py-8 text-center">
+            <p className="font-medium">Couldn't load your current plan</p>
+            <p className="text-sm text-destructive mt-1">{apiError(subError)}</p>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchSub()}>
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
       )}
 
       {sub && (() => {
@@ -673,7 +699,17 @@ export function BillingPage() {
           </p>
         </CardHeader>
         <CardContent className="space-y-1">
-          {invoices.length === 0 && (
+          {/* NP-127 — a failed fetch must NOT masquerade as "No invoices
+              yet." (the `= []` default made them identical). */}
+          {invIsError && (
+            <div className="py-6 text-center">
+              <p className="text-destructive text-sm">{apiError(invError)}</p>
+              <Button variant="outline" size="sm" className="mt-3" onClick={() => refetchInvoices()}>
+                Retry
+              </Button>
+            </div>
+          )}
+          {!invIsError && invoices.length === 0 && (
             <div className="py-6 text-center text-muted-foreground">
               <FileText className="w-8 h-8 mx-auto mb-2 opacity-40" />
               <div>No invoices yet.</div>
@@ -728,13 +764,21 @@ export function BillingPage() {
                       receipt if the PDF endpoint errors. */}
                   <button
                     onClick={async () => {
+                      // NP-133: window.open AFTER the await gets popup-blocked
+                      // (the click gesture is spent by then) — the button
+                      // silently did nothing for most users. Open the tab
+                      // synchronously NOW, then point it at the PDF blob once
+                      // it arrives; the HTML-receipt fallback reuses the same
+                      // pre-opened tab.
+                      const w = window.open('', '_blank');
                       try {
                         const blob = await ffApi.subscriptionInvoicePdf(i.id);
                         const url = URL.createObjectURL(blob);
-                        window.open(url, '_blank');
+                        if (w) w.location.href = url;
+                        else window.open(url, '_blank'); // popups hard-blocked — best effort
                         setTimeout(() => URL.revokeObjectURL(url), 60000);
                       } catch {
-                        openInvoicePreview(i, sub, biz);
+                        openInvoicePreview(i, sub, biz, w);
                       }
                     }}
                     className="inline-flex items-center gap-1 text-xs text-primary hover:underline">

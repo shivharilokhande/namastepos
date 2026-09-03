@@ -8,7 +8,7 @@ const express = require('express');
 const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireRole } = require('../middleware/auth');
 const { Forbidden } = require('../utils/errors');
 const multiOutlet = require('../services/multiOutletService');
 const { query } = require('../config/db');
@@ -38,12 +38,12 @@ const requireGroupMembership = asyncHandler(async (req, _res, next) => {
 // SECURITY FIX (2026-08-23, review H5): the real owner role value is
 // 'business_owner' (user_role enum) — the old `role !== 'owner'` check
 // 403'd every legitimate owner AND let tokens with a missing role pass.
-const requireOwner = (req, _res, next) => {
-  if (req.user?.role !== 'business_owner') {
-    return next(Object.assign(new Error('Owner role required'), { status: 403 }));
-  }
-  next();
-};
+// NP-125 (2026-09-03): the hand-rolled check above trusted req.user.role
+// straight from the JWT — a demoted/removed owner kept multi-outlet access
+// until their token expired. Use the shared requireRole middleware, which
+// re-verifies the caller's role against the live business_users row
+// (30s-cached) exactly like every other owner-gated route.
+const requireOwner = requireRole(['business_owner']);
 
 // SECURITY FIX (2026-08-23, review C1): verify a caller actually OWNS a
 // business id they're operating on. Used wherever the request body names

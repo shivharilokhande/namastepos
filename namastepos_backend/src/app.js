@@ -155,7 +155,11 @@ function buildApp() {
       // requires auth (see auth.routes.js), so it's dropped from this exempt
       // list. Only the genuinely pre-login staff steps remain here.
       req.path === `${authPath}/staff-resolve` ||
-      req.path === `${authPath}/pin-login`
+      req.path === `${authPath}/pin-login` ||
+      // NP-126 (2026-09-03): impersonation-code exchange is pre-login for the
+      // dashboard tab the admin just opened — a stale ff_refresh cookie in
+      // that browser must not 403 the exchange (one-time code IS the proof).
+      req.path === `${authPath}/impersonation-exchange`
     ) {
       return next();
     }

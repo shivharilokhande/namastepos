@@ -141,6 +141,14 @@ const staffResolveSchema = {
   }),
 };
 
+// NP-126 (2026-09-03): one-time impersonation handoff code exchange.
+// Codes are 32 random bytes base64url (43 chars); cap length defensively.
+const impersonationExchangeSchema = {
+  body: Joi.object({
+    code: Joi.string().min(16).max(128).required(),
+  }),
+};
+
 /** Helper — build the standard session payload + plan summary. */
 async function _sessionPayload(user, { req, name }) {
   let memberships = await auth.listMembershipsForUser(user.id);
@@ -606,6 +614,15 @@ module.exports = {
     const staff = require('../services/staffService');
     const phone = String(req.body.phone).trim();
     res.json({ outlets: await staff.resolveStaffByPhone(phone) });
+  })],
+  // NP-126 (2026-09-03): swap a one-time admin-minted handoff code for the
+  // same short-lived read-only impersonation token the legacy /admin
+  // .../impersonate endpoint returns. The claim is a single atomic UPDATE in
+  // adminService — used/expired/unknown codes all 401 uniformly. Rate-limited
+  // per-IP in auth.routes.js.
+  impersonationExchange: [validate(impersonationExchangeSchema), asyncHandler(async (req, res) => {
+    const adminSvc = require('../services/adminService');
+    res.json(await adminSvc.exchangeImpersonationCode(req.body.code));
   })],
   refresh: [validate(refreshSchema), refresh],
   // Bug fix: there used to be a stub here that overrode the rich `logout` defined

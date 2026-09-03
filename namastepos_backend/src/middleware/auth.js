@@ -190,6 +190,15 @@ function requireRole(allowed) {
       if (req.user?.isSuperAdmin) return next();
       if (!req.user) return next(new Forbidden(`Requires one of: ${allow.join(', ')}`));
 
+      // NP-125 follow-up: impersonation tokens carry a non-UUID uid
+      // ('impersonator'), so the live business_users lookup would 22P02 →
+      // 500. Impersonation is read-only by design (requireBusinessAccess
+      // blocks writes); allow GET/HEAD through, reject writes explicitly.
+      if (req.user.impersonator) {
+        if (req.method === 'GET' || req.method === 'HEAD') return next();
+        return next(new Forbidden('Impersonation is read-only. Exit impersonation to make changes.'));
+      }
+
       const businessId = req.params.businessId || req.user.businessId;
       let effectiveRole = req.user.role;
       if (businessId && req.user.id) {

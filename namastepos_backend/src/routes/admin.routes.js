@@ -99,6 +99,14 @@ router.post  ('/customers/:businessId/set-plan',    requirePermission('plans.cha
 router.post  ('/customers/:businessId/impersonate', requirePermission('customers.impersonate'),
               audit.middlewareLog('customers', 'impersonate', (req) => ({ type: 'business', id: req.params.businessId })),
               c.impersonate);
+// NP-126 (2026-09-03): one-time 60s handoff code — same guards + audit as
+// /impersonate above. The raw code is returned once; the dashboard exchanges
+// it at the public POST /v1/auth/impersonation-exchange for the tenant token.
+// /impersonate stays intact for back-compat (#imp= flow) until the web half
+// fully migrates.
+router.post  ('/customers/:businessId/impersonation-code', requirePermission('customers.impersonate'),
+              audit.middlewareLog('customers', 'impersonation-code', (req) => ({ type: 'business', id: req.params.businessId })),
+              c.createImpersonationCode);
 
 router.post  ('/customers/:businessId/notes',     requirePermission('notes.write'), ...c.addNote);
 router.delete('/customers/:businessId/notes/:noteId', requirePermission('notes.write'), c.deleteNote);

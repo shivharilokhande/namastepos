@@ -66,25 +66,44 @@ export function CustomerDetailPage() {
     onSuccess: () => { toast.success('Restored'); qc.invalidateQueries({ queryKey: ['drilldown', id] }); },
     onError: (e) => toast.error(apiError(e)),
   });
+  // NP-126 (2026-09-03): the raw impersonation JWT no longer travels through
+  // the `#imp=` URL hash (it landed in proxy logs / browser history on any
+  // hiccup) and is NEVER written to the clipboard. We fetch a one-time
+  // short-lived CODE instead and open `${dash}/#impc=<code>`; the dashboard's
+  // bootstrapAuth exchanges it via POST /v1/auth/impersonation-exchange.
+  // The tab is pre-opened SYNCHRONOUSLY in startImpersonation (window.open
+  // after the await would be popup-blocked) and navigated on success.
   const impersonate = useMutation({
-    mutationFn: () => adminApi.impersonate(id!),
-    onSuccess: (r) => {
-      // The tenant dashboard now keeps its access token in-memory only, so
-      // pasting a token into localStorage no longer works. Hand it over via
-      // the `#imp=` URL hash, which bootstrapAuth() adopts and immediately
-      // strips. If no dashboard URL is configured, fall back to copying the
-      // raw token so support still has an escape hatch.
-      const dash = (import.meta.env.VITE_DASHBOARD_URL as string | undefined)?.replace(/\/$/, '');
-      if (dash) {
-        window.open(`${dash}/#imp=${encodeURIComponent(r.accessToken)}`, '_blank', 'noopener');
-        toast.success('Opening the tenant dashboard as this customer…');
-      } else {
-        navigator.clipboard.writeText(r.accessToken);
-        toast.success('Impersonation token copied to clipboard');
-      }
+    mutationFn: async ({ w, dash }: { w: Window | null; dash: string }) => {
+      const { code } = await adminApi.impersonationCode(id!);
+      return { w, dash, code };
     },
-    onError: (e) => toast.error(apiError(e)),
+    onSuccess: ({ w, dash, code }) => {
+      const url = `${dash}/#impc=${encodeURIComponent(code)}`;
+      if (w) {
+        w.opener = null; // sever the reverse-tabnabbing handle before navigating
+        w.location.href = url;
+      } else {
+        window.open(url, '_blank', 'noopener'); // popups hard-blocked — best effort
+      }
+      toast.success('Opening the tenant dashboard as this customer…');
+    },
+    onError: (e, { w }) => {
+      try { w?.close(); } catch { /* already gone */ }
+      toast.error(apiError(e));
+    },
   });
+  const startImpersonation = () => {
+    const dash = (import.meta.env.VITE_DASHBOARD_URL as string | undefined)?.replace(/\/$/, '');
+    if (!dash) {
+      // No clipboard fallback by design — a copied code/token is a leak.
+      toast.error('VITE_DASHBOARD_URL is not configured — set it to the tenant dashboard origin to enable impersonation.');
+      return;
+    }
+    // Open the tab NOW, inside the click gesture, so it isn't popup-blocked.
+    const w = window.open('', '_blank');
+    impersonate.mutate({ w, dash });
+  };
 
   if (isLoading || !data) return <div className="text-muted-foreground">Loading…</div>;
 
@@ -120,7 +139,7 @@ export function CustomerDetailPage() {
           <Button variant="outline" onClick={() => setChangingPlan(true)}>
             <ArrowUpRight className="mr-2 h-4 w-4" /> Change plan
           </Button>
-          <Button variant="outline" onClick={() => impersonate.mutate()} disabled={impersonate.isPending}>
+          <Button variant="outline" onClick={startImpersonation} disabled={impersonate.isPending}>
             <UserCheck className="mr-2 h-4 w-4" /> Impersonate
           </Button>
           {s?.status === 'paused' ? (
@@ -813,12 +832,16 @@ function InvoicesTab({ invoices, businessId }: any) {
   // (no dependence on Razorpay hosting one). Fetch it as an authenticated blob
   // and open it in a new tab.
   const openPdf = async (inv: any) => {
+    // NP-133 follow-up: open the tab SYNCHRONOUSLY inside the click gesture —
+    // an await before window.open gets popup-blocked and silently no-ops.
+    const w = window.open('', '_blank');
     try {
       const blob = await adminApi.invoicePdf(businessId, inv.id);
       const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
+      if (w) { w.location.href = url; } else { window.open(url, '_blank'); }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
+      w?.close();
       toast.error(apiError(e));
     }
   };

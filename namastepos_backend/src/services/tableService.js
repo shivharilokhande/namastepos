@@ -429,36 +429,52 @@ async function unjoinTable(businessId, sessionId, tableId) {
 //     identified customer on the session.
 async function closeSession(businessId, sessionId, closedByUserId, paymentMethod = 'cash', discountInr = 0, paymentBreakdown = null, shortfallInr = 0, autoWallet = false, walletCapInr = null, pointsToRedeem = 0) {
   return withTransaction(async (client) => {
-    // Settle-time discount (2026-08-22, founder request): applied to the
-    // HEAD order (smallest order_no) of the session so it's auditable on
-    // the bill and flows into reports/leakage like any other discount.
+    // Settle-time discount (2026-08-22, founder request): applied starting
+    // at the HEAD order (smallest order_no) of the session so it's auditable
+    // on the bill and flows into reports/leakage like any other discount.
     // Capped at the session total so the bill can't go negative.
+    //
+    // NP-122 (2026-09-03): the discount used to be subtracted ONLY from the
+    // head order via GREATEST(0, total - disc) while `discount` incremented
+    // by the FULL amount — any portion above the head order's total silently
+    // evaporated (customer still owed it on the later KOTs) and the recorded
+    // discount overstated what was actually given. Now the discount CASCADES
+    // across the session's orders oldest→newest: each order absorbs at most
+    // its own total, and each order's stored `discount` is exactly what was
+    // subtracted from it — so SUM(per-order discounts) == the applied
+    // discount and no order ever goes negative. Same transaction as before.
     const disc = Math.max(0, Number(discountInr) || 0);
     if (disc > 0) {
-      const head = await client.query(
+      const sessOrders = await client.query(
         `SELECT id, total FROM orders
           WHERE table_session_id = $1 AND business_id = $2
             AND status <> 'cancelled'
-          ORDER BY order_no ASC LIMIT 1
+          ORDER BY order_no ASC
           FOR UPDATE`,
         [sessionId, businessId]
       );
-      if (head.rowCount > 0) {
-        const sumQ = await client.query(
-          `SELECT COALESCE(SUM(total), 0) AS total FROM orders
-            WHERE table_session_id = $1 AND status <> 'cancelled'`,
-          [sessionId]
+      if (sessOrders.rowCount > 0) {
+        // Money stays in integer paise while we split so the parts always
+        // re-sum to exactly the applied discount (orders money is NUMERIC
+        // INR, 2dp — paise-exact).
+        const totalsPaise = sessOrders.rows.map(
+          (o) => Math.round(parseFloat(o.total) * 100),
         );
-        const sessionTotal = parseFloat(sumQ.rows[0].total);
-        const applied = Math.min(disc, sessionTotal);
-        if (applied > 0) {
-          await client.query(
-            `UPDATE orders
-                SET discount = discount + $1,
-                    total = GREATEST(0, total - $1)
-              WHERE id = $2`,
-            [applied, head.rows[0].id]
-          );
+        const sessionTotalPaise = totalsPaise.reduce((s, t) => s + t, 0);
+        // Still capped at the session total — the bill can't go negative.
+        let remainingPaise = Math.min(Math.round(disc * 100), sessionTotalPaise);
+        for (let i = 0; i < sessOrders.rows.length && remainingPaise > 0; i += 1) {
+          const takePaise = Math.min(remainingPaise, totalsPaise[i]);
+          if (takePaise > 0) {
+            await client.query(
+              `UPDATE orders
+                  SET discount = discount + $1,
+                      total = GREATEST(0, total - $1)
+                WHERE id = $2`,
+              [takePaise / 100, sessOrders.rows[i].id]
+            );
+            remainingPaise -= takePaise;
+          }
         }
       }
     }

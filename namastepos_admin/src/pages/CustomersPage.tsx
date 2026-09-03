@@ -15,6 +15,7 @@ import {
 import { adminApi } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR, formatDate } from '@/lib/utils';
+import { useDebounce } from '@/hooks/useDebounce';
 
 export function CustomersPage() {
   const navigate = useNavigate();
@@ -33,10 +34,14 @@ export function CustomersPage() {
     staleTime: 60_000,
   });
 
+  // NP-129: the raw input used to go straight into the queryKey — one
+  // request per keystroke. Only the ~300ms-debounced value hits the server.
+  const debouncedSearch = useDebounce(search, 300);
+
   const { data, isLoading } = useQuery({
-    queryKey: ['customers', search, plan, page],
+    queryKey: ['customers', debouncedSearch, plan, page],
     queryFn: () => adminApi.listCustomers({
-      search: search || undefined, plan: plan || undefined,
+      search: debouncedSearch || undefined, plan: plan || undefined,
       limit: PAGE_SIZE, offset: page * PAGE_SIZE,
     }),
   });

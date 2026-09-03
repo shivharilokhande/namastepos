@@ -143,7 +143,14 @@ module.exports = {
     validate({ query: listQuery }),
     asyncHandler(async (req, res) => {
       const orders = await order.list(req.params.businessId, req.query);
-      res.json({ orders, count: orders.length, total: orders.total ?? orders.length });
+      // NP-132: channelCounts = {all, online, offline} over the WHOLE
+      // status/date-filtered set, so channel chips don't count just page 1.
+      res.json({
+        orders,
+        count: orders.length,
+        total: orders.total ?? orders.length,
+        channelCounts: orders.channelCounts,
+      });
     }),
   ],
   get: asyncHandler(async (req, res) => {
