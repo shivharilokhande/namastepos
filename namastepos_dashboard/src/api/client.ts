@@ -307,10 +307,18 @@ api.interceptors.response.use(
           || /Plan limit reached for ([a-z_]+)/i.exec(String(data.message || ''))?.[1]
           || 'unknown';
         const limit = typeof d.limit === 'number' ? d.limit : null;
-        // What they tried to create: the count that was refused, +1.
-        const attempted = typeof d.current === 'number'
-          ? d.current + 1
-          : (limit !== null ? limit + 1 : null);
+        // What they tried to create. A BULK refusal (assertCapacity: a CSV
+        // import, a starter menu template, a pasted menu) already reports the
+        // real batch size in `details.attempted` — 34 items, not 1 — and
+        // reading it matters, because "attempted 34 against a cap of 10" and
+        // "attempted 11 against a cap of 10" are completely different sales
+        // signals. Single-create paths do not send it, so fall back to the
+        // old current+1.
+        const attempted = typeof (d as { attempted?: number }).attempted === 'number'
+          ? (d as { attempted: number }).attempted
+          : (typeof d.current === 'number'
+            ? d.current + 1
+            : (limit !== null ? limit + 1 : null));
         track('plan_limit_hit', {
           metric,
           limit,

@@ -5,6 +5,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const menu = require('../services/menuService');
 const variants = require('../services/variantService');
+const templates = require('../services/menuTemplateService');
+const { parseMenuText } = require('../utils/menuTextParser');
 
 // Combo component shape: a reference to an existing menu item with a qty.
 const comboLine = Joi.object({
@@ -108,7 +110,44 @@ const bulkImportBody = Joi.object({
     .required(),
 });
 
+// 2026-09-05 — "paste your menu". Body is the raw text and nothing else:
+// there is deliberately NO way to send a price to this endpoint, because it
+// does not write anything. It parses and returns a preview; the rows the owner
+// confirms go back through POST /menu/bulk.
+//
+// 200 KB is roughly 4,000 menu lines — far past any real menu, small enough
+// that a pasted PDF dump cannot be used to tie up a worker.
+const parseTextBody = Joi.object({
+  text: Joi.string().min(1).max(200000).required(),
+  defaultCategory: Joi.string().max(50).allow('', null),
+});
+
 module.exports = {
+  // ── Starter menu templates (2026-09-05) ───────────────────────────────
+  // No plan gate and no feature key: an owner who cannot load a menu never
+  // reaches their first bill, so this is the one thing that must work on
+  // every plan including free Starter. The plan CAP still applies, inside
+  // bulkImport, and refuses the whole template rather than half-loading it.
+  listTemplates: asyncHandler(async (req, res) => {
+    res.json({ templates: templates.listTemplates() });
+  }),
+  getTemplate: asyncHandler(async (req, res) => {
+    res.json({ template: templates.getTemplate(req.params.slug) });
+  }),
+  applyTemplate: asyncHandler(async (req, res) => {
+    // businessId is the ownership-checked path param (requireBusinessOwnership
+    // ran in the router), and the slug is the ONLY thing the client controls.
+    const result = await templates.applyTemplate(req.params.businessId, req.params.slug);
+    res.json(result);
+  }),
+  parseText: [
+    validate({ body: parseTextBody }),
+    asyncHandler(async (req, res) => {
+      res.json(parseMenuText(req.body.text, {
+        defaultCategory: req.body.defaultCategory || undefined,
+      }));
+    }),
+  ],
   bulkImport: [
     validate({ body: bulkImportBody }),
     asyncHandler(async (req, res) => {

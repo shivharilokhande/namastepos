@@ -1,0 +1,39 @@
+{
+  "slug": "tea-stall",
+  "name": "Tea Stall & Snacks",
+  "tagline": "Chai, coffee and fried snacks over a counter. Fastest to bill.",
+  "format": "counter",
+  "defaultGstPct": 5,
+  "defaultHsnCode": "996331",
+  "notes": [
+    "Counter mode suits a stall: bill and take payment in one tap, no tables.",
+    "Every line here is food you make and serve, so it is the 5% restaurant-service rate. Sealed packaged goods (bottled water, biscuit packets, cigarettes) are taxed as goods at their own rate - add those yourself with the correct rate and HSN.",
+    "Confirm the rate with your CA if you are registered under composition."
+  ],
+  "items": [
+    { "name": "Cutting Chai", "price": 10, "category": "Chai", "isVeg": true },
+    { "name": "Masala Chai", "price": 15, "category": "Chai", "isVeg": true },
+    { "name": "Adrak Chai", "price": 15, "category": "Chai", "isVeg": true },
+    { "name": "Elaichi Chai", "price": 18, "category": "Chai", "isVeg": true },
+    { "name": "Kulhad Chai", "price": 25, "category": "Chai", "isVeg": true },
+    { "name": "Black Tea", "price": 12, "category": "Chai", "isVeg": true },
+    { "name": "Green Tea", "price": 20, "category": "Chai", "isVeg": true },
+    { "name": "Lemon Tea", "price": 20, "category": "Chai", "isVeg": true },
+    { "name": "Filter Coffee", "price": 20, "category": "Coffee", "isVeg": true },
+    { "name": "Instant Coffee", "price": 15, "category": "Coffee", "isVeg": true },
+    { "name": "Cold Coffee", "price": 50, "category": "Coffee", "isVeg": true },
+    { "name": "Nimbu Pani", "price": 20, "category": "Cold drinks", "isVeg": true },
+    { "name": "Fresh Lime Soda", "price": 30, "category": "Cold drinks", "isVeg": true },
+    { "name": "Lassi (sweet)", "price": 40, "category": "Cold drinks", "isVeg": true },
+    { "name": "Bun Maska", "price": 25, "category": "Snacks", "isVeg": true },
+    { "name": "Toast Butter", "price": 25, "category": "Snacks", "isVeg": true },
+    { "name": "Vada Pav", "price": 20, "category": "Snacks", "isVeg": true },
+    { "name": "Samosa", "price": 15, "category": "Snacks", "isVeg": true },
+    { "name": "Kachori", "price": 15, "category": "Snacks", "isVeg": true },
+    { "name": "Bread Pakoda", "price": 25, "category": "Snacks", "isVeg": true },
+    { "name": "Onion Pakoda (plate)", "price": 40, "category": "Snacks", "isVeg": true },
+    { "name": "Poha", "price": 30, "category": "Snacks", "isVeg": true },
+    { "name": "Maggi Plain", "price": 40, "category": "Snacks", "isVeg": true },
+    { "name": "Maggi Masala Cheese", "price": 60, "category": "Snacks", "isVeg": true }
+  ]
+}

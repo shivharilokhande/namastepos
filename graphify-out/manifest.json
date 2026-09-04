@@ -5486,7 +5486,7 @@
   "namastepos_backend/db/migrations/089_soft_order_limit_and_menu_cap_lift.sql": {
     "mtime": 1788542188.6995387,
     "seen": 1788543838.29211,
-    "ast_hash": "abbb612d1ef00a499a95afba0487f51b",
+    "ast_hash": "",
     "semantic_hash": ""
   },
   "namastepos_backend/tests/integration/softOrderLimit2026.test.js": {

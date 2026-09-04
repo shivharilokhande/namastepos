@@ -286,6 +286,12 @@ const WELL_KNOWN_FEATURE_KEYS = [
   'reservations', 'wastage', 'daily_closing', 'b2b_invoice', 'qr_ordering',
   'whatsapp_marketing', 'auto_whatsapp_order',
   'recipe_costing', 'bill_split',
+  // 'staff_unlimited' is a CLAIM, not a gate — nothing in this codebase
+  // branches on it; the staff cap is enforced solely from
+  // `plans.limits.staff` by subscriptionService.enforceLimit. It stays in the
+  // catalog so the admin can grant it to the plans where it is TRUE
+  // (limits.staff = -1). Migration 090 removed it from the Rs 799 Pro plan,
+  // which caps staff at 10 — read that file before granting it anywhere.
   'staff_unlimited', 'voice_pos',
   // FF-402 restore-orphans: Inventory screen was wired into the mobile
   // drawer under this feature key but the catalog forgot to expose it,

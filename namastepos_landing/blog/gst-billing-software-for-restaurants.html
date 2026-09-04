@@ -31,11 +31,12 @@
 {"@type":"ListItem","position":1,"name":"Home","item":"https://namastepos.in/"},
 {"@type":"ListItem","position":2,"name":"Blog","item":"https://namastepos.in/blog/"},
 {"@type":"ListItem","position":3,"name":"GST Billing Software for Restaurants","item":"https://namastepos.in/blog/gst-billing-software-for-restaurants"}]},
-{"@type":"BlogPosting","headline":"GST Billing Software for Restaurants in India: The Complete Guide","description":"CGST/SGST vs IGST, HSN/SAC, e-invoicing and what a compliant restaurant bill must show.","datePublished":"2026-08-26","dateModified":"2026-08-26","author":{"@type":"Organization","name":"NamastePOS"},"publisher":{"@type":"Organization","name":"NamastePOS","logo":{"@type":"ImageObject","url":"https://namastepos.in/apple-touch-icon.png"}},"mainEntityOfPage":{"@type":"WebPage","@id":"https://namastepos.in/blog/gst-billing-software-for-restaurants"},"image":"https://namastepos.in/og-image.png"},
-{"@type":"FAQPage","mainEntity":[
-{"@type":"Question","name":"What GST rate applies to restaurant food in India?","acceptedAnswer":{"@type":"Answer","text":"Most standalone restaurants charge 5% GST (2.5% CGST + 2.5% SGST) without input tax credit. Restaurants inside specified hotels with room tariffs above the notified threshold, and some other categories, may attract 18%. Always confirm your category with your CA, as rates and conditions can change."}},
-{"@type":"Question","name":"What must a GST-compliant restaurant bill show?","acceptedAnswer":{"@type":"Answer","text":"A compliant tax invoice shows your legal name and GSTIN, invoice number and date, item description, taxable value, the GST rate, the CGST/SGST (or IGST) split, and the total. NamastePOS generates this automatically."}},
-{"@type":"Question","name":"Does a restaurant need e-invoicing?","acceptedAnswer":{"@type":"Answer","text":"E-invoicing (IRN generation) applies once your aggregate turnover crosses the government-notified threshold. Even below it, using e-invoice-ready software means you're prepared when you cross the limit."}}]}
+{"@type":"BlogPosting","headline":"GST Billing Software for Restaurants in India: The Complete Guide","description":"CGST/SGST vs IGST, HSN/SAC, e-invoicing and what a compliant restaurant bill must show.","datePublished":"2026-08-26","dateModified":"2026-08-26","author":{"@type":"Organization","@id":"https://namastepos.in/#organization","name":"NamastePOS"},"publisher":{"@type":"Organization","@id":"https://namastepos.in/#organization","name":"NamastePOS","logo":{"@type":"ImageObject","url":"https://namastepos.in/apple-touch-icon.png"}},"mainEntityOfPage":{"@type":"WebPage","@id":"https://namastepos.in/blog/gst-billing-software-for-restaurants"},"image":"https://namastepos.in/og-image.png","url":"https://namastepos.in/blog/gst-billing-software-for-restaurants","inLanguage":"en-IN","isPartOf":{"@type":"Blog","@id":"https://namastepos.in/blog/#blog"}},
+{"@type":"FAQPage","inLanguage":"en-IN","mainEntity":[
+{"@type":"Question","name":"What GST rate applies to restaurant food in India?","acceptedAnswer":{"@type":"Answer","text":"Most standalone restaurants charge 5% (2.5% CGST + 2.5% SGST) without ITC; restaurants in specified hotels and some categories may attract 18%. Confirm your category with your CA."}},
+{"@type":"Question","name":"What must a GST-compliant restaurant bill show?","acceptedAnswer":{"@type":"Answer","text":"Your legal name and GSTIN, invoice number and date, item description, taxable value, GST rate, the CGST/SGST (or IGST) split, and the total. NamastePOS produces this automatically."}},
+{"@type":"Question","name":"Does a restaurant need e-invoicing?","acceptedAnswer":{"@type":"Answer","text":"It applies once turnover crosses the notified threshold. Using e-invoice-ready software keeps you prepared before you get there."}},
+{"@type":"Question","name":"Can GST billing work offline?","acceptedAnswer":{"@type":"Answer","text":"Yes — with NamastePOS, bills and KOTs work offline and sync automatically when you're back online."}}]}
 ]}
 </script>
 </head>
@@ -59,10 +60,10 @@
   </div>
 
   <div class="prose">
-    <blockquote>This guide is general information, not tax advice. GST rates, thresholds and conditions change — always confirm specifics with a qualified chartered accountant for your business.</blockquote>
+    <blockquote>This guide is general information, not tax advice. GST rates, thresholds and conditions change — always confirm specifics with a qualified chartered accountant for your business. The primary sources are the <a href="https://cbic-gst.gov.in/" target="_blank" rel="noopener">CBIC GST portal</a> and the <a href="https://taxinformation.cbic.gov.in/" target="_blank" rel="noopener">CBIC tax information portal</a>, which publishes the acts, rules, rate schedules and notifications in force.</blockquote>
 
     <h2>What GST rate applies to restaurant food?</h2>
-    <p>For most <strong>standalone restaurants</strong> in India, food and beverage service is taxed at <strong>5% GST</strong> — split as 2.5% CGST + 2.5% SGST — <em>without</em> input tax credit (ITC). Restaurants located within specified hotels (where room tariff crosses the notified threshold), and certain other categories, can attract <strong>18% GST</strong> with ITC. Because the conditions shift, treat the rate as a setting your software should let you configure, not something hard-coded.</p>
+    <p>For most <strong>standalone restaurants</strong> in India, food and beverage service is taxed at <strong>5% GST</strong> — split as 2.5% CGST + 2.5% SGST — <em>without</em> input tax credit (ITC). Restaurants located within specified hotels (where room tariff crosses the notified threshold), and certain other categories, can attract <strong>18% GST</strong> with ITC. Because the conditions shift, treat the rate as a setting your software should let you configure, not something hard-coded. We deliberately do not print a notification number or a tariff figure here — look up the rate schedule and the notification currently in force on the <a href="https://taxinformation.cbic.gov.in/" target="_blank" rel="noopener">CBIC tax information portal</a>, or have your CA do it, and note the date you checked.</p>
 
     <h3>CGST + SGST vs IGST</h3>
     <p>For a dine-in bill, the supply happens within your state, so GST splits into <strong>CGST + SGST</strong>. IGST only applies to inter-state supplies — rare for dine-in, but relevant for some B2B or delivery scenarios. Good billing software decides this automatically from the place of supply.</p>
@@ -76,7 +77,7 @@
       <li><strong>Taxable value</strong> (before tax)</li>
       <li>The <strong>GST rate</strong> and the <strong>CGST/SGST (or IGST) amounts</strong> shown separately</li>
       <li>The <strong>invoice total</strong></li>
-      <li><strong>HSN/SAC</strong> where applicable (restaurant service commonly uses SAC 9963)</li>
+      <li><strong>HSN/SAC</strong> where applicable (restaurant service commonly uses SAC 9963 — confirm the code for your supplies against the schedules on the <a href="https://taxinformation.cbic.gov.in/" target="_blank" rel="noopener">CBIC tax information portal</a>)</li>
     </ul>
     <p>Doing this by hand is error-prone. The point of GST billing software is that every bill comes out correct, numbered in sequence, and ready for your GSTR filings.</p>
 
@@ -93,7 +94,7 @@
     </table>
 
     <h2>Do restaurants need e-invoicing?</h2>
-    <p>E-invoicing — generating an IRN (Invoice Reference Number) from the government portal — becomes mandatory once your aggregate turnover crosses the notified threshold. Even if you're under it today, choosing <strong>e-invoice-ready</strong> software means you won't have to switch systems the moment you grow past the limit.</p>
+    <p>E-invoicing — generating an IRN (Invoice Reference Number) from the government portal — becomes mandatory once your aggregate turnover crosses the notified threshold. The threshold in force, the notification that set it, and a check for whether your own GSTIN has been enabled for e-invoicing are all published on <a href="https://einvoice1.gst.gov.in/" target="_blank" rel="noopener">the government e-invoice portal (einvoice1.gst.gov.in)</a> — read the figure there rather than from any blog, this one included. Even if you're under it today, choosing <strong>e-invoice-ready</strong> software means you won't have to switch systems the moment you grow past the limit.</p>
 
     <div class="callout">
       <h3>GST-ready billing, out of the box</h3>
@@ -105,7 +106,7 @@
     <ol>
       <li>Bill every order through your POS so tax is captured correctly at source.</li>
       <li>At month-end, export the GST/GSTR summary from reports.</li>
-      <li>Hand it to your CA (or upload to the portal) for GSTR-1 and 3B.</li>
+      <li>Hand it to your CA, or file it yourself on the GST portal at <a href="https://www.gst.gov.in/" target="_blank" rel="noopener">gst.gov.in</a>, for GSTR-1 and 3B.</li>
       <li>Keep digital copies of invoices — your POS stores them automatically.</li>
     </ol>
     <p>That's the whole loop. The heavy lifting happens once, at billing time, so filing is mostly review-and-submit.</p>
@@ -116,6 +117,8 @@
       <li><a href="/blog/e-invoicing-for-restaurants-india">E-invoicing for restaurants in India</a></li>
       <li><a href="/blog/best-restaurant-pos-software-india">Best restaurant POS software in India</a></li>
       <li><a href="/blog/upi-payments-for-restaurants">Accepting UPI & split payments</a></li>
+      <li><a href="/gst-billing-software-restaurant">GST billing software for restaurants</a></li>
+      <li><a href="/restaurant-billing-software">Restaurant billing software on your phone</a></li>
     </ul>
 
   <div class="faq">

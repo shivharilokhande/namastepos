@@ -45,15 +45,17 @@
 <!-- Structured data: Organization + SoftwareApplication + FAQ (AEO/SEO) -->
 <script type="application/ld+json">
 {"@context":"https://schema.org","@graph":[
-{"@type":"Organization","name":"NamastePOS","url":"https://namastepos.in/","logo":"https://namastepos.in/apple-touch-icon.png","sameAs":[],"contactPoint":{"@type":"ContactPoint","email":"support@namastepos.in","contactType":"customer support","areaServed":"IN"}},
-{"@type":"SoftwareApplication","name":"NamastePOS","operatingSystem":"Android, iOS, Web","applicationCategory":"BusinessApplication","applicationSubCategory":"Restaurant billing software and POS app","description":"Restaurant billing software and POS app for India with offline billing, KOT software, QR self-ordering, loyalty and live reports. GST tax invoices from the Pro plan; e-invoice formats from Advanced.","offers":{"@type":"AggregateOffer","lowPrice":"0","highPrice":"1999","priceCurrency":"INR","offerCount":"5"}},
-{"@type":"FAQPage","mainEntity":[
+{"@type":"Organization","@id":"https://namastepos.in/#organization","name":"NamastePOS","url":"https://namastepos.in/","logo":{"@type":"ImageObject","url":"https://namastepos.in/apple-touch-icon.png"},"email":"support@namastepos.in","foundingDate":"2026","areaServed":{"@type":"Country","name":"India"},"contactPoint":{"@type":"ContactPoint","email":"support@namastepos.in","contactType":"customer support","areaServed":"IN","availableLanguage":["en","hi"]}},
+{"@type":"WebSite","@id":"https://namastepos.in/#website","url":"https://namastepos.in/","name":"NamastePOS","publisher":{"@id":"https://namastepos.in/#organization"},"inLanguage":"en-IN"},
+{"@type":"WebPage","@id":"https://namastepos.in/#webpage","url":"https://namastepos.in/","name":"NamastePOS - Restaurant Billing Software and POS App for India","isPartOf":{"@id":"https://namastepos.in/#website"},"about":{"@id":"https://namastepos.in/#software"},"inLanguage":"en-IN"},
+{"@type":"SoftwareApplication","@id":"https://namastepos.in/#software","name":"NamastePOS","url":"https://namastepos.in/","operatingSystem":"Android, iOS, Web","applicationCategory":"BusinessApplication","applicationSubCategory":"Restaurant billing software and POS app","description":"Restaurant billing software and POS app for India with offline billing, KOT software, QR self-ordering, loyalty and live reports. GST tax invoices from the Pro plan; e-invoice formats from Advanced.","inLanguage":"en-IN","publisher":{"@id":"https://namastepos.in/#organization"},"author":{"@id":"https://namastepos.in/#organization"},"featureList":["Offline-first billing","KOT printing and kitchen display (KDS)","Captain and table ordering","QR self-ordering","GST tax invoices with CGST/SGST and HSN (Pro and above)","E-invoice formats (Advanced and above)","Loyalty, memberships and prepaid wallet","UPI, cash, card and split payments","Inventory and recipe costing","Live sales reports and day-end closing"],"offers":{"@type":"AggregateOffer","lowPrice":"0","highPrice":"1999","priceCurrency":"INR","offerCount":"5","offers":[{"@type":"Offer","name":"Starter","price":"0","priceCurrency":"INR","description":"Free forever","url":"https://namastepos.in/#pricing","availability":"https://schema.org/InStock","category":"Subscription, per register, billed monthly"},{"@type":"Offer","name":"Growth","price":"299","priceCurrency":"INR","description":"₹299 per register per month, or ₹2,990 per register per year","url":"https://namastepos.in/#pricing","availability":"https://schema.org/InStock","category":"Subscription, per register, billed monthly"},{"@type":"Offer","name":"Pro","price":"799","priceCurrency":"INR","description":"₹799 per register per month, or ₹7,990 per register per year","url":"https://namastepos.in/#pricing","availability":"https://schema.org/InStock","category":"Subscription, per register, billed monthly"},{"@type":"Offer","name":"Advanced","price":"999","priceCurrency":"INR","description":"₹999 per register per month, or ₹9,990 per register per year","url":"https://namastepos.in/#pricing","availability":"https://schema.org/InStock","category":"Subscription, per register, billed monthly"},{"@type":"Offer","name":"Enterprise","price":"1999","priceCurrency":"INR","description":"₹1,999 per register per month, or ₹19,990 per register per year","url":"https://namastepos.in/#pricing","availability":"https://schema.org/InStock","category":"Subscription, per register, billed monthly"}]}},
+{"@type":"FAQPage","inLanguage":"en-IN","mainEntity":[
 {"@type":"Question","name":"Which plans include GST tax invoices?","acceptedAnswer":{"@type":"Answer","text":"GST-compliant CGST/SGST tax invoices, with HSN per item, are included from Pro (₹799/mo) and above. E-invoice formats start on Advanced (₹999/mo). Starter and Growth print plain invoices and receipts, not GST tax invoices."}},
-{"@type":"Question","name":"Does NamastePOS work offline?","acceptedAnswer":{"@type":"Answer","text":"Yes. Billing and KOTs keep working with no internet and sync automatically when you're back online — so service never stops during a rush."}},
-{"@type":"Question","name":"Can I run NamastePOS on my phone?","acceptedAnswer":{"@type":"Answer","text":"Absolutely. NamastePOS is mobile-first — run your whole restaurant from an Android phone or tablet, no bulky terminal required. iOS and web are supported too."}},
-{"@type":"Question","name":"Is there a free trial?","acceptedAnswer":{"@type":"Answer","text":"Yes — start free, no credit card required. Set up in about 5 minutes and upgrade only when you're ready."}},
-{"@type":"Question","name":"Is there any lock-in contract?","acceptedAnswer":{"@type":"Answer","text":"No lock-in. Pricing is all-inclusive with no hidden report paywalls, and you can leave anytime."}}
-]}
+{"@type":"Question","name":"Does it work offline?","acceptedAnswer":{"@type":"Answer","text":"Yes. Billing and KOTs keep working with no internet and sync automatically when you're back online — service never stops during a rush."}},
+{"@type":"Question","name":"Can I run it on my phone?","acceptedAnswer":{"@type":"Answer","text":"Absolutely. NamastePOS is mobile-first — run the whole restaurant from an Android phone or tablet, no bulky terminal required. iOS and web are supported too."}},
+{"@type":"Question","name":"Is there a free trial?","acceptedAnswer":{"@type":"Answer","text":"Yes — start free with no credit card. Set up in about 5 minutes and upgrade only when you're ready."}},
+{"@type":"Question","name":"Is there any lock-in contract?","acceptedAnswer":{"@type":"Answer","text":"No lock-in. Pricing is all-inclusive with no hidden report paywalls, and you can leave anytime."}},
+{"@type":"Question","name":"How is NamastePOS different from legacy POS systems?","acceptedAnswer":{"@type":"Answer","text":"Same everyday features, but mobile-first and offline-ready at a lower, all-inclusive price — no annual lock-in and no paywall to see your own reports."}}]}
 ]}
 </script>
 <style>
@@ -526,7 +528,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
           <li><span class="material-symbols-outlined">check</span> White-label</li>
           <li><span class="material-symbols-outlined">check</span> Multi-currency</li>
           <li><span class="material-symbols-outlined">check</span> Staff logins</li>
-          <li><span class="material-symbols-outlined">check</span> Unlimited staff</li>
+          <li><span class="material-symbols-outlined">check</span> Unlimited staff logins (Advanced and Enterprise)</li>
           <li><span class="material-symbols-outlined">check</span> Web dashboard</li>
         </ul>
       </div>
@@ -575,7 +577,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
         <h3>Pro</h3>
         <div class="price">₹799<small>/mo</small></div>
         <div class="note">full-service restaurants</div>
-        <ul><li><span class="material-symbols-outlined">check</span> Everything in Growth</li><li><span class="material-symbols-outlined">check</span> GST tax invoices (CGST/SGST + HSN)</li><li><span class="material-symbols-outlined">check</span> Zomato &amp; Swiggy aggregators</li><li><span class="material-symbols-outlined">check</span> Inventory &amp; recipe costing</li><li><span class="material-symbols-outlined">check</span> Unlimited staff</li></ul>
+        <ul><li><span class="material-symbols-outlined">check</span> Everything in Growth</li><li><span class="material-symbols-outlined">check</span> GST tax invoices (CGST/SGST + HSN)</li><li><span class="material-symbols-outlined">check</span> Zomato &amp; Swiggy aggregators</li><li><span class="material-symbols-outlined">check</span> Inventory &amp; recipe costing</li><li><span class="material-symbols-outlined">check</span> Up to 10 staff logins</li></ul>
         <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-pro&amp;plan=pro_plan" class="btn btn-primary">Start free trial</a>
       </div>
       <div class="plan rv">
@@ -601,16 +603,22 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
              5-plan lineup for no-JS / SEO and MUST match the pricing cards. -->
         <thead id="compare-head"><tr><th>Compare features</th><th>Starter</th><th>Growth</th><th>Pro</th><th>Advanced</th><th>Enterprise</th></tr></thead>
         <tbody id="compare-body">
-          <tr><td>Menu items</td><td>10</td><td>25</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
-          <tr><td>Staff logins</td><td>1</td><td>3</td><td>10</td><td>Unlimited</td><td>Unlimited</td></tr>
-          <tr><td>Outlets</td><td>1</td><td>1</td><td>1</td><td>Up to 3</td><td>Up to 3</td></tr>
-          <tr><td>Invoices &amp; receipts</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>GST tax invoices (CGST/SGST + HSN)</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>E-invoice (GST)</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>WhatsApp marketing</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>Aggregators</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>Accounting (P&amp;L / BS)</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td><td class="yes">✓</td></tr>
-          <tr><td>Multi-outlet</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="no">—</td><td class="yes">✓</td></tr>
+          <tr><td>Menu items</td><td>60</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
+          <tr><td>Staff logins</td><td>1</td><td>5</td><td>10</td><td>Unlimited</td><td>Unlimited</td></tr>
+          <tr><td>Outlets</td><td>1</td><td>1</td><td>1</td><td>3</td><td>3</td></tr>
+          <tr><td>Invoices &amp; receipts</td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>GST tax invoices (CGST/SGST + HSN)</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>WhatsApp marketing</td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>Loyalty &amp; points</td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>Memberships &amp; wallet</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>QR self-ordering</td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>Kitchen display (KDS)</td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>Captain ordering</td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>Inventory tracking</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>Advanced reports</td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>Zomato / Swiggy</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>E-invoice (GST)</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>Multi-outlet</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -644,6 +652,21 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
         <h3>KOT software</h3>
         <p>Kitchen order tickets from the counter or the captain's phone, to a printer or a screen.</p>
       </a>
+    </div>
+
+    <div class="rv" style="max-width:760px;margin:38px auto 0">
+      <h3 style="font-size:18px;margin:0 0 10px">Guides for restaurant owners</h3>
+      <ul style="line-height:1.9;padding-left:18px;color:var(--muted);font-size:15px">
+        <li><a href="/blog/best-restaurant-pos-software-india" style="color:var(--green);font-weight:600">How to choose restaurant POS software in India</a> &mdash; the checklist to run before you commit</li>
+        <li><a href="/blog/restaurant-pos-cost-india" style="color:var(--green);font-weight:600">What a restaurant POS costs in year one</a> &mdash; licence, hardware, add-ons and the costs nobody quotes</li>
+        <li><a href="/blog/gst-billing-software-for-restaurants" style="color:var(--green);font-weight:600">GST billing for restaurants: the complete guide</a> &mdash; CGST/SGST vs IGST, HSN/SAC and the monthly routine</li>
+        <li><a href="/blog/restaurant-bill-format-india" style="color:var(--green);font-weight:600">Restaurant bill format in India</a> &mdash; every field a GST tax invoice must show</li>
+        <li><a href="/blog/offline-restaurant-billing" style="color:var(--green);font-weight:600">Restaurant billing without internet</a> &mdash; why offline-first beats a queue that hopes</li>
+        <li><a href="/blog/kot-kds-kitchen-order-system" style="color:var(--green);font-weight:600">KOT and KDS: the kitchen order system</a> &mdash; paper tickets, screens, and which your kitchen needs</li>
+        <li><a href="/blog/switching-restaurant-pos" style="color:var(--green);font-weight:600">Switching your restaurant POS without downtime</a> &mdash; the migration order that keeps you billing</li>
+        <li><a href="/blog/free-restaurant-billing-software" style="color:var(--green);font-weight:600">Free restaurant billing software: the catch</a> &mdash; how to read a free plan before you build your menu in it</li>
+      </ul>
+      <p style="margin-top:10px;font-size:15px"><a href="/blog/" style="color:var(--green);font-weight:700">All restaurant guides</a></p>
     </div>
   </div>
 </section>

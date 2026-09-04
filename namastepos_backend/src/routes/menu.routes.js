@@ -30,6 +30,32 @@ router.post(
   requireRole(['business_owner', 'staff_manager']),
   ...c.bulkImport,
 );
+// ── Activation: the three real ways to get a menu in ────────────────────
+//
+// 2026-09-05. These MUST be declared before '/:itemId' — Express matches in
+// order, so a later '/templates' would be swallowed by the item route and
+// answered with "Menu item not found".
+//
+// 1. LOAD A TEMPLATE. GET is read-only product content (any authenticated
+//    member of the business may look), POST writes and needs the same roles
+//    as creating an item by hand.
+router.get('/templates', c.listTemplates);
+router.get('/templates/:slug', c.getTemplate);
+router.post(
+  '/templates/:slug/apply',
+  requireRole(['business_owner', 'staff_manager']),
+  c.applyTemplate,
+);
+// 2. PASTE A MENU. Parse-only: it writes nothing, so no plan cap and no
+//    idempotency key. The confirmed rows are posted to '/bulk' above, which
+//    is where the cap and the all-or-nothing transaction live.
+router.post(
+  '/parse-text',
+  requireRole(['business_owner', 'staff_manager']),
+  ...c.parseText,
+);
+// 3. IMPORT A CSV / POS export — POST '/bulk', already above.
+
 router.get('/:itemId', c.get);
 router.put('/:itemId', requireRole(['business_owner', 'staff_manager']), ...c.update);
 router.delete('/:itemId', requireRole(['business_owner', 'staff_manager']), c.remove);

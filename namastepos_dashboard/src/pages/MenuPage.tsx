@@ -18,8 +18,11 @@ import { toast } from 'sonner';
 import {
   Plus, Trash2, Edit2, Search, Filter, Gift, Leaf, X, ChefHat, ImageOff,
   Ban, Check as CheckIcon, Upload as UploadIcon, Lock,
+  Sparkles, ClipboardPaste, PencilLine,
 } from 'lucide-react';
 import { MenuCsvImportDialog } from '@/components/MenuCsvImportDialog';
+import { MenuTemplateDialog } from '@/components/MenuTemplateDialog';
+import { MenuPasteDialog } from '@/components/MenuPasteDialog';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -58,6 +61,9 @@ export function MenuPage() {
   const [editing, setEditing] = useState<any | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<any | null>(null);
   const [csvOpen, setCsvOpen] = useState(false);   // FF-218
+  // 2026-09-05 — the two new routes past the menu wall (activation audit).
+  const [templateOpen, setTemplateOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
 
   // ── Derive category list from items.category ────────────────────────────
   const categoryCounts = useMemo(() => {
@@ -89,6 +95,11 @@ export function MenuPage() {
     });
   }, [items, selectedCat, search, vegOnly, activeOnly]);
 
+  // A genuinely empty menu, as distinct from a filter that matched nothing.
+  // The old code conflated the two and told brand-new owners their filters
+  // were too narrow.
+  const menuIsEmpty = !isLoading && items.length === 0;
+
   const remove = useMutation({
     mutationFn: (id: string) => ffApi.deleteMenuItem(id),
     onSuccess: () => {
@@ -109,9 +120,18 @@ export function MenuPage() {
             {items.length} items · {categoryCounts.length} categories · {comboCount} combos
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {/* 2026-09-05 — the fast routes come first in the header too, not
+              just in the empty state: an owner who typed five items and gave
+              up is looking for exactly this. */}
+          <Button variant="outline" onClick={() => setTemplateOpen(true)}>
+            <Sparkles className="mr-2 h-4 w-4" /> Start with a menu
+          </Button>
+          <Button variant="outline" onClick={() => setPasteOpen(true)}>
+            <ClipboardPaste className="mr-2 h-4 w-4" /> Paste a menu
+          </Button>
           <Button variant="outline" onClick={() => setCsvOpen(true)}>
-            <UploadIcon className="mr-2 h-4 w-4" /> Bulk import CSV
+            <UploadIcon className="mr-2 h-4 w-4" /> Import CSV
           </Button>
           <Button variant="outline" onClick={() => setEditing({ isCombo: true })}>
             <Gift className="mr-2 h-4 w-4" /> New combo
@@ -122,8 +142,74 @@ export function MenuPage() {
         </div>
       </div>
       <MenuCsvImportDialog open={csvOpen} onClose={() => setCsvOpen(false)} />
+      <MenuTemplateDialog open={templateOpen} onClose={() => setTemplateOpen(false)} />
+      <MenuPasteDialog open={pasteOpen} onClose={() => setPasteOpen(false)} />
+
+      {/* ── EMPTY MENU ────────────────────────────────────────────────────
+          The wall, and the moment it matters most. This screen used to say
+          "No items match these filters." to an owner who had no items and no
+          filters — technically true, and completely useless. A new owner
+          landing here has to be told the three real ways in, with the fastest
+          one first and the 45-minute one last. Filters, the search box and the
+          category sidebar are all hidden while the menu is empty: there is
+          nothing to search. */}
+      {menuIsEmpty && (
+        <>
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="p-6 text-center space-y-2">
+              <h2 className="text-xl font-bold">Your menu is empty</h2>
+              <p className="text-sm text-muted-foreground max-w-xl mx-auto">
+                You need a menu before you can bill anything — but you do not
+                need to type it. Pick whichever of these matches what you have
+                right now.
+              </p>
+            </CardContent>
+          </Card>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <EmptyRoute
+              icon={<Sparkles className="h-5 w-5" />}
+              title="Start with a menu"
+              time="about 1 minute"
+              body="Load a ready menu for your kind of kitchen — cafe, dhaba, tiffin, QSR, bakery, bar, cloud kitchen, tea stall. Items, categories and GST come pre-filled. Change prices after."
+              cta="Pick a starter menu"
+              onClick={() => setTemplateOpen(true)}
+              primary
+            />
+            <EmptyRoute
+              icon={<ClipboardPaste className="h-5 w-5" />}
+              title="Paste what you have"
+              time="about 5 minutes"
+              body="Already have the menu as text — a WhatsApp message, a typed list? Paste it and we read the names and prices. You check the list before it saves."
+              cta="Paste a menu"
+              onClick={() => setPasteOpen(true)}
+            />
+            <EmptyRoute
+              icon={<UploadIcon className="h-5 w-5" />}
+              title="Import from your old system"
+              time="about 5 minutes"
+              body="Moving off another POS or a spreadsheet? Upload the CSV export. Name and Price are the only columns we need."
+              cta="Import a CSV"
+              onClick={() => setCsvOpen(true)}
+            />
+          </div>
+
+          <Card>
+            <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+              <div className="text-sm text-muted-foreground flex items-center gap-2">
+                <PencilLine className="h-4 w-4" />
+                Only sell a handful of things? Typing them is fine too.
+              </div>
+              <Button variant="outline" onClick={() => setEditing({})}>
+                <Plus className="mr-2 h-4 w-4" /> Add an item by hand
+              </Button>
+            </CardContent>
+          </Card>
+        </>
+      )}
 
       {/* Search + filters */}
+      {!menuIsEmpty && (
       <Card>
         <CardContent className="p-3 flex flex-col md:flex-row gap-3 md:items-center">
           <div className="relative flex-1">
@@ -153,8 +239,10 @@ export function MenuPage() {
           </div>
         </CardContent>
       </Card>
+      )}
 
       {/* Body — sidebar + grid */}
+      {!menuIsEmpty && (
       <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-4">
         {/* Category sidebar */}
         <Card>
@@ -223,6 +311,7 @@ export function MenuPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Edit / Create dialog */}
       {editing && (
@@ -267,6 +356,44 @@ export function MenuPage() {
 }
 
 // ── Small bits ──────────────────────────────────────────────────────────
+
+/**
+ * One of the three routes out of an empty menu. `time` is an honest estimate,
+ * not a promise: an owner who is told "1 minute" and spends 20 stops
+ * believing anything else the product says.
+ */
+function EmptyRoute({
+  icon, title, time, body, cta, onClick, primary,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  time: string;
+  body: string;
+  cta: string;
+  onClick: () => void;
+  primary?: boolean;
+}) {
+  return (
+    <Card className={primary ? 'border-primary' : ''}>
+      <CardContent className="p-4 flex flex-col gap-2 h-full">
+        <div className="flex items-center gap-2">
+          <span className={`grid place-items-center h-9 w-9 rounded-lg ${
+            primary ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'}`}>
+            {icon}
+          </span>
+          <div>
+            <div className="font-semibold leading-tight">{title}</div>
+            <div className="text-[11px] text-muted-foreground">{time}</div>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground flex-1">{body}</p>
+        <Button variant={primary ? 'default' : 'outline'} className="w-full" onClick={onClick}>
+          {cta}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 function FilterChip({
   on, onClick, icon, children,

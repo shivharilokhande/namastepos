@@ -35,15 +35,15 @@ Single-outlet Indian food businesses - cafes, QSRs, cloud kitchens, dhabas, stre
 
 Android (APK), iOS and a web dashboard. One login works across devices.
 
-## Plan ladder (INR, per register, verified 2026-09-04)
+## Plan ladder (INR, per register, verified 2026-09-05 against https://api.namastepos.in/v1/public/plans)
 
-| Plan | Monthly | Yearly | Menu items | Staff logins | Outlets | Monthly orders |
-|---|---|---|---|---|---|---|
-| Starter | ₹0 | not offered | 10 | 1 | 1 | 200 |
-| Growth | ₹299 | ₹2,990 | 25 | 3 | 1 | 2,000 |
-| Pro | ₹799 | ₹7,990 | unlimited | 10 | 1 | unlimited |
-| Advanced | ₹999 | ₹9,990 | unlimited | unlimited | 3 | unlimited |
-| Enterprise | ₹1,999 | ₹19,990 | unlimited | unlimited | 3 | unlimited |
+| Plan | Monthly | Yearly | Menu items | Staff logins | Tables | Outlets | Monthly orders |
+|---|---|---|---|---|---|---|---|
+| Starter | ₹0 | not offered | 60 | 1 | 8 | 1 | 500 |
+| Growth | ₹299 | ₹2,990 | unlimited | 5 | 12 | 1 | 3,000 |
+| Pro | ₹799 | ₹7,990 | unlimited | 10 | unlimited | 1 | unlimited |
+| Advanced | ₹999 | ₹9,990 | unlimited | unlimited | unlimited | 3 | unlimited |
+| Enterprise | ₹1,999 | ₹19,990 | unlimited | unlimited | unlimited | 3 | unlimited |
 
 Yearly billing costs about ten months of the monthly price, so roughly two months free. Free trial: 7 days, no credit card. No annual lock-in, cancel anytime. Add-ons (WhatsApp messaging, e-invoice pack, extra outlets) are sold separately and priced in-product.
 

@@ -309,6 +309,37 @@ export const ffApi = {
     const b = getBusinessCache();
     return api.post(`/businesses/${b.id}/menu/bulk`, { items }).then((r) => r.data);
   },
+
+  // ── Activation (2026-09-05): the three routes out of the menu wall ──────
+  //
+  // Manual menu entry is 45-90 minutes on a phone and it sits between signup
+  // and the first bill (activation audit 2026-09-04). CSV import only helps an
+  // owner who already HAS an export. These two cover the rest.
+  //
+  // 1. Starter templates. `applyMenuTemplate` sends ONLY the slug — every
+  //    name, price, GST rate and HSN code is read server-side off disk, so
+  //    the client cannot set a price through this path.
+  listMenuTemplates: () => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/menu/templates`).then((r) => r.data.templates);
+  },
+  getMenuTemplate: (slug: string) => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/menu/templates/${slug}`).then((r) => r.data.template);
+  },
+  applyMenuTemplate: (slug: string) => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/menu/templates/${slug}/apply`, {})
+      .then((r) => r.data);
+  },
+  // 2. Paste a menu. Parse-only — it writes nothing. The rows the owner
+  //    confirms are posted through `bulkImportMenu` above, which is the
+  //    plan-capped, all-or-nothing path.
+  parseMenuText: (text: string, defaultCategory?: string) => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/menu/parse-text`, { text, defaultCategory })
+      .then((r) => r.data);
+  },
   // Migration wizard (2026-09-03) — "Switch to NamastePOS" imports. Both
   // return { imported, failed: [{row,error}], warnings: [{row,warning}] }.
   importCustomers: (rows: any[]) => {

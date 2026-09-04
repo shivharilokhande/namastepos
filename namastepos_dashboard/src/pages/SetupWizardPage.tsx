@@ -14,9 +14,11 @@
 
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { ChevronRight, Store, LayoutGrid, UtensilsCrossed, Sparkles, Plus, X } from 'lucide-react';
+import {
+  ChevronRight, Store, LayoutGrid, UtensilsCrossed, Sparkles, Plus, X, Check,
+} from 'lucide-react';
 
 import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
@@ -68,6 +70,21 @@ export function SetupWizardPage() {
   ]);
 
   const [busy, setBusy] = useState(false);
+
+  // ── Step 3, the wall (2026-09-05) ─────────────────────────────────────
+  //
+  // This step used to be three name+price boxes and a "you can bulk-import a
+  // CSV later" tip. An owner with a 40-dish menu reads that as "type it all,
+  // one box at a time", which is the 45-90 minute wall the activation audit
+  // named as the top reason a trial dies on day one. Now the DEFAULT is a
+  // starter menu for their format, and typing is the fallback.
+  const [menuMode, setMenuMode] = useState<'template' | 'manual'>('template');
+  const [templateSlug, setTemplateSlug] = useState<string | null>(null);
+  const { data: menuTemplates = [] } = useQuery<any[]>({
+    queryKey: ['menu-templates'],
+    queryFn: ffApi.listMenuTemplates,
+    staleTime: 60 * 60 * 1000,
+  });
 
   // FF-217c helper: swallow "already exists" (409) so the wizard is
   // idempotent — the user can complete it even if some rows were
@@ -125,32 +142,46 @@ export function SetupWizardPage() {
         }));
       }
 
-      // 3. Menu — same idempotency treatment.
-      const existingMenu = await ffApi.listMenu().catch(() => []);
-      const existingItemNames = new Set(
-        (existingMenu as any[]).map((m: any) => (m.name || '').toLowerCase())
-      );
-      for (const it of items) {
-        const n = it.name.trim();
-        if (!n) continue;
-        if (existingItemNames.has(n.toLowerCase())) continue;
-        await swallowDup(ffApi.createMenuItem({
-          name: n,
-          price: Number(it.price) || 0,
-        }));
+      // 3. Menu — a starter template if they picked one, otherwise the typed
+      //    rows. The template path is idempotent server-side (it skips any
+      //    name the business already has), so re-running the wizard is safe
+      //    and cannot duplicate or re-price anything.
+      let templateApplied = 0;
+      if (menuMode === 'template' && templateSlug) {
+        const r: any = await ffApi.applyMenuTemplate(templateSlug);
+        templateApplied = r?.inserted ?? 0;
+      } else {
+        const existingMenu = await ffApi.listMenu().catch(() => []);
+        const existingItemNames = new Set(
+          (existingMenu as any[]).map((m: any) => (m.name || '').toLowerCase())
+        );
+        for (const it of items) {
+          const n = it.name.trim();
+          if (!n) continue;
+          if (existingItemNames.has(n.toLowerCase())) continue;
+          await swallowDup(ffApi.createMenuItem({
+            name: n,
+            price: Number(it.price) || 0,
+          }));
+        }
       }
       // 4. Mark onboarded — flips the gate so the wizard never returns.
       await ffApi.patchMe({ onboarded: true });
+      return { templateApplied };
     },
-    onSuccess: () => {
+    onSuccess: (r) => {
       qc.invalidateQueries();
-      // Activation funnel — `menu_ready`, attributed to the wizard. Reads
-      // the menu back from the server so the count is the real total, and
-      // countOwnerAuthored() discards the three untouched pre-fills above
-      // (Masala Chai 30 / Butter Naan 40 / Paneer Tikka 250) — clicking
-      // "Finish setup" without editing anything must not count as a ready
-      // menu.
-      trackMenuReadyFromServer('wizard');
+      // Activation funnel — `menu_ready`. Reads the menu back from the server
+      // so the count is the real total, and countOwnerAuthored() discards the
+      // three untouched pre-fills above (Masala Chai 30 / Butter Naan 40 /
+      // Paneer Tikka 250) — clicking "Finish setup" without editing anything
+      // must not count as a ready menu.
+      //
+      // The SOURCE is 'template' when a starter menu did the work and
+      // 'wizard' when the owner typed. Those are the two arms of the whole
+      // experiment; collapsing them into one source would make the result
+      // unreadable.
+      trackMenuReadyFromServer(r?.templateApplied ? 'template' : 'wizard');
       toast.success('Setup complete! Welcome to NamastePOS.');
       nav('/', { replace: true });
     },
@@ -278,26 +309,93 @@ export function SetupWizardPage() {
 
           {step === 2 && (
             <div className="space-y-3">
-              <Label>Menu items ({items.length})</Label>
-              {items.map((it, i) => (
-                <div key={i} className="flex gap-2 items-center">
-                  <Input value={it.name} onChange={(e) => {
-                    const next = [...items]; next[i] = { ...it, name: e.target.value }; setItems(next);
-                  }} placeholder="Item name" className="flex-1" />
-                  <Input value={it.price} onChange={(e) => {
-                    const next = [...items]; next[i] = { ...it, price: e.target.value }; setItems(next);
-                  }} placeholder="₹" className="w-24" type="number" />
-                  <Button size="sm" variant="ghost" onClick={() => setItems(items.filter((_, x) => x !== i))}>
-                    <X className="w-3.5 h-3.5" />
-                  </Button>
-                </div>
-              ))}
-              <Button size="sm" variant="outline" onClick={() => setItems([...items, { name: '', price: '' }])}>
-                <Plus className="w-3.5 h-3.5 mr-1" /> Add item
-              </Button>
-              <div className="text-xs text-muted-foreground pt-1">
-                Tip: you can bulk-import a CSV from the Menu page later.
+              {/* Do not type your menu. That is the whole point of this step. */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setMenuMode('template')}
+                  className={`flex-1 rounded-md border p-2 text-sm font-medium ${
+                    menuMode === 'template' ? 'border-primary bg-primary/5 text-primary' : 'border-input'}`}
+                >
+                  Start with a ready menu
+                </button>
+                <button
+                  onClick={() => setMenuMode('manual')}
+                  className={`flex-1 rounded-md border p-2 text-sm font-medium ${
+                    menuMode === 'manual' ? 'border-primary bg-primary/5 text-primary' : 'border-input'}`}
+                >
+                  I&apos;ll type a few items
+                </button>
               </div>
+
+              {menuMode === 'template' && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Pick the closest kind of kitchen. Items, categories and GST
+                    come pre-filled — change any price later, in the middle of
+                    the rush if you have to. Nothing you already added is touched.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-72 overflow-y-auto">
+                    {menuTemplates.map((t) => (
+                      <button
+                        key={t.slug}
+                        onClick={() => setTemplateSlug(t.slug === templateSlug ? null : t.slug)}
+                        className={`text-left rounded-md border p-2.5 ${
+                          templateSlug === t.slug
+                            ? 'border-primary bg-primary/5'
+                            : 'border-input hover:bg-accent'}`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-medium">{t.name}</span>
+                          {templateSlug === t.slug
+                            ? <Check className="w-4 h-4 text-primary shrink-0" />
+                            : <span className="text-[10px] text-muted-foreground shrink-0">{t.itemCount} items</span>}
+                        </div>
+                        {t.tagline && (
+                          <div className="text-[11px] text-muted-foreground mt-0.5">{t.tagline}</div>
+                        )}
+                      </button>
+                    ))}
+                    {menuTemplates.length === 0 && (
+                      <div className="text-xs text-muted-foreground p-2 sm:col-span-2">
+                        Couldn&apos;t load the ready menus. Type a few items instead —
+                        you can load one any time from the Menu page.
+                      </div>
+                    )}
+                  </div>
+                  {!templateSlug && (
+                    <div className="text-xs text-muted-foreground">
+                      Nothing picked yet. Choose one, or switch to typing.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {menuMode === 'manual' && (
+                <div className="space-y-3">
+                  <Label>Menu items ({items.length})</Label>
+                  {items.map((it, i) => (
+                    <div key={i} className="flex gap-2 items-center">
+                      <Input value={it.name} onChange={(e) => {
+                        const next = [...items]; next[i] = { ...it, name: e.target.value }; setItems(next);
+                      }} placeholder="Item name" className="flex-1" />
+                      <Input value={it.price} onChange={(e) => {
+                        const next = [...items]; next[i] = { ...it, price: e.target.value }; setItems(next);
+                      }} placeholder="₹" className="w-24" type="number" />
+                      <Button size="sm" variant="ghost" onClick={() => setItems(items.filter((_, x) => x !== i))}>
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button size="sm" variant="outline" onClick={() => setItems([...items, { name: '', price: '' }])}>
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Add item
+                  </Button>
+                  <div className="text-xs text-muted-foreground pt-1">
+                    Three items is enough to print your first bill. The Menu page
+                    can load a ready menu, take a pasted menu, or import a CSV
+                    whenever you want the rest.
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -307,7 +405,21 @@ export function SetupWizardPage() {
               <div className="text-lg font-semibold">Almost there, {name || 'friend'}!</div>
               <div className="text-sm text-muted-foreground max-w-md mx-auto">
                 We&apos;ll create <strong>{tables.length}</strong> table{tables.length === 1 ? '' : 's'} on
-                &nbsp;<strong>{floorName}</strong> and add <strong>{items.filter((i) => i.name.trim()).length}</strong> menu items.
+                &nbsp;<strong>{floorName}</strong> and{' '}
+                {menuMode === 'template' && templateSlug ? (
+                  <>load the{' '}
+                    <strong>
+                      {menuTemplates.find((t) => t.slug === templateSlug)?.name || 'starter'}
+                    </strong>{' '}
+                    menu (
+                    <strong>
+                      {menuTemplates.find((t) => t.slug === templateSlug)?.itemCount ?? '—'}
+                    </strong>{' '}
+                    items)
+                  </>
+                ) : (
+                  <>add <strong>{items.filter((i) => i.name.trim()).length}</strong> menu items</>
+                )}.
                 You can edit everything from the dashboard afterwards.
               </div>
             </div>

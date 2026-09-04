@@ -113,7 +113,13 @@ export function trackBusinessCreated(opts: {
 
 // ── 3. menu_ready ────────────────────────────────────────────────────────
 
-export type MenuReadySource = 'wizard' | 'manual' | 'bulk_csv' | 'migrate';
+// 2026-09-05: 'template' (a starter menu loaded in one tap) and 'paste' (a
+// menu pasted as text) are the two new routes past the menu wall. They are
+// separate sources on purpose — the activation audit's headline question is
+// "median time-to-value BY menu_created.source", and the whole point of
+// shipping these is to find out whether they beat 'manual'.
+export type MenuReadySource =
+  | 'wizard' | 'manual' | 'bulk_csv' | 'migrate' | 'template' | 'paste';
 
 const MENU_READY_THRESHOLD = 3;
 
