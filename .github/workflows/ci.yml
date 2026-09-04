@@ -5,6 +5,10 @@ on:
     branches: [main]
   push:
     branches: [main]
+    tags: ['v*']
+  # Lets you demand a full signed release build on any branch, on demand —
+  # see the `if:` on the APK steps in the mobile job.
+  workflow_dispatch:
 
 jobs:
   backend:
@@ -138,7 +142,14 @@ jobs:
       # rules) is exercised for real, and the resulting APK is signed with a
       # keystore that exists for 5 minutes inside one runner and is not usable
       # for distribution or for updating an installed app.
+      # 2026-09-04, repo went PRIVATE: Actions minutes are now metered (2,000/mo
+      # on Free), and this step alone is ~8 min of R8/shrink per push — about
+      # 10 pushes a day would eat the whole monthly budget. `analyze` catches
+      # Dart errors on every push, which is the fast, high-yield gate; a full
+      # signed release build only needs to pass before an actual release, so it
+      # runs on tags and on manual dispatch.
       - name: Generate a throwaway signing key (CI artifact only)
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         working-directory: namastepos_flutter/android
         run: |
           keytool -genkeypair -v -noprompt \
@@ -154,6 +165,7 @@ jobs:
       # No --no-shrink: shrinking is what a real release does, and a missing
       # proguard keep rule only ever shows up here.
       - name: Build APK (release, throwaway signature)
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         working-directory: namastepos_flutter
         run: flutter build apk --release
 
