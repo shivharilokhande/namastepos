@@ -1,7 +1,7 @@
 name: namastepos
 description: NamastePOS — Micro-food POS for street vendors and small restaurants. PetPooja clone.
 publish_to: 'none'
-version: 1.0.16+17
+version: 1.0.17+18
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -138,6 +138,10 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
-  assets:
-    - assets/images/
-    - assets/icons/
+  # No `assets:` block: assets/images/ and assets/icons/ were declared but
+  # empty, so git (which cannot track empty directories) never shipped them
+  # and every clean clone — CI included — failed analysis on two directories
+  # that do not exist. Nothing in lib/ ever referenced them. The one real
+  # image, assets/icon/app_icon.png, is consumed by flutter_launcher_icons at
+  # build time and does not need declaring here. Add the block back the moment
+  # a runtime asset actually exists.

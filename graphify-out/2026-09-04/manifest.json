@@ -342,9 +342,9 @@
     "semantic_hash": "e9ab3924a006635c613d64a983cd2686"
   },
   "namastepos_backend/scripts/migrate.js": {
-    "mtime": 1788515697.2525747,
-    "seen": 1788516965.200858,
-    "ast_hash": "c85f4243e35f6f1bf3bbeeef76c3cabb",
+    "mtime": 1788522779.91867,
+    "seen": 1788522937.039905,
+    "ast_hash": "056035680f045cd6ae01dad7a94ff9bb",
     "semantic_hash": ""
   },
   "namastepos_backend/scripts/rotate-super-admin.js": {
@@ -360,9 +360,9 @@
     "semantic_hash": "c170ecca37dc712c60f06e58fca8d769"
   },
   "namastepos_backend/src/app.js": {
-    "mtime": 1788515888.1381664,
-    "seen": 1788516965.2009442,
-    "ast_hash": "327e8290183e8f0199b004cf7834ba14",
+    "mtime": 1788522816.8438928,
+    "seen": 1788522937.0399082,
+    "ast_hash": "9eb2220dac4cb2aab21b504acd442e01",
     "semantic_hash": ""
   },
   "namastepos_backend/src/config/db.js": {
@@ -696,9 +696,9 @@
     "semantic_hash": ""
   },
   "namastepos_backend/src/server.js": {
-    "mtime": 1788515888.1383364,
-    "seen": 1788516965.201132,
-    "ast_hash": "221c3f7d6433e1df71a5a1d13c32c0f0",
+    "mtime": 1788522830.090349,
+    "seen": 1788522937.0399308,
+    "ast_hash": "c42396348708dddb07ced8059848d142",
     "semantic_hash": ""
   },
   "namastepos_backend/src/services/accountingExportService.js": {
@@ -5199,6 +5199,24 @@
     "mtime": 1788521924.9967608,
     "seen": 1788522652.119352,
     "ast_hash": "14c727f620da4047523b72534bcc599a",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/084_variant_stock_tracking.sql": {
+    "mtime": 1788517910.7650678,
+    "seen": 1788522937.039901,
+    "ast_hash": "10dd42139e0d7b2c00e2f96fad52b0c2",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/085_idempotency_keys.sql": {
+    "mtime": 1788519849.0069344,
+    "seen": 1788522937.039902,
+    "ast_hash": "afba7d7c952f9dc15fe2b943487f198d",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/086_admin_2fa_attempts.sql": {
+    "mtime": 1788522037.216229,
+    "seen": 1788522937.039903,
+    "ast_hash": "ee4161ffdc30c1b9e4fb5df27be795ec",
     "semantic_hash": ""
   }
 }

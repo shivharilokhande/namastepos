@@ -93,12 +93,25 @@ jobs:
         working-directory: namastepos_admin
         run: npm run build
 
+  # 2026-09-04 — this job failed on EVERY push since it was made blocking, and
+  # the reason was version skew, not the code: `channel: stable` installs
+  # whatever stable is on the day, which was months newer than the 3.44.0 on
+  # the dev machine. So `flutter analyze` was clean locally and failed in CI on
+  # findings the older analyzer does not have (including a genuine
+  # unchecked-nullable error in the reprint path). Two consequences:
+  #   1. The gate is now PINNED to the same version used locally, so "clean on
+  #      my machine" and "green in CI" mean the same thing, and an upstream
+  #      stable release can no longer break main overnight.
+  #   2. Newer findings are not thrown away — the `mobile-next` job below runs
+  #      the same analysis on latest stable as an early warning that cannot
+  #      block a deploy. When it complains, fix the code and bump the pin
+  #      together, deliberately.
   mobile:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
-        with: { channel: stable, cache: true }
+        with: { channel: stable, flutter-version: '3.44.0', cache: true }
       - name: Fetch packages
         working-directory: namastepos_flutter
         run: flutter pub get
@@ -118,3 +131,21 @@ jobs:
       - name: Build APK (release, no signing)
         working-directory: namastepos_flutter
         run: flutter build apk --release --no-shrink
+
+  # Early warning only — never blocks a deploy. Tells us what the NEXT Flutter
+  # upgrade will demand, before we take it.
+  mobile-next:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - name: Flutter version under test
+        run: flutter --version
+      - name: Fetch packages
+        working-directory: namastepos_flutter
+        run: flutter pub get
+      - name: Analyze on latest stable (advisory)
+        working-directory: namastepos_flutter
+        run: flutter analyze

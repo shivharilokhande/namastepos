@@ -409,10 +409,18 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
             TextButton(
               onPressed: () async {
                 final biz2 = auth.business!;
+                // Read the nullable order ONCE into a local. The old code did
+                // `printToken(order!, …)` then `order.id` — the second access
+                // was unpromoted (a nullable getter on a provider can change
+                // between reads), so a reprint on a screen whose order had
+                // gone null threw instead of printing. Newer Dart analyzers
+                // flag this as an error; ours locally did not.
+                final o = order;
+                if (o == null) return;
                 try {
-                  final ok = await PrinterService.instance.printToken(order!, biz2);
+                  final ok = await PrinterService.instance.printToken(o, biz2);
                   if (ok) {
-                    await orders.markPrinted(order.id);
+                    await orders.markPrinted(o.id);
                   } else if (mounted) {
                     messenger.showSnackBar(const SnackBar(
                       content: Text('Printer did not acknowledge — check paper & power'),

@@ -154,7 +154,11 @@ class AuthService {
       // deleted them), so a Google login whose response omitted `role` left
       // the previous session's cached role in the keychain. One code path =
       // one fail-closed policy for every login.
-      return _persistSessionPayload(data);
+      // `await` is load-bearing, not style: without it the Future escapes the
+      // try, so a failure INSIDE persistence (keychain write, role hydration)
+      // skipped both catch blocks below and surfaced as a raw async error with
+      // no fallback and no message the login screen could show.
+      return await _persistSessionPayload(data);
     } on ApiException {
       // Bug fix (2026-08-20): the earlier "fall back to Demo Stall on
       // ANY ApiException" hid real errors — a 401 / audience-mismatch /
