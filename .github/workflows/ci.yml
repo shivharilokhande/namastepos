@@ -128,9 +128,34 @@ jobs:
           else
             echo "No Flutter tests yet — analyze is the gate."
           fi
-      - name: Build APK (release, no signing)
+      # android/app/build.gradle deliberately THROWS on a release build when
+      # android/key.properties is absent, so a debug-signed APK can never be
+      # shipped by accident. key.properties and *.jks are gitignored, so the
+      # real upload key is not here and must not be — which means the previous
+      # `flutter build apk --release` step could never have passed, in any run.
+      # Rather than weaken the guard, give CI a THROWAWAY key of its own: the
+      # release path (R8/minify, shrinkResources, manifest merge, proguard
+      # rules) is exercised for real, and the resulting APK is signed with a
+      # keystore that exists for 5 minutes inside one runner and is not usable
+      # for distribution or for updating an installed app.
+      - name: Generate a throwaway signing key (CI artifact only)
+        working-directory: namastepos_flutter/android
+        run: |
+          keytool -genkeypair -v -noprompt \
+            -keystore "$RUNNER_TEMP/ci-throwaway.p12" \
+            -storetype PKCS12 -keyalg RSA -keysize 2048 -validity 30 \
+            -alias ci -storepass cicicicici -keypass cicicicici \
+            -dname "CN=NamastePOS CI, OU=CI, O=NamastePOS, L=Pune, S=MH, C=IN"
+          # printf, not a heredoc: an indented heredoc inside `run: |` writes
+          # the leading spaces into the file too.
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/ci-throwaway.p12" cicicicici ci cicicicici > key.properties
+          echo "--- key.properties (throwaway):" && cat key.properties
+      # No --no-shrink: shrinking is what a real release does, and a missing
+      # proguard keep rule only ever shows up here.
+      - name: Build APK (release, throwaway signature)
         working-directory: namastepos_flutter
-        run: flutter build apk --release --no-shrink
+        run: flutter build apk --release
 
   # Early warning only — never blocks a deploy. Tells us what the NEXT Flutter
   # upgrade will demand, before we take it.
