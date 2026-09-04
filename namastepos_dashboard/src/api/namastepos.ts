@@ -2,6 +2,38 @@
 
 import { api, getBusinessCache } from './client';
 
+/**
+ * POST a body that may carry `plan`, tolerating an API that predates the field.
+ *
+ * The two halves of this app deploy independently (Cloudflare Pages vs Render),
+ * so a new client can meet an old server. The auth schemas use
+ * `allowUnknown: false`, which turns an unknown field into a 400 rather than an
+ * ignored key — and a 400 here means a failed signup. Retry once without
+ * `plan`: the trial then uses the server's TRIAL_PLAN_TIER default, which is a
+ * far smaller loss than the account.
+ *
+ * Only retries on the specific "not allowed" validation failure for `plan`, so
+ * a genuine validation error (bad email, weak password) still surfaces as-is
+ * and is never silently retried.
+ */
+async function postTolerantOfPlan(path: string, body: Record<string, unknown>) {
+  try {
+    const r = await api.post(path, body);
+    return r.data;
+  } catch (e: any) {
+    const details: unknown = e?.response?.data?.details;
+    const rejectedPlan = e?.response?.status === 400
+      && body.plan !== undefined
+      && Array.isArray(details)
+      && details.some((d) => typeof d === 'string' && /\bplan\b/.test(d) && /not allowed/i.test(d));
+    if (!rejectedPlan) throw e;
+    const { plan, ...withoutPlan } = body;
+    void plan;
+    const r = await api.post(path, withoutPlan);
+    return r.data;
+  }
+}
+
 // Push 15d — trigger a save-as in the browser for a Blob (PDF/XLSX/CSV).
 // axios is the auth path so the file is fetched WITH the Bearer token;
 // once we have the blob in memory we synthesise an <a download> click
@@ -35,10 +67,39 @@ export interface PlanUsageMetric {
   remaining: number;
   /** Percent of the cap used. Can exceed 100 after a reconciliation. */
   pct: number;
-  /** ok < 80% | warn >= 80% | critical >= 100% (the next attempt 403s). */
+  /** ok < 80% | warn >= 80% | critical >= 100%. */
   level: 'ok' | 'warn' | 'critical';
+  /**
+   * What happens AT the cap (2026-09-04, decision 5). The banner must branch
+   * on this, not on the metric name:
+   *   'hard' — the next attempt is refused with a 403 (dishes, staff, tables,
+   *            floors, outlets: configuration actions, nobody is waiting)
+   *   'soft' — nothing is refused; the extra is recorded as overage
+   *            (`monthly_orders` — a POS must never refuse a bill)
+   * Absent on an older server: treat as 'hard', which is what it used to be.
+   */
+  enforcement?: 'soft' | 'hard';
+  /** Units past the cap. 0 unless `level` is critical on a soft metric. */
+  over?: number;
   /** Plain-language line to show the owner. */
   message: string;
+}
+
+/**
+ * Recorded overage for the current period on a SOFT metric. Present on the
+ * billing read only while the tenant is actually past their included volume.
+ */
+export interface PlanOverage {
+  metric: string;
+  period: string;
+  /** The included volume that applied. */
+  included: number | null;
+  /** Total used this period. */
+  used: number;
+  /** How many of those were past `included`. */
+  over: number;
+  firstAt: string | null;
+  lastAt: string | null;
 }
 
 export interface PlanUsage {
@@ -78,6 +139,7 @@ export interface Subscription {
   plan: Record<string, any> | null;
   usage?: PlanUsage | null;
   grace?: PastDueGrace | null;
+  overage?: PlanOverage | null;
   [key: string]: any;
 }
 
@@ -178,12 +240,29 @@ export const ffApi = {
   // card now actually trials Pro. Ignored for an existing user (Google
   // sign-in is find-or-create), and an unknown tier silently falls back to
   // the default — it is not a way to grant yourself a plan.
+  // FORWARD-COMPATIBILITY (2026-09-04, learned the hard way).
+  //
+  // `plan` was added to these two payloads in the same commit as the server
+  // side that accepts it — but the dashboard deploys via Cloudflare Pages and
+  // the API via Render, INDEPENDENTLY. Render's build failed on that push
+  // (it had lost repo access when the repo went private) while Pages
+  // succeeded, so for a while a new dashboard was posting `plan` to an old
+  // API whose Joi schema is `allowUnknown: false`. It answered
+  // `"plan" is not allowed` — a 400 on every signup that came from a pricing
+  // card. Registration, the single thing the whole funnel exists to reach.
+  //
+  // So these no longer assume the two halves ship together: send `plan`, and
+  // if the server rejects it as an unknown field, drop it and retry once.
+  // Losing `plan` is harmless — the trial plan then falls back to the
+  // TRIAL_PLAN_TIER default — whereas losing the signup is not. The retry
+  // costs one request only on an API that predates the field, and disappears
+  // by itself once the API catches up.
   googleLogin: (idToken: string, plan?: string) =>
-    api.post('/auth/google', { idToken, plan }).then((r) => r.data),
+    postTolerantOfPlan('/auth/google', { idToken, plan }),
   passwordLogin: (email: string, password: string) =>
     api.post('/auth/login', { email, password }).then((r) => r.data),
   register: (body: { email: string; password: string; name?: string; businessName?: string; referralCode?: string; plan?: string }) =>
-    api.post('/auth/register', body).then((r) => r.data),
+    postTolerantOfPlan('/auth/register', body),
   me: () => api.get('/auth/me').then((r) => r.data),
   patchMe: (patch: any) => api.patch('/auth/me', patch).then((r) => r.data),
 
