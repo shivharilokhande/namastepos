@@ -2,6 +2,133 @@
 
 const { query } = require('../config/db');
 const { Forbidden, NotFound } = require('../utils/errors');
+const entitlement = require('./planEntitlement');
+// Ordered tier-kind ladder + rank helpers. Single source of truth — read the
+// header of that file before touching anything tier-related.
+const planTiers = require('./planTiers');
+
+// ── Capped metrics: labels + owner-facing copy ───────────────────────────
+//
+// 2026-09-04 (pricing audit F-03). The 403 used to read
+// "Plan limit reached for monthly_orders: 200/200. Upgrade your plan." — a
+// column name and a fraction, shown to a cashier with a queue in front of
+// them. These are the same metrics enforceLimit() counts, with words an owner
+// can act on. Keys MUST match the metric names in plans.limits.
+const METRIC_COPY = {
+  monthly_orders: {
+    label: 'bills this month',
+    noun: 'bills',
+    // The one that stops the till. Say what still works and what to do.
+    hit: (limit) => `You've used all ${limit} bills included in your plan this month. `
+      + 'Billing is paused until you upgrade or the month resets. Upgrading takes '
+      + 'about a minute and your bills carry on immediately.',
+    warn: (remaining, limit) => `${remaining} of your ${limit} monthly bills left. `
+      + 'At zero, the till stops taking orders until you upgrade.',
+  },
+  menu_items: {
+    label: 'menu items',
+    noun: 'dishes',
+    hit: (limit) => `Your plan covers ${limit} dishes and all ${limit} are in use. `
+      + 'Upgrade to add more, or deactivate a dish you no longer sell.',
+    warn: (remaining, limit) => `${remaining} of your ${limit} menu items left.`,
+  },
+  staff: {
+    label: 'staff logins',
+    noun: 'staff',
+    hit: (limit) => `Your plan covers ${limit} staff login${limit === 1 ? '' : 's'} `
+      + '(the owner does not count). Upgrade to add another.',
+    warn: (remaining, limit) => `${remaining} of your ${limit} staff logins left.`,
+  },
+  tables: {
+    label: 'tables',
+    noun: 'tables',
+    hit: (limit) => `Your plan covers ${limit} table${limit === 1 ? '' : 's'}. `
+      + 'Upgrade to add more seating.',
+    warn: (remaining, limit) => `${remaining} of your ${limit} tables left.`,
+  },
+  floors: {
+    label: 'floors',
+    noun: 'floors',
+    hit: (limit) => `Your plan covers ${limit} floor${limit === 1 ? '' : 's'}. `
+      + 'Upgrade to add another seating area.',
+    warn: (remaining, limit) => `${remaining} of your ${limit} floors left.`,
+  },
+};
+
+/** Metrics we can both cap and count. Everything else is data-only. */
+const COUNTABLE_METRICS = Object.keys(METRIC_COPY);
+
+function metricLabel(metric) {
+  return METRIC_COPY[metric]?.label || String(metric).replace(/_/g, ' ');
+}
+
+function limitHitMessage(metric, limit) {
+  const c = METRIC_COPY[metric];
+  if (c) return c.hit(limit);
+  return `Your plan covers ${limit} ${metricLabel(metric)} and you have reached that. `
+    + 'Upgrade to continue.';
+}
+
+function limitWarnMessage(metric, remaining, limit) {
+  const c = METRIC_COPY[metric];
+  if (c) return c.warn(remaining, limit);
+  return `${remaining} of your ${limit} ${metricLabel(metric)} left.`;
+}
+
+/**
+ * Count the CURRENT usage of one capped metric. Extracted from enforceLimit
+ * (2026-09-04) so the owner-facing usage meter and the gate that blocks them
+ * can never disagree about the number — the whole point of the warning is
+ * that it predicts the block.
+ */
+async function currentUsage(businessId, metric) {
+  if (metric === 'menu_items') {
+    const r = await query(
+      `SELECT COUNT(*)::int AS c FROM menu_items
+        WHERE business_id = $1 AND is_active = TRUE`,
+      [businessId],
+    );
+    return r.rows[0].c;
+  }
+  if (metric === 'staff') {
+    // Push 14e — owner does NOT count against the staff cap. Starter's
+    // "1 staff" means one staff in addition to the owner. This keeps
+    // the gate consistent with the mobile + dashboard banners which
+    // also exclude business_owner from their count.
+    const r = await query(
+      `SELECT COUNT(*)::int AS c FROM business_users
+        WHERE business_id = $1 AND is_active = TRUE
+          AND role <> 'business_owner'`,
+      [businessId],
+    );
+    return r.rows[0].c;
+  }
+  if (metric === 'tables') {
+    // Push 16d — gate table creation by plan.
+    const r = await query(
+      'SELECT COUNT(*)::int AS c FROM tables WHERE business_id = $1',
+      [businessId],
+    );
+    return r.rows[0].c;
+  }
+  if (metric === 'floors') {
+    const r = await query(
+      'SELECT COUNT(*)::int AS c FROM floors WHERE business_id = $1',
+      [businessId],
+    );
+    return r.rows[0].c;
+  }
+  if (metric === 'monthly_orders') {
+    const period = new Date().toISOString().slice(0, 7);
+    const r = await query(
+      `SELECT count FROM usage_counters
+        WHERE business_id = $1 AND metric = 'monthly_orders' AND period = $2`,
+      [businessId, period],
+    );
+    return r.rowCount > 0 ? r.rows[0].count : 0;
+  }
+  return 0;
+}
 
 function serializePlan(p) {
   // FF-402c — one plan row, two prices. Yearly is optional (null =
@@ -107,7 +234,7 @@ async function updatePlan(tier, patch) {
   const nextMonthly = patch.price_inr_paise != null
     ? patch.price_inr_paise
     : (currentPlan?.price_inr_paise || 0);
-  if (nextTierKind === 'starter' || nextMonthly === 0) {
+  if (nextTierKind === planTiers.STARTER_TIER_KIND || nextMonthly === 0) {
     // Overwrite the "$N = value" slot for price_yearly_paise if the
     // caller set it, or append a null-setter if they didn't. Cheapest
     // approach: unconditionally push a null assignment (idempotent).
@@ -136,9 +263,10 @@ async function updatePlan(tier, patch) {
   return r.rows[0];
 }
 
-// Push 14d — admin plan CRUD (super-admin only). The plans.tier column is
-// a plan_tier enum (free/basic/pro), so callers must POST one of those
-// values; tier_kind is a free-form string. Limits + features are JSONB.
+// Push 14d — admin plan CRUD (super-admin only). `plans.tier` is a free-form
+// VARCHAR(40) tier CODE since migration 039 (the plan_tier enum is gone);
+// `tier_kind` must be one of planTiers.TIER_KIND_LADDER, which is what the
+// route's Joi schema enforces. Limits + features are JSONB.
 async function createPlan(body) {
   const {
     tier, tier_kind, name,
@@ -157,7 +285,7 @@ async function createPlan(body) {
   // so we hard-block yearly on the starter tier kind regardless of what
   // the admin sent. Same for price = 0 (free tiers can't have a yearly
   // charge). Pro / Enterprise auto-default to 10× monthly (2 months free).
-  const yearlyPaise = (tier_kind === 'starter' || price_inr_paise === 0)
+  const yearlyPaise = (tier_kind === planTiers.STARTER_TIER_KIND || price_inr_paise === 0)
     ? null
     : (price_yearly_paise !== undefined
       ? price_yearly_paise
@@ -180,7 +308,7 @@ async function createPlan(body) {
         razorpay_plan_id, razorpay_plan_id_yearly)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
-    [tier, tier_kind || 'starter', name, price_inr_paise, yearlyPaise,
+    [tier, tier_kind || planTiers.FALLBACK_TIER_KIND, name, price_inr_paise, yearlyPaise,
       billing_period, is_active,
       JSON.stringify(limits), JSON.stringify(features),
       razorpay_plan_id, razorpay_plan_id_yearly],
@@ -421,74 +549,239 @@ function enforceLimit(metric) {
     if (!businessId) return next();
 
     try {
-      const sub = await get(businessId);
-      if (!sub) return next();
-      const limit = sub.plan?.limits?.[metric];
+      const eff = await effectivePlan(businessId);
+      if (!eff.plan) return next();
+      const limit = eff.plan.limits?.[metric];
       if (limit === undefined || limit === -1) return next(); // unlimited
 
-      let current = 0;
-      if (metric === 'menu_items') {
-        const r = await query(
-          `SELECT COUNT(*)::int AS c FROM menu_items
-            WHERE business_id = $1 AND is_active = TRUE`,
-          [businessId],
-        );
-        current = r.rows[0].c;
-      } else if (metric === 'staff') {
-        // Push 14e — owner does NOT count against the staff cap. Starter's
-        // "1 staff" means one staff in addition to the owner. This keeps
-        // the gate consistent with the mobile + dashboard banners which
-        // also exclude business_owner from their count.
-        const r = await query(
-          `SELECT COUNT(*)::int AS c FROM business_users
-            WHERE business_id = $1 AND is_active = TRUE
-              AND role <> 'business_owner'`,
-          [businessId],
-        );
-        current = r.rows[0].c;
-      } else if (metric === 'tables') {
-        // Push 16d — gate table creation by plan. Starter typically gets
-        // a small cap (e.g. 5), Pro 50, Enterprise -1 (unlimited).
-        const r = await query(
-          'SELECT COUNT(*)::int AS c FROM tables WHERE business_id = $1',
-          [businessId],
-        );
-        current = r.rows[0].c;
-      } else if (metric === 'floors') {
-        const r = await query(
-          'SELECT COUNT(*)::int AS c FROM floors WHERE business_id = $1',
-          [businessId],
-        );
-        current = r.rows[0].c;
-      } else if (metric === 'monthly_orders') {
-        const period = new Date().toISOString().slice(0, 7);
-        const r = await query(
-          `SELECT count FROM usage_counters
-            WHERE business_id = $1 AND metric = 'monthly_orders' AND period = $2`,
-          [businessId, period],
-        );
-        current = r.rowCount > 0 ? r.rows[0].count : 0;
-      }
+      const current = await currentUsage(businessId, metric);
 
       if (current >= limit) {
         // X3 (2026-08-28) — drop a deduped upsell task for the sales team.
         // Fire-and-forget so it never delays or breaks the request.
         try {
           require('./crmService').ensureUpsellTask(businessId, metric, {
-            limit, current, planTier: sub.plan.tier,
+            limit, current, planTier: eff.plan.tier,
           }).catch(() => {});
         } catch (_) { /* non-fatal */ }
-        const err = new Forbidden(
-          `Plan limit reached for ${metric}: ${current}/${limit}. Upgrade your plan.`,
-        );
+        // 2026-09-04 (pricing audit F-03) — the message is now something an
+        // owner can act on rather than a column name and a fraction. The
+        // WIRE SHAPE IS DELIBERATELY UNCHANGED: `error: 'PLAN_LIMIT'` plus
+        // `details: { metric, limit, current, plan }`. Both the dashboard's
+        // error path and its `plan_limit_hit` analytics hook read exactly
+        // those keys (namastepos_dashboard/src/api/client.ts), so the extra
+        // fields below are ADDITIVE only — never rename or drop the four.
+        const err = new Forbidden(limitHitMessage(metric, limit));
         err.code = 'PLAN_LIMIT';
-        err.details = { metric, limit, current, plan: sub.plan.tier };
+        err.details = {
+          metric,
+          limit,
+          current,
+          plan: eff.plan.tier,
+          // Additive (safe for existing readers, useful for new ones).
+          metricLabel: metricLabel(metric),
+          remaining: 0,
+          planName: eff.plan.name || null,
+          upgradePath: '/billing',
+        };
         return next(err);
       }
       return next();
     } catch (err) {
       return next(err);
     }
+  };
+}
+
+/**
+ * Owner-facing copy for a BULK refusal. Says all four numbers an owner needs:
+ * what the plan allows, what they already hold, what the file would add, and
+ * which plan lifts the limit. `requiredLabel` comes from the tier ladder
+ * (planTiers.nextKindUp -> labelOf) — never a guessed plan name.
+ */
+function bulkLimitMessage(metric, {
+  limit, current, wanted, requiredLabel,
+}) {
+  const label = metricLabel(metric);
+  const room = Math.max(0, limit - current);
+  const over = current + wanted - limit;
+  const upgrade = requiredLabel
+    ? `Upgrade to ${requiredLabel} to bring them all in`
+    : 'Upgrade to bring them all in';
+  const trim = room > 0
+    ? `, or import ${room} ${room === 1 ? 'row' : 'rows'} at a time.`
+    : ', or deactivate items you no longer sell to free up room.';
+  return `Your plan covers ${limit} ${label}. You already have ${current} and this `
+    + `import adds ${wanted} — ${current + wanted} in total, ${over} over the limit. `
+    + `Nothing was imported. ${upgrade}${trim}`;
+}
+
+/**
+ * Pre-write capacity gate for BULK writes (2026-09-04).
+ *
+ * `enforceLimit` is a per-request middleware: it answers "is there room for
+ * ONE more?". A bulk import needs "is there room for N more?" BEFORE the first
+ * row is written — otherwise the owner imports 45 dishes on a 10-dish plan and
+ * meets the wall on row 46, i.e. after all the work, which is the worst
+ * possible moment (POST /menu/bulk did exactly that).
+ *
+ * Returns `{ limit, current, remaining }` when there is room, or `null` when
+ * the metric is uncapped / unlimited (-1) / the tenant has no plan. Throws the
+ * SAME 403 PLAN_LIMIT contract enforceLimit uses — `error: 'PLAN_LIMIT'` plus
+ * `details: { metric, limit, current, plan }` — because the dashboard banner
+ * and the `plan_limit_hit` analytics hook (web api/client.ts, mobile
+ * ApiService._maybeTrackPlanLimit) read exactly those keys. Everything else in
+ * `details` is additive.
+ */
+async function assertCapacity(businessId, metric, wanted) {
+  const want = Number(wanted);
+  if (!businessId || !Number.isFinite(want) || want <= 0) return null;
+  const eff = await effectivePlan(businessId);
+  if (!eff.plan) return null;
+  const raw = eff.plan.limits?.[metric];
+  if (raw === undefined || raw === null || Number(raw) === -1) return null;
+  const limit = Number(raw);
+  if (!Number.isFinite(limit) || limit < 0) return null;
+
+  const current = await currentUsage(businessId, metric);
+  if (current + want <= limit) {
+    return { limit, current, remaining: limit - current };
+  }
+
+  // Same deduped upsell task enforceLimit drops, so a refused import is as
+  // visible to the sales team as a refused single create. Fire-and-forget.
+  try {
+    require('./crmService').ensureUpsellTask(businessId, metric, {
+      limit, current, planTier: eff.plan.tier,
+    }).catch(() => {});
+  } catch (_) { /* non-fatal */ }
+
+  const requiredKind = planTiers.nextKindUp(eff.plan.tierKind);
+  const requiredLabel = planTiers.labelOf(requiredKind);
+  const err = new Forbidden(bulkLimitMessage(metric, {
+    limit, current, wanted: want, requiredLabel,
+  }));
+  err.code = 'PLAN_LIMIT';
+  err.details = {
+    // The four keys every existing reader parses. Never rename or drop them.
+    metric,
+    limit,
+    current,
+    plan: eff.plan.tier,
+    // Additive.
+    metricLabel: metricLabel(metric),
+    remaining: Math.max(0, limit - current),
+    attempted: want,
+    planName: eff.plan.name || null,
+    requiredTierKind: requiredKind || null,
+    requiredTierLabel: requiredLabel || null,
+    upgradePath: '/billing',
+  };
+  throw err;
+}
+
+/**
+ * The plan whose LIMITS actually apply right now.
+ *
+ * 2026-09-04. This used to be implicit: enforceLimit read `get(businessId)`,
+ * which joins whatever plan_id the row happens to carry, no matter what state
+ * the subscription is in. That was survivable while every trial was a Starter
+ * trial. It is not survivable now that a trial runs on a real paid plan — a
+ * lapsed Pro trial would keep unlimited orders and unlimited menu items until
+ * the nightly downgrade swept it up, i.e. for up to a day, for free.
+ *
+ * So limits resolve through the SAME entitlement predicate as features
+ * (planEntitlement): entitled → the subscription's plan (which is what makes
+ * the past_due grace window cover caps as well as features); not entitled →
+ * the free/starter plan. One rule, both gates.
+ */
+async function effectivePlan(businessId) {
+  const r = await query(
+    `SELECT s.status, s.trial_ends_at, s.past_due_at, s.last_dunning_at,
+            s.plan_id
+       FROM subscriptions s
+      WHERE s.business_id = $1
+      LIMIT 1`,
+    [businessId],
+  );
+  if (r.rowCount === 0) return { plan: null, entitled: false, reason: 'none' };
+  const row = r.rows[0];
+  const c = entitlement.classify(row);
+  const planId = c.entitled ? row.plan_id : null;
+  let plan = null;
+  if (planId) {
+    const p = await query('SELECT * FROM plans WHERE id = $1 LIMIT 1', [planId]);
+    plan = p.rows[0] ? serializePlan(p.rows[0]) : null;
+  } else {
+    // Lapsed: fall back to the free plan's caps, matching what
+    // featureService resolves to (tier 'free' / tier_kind 'starter').
+    const p = await query(
+      `SELECT * FROM plans
+        WHERE is_active = TRUE AND business_id IS NULL AND price_inr_paise = 0
+        ORDER BY created_at ASC LIMIT 1`,
+    );
+    plan = p.rows[0] ? serializePlan(p.rows[0]) : null;
+  }
+  return { plan, entitled: c.entitled, reason: c.reason, status: row.status };
+}
+
+/**
+ * Owner-facing usage meter for every capped metric on the effective plan.
+ *
+ * 2026-09-04 (pricing audit F-03 / retention audit F-03). The 80%-of-cap
+ * "near limit" flag existed only in the super-admin console
+ * (platformOpsService → admin UsagePage), where the person who can actually
+ * act on it — the restaurant owner — cannot see it. The counts already lived
+ * in `usage_counters`; this exposes them on a route the tenant dashboard and
+ * the mobile app ALREADY call on every launch
+ * (GET /v1/businesses/:bid/billing), so no new endpoint and no new polling.
+ *
+ * `level`:
+ *   ok       — under the warn threshold
+ *   warn     — at or past 80% of the cap
+ *   critical — at or past 100%; the next attempt is the 403
+ */
+const WARN_AT = 0.8;
+
+async function usageSummary(businessId) {
+  const eff = await effectivePlan(businessId);
+  const limits = eff.plan?.limits || {};
+  const out = [];
+  for (const metric of COUNTABLE_METRICS) {
+    const limit = limits[metric];
+    // Absent or -1 = unlimited: nothing to warn about, so it is not reported.
+    if (limit === undefined || limit === null || limit === -1) continue;
+    const numeric = Number(limit);
+    if (!Number.isFinite(numeric) || numeric < 0) continue;
+    let current = 0;
+    try {
+      current = await currentUsage(businessId, metric);
+    } catch (_) { continue; } // a missing table must not break the billing read
+    const remaining = Math.max(0, numeric - current);
+    const pct = numeric > 0 ? Math.min(999, Math.round((current / numeric) * 100)) : 100;
+    const level = current >= numeric ? 'critical' : (pct >= WARN_AT * 100 ? 'warn' : 'ok');
+    out.push({
+      metric,
+      label: metricLabel(metric),
+      limit: numeric,
+      current,
+      remaining,
+      pct,
+      level,
+      message: level === 'critical'
+        ? limitHitMessage(metric, numeric)
+        : limitWarnMessage(metric, remaining, numeric),
+    });
+  }
+  return {
+    planTier: eff.plan?.tier || null,
+    planName: eff.plan?.name || null,
+    // True when the effective plan is NOT the subscribed plan (lapsed trial /
+    // past grace), so the dashboard can explain why the caps changed.
+    entitled: eff.entitled,
+    reason: eff.reason,
+    warnAtPct: WARN_AT * 100,
+    metrics: out,
   };
 }
 
@@ -529,9 +822,25 @@ async function incrementUsage(businessId, metric = 'monthly_orders', { limit = n
     [businessId, metric, period, limit],
   );
   if (r.rowCount === 0) {
-    const err = new Forbidden(`Plan limit reached for ${metric}: ${limit}/${limit}`);
+    // Keep the "Plan limit reached for <metric>: n/n" prefix: the dashboard's
+    // error interceptor regex-parses this message as its fallback when a
+    // PLAN_LIMIT arrives with no details (this 402 race-backstop was the only
+    // such path). Details are now attached too, so the regex is belt-and-
+    // braces rather than the only source.
+    const err = new Forbidden(
+      `Plan limit reached for ${metric}: ${limit}/${limit}. ${limitHitMessage(metric, limit)}`,
+    );
     err.code = 'PLAN_LIMIT';
     err.statusCode = 402;
+    err.details = {
+      metric,
+      limit,
+      current: limit,
+      plan: null,
+      metricLabel: metricLabel(metric),
+      remaining: 0,
+      upgradePath: '/billing',
+    };
     throw err;
   }
 }
@@ -550,5 +859,13 @@ module.exports = {
   resume,
   serializeSubscription,
   enforceLimit,
+  // Pre-write gate for bulk writes (N rows at once), same 403 contract.
+  assertCapacity,
   incrementUsage,
+  // 2026-09-04 — owner-facing limit warnings + shared entitlement resolution.
+  effectivePlan,
+  usageSummary,
+  currentUsage,
+  metricLabel,
+  COUNTABLE_METRICS,
 };

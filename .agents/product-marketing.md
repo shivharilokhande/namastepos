@@ -1,0 +1,1 @@
+/Users/shiv/AI Development/NamastePOS-Marketing/.agents/product-marketing.md

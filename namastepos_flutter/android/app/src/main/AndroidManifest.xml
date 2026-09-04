@@ -62,6 +62,25 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+
+        <!-- Activation-funnel analytics (2026-09-04). Parity with the web
+             half, which configures gtag with send_page_view:false,
+             allow_google_signals:false and
+             allow_ad_personalization_signals:false. We want the seven funnel
+             events and nothing else: no advertising identifier, no ad
+             personalisation, and no automatic screen_view (screen names on a
+             POS carry table labels and order ids). Firebase Analytics stays
+             enabled by default; the app-level kill switch is the
+             ANALYTICS_DISABLED dart-define (see analytics_service.dart). -->
+        <meta-data
+            android:name="google_analytics_adid_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_default_allow_ad_personalization_signals"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_automatic_screen_reporting_enabled"
+            android:value="false" />
     </application>
 
     <queries>

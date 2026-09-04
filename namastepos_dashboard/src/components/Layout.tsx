@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { ImpersonationBanner } from './ImpersonationBanner';
+import { PlanLimitBanner } from './PlanLimitBanner';
 import { OutletSwitcher } from './OutletSwitcher';
 import { api, setSession, setBusinessCache, getBusinessCache } from '@/api/client';
 import { cn } from '@/lib/utils';
@@ -338,7 +339,10 @@ export function Layout() {
       >
         <span className="flex items-center gap-1.5">
           <span className="rounded bg-primary px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-primary-foreground">
-            {plan.tierKind}
+            {/* Owner-facing label, not the raw kind: 'pro_plan' would read
+                as gibberish and 'pro' would read as the Pro plan when it is
+                actually Growth. See @/lib/planTiers. */}
+            {plan.tierLabel || plan.tierKind}
           </span>
           {plan.isStarter && <span className="text-muted-foreground">→ upgrade</span>}
         </span>
@@ -429,6 +433,11 @@ export function Layout() {
         </aside>
         <main className="flex-1 overflow-auto bg-muted/30">
           <div className="container mx-auto py-6 max-w-7xl px-3 md:px-6">
+            {/* 2026-09-04 — plan-limit + past-due grace warnings. Mounted at
+                the layout level, not on Billing, because the owner about to
+                hit an order cap has no reason to open the Billing page. At
+                100% of a cap the banner has no dismiss control by design. */}
+            <PlanLimitBanner />
             <Outlet />
           </div>
         </main>

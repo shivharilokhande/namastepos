@@ -35,6 +35,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { ffApi } from '@/api/namastepos';
 import { api, apiError, getBusinessCache } from '@/api/client';
+import { trackFirstKot, trackFirstBill } from '@/lib/activation';
 import { formatINR } from '@/lib/utils';
 import { VoiceCommand, parseSpokenOrder } from '@/components/VoiceCommand';
 
@@ -480,6 +481,29 @@ export function NewOrderDialog({
       return ffApi.createOrder(body);
     },
     onSuccess: (o: any, mode) => {
+      // ── Activation funnel ──────────────────────────────────────────────
+      // first_kot: a 200 from POST /orders IS the KOT fire on web — the
+      // tickets are generated inside the order transaction (orderService →
+      // kotService.generateTickets) and queued to print in the same txn,
+      // so there is no separate "fire" call to hook. Both modes count:
+      // Save-KOT and Pay-&-place both put a ticket in front of the kitchen.
+      trackFirstKot({ orderId: o?.id });
+      // first_bill: only the pay path. A Save-KOT order is unpaid, so no
+      // money has passed through NamastePOS yet. Both helpers are
+      // first-time-only per business and cheap to call.
+      if (mode === 'pay') {
+        trackFirstBill({
+          orderId: o?.id,
+          amountInr: Number(o?.total ?? 0),
+          // Server derives the primary method from the largest leg on a
+          // split, so report the split explicitly instead.
+          paymentMode: splitOn ? 'split' : (o?.paymentMethod || paymentMethod),
+          // No receipt is produced by this dialog; OrdersPage's "Print
+          // receipt" reports browser_print if the owner prints from there.
+          receiptChannel: 'none',
+          lines: cart.map((l) => ({ name: l.name, price: l.price })),
+        });
+      }
       toast.success(mode === 'kot' ? `KOT #${o.orderNo} sent` : `Order #${o.orderNo} placed`);
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['ops-tables'] });

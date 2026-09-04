@@ -25,10 +25,16 @@ class TrialBanner extends StatelessWidget {
         final s = sub.subscription;
         // Hide if not trialing, trial expired, OR user is already on a paid
         // tier (last check protects against stale SubscriptionProvider — if
-        // AuthProvider.plan says Pro/Enterprise, no banner regardless of
-        // what /billing returned).
+        // AuthProvider.plan says a paid kind, no banner regardless of what
+        // /billing returned).
+        //
+        // 2026-09-04: this was `tier == 'pro' || tier == 'enterprise'`, which
+        // missed the two middle kinds of the live five-kind ladder
+        // ('pro_plan' = the plan named Pro, 'advanced'), so paying Pro and
+        // Advanced tenants were still shown a trial banner. "Paid" is simply
+        // "not the free bottom kind" — no list of kinds to keep in sync.
         final tier = context.watch<AuthProvider>().plan.tierKind;
-        final onPaidTier = tier == 'pro' || tier == 'enterprise';
+        final onPaidTier = tier.isNotEmpty && tier != 'starter';
         if (onPaidTier || s == null || !s.isTrialing || s.trialExpired) {
           return const SizedBox.shrink();
         }

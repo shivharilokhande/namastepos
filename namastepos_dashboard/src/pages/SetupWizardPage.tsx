@@ -20,6 +20,7 @@ import { ChevronRight, Store, LayoutGrid, UtensilsCrossed, Sparkles, Plus, X } f
 
 import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
+import { trackMenuReadyFromServer } from '@/lib/activation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -143,6 +144,13 @@ export function SetupWizardPage() {
     },
     onSuccess: () => {
       qc.invalidateQueries();
+      // Activation funnel — `menu_ready`, attributed to the wizard. Reads
+      // the menu back from the server so the count is the real total, and
+      // countOwnerAuthored() discards the three untouched pre-fills above
+      // (Masala Chai 30 / Butter Naan 40 / Paneer Tikka 250) — clicking
+      // "Finish setup" without editing anything must not count as a ready
+      // menu.
+      trackMenuReadyFromServer('wizard');
       toast.success('Setup complete! Welcome to NamastePOS.');
       nav('/', { replace: true });
     },

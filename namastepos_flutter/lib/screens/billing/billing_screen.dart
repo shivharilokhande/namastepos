@@ -57,14 +57,23 @@ class _BillingScreenState extends State<BillingScreen> {
   List<Map<String, dynamic>> _tiers = const [];
   List<dynamic> _rawPlans = const []; // cached so the yearly toggle can remap
 
+  // Cosmetics keyed by tier KIND. The live ladder has five kinds — 'pro' is
+  // the Growth plan and 'pro_plan' is the plan named Pro (backend
+  // services/planTiers.js) — and the two middle kinds were missing here, so
+  // Pro and Advanced cards rendered with the default colour and no tagline.
+  // Nothing here decides an upgrade target; that comes from the server.
   static const _tierColors = <String, Color>{
     'starter': Color(0xFF10B981),
     'pro': AppColors.primary,
+    'pro_plan': Color(0xFF2563EB),
+    'advanced': Color(0xFF9333EA),
     'enterprise': Color(0xFF7C3AED),
   };
   static const _tierTaglines = <String, String>{
     'starter': 'Cart / Street vendor',
     'pro': 'Cafe / Small restaurant',
+    'pro_plan': 'Busy restaurant / Bar',
+    'advanced': 'Multi-floor / Large kitchen',
     'enterprise': 'Hotel / Chain / Multi-outlet',
   };
   // Readable labels for raw feature keys. Anything unmapped falls back
@@ -497,6 +506,30 @@ class _BillingScreenState extends State<BillingScreen> {
     );
   }
 
+  /// Button copy for one plan card.
+  ///
+  /// 2026-09-04: this was `currentTier == 'starter' && kind == 'pro' ?
+  /// 'Upgrade to Pro' : kind == 'enterprise' ? 'Upgrade to Enterprise' :
+  /// 'Switch plan'` — which printed "Upgrade to Pro" on the GROWTH card (kind
+  /// 'pro' is Growth, Rs 299) and left the real Pro and Advanced cards saying
+  /// "Switch plan". Now it uses the plan's own server-sent name and ranks by
+  /// the server's own price, so no plan name or ladder position is hardcoded.
+  String _ctaLabel(Map<String, dynamic> t, String currentTier) {
+    if (t['kind'] == currentTier) return 'Your current plan';
+    final label = ((t['label'] as String?) ?? '').trim();
+    if (label.isEmpty) return 'Switch plan';
+    num? currentPrice;
+    for (final x in _tiers) {
+      if (x['kind'] == currentTier) {
+        currentPrice = (x['priceValue'] as num?) ?? 0;
+        break;
+      }
+    }
+    if (currentPrice == null) return 'Choose $label';
+    final target = (t['priceValue'] as num?) ?? 0;
+    return target > currentPrice ? 'Upgrade to $label' : 'Switch to $label';
+  }
+
   Widget _planCard(Map<String, dynamic> t, {required String currentTier}) {
     final isCurrent = t['kind'] == currentTier;
     final recommended = t['recommended'] == true;
@@ -588,10 +621,7 @@ class _BillingScreenState extends State<BillingScreen> {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2.4, color: Colors.white))
                         : Text(
-                            isCurrent ? 'Your current plan'
-                                : (currentTier == 'starter' && t['kind'] == 'pro' ? 'Upgrade to Pro'
-                                : t['kind'] == 'enterprise' ? 'Upgrade to Enterprise'
-                                : 'Switch plan'),
+                            _ctaLabel(t, currentTier),
                             style: const TextStyle(fontWeight: FontWeight.w900),
                           ),
                   ),

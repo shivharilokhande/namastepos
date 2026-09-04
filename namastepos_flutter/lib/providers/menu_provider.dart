@@ -12,6 +12,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/menu_item.dart';
+import '../services/analytics_service.dart';
 import '../services/api_service.dart';
 import '../services/repositories.dart';
 
@@ -40,6 +41,10 @@ class MenuProvider extends ChangeNotifier {
     _loading = false;
     _error = null;
     _selectedCategory = 'All';
+    // The plan's menu-item cap is tenant-scoped — never let the previous
+    // outlet's cap decide the next one's `menu_ready.over_plan_cap`.
+    _cachedMenuCap = null;
+    _menuCapResolved = false;
     // May run during a ProxyProvider `update` (build phase) — defer.
     Future.microtask(notifyListeners);
   }
@@ -109,6 +114,56 @@ class MenuProvider extends ChangeNotifier {
 
     _loading = false;
     notifyListeners();
+    // Activation funnel — `menu_ready`. Hooked to the one place a menu list
+    // lands in the app so no screen has to remember it. Cheap to call on
+    // every refresh: it exits immediately once the milestone has fired or
+    // while the owner is still under the 3-item threshold.
+    // ignore: unawaited_futures
+    _maybeTrackMenuReady(businessId);
+  }
+
+  /// Fires `menu_ready` the first time the owner has >= 3 ACTIVE menu items
+  /// they authored themselves (the setup wizard's three untouched demo rows
+  /// do not count — see Activation.countOwnerAuthored, which uses the same
+  /// pre-fill table as the dashboard).
+  ///
+  /// `source` is always 'manual' on mobile: the app has no CSV-import or
+  /// POS-migration path, both of which exist only on the dashboard.
+  Future<void> _maybeTrackMenuReady(String businessId) async {
+    final a = AnalyticsService.instance;
+    if (a.disabled) return;
+    try {
+      if (await a.hasFired(FunnelEvent.menuReady)) return;
+      final rows = _items
+          .map((i) => (name: i.name, price: i.price as num, active: i.isActive))
+          .toList();
+      // Only worth the extra subscription read once the threshold is met —
+      // Activation.menuReady bails before using it otherwise, so resolve the
+      // cap lazily here for the single render that crosses the line.
+      int? cap;
+      if (Activation.countOwnerAuthored(rows) >= 3) {
+        cap = await _menuItemCap(businessId);
+      }
+      await Activation.menuReady(rows, 'manual', planItemCap: cap);
+    } catch (_) { /* analytics never surfaces an error to the menu screen */ }
+  }
+
+  // Remembered so the one extra GET above happens at most once per session.
+  int? _cachedMenuCap;
+  bool _menuCapResolved = false;
+
+  Future<int?> _menuItemCap(String businessId) async {
+    if (_menuCapResolved) return _cachedMenuCap;
+    try {
+      final sub = await ApiService.instance.getSubscription(businessId);
+      final raw = (sub?['plan'] as Map?)?['limits'];
+      final v = raw is Map ? raw['menu_items'] : null;
+      _cachedMenuCap = v is num ? v.toInt() : int.tryParse('${v ?? ''}');
+    } catch (_) {
+      _cachedMenuCap = null;
+    }
+    _menuCapResolved = true;
+    return _cachedMenuCap;
   }
 
   Future<void> upsert(MenuItem item, {bool isNew = false}) async {
@@ -121,6 +176,13 @@ class MenuProvider extends ChangeNotifier {
       if (idx >= 0) _items[idx] = item;
     }
     notifyListeners();
+    // Same hook on the write path so the third item the owner types fires
+    // `menu_ready` immediately rather than on the next menu refresh.
+    final bid = _businessId;
+    if (bid != null) {
+      // ignore: unawaited_futures
+      _maybeTrackMenuReady(bid);
+    }
   }
 
   Future<void> remove(MenuItem item) async {

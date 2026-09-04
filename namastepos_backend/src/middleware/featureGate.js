@@ -117,7 +117,13 @@ module.exports = function featureGate() {
         feature: key,
         currentTier,
         requiredTier,
-        message: `Upgrade to ${requiredTier} to unlock this feature.`,
+        // Raw kinds stay in currentTier/requiredTier for API compatibility;
+        // the labels are what clients should show ('pro_plan' -> 'Pro').
+        currentTierLabel: features.tierLabel(currentTier),
+        requiredTierLabel: features.tierLabel(requiredTier),
+        message: requiredTier
+          ? `Upgrade to ${features.tierLabel(requiredTier)} to unlock this feature.`
+          : 'This feature is not included in your plan.',
         upgradeUrl: '/billing',
       });
     } catch (err) {

@@ -17,6 +17,10 @@ const audit = require('../services/auditService');
 const adminLegacy = require('../services/adminService'); // kept for old metrics()
 const razorpay = require('../services/razorpayService');
 const features = require('../services/featureService'); // Push 14d feature catalog
+// Ordered tier-kind ladder. SINGLE SOURCE OF TRUTH — every tier_kind Joi
+// schema below derives its .valid() list from it so the API and the ladder
+// can never drift apart. Read that file's header before editing tiers.
+const planTiers = require('../services/planTiers');
 const menuService = require('../services/menuService'); // Push 20b bulk import
 const { query } = require('../config/db');
 
@@ -370,19 +374,44 @@ const deleteNote = asyncHandler(async (req, res) => {
 const listPlans = asyncHandler(async (_req, res) => {
   res.json({ plans: await sub.listAllPlans() });
 });
-const updatePlan = asyncHandler(async (req, res) => {
-  const plan = await sub.updatePlan(req.params.tier, req.body);
-  // Price-change fix (2026-08-25): Razorpay plans are immutable, so a
-  // price edit must produce a replacement Razorpay plan. syncPlans is now
-  // amount-aware; run it right away (best-effort — a Razorpay hiccup must
-  // not fail the admin save; the manual Sync button remains as fallback).
-  if (req.body && (req.body.price_inr_paise != null
-      || req.body.price_yearly_paise != null)) {
-    try { await razorpay.syncPlans(); } catch (err) {
-      logger.warn(`Auto plan-sync after price change failed: ${err.message}`);
+// 2026-09-04 — updatePlan had NO body validation at all while createPlan's
+// tier_kind list was over-restrictive: opposite failure modes of the same
+// missing single source of truth. subscriptionService.updatePlan whitelists
+// the columns it will write, so this schema only has to constrain tier_kind
+// (unknown keys are allowed through and ignored downstream, preserving every
+// existing caller).
+const updatePlanBody = Joi.object({
+  tier_kind: Joi.string().valid(...planTiers.TIER_KIND_LADDER),
+}).unknown(true);
+const updatePlan = [
+  validate({ body: updatePlanBody }),
+  asyncHandler(async (req, res) => {
+    const plan = await sub.updatePlan(req.params.tier, req.body);
+    // Price-change fix (2026-08-25): Razorpay plans are immutable, so a
+    // price edit must produce a replacement Razorpay plan. syncPlans is now
+    // amount-aware; run it right away (best-effort — a Razorpay hiccup must
+    // not fail the admin save; the manual Sync button remains as fallback).
+    if (req.body && (req.body.price_inr_paise != null
+        || req.body.price_yearly_paise != null)) {
+      try { await razorpay.syncPlans(); } catch (err) {
+        logger.warn(`Auto plan-sync after price change failed: ${err.message}`);
+      }
     }
-  }
-  res.json({ plan: (await sub.listAllPlans()).find((p) => p.tier === req.params.tier) || plan });
+    res.json({
+      plan: (await sub.listAllPlans()).find((p) => p.tier === req.params.tier) || plan,
+    });
+  }),
+];
+// The tier-kind ladder, in rank order, with owner-facing labels. Serves the
+// admin UI's tier_kind picker so it cannot hold a stale copy of the list
+// (its own hardcoded ['starter','pro','enterprise'] rendered a blank select
+// for the Pro and Advanced plans, and could not express either one).
+const tierKinds = asyncHandler(async (_req, res) => {
+  res.json({
+    tierKinds: planTiers.TIER_KIND_LADDER.map((kind, rank) => ({
+      kind, rank, label: planTiers.labelOf(kind),
+    })),
+  });
 });
 const syncRazorpayPlans = asyncHandler(async (_req, res) => {
   await razorpay.syncPlans();
@@ -397,7 +426,10 @@ const createPlanBody = Joi.object({
   tier: Joi.string().min(1).max(40).pattern(/^[a-z0-9_]+$/)
     .required()
     .messages({ 'string.pattern.base': 'tier must be lowercase letters, numbers, or underscores only' }),
-  tier_kind: Joi.string().valid('starter', 'pro', 'enterprise').required(),
+  // DERIVED from planTiers.TIER_KIND_LADDER — never a literal list. This was
+  // hardcoded to ('starter','pro','enterprise') while the live ladder has
+  // five kinds, so creating a plan at Pro or Advanced level 400'd.
+  tier_kind: Joi.string().valid(...planTiers.TIER_KIND_LADDER).required(),
   name: Joi.string().min(1).max(60).required(),
   price_inr_paise: Joi.number().integer().min(0).default(0),
   // FF-402c — yearly is now a SIBLING price on the same plan row.
@@ -654,7 +686,11 @@ const reportRevenueBreakdown = asyncHandler(async (req, res) => {
 // Push 20b — bulk menu import (super-admin uploads CSV for a customer)
 const customerMenuBulkImport = asyncHandler(async (req, res) => {
   const items = Array.isArray(req.body?.items) ? req.body.items : [];
-  const result = await menuService.bulkImport(req.params.businessId, items);
+  // Super-admin is exempt from tenant plan caps — sub.enforceLimit already
+  // returns early for req.user.isSuperAdmin, so the bulk gate matches it
+  // rather than blocking an operator loading a customer's menu for them.
+  const opts = { enforcePlanCap: false };
+  const result = await menuService.bulkImport(req.params.businessId, items, opts);
   res.json(result);
 });
 
@@ -833,7 +869,12 @@ const putCustomPlanBody = Joi.object({
   }).unknown(true).default({}),
   // Legacy flat list (pre-base-plan callers) — treated as extras.
   featureKeys: Joi.array().items(Joi.string().min(1).max(60)).max(100),
-  tierKind: Joi.string().valid('starter', 'pro', 'enterprise'),
+  // DERIVED from planTiers.TIER_KIND_LADDER — never a literal list. This was
+  // hardcoded to ('starter','pro','enterprise'), which made a STANDALONE
+  // custom plan (no basePlanTier) at Pro or Advanced level impossible: the
+  // .custom() rule below requires tierKind when there is no base plan, and
+  // the only Pro/Advanced values it could have been given were rejected.
+  tierKind: Joi.string().valid(...planTiers.TIER_KIND_LADDER),
   assign: Joi.boolean().default(false),
 }).custom((v, helpers) => {
   // Standalone custom plans (no base) must still state a price + tier kind.
@@ -1044,7 +1085,14 @@ module.exports = {
   listPlans,
   updatePlan,
   syncRazorpayPlans,
+  tierKinds,
   createPlan,
+  // Exported for tests/integration/plan_tier_ladder.test.js, which asserts
+  // that every tier_kind present in the `plans` table is accepted by these
+  // schemas. Do not use them as request handlers.
+  createPlanBody,
+  updatePlanBody,
+  putCustomPlanBody,
   deletePlan,
   featureCatalog,
   tierFeatures,

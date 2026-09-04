@@ -8,8 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ffApi } from '@/api/namastepos';
 import { apiError, getBusinessCache } from '@/api/client';
+import { trackUpgradePaid } from '@/lib/activation';
 import { formatINR, formatDate } from '@/lib/utils';
 import { escapeHtml } from '@/lib/receiptPrint';
+import { TIER_KIND_COLORS, TIER_KIND_LADDER, TIER_KIND_TAGLINES } from '@/lib/planTiers';
 
 declare global {
   interface Window { Razorpay: any; }
@@ -177,17 +179,12 @@ const FEATURE_LABELS: Record<string, string> = {
   multi_currency_fx: 'Multi-currency / FX',
 };
 
-const TIER_COLORS: Record<string, string> = {
-  starter: '#10B981',
-  pro: '#FF6B35',
-  enterprise: '#7C3AED',
-};
-
-const TIER_TAGLINES: Record<string, string> = {
-  starter: 'Cart / Street vendor',
-  pro: 'Cafe / Small restaurant',
-  enterprise: 'Hotel / Chain / Multi-outlet',
-};
+// 2026-09-04 — colours + taglines moved to @/lib/planTiers, which mirrors
+// the backend's tier-kind ladder. The local three-entry maps here had gone
+// stale against the live five-kind ladder, so the Pro and Advanced cards
+// rendered with the grey fallback colour and NO tagline at all.
+const TIER_COLORS = TIER_KIND_COLORS;
+const TIER_TAGLINES = TIER_KIND_TAGLINES;
 
 function loadRazorpayScript(): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -247,6 +244,18 @@ export function BillingPage() {
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
+
+  // Activation funnel — `upgrade_paid`. The Razorpay webhook is server-side
+  // and invisible to the browser, so we watch for the row the webhook
+  // WRITES: a non-free plan with status 'active'. Deliberately NOT the
+  // Razorpay checkout `handler` callback — that is the client claiming a
+  // charge succeeded, before the mandate is confirmed. This query already
+  // refetches on window focus and after `change` invalidates it, so the
+  // confirmed state is picked up on the owner's next look at this page.
+  useEffect(() => {
+    if (!sub) return;
+    trackUpgradePaid(sub, getBusinessCache()?.id ?? null);
+  }, [sub]);
   // NP-127: same deal for invoices — the `= []` default made a failed
   // fetch indistinguishable from "no invoices yet".
   const {
@@ -369,15 +378,19 @@ export function BillingPage() {
         <p className="text-muted-foreground">Plan, invoices, payment method.</p>
       </div>
 
-      {/* N1 dunning — actionable past-due banner. When the subscription is
-          past_due (a charge failed), prompt the owner to fix payment now so
-          features/reports stay active. */}
-      {sub?.status === 'past_due' && (
+      {/* N1 dunning — actionable past-due banner.
+          2026-09-04: only rendered once the GRACE WINDOW HAS PASSED. While a
+          failed charge is still inside the grace window, features are still
+          on and PlanLimitBanner (mounted in Layout, so present on every
+          screen including this one) shows the amount and the date access
+          ends. Rendering both would put two contradictory banners about the
+          same failed charge on this page. */}
+      {sub?.status === 'past_due' && !sub?.grace && (
         <div className="rounded-lg border border-red-300 bg-red-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="flex-1">
             <div className="font-semibold text-red-800">Payment failed — your plan is past due</div>
             <div className="text-sm text-red-700">
-              Update your payment method to keep loyalty, reports and add-ons active. We retry automatically, but you can fix it now.
+              Loyalty, reports and add-ons are paused until this is settled. We retry automatically, but you can fix it now — nothing has been deleted.
             </div>
           </div>
           <Button variant="default" onClick={() => { const el = document.getElementById('choose-plan'); el?.scrollIntoView({ behavior: 'smooth' }); }}>
@@ -514,7 +527,7 @@ export function BillingPage() {
         </div>
         <div id="choose-plan" className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           {orderedPlans.map((p: any) => {
-            const tierKind = (p.tierKind || 'starter') as keyof typeof TIER_COLORS;
+            const tierKind: string = p.tierKind || TIER_KIND_LADDER[0];
             const color = TIER_COLORS[tierKind] || '#888';
             // FF-402d — "Current" means SAME tier AND SAME cadence. If
             // the tier matches but the cadence differs, we surface a

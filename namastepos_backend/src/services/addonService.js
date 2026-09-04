@@ -11,6 +11,9 @@ const env = require('../config/env');
 const { query } = require('../config/db');
 const logger = require('../config/logger');
 const { NotFound, BadRequest, Conflict, Forbidden } = require('../utils/errors');
+// Ordered tier-kind ladder + rank helpers. Single source of truth — read the
+// header of that file before touching anything tier-related.
+const planTiers = require('./planTiers');
 
 // ── Razorpay helper (mirrors razorpayService for addon-scoped calls) ───
 function rzCall(method, path, body) {
@@ -247,27 +250,27 @@ async function hasAddon(businessId, slug) {
  * Start a paid subscription for an addon. Returns Razorpay checkout payload
  * so the dashboard can open Checkout.js.
  */
-const KIND_ORDER = { starter: 0, pro: 1, enterprise: 2 };
-
 /**
  * 2026-09-03 (founder bug: multi-outlet sold on a Growth plan).
- * Eligibility is judged ONLY on tier_kind rank (starter < pro < enterprise).
+ * Eligibility is judged ONLY on tier_kind rank — see services/planTiers.js,
+ * which owns the ordered ladder. This file used to keep its own
+ * `KIND_ORDER = { starter, pro, enterprise }`; that list had gone stale
+ * against the live five-kind ladder, so a Pro (Rs 799) or Advanced (Rs 999)
+ * tenant ranked as UNKNOWN -> 0 and was refused a "requires pro" addon that
+ * a Growth (Rs 299) tenant could buy. Never re-introduce a local list.
  *
- * The old check resolved `required_plan_tier` ('pro') as a PLAN TIER CODE —
- * and the live config has a plan whose code is literally 'pro' — so the
- * requirement collapsed to that single plan's kind+price, which a mid-tier
- * plan could satisfy. Price is no longer part of the test at all: a cheap
- * enterprise-kind plan should still qualify, and an expensive starter should
- * not. `addons.required_tier_kind` (migration 078) is the source of truth,
- * with a defensive fallback for rows an older admin build wrote.
+ * The original check resolved `required_plan_tier` ('pro') as a PLAN TIER
+ * CODE — and the live config has a plan whose code is literally 'pro' — so
+ * the requirement collapsed to that single plan's kind+price, which a
+ * mid-tier plan could satisfy. Price is no longer part of the test at all: a
+ * cheap enterprise-kind plan should still qualify, and an expensive starter
+ * should not. `addons.required_tier_kind` (migration 078) is the source of
+ * truth, with a defensive fallback for rows an older admin build wrote.
  */
 function requiredKindOf(addon) {
   if (addon.required_tier_kind) return addon.required_tier_kind;
-  const legacy = addon.required_plan_tier ? String(addon.required_plan_tier) : null;
-  if (!legacy) return null;
-  if (KIND_ORDER[legacy] !== undefined) return legacy;
-  if (legacy === 'free' || legacy === 'basic') return 'starter';
-  return null; // unknown custom code — do not block the sale on a guess
+  // unknown custom code -> null: do not block the sale on a guess
+  return planTiers.legacyRequiredPlanTierToKind(addon.required_plan_tier);
 }
 
 /** { ok, requiredKind, currentKind, currentPlanName } for an addon + tenant. */
@@ -285,9 +288,9 @@ async function checkPlanEligibility(businessId, addon) {
       LIMIT 1`,
     [businessId],
   );
-  const currentKind = cur.rows[0]?.tier_kind || 'starter';
+  const currentKind = cur.rows[0]?.tier_kind || planTiers.FALLBACK_TIER_KIND;
   return {
-    ok: (KIND_ORDER[currentKind] ?? 0) >= (KIND_ORDER[requiredKind] ?? 0),
+    ok: planTiers.meetsKind(currentKind, requiredKind),
     requiredKind,
     currentKind,
     currentPlanName: cur.rows[0]?.name || null,
@@ -365,14 +368,13 @@ async function subscribe(businessId, slug) {
   const addon = await getBySlug(slug);
 
   // Plan compatibility check — Push 18a made plan tiers arbitrary VARCHAR,
-  // so we can't compare by hardcoded order. Compare by `tier_kind` ordering
-  // (starter < pro < enterprise) which is the canonical scale, falling back
-  // to "any non-free" for legacy plans that lack tier_kind.
+  // so we can't compare by hardcoded order. Compare by `tier_kind` rank on
+  // planTiers.TIER_KIND_LADDER, which is the canonical scale.
   const gate = await checkPlanEligibility(businessId, addon);
   if (!gate.ok) {
     throw new Forbidden(
-      `This addon requires a ${gate.requiredKind} plan or higher `
-      + `(this customer is on ${gate.currentPlanName || gate.currentKind}).`,
+      `This addon requires a ${planTiers.labelOf(gate.requiredKind)} plan or higher `
+      + `(this customer is on ${gate.currentPlanName || planTiers.labelOf(gate.currentKind)}).`,
     );
   }
 

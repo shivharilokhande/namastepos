@@ -255,6 +255,89 @@ async function _runOnce() {
       } catch (e) {
         logger.warn(`[crm nightly] ${e.message}`);
       }
+      // 2026-09-04 (retention audit F-01) — EXPLICIT trial-expiry downgrade.
+      //
+      // The trial now runs on a real paid plan (authService.resolveTrialPlanId),
+      // so its expiry has to be a real event. Before this, expiry was a silent
+      // resolution change: featureService stopped honouring the trial but the
+      // subscription row still said "trialing on Pro", the limit gate still
+      // read the trialled plan's caps, and the owner was told nothing — the
+      // single highest-intent moment in a no-card funnel simply did not exist.
+      //
+      // expireLapsedTrials() moves the row onto the free plan, stamps
+      // trial_downgraded_at, keeps trial_plan_id (so we can name what lapsed
+      // and re-offer exactly that plan) and drops the feature cache. Here we
+      // add the two things a cron is the right place for: the CRM timeline
+      // entry and the owner's email. Both best-effort — a mail failure must
+      // never leave the downgrade half-applied.
+      try {
+        const downgraded = await _track(
+          'trial-expiry',
+          () => require('./authService').expireLapsedTrials(),
+        );
+        for (const row of downgraded) {
+          const bid = row.business_id;
+          let planName = null;
+          try {
+            const p = await query(
+              'SELECT name FROM plans WHERE id = $1 LIMIT 1',
+              [row.trial_plan_id],
+            );
+            planName = p.rows[0]?.name || null;
+          } catch (_) { /* name is cosmetic */ }
+          try {
+            await require('./crmService').logActivity({
+              businessId: bid,
+              kind: 'plan_change',
+              title: planName
+                ? `${planName} trial ended - moved to the free Starter plan`
+                : 'Trial ended - moved to the free Starter plan',
+              meta: {
+                reason: 'trial_expired',
+                trialPlanId: row.trial_plan_id,
+                trialEndedAt: row.trial_ends_at,
+              },
+              actorType: 'system',
+            });
+          } catch (_) { /* timeline is non-fatal */ }
+          try {
+            const b = await query(
+              'SELECT name, email FROM businesses WHERE id = $1 LIMIT 1',
+              [bid],
+            );
+            const biz = b.rows[0];
+            if (biz?.email) {
+              const label = planName ? `${planName} trial` : 'free trial';
+              // Reassurance first, then the offer. An owner who believes their
+              // data was deleted does not come back, so say plainly that it
+              // was not.
+              await require('./emailService').sendMail({
+                template: 'trial_expired_downgrade',
+                recipient: biz.email,
+                subject: 'Your NamastePOS trial has ended',
+                text: `Hi ${biz.name || 'there'},\n\n`
+                  + `Your ${label} has ended and ${biz.name || 'your restaurant'} `
+                  + 'is now on the free Starter plan.\n\n'
+                  + 'Nothing was deleted. Your menu, bills, customers and reports '
+                  + 'are all exactly where you left them, and you can keep billing '
+                  + 'on Starter.\n\n'
+                  + 'What you no longer have are the paid-plan features you were '
+                  + 'using during the trial. To get them back, pick a plan here:\n'
+                  + 'https://app.namastepos.in/billing\n\n'
+                  + 'No lock-in, cancel any month.\n\n- Team NamastePOS',
+                businessId: bid,
+              });
+            }
+          } catch (e) {
+            logger.warn(`[trial-expiry] notice failed for ${bid}: ${e.message}`);
+          }
+        }
+        if (downgraded.length > 0) {
+          logger.info(`[trial-expiry] downgraded ${downgraded.length} lapsed trial(s)`);
+        }
+      } catch (e) {
+        logger.warn(`[trial-expiry] nightly sweep failed: ${e.message}`);
+      }
       // 2026-09-03 (plans/addons audit #4b) — addon expiry reminders: paid
       // add-ons expiring within 3 days (or expired in the last day) push a
       // renewal nudge to the business owners, once per activation

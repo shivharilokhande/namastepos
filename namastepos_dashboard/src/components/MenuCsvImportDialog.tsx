@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { Upload, FileSpreadsheet, AlertTriangle, CheckCircle2, X, Download } from 'lucide-react';
 import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
+import { trackMenuReadyFromServer } from '@/lib/activation';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -102,6 +103,10 @@ export function MenuCsvImportDialog({ open, onClose }: Props) {
     onSuccess: (r: any) => {
       setResult(r);
       qc.invalidateQueries({ queryKey: ['menu'] });
+      // Activation funnel — `menu_ready` with the right attribution. The
+      // dialog can be used from anywhere, so read the resulting menu back
+      // rather than guessing the new total from r.inserted.
+      if (r.inserted > 0) trackMenuReadyFromServer('bulk_csv');
       if (r.inserted > 0) {
         toast.success(`Imported ${r.inserted} item${r.inserted === 1 ? '' : 's'}` +
           (r.skipped > 0 ? ` · ${r.skipped} skipped` : ''));

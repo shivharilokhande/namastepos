@@ -4,10 +4,12 @@ import 'package:flutter/foundation.dart';
 
 import '../models/business.dart';
 import '../models/plan_info.dart';
+import '../services/analytics_service.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../services/offline_outbox.dart';
+import '../services/upsell_hints.dart';
 import '../utils/role_permissions.dart';
 
 enum AuthStatus { unknown, authenticated, unauthenticated, locked }
@@ -257,6 +259,9 @@ class AuthProvider extends ChangeNotifier {
     // entitlements stayed in RAM (login paths only overwrite _plan when the
     // response carries one, and the cached plan is deleted on logout).
     _plan = PlanInfo.starterDefault();
+    // Same reasoning for the cached upgrade labels: the next tenant's
+    // position on the plan ladder is not this one's.
+    UpsellHints.instance.clear();
     _mpinSet = false;
     _status = AuthStatus.unauthenticated;
     notifyListeners();
@@ -270,6 +275,13 @@ class AuthProvider extends ChangeNotifier {
   void _postLogin() {
     final biz = _business;
     if (biz == null) return;
+    // Activation funnel — `business_created`. Hooked here because this is the
+    // single funnel every successful sign-in path (Google, password, staff
+    // PIN, MPIN unlock, launch bootstrap) already routes through, so no
+    // screen has to remember to fire it. trackOnce keys on the business id,
+    // so relaunches and re-logins do NOT re-fire; a genuinely different
+    // outlet does.
+    Activation.businessCreated(category: biz.category);
     // ignore: unawaited_futures
     NotificationService.instance.registerFcmToken(biz.id).catchError((e) {
       debugPrint('[auth] fcm register failed (non-fatal): $e');
@@ -486,6 +498,7 @@ class AuthProvider extends ChangeNotifier {
     _permissions = const [];
     // NP-114: drop the old account's plan from RAM (see signOutFromLock).
     _plan = PlanInfo.starterDefault();
+    UpsellHints.instance.clear();
     _status = AuthStatus.unauthenticated;
     notifyListeners();
   }

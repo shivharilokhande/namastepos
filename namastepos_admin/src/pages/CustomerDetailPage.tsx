@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { useTierKinds } from '@/hooks/useTierKinds';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -670,8 +671,12 @@ function AddonsTab({ businessId }: { businessId: string }) {
 // ── Plans-addons migration — per-customer custom plan + feature overrides ──
 const CUSTOM_PLAN_LIMIT_KEYS: (keyof CustomPlanLimits)[] =
   ['staff', 'tables', 'floors', 'menu_items', 'monthly_orders'];
-const CUSTOM_TIER_KINDS = ['starter', 'pro', 'enterprise'] as const;
-type CustomTierKind = typeof CUSTOM_TIER_KINDS[number];
+// 2026-09-04 — the tier-kind ladder is served by the backend (single source
+// of truth: namastepos_backend/src/services/planTiers.js). This page used to
+// declare `['starter','pro','enterprise']`, which had drifted from the live
+// five-kind ladder — so a STANDALONE custom plan (no base plan) could not be
+// created at Pro or Advanced level: the select had no option for either, and
+// the backend's Joi schema rejected both. Do NOT re-add a local list.
 
 function PlanFeaturesTab({ businessId }: { businessId: string }) {
   // One shared feature-key catalog for both panels. adminApi.listFeatureKeys
@@ -718,7 +723,14 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
   // Prices are edited in RUPEES; converted to paise on save.
   const [priceMonthly, setPriceMonthly] = useState('');
   const [priceYearly, setPriceYearly] = useState('');
-  const [tierKind, setTierKind] = useState<CustomTierKind>('pro');
+  const tierKinds = useTierKinds();
+  // Empty until the plan or the base plan supplies one; the select falls back
+  // to the first PAID rung of the ladder rather than a hardcoded 'pro' (which
+  // is Growth's KIND and Enterprise's CODE).
+  const [tierKind, setTierKind] = useState<string>('');
+  // Fall back to the first PAID rung of the ladder while nothing has supplied
+  // a kind (a standalone custom plan must send one — the backend requires it).
+  const effectiveTierKind = tierKind || tierKinds[1]?.kind || tierKinds[0]?.kind || '';
   const [limits, setLimits] = useState<Record<string, string>>(
     Object.fromEntries(CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, '-1'])));
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -751,7 +763,7 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
     setName(p.name || '');
     setPriceMonthly(String((p.priceInrPaise ?? 0) / 100));
     setPriceYearly(p.priceYearlyPaise != null ? String(p.priceYearlyPaise / 100) : '');
-    setTierKind((p.tierKind as CustomTierKind) || 'pro');
+    setTierKind(p.tierKind || '');
     setBasePlanTier(p.basePlanTier || '');
     setLimits(Object.fromEntries(
       CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, String(p.limits?.[k] ?? -1)])));
@@ -769,7 +781,7 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
     if (!name.trim()) setName(`${b.name} + extras`);
     setPriceMonthly(String((b.priceInrPaise ?? 0) / 100));
     setPriceYearly(b.priceYearlyInrPaise != null ? String(b.priceYearlyInrPaise / 100) : '');
-    if (b.tierKind) setTierKind(b.tierKind as CustomTierKind);
+    if (b.tierKind) setTierKind(b.tierKind);
     setLimits(Object.fromEntries(
       CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, String(b.limits?.[k] ?? -1)])));
   };
@@ -783,7 +795,7 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
       CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, Number(limits[k] ?? -1)])) as unknown as CustomPlanLimits,
     // Only the EXTRAS travel — the backend unions them with the base plan's.
     extraFeatureKeys: Array.from(selected).filter((k) => !inherited.has(k)),
-    tierKind,
+    tierKind: effectiveTierKind,
     assign,
   });
   const save = useMutation({
@@ -902,9 +914,20 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
               </div>
               <div>
                 <Label>Tier kind</Label>
-                <select value={tierKind} onChange={(e) => setTierKind(e.target.value as CustomTierKind)}
+                <select value={effectiveTierKind} onChange={(e) => setTierKind(e.target.value)}
                   className="h-10 w-full md:w-56 rounded-md border border-input bg-background px-3 text-sm">
-                  {CUSTOM_TIER_KINDS.map((tk) => <option key={tk} value={tk}>{tk}</option>)}
+                  {/* A kind the ladder does not contain would render blank —
+                      exactly how the old hardcoded list hid Pro/Advanced.
+                      Keep it visible and flagged instead. */}
+                  {effectiveTierKind
+                    && !tierKinds.some((t) => t.kind === effectiveTierKind) && (
+                    <option value={effectiveTierKind}>
+                      {effectiveTierKind} (not on the ladder)
+                    </option>
+                  )}
+                  {tierKinds.map((t) => (
+                    <option key={t.kind} value={t.kind}>{t.label} ({t.kind})</option>
+                  ))}
                 </select>
                 <p className="text-xs text-muted-foreground mt-1">
                   Drives upgrade CTAs + addon eligibility. Inherited from the base plan.

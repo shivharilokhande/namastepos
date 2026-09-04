@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input';
 import { NewOrderDialog } from '@/components/NewOrderDialog';
 import { ffApi } from '@/api/namastepos';
 import { api, apiError, getBusinessCache } from '@/api/client';
+import { trackFirstBill } from '@/lib/activation';
 import { formatINR, formatDateTime } from '@/lib/utils';
 import { printReceipt } from '@/lib/receiptPrint';
 
@@ -130,6 +131,24 @@ export function OrdersPage() {
   const handleReprint = (o: any) => {
     const opened = printOrderReceipt(o, true);
     if (opened) reprint.mutate(o.id);
+  };
+
+  // Activation funnel — `first_bill` via the receipt. Called from the
+  // "Print receipt" action so the event carries receipt_channel =
+  // browser_print. Only for orders that are actually PAID: an unpaid KOT
+  // printout is not a bill. Idempotent per business (see lib/activation),
+  // so this and the settle paths can both call it safely.
+  const noteBillPrinted = (o: any, opened: boolean) => {
+    if (!opened) return;
+    const paid = !!o?.paymentMethod && o.paymentMethod !== 'unpaid';
+    if (!paid) return;
+    trackFirstBill({
+      orderId: o.id,
+      amountInr: Number(o.total ?? 0),
+      paymentMode: (o.paymentBreakdown?.length ?? 0) > 1 ? 'split' : o.paymentMethod,
+      receiptChannel: 'browser_print',
+      lines: (o.items || []).map((it: any) => ({ name: it.name, price: it.price })),
+    });
   };
 
   // FF-602: GST E-Invoice (IRN) generation — only meaningful once the
@@ -424,7 +443,7 @@ export function OrdersPage() {
                     no DUPLICATE banner, no audit bump. */}
                 {o.status !== 'cancelled' && (
                   <Button size="sm" variant="outline" className="mt-3 w-full"
-                    onClick={() => printOrderReceipt(o)}>
+                    onClick={() => noteBillPrinted(o, printOrderReceipt(o))}>
                     <Printer className="mr-1 h-3.5 w-3.5" />
                     Print receipt
                   </Button>

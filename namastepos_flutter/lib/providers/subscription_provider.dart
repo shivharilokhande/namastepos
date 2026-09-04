@@ -3,6 +3,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../models/subscription.dart';
+import '../services/analytics_service.dart';
 import '../services/api_service.dart';
 
 class SubscriptionProvider extends ChangeNotifier {
@@ -74,6 +75,25 @@ class SubscriptionProvider extends ChangeNotifier {
     } finally {
       _loading = false;
       notifyListeners();
+    }
+    // Activation funnel — `upgrade_paid`. This provider is the single place
+    // every screen's subscription data comes from, and the subscription row
+    // (paid plan + status 'active') is the only client-observable proof that
+    // Razorpay's webhook actually landed — the checkout handler firing is
+    // just the client saying so. trackOnce keys it per business.
+    final s = _subscription;
+    final p = s?.plan;
+    if (s != null && p != null) {
+      // ignore: unawaited_futures
+      Activation.upgradePaid(
+        businessId: businessId,
+        tier: p.tier,
+        priceInr: s.billingPeriod == 'yearly'
+            ? (p.priceYearlyInr ?? p.priceInr)
+            : p.priceInr,
+        status: s.status,
+        billingCycle: s.billingPeriod,
+      );
     }
   }
 

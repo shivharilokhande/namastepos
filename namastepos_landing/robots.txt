@@ -1,16 +1,17 @@
+# NamastePOS - https://namastepos.in
+# Search crawlers: allowed. AI answer engines: allowed for grounding and citation.
+# One record per agent. No duplicate User-agent groups.
+
 User-agent: *
 Allow: /
 
-# AI answer engines / crawlers
+# AI answer engines and dataset crawlers - explicitly allowed
 User-agent: GPTBot
-Allow: /
 User-agent: OAI-SearchBot
-Allow: /
-User-agent: PerplexityBot
-Allow: /
 User-agent: ClaudeBot
-Allow: /
+User-agent: PerplexityBot
 User-agent: Google-Extended
+User-agent: CCBot
 Allow: /
 
 Sitemap: https://namastepos.in/sitemap.xml

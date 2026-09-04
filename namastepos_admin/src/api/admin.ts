@@ -69,13 +69,30 @@ export interface SupportOrder {
   privacyNotice: string;
 }
 
+/**
+ * One rung of the tier-kind ladder, served by GET /admin/tier-kinds.
+ * `rank` is the ladder index (0 = lowest); `label` is owner-facing
+ * ('pro_plan' -> 'Pro'). See adminApi.tierKinds.
+ */
+export interface TierKindOption {
+  kind: string;
+  rank: number;
+  label: string;
+}
+
 export interface Plan {
   id: string;
   // Push 18a — tier is now a free-form code (was an enum locked to
-  // free/basic/pro). Any [a-z0-9_]+ string is allowed.
+  // free/basic/pro). Any [a-z0-9_]+ string is allowed. It is a CODE, not a
+  // name: live mapping is free=Starter, basic=Growth, pro_plan=Pro,
+  // advanced=Advanced, pro=Enterprise (yes, tier 'pro' is Enterprise).
   tier: string;
   name: string;
-  tierKind?: 'starter' | 'pro' | 'enterprise';
+  // A tier KIND, not a code, and the list is open-ended — the ladder comes
+  // from GET /admin/tier-kinds. Do NOT narrow this to a union of literals:
+  // it was typed 'starter'|'pro'|'enterprise' and silently mistyped the live
+  // 'pro_plan' and 'advanced' plans.
+  tierKind?: string;
   priceInr: number; priceInrPaise: number;
   // FF-402c — one plan, two prices. null yearly = plan doesn't offer yearly.
   priceYearlyInr: number | null;
@@ -381,6 +398,14 @@ export const adminApi = {
   deletePlan: (tier: string) =>
     api.delete(`/admin/plans/${tier}`).then((r) => r.data),
   syncRazorpay: () => api.post('/admin/razorpay/sync').then((r) => r.data),
+  // 2026-09-04 — the tier_kind ladder comes FROM THE BACKEND (single source
+  // of truth: namastepos_backend/src/services/planTiers.js). This page used
+  // to hardcode ['starter','pro','enterprise'], which had drifted from the
+  // live five-kind ladder: the Pro and Advanced plans rendered a blank
+  // "Tier kind" select and could not be created at all. Never re-add a
+  // local list — render the picker from this call.
+  tierKinds: () =>
+    api.get<{ tierKinds: TierKindOption[] }>('/admin/tier-kinds').then((r) => r.data.tierKinds),
 
   // Push 14d — feature matrix (source of truth for plan-gated UI on the
   // owner dashboard + mobile). Changes propagate within ~60s as those
@@ -694,7 +719,10 @@ export interface CustomPlan {
   tier: string; name: string;
   priceInrPaise: number; priceYearlyPaise: number | null;
   limits: CustomPlanLimits;
-  tierKind: 'starter' | 'pro' | 'enterprise';
+  // A tier KIND from the open-ended ladder (GET /admin/tier-kinds), NOT a
+  // union of literals: typed 'starter'|'pro'|'enterprise' it mistyped the
+  // live 'pro_plan' and 'advanced' kinds. See src/hooks/useTierKinds.ts.
+  tierKind: string;
   assigned: boolean;
   // 2026-09-03 — "base plan + extras": the public plan this one extends,
   // the extras layered on top, and the base's keys (shown locked in the UI).
@@ -712,7 +740,9 @@ export interface CustomPlanInput {
   limits?: CustomPlanLimits;
   extraFeatureKeys?: string[];
   featureKeys?: string[];    // legacy flat list — treated as extras
-  tierKind?: 'starter' | 'pro' | 'enterprise';
+  // A tier KIND from the open-ended ladder (GET /admin/tier-kinds). Required
+  // by the backend when basePlanTier is absent (a standalone custom plan).
+  tierKind?: string;
   assign: boolean;
 }
 

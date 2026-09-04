@@ -9,14 +9,70 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { adminApi, Plan } from '@/api/admin';
+import { adminApi, Plan, TierKindOption } from '@/api/admin';
+import { useTierKinds } from '@/hooks/useTierKinds';
 import { apiError } from '@/api/client';
 import { formatINR } from '@/lib/utils';
 
-// Three tier_kind values — owner dashboard + mobile use plan_features
-// matrix keyed by these to decide which UI to enable.
-const TIER_KINDS = ['starter', 'pro', 'enterprise'] as const;
-type TierKind = typeof TIER_KINDS[number];
+// 2026-09-04 — the tier_kind ladder is served by the backend, which owns the
+// single source of truth (namastepos_backend/src/services/planTiers.js).
+//
+// This file used to declare `const TIER_KINDS = ['starter','pro','enterprise']`
+// and a `TierKind` union from it. That list had gone stale against the live
+// five-kind ladder, so the "Tier kind" select rendered BLANK for the Pro
+// ('pro_plan') and Advanced ('advanced') plans and could not create a plan at
+// either level. Do NOT re-introduce a local list — call useTierKinds()
+// (src/hooks/useTierKinds.ts), which every admin page shares.
+
+// Card accent, indexed by ladder RANK rather than by kind name, so a new
+// rung styles itself instead of falling through to "no border".
+const RANK_BORDER = [
+  'border-emerald-500',
+  'border-orange-500 shadow-lg',
+  'border-sky-500',
+  'border-indigo-500',
+  'border-purple-600',
+];
+const RANK_BG = [
+  'bg-emerald-500',
+  'bg-orange-500',
+  'bg-sky-500',
+  'bg-indigo-500',
+  'bg-purple-600',
+];
+function rankStyles(rank: number | undefined) {
+  const i = rank === undefined || rank < 0 ? -1 : rank;
+  return {
+    border: i < 0 ? '' : (RANK_BORDER[i] ?? RANK_BORDER[RANK_BORDER.length - 1]),
+    bg: i < 0 ? 'bg-muted-foreground' : (RANK_BG[i] ?? RANK_BG[RANK_BG.length - 1]),
+  };
+}
+
+/** Select of every tier kind on the ladder, labelled ('pro_plan' -> 'Pro'). */
+function TierKindSelect({
+  value, onChange, options,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  options: TierKindOption[];
+}) {
+  return (
+    <>
+      <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+          value={value} onChange={(e) => onChange(e.target.value)}>
+        {/* A value the ladder does not contain would render blank, which is
+            exactly how the old hardcoded list hid the Pro/Advanced plans.
+            Keep it visible and flagged instead. */}
+        {value && !options.some((o) => o.kind === value) && (
+          <option value={value}>{value} (not on the ladder)</option>
+        )}
+        {options.map((o) => (
+          <option key={o.kind} value={o.kind}>{o.label} ({o.kind})</option>
+        ))}
+      </select>
+    </>
+  );
+}
 
 export function PlansPage() {
   const qc = useQueryClient();
@@ -180,24 +236,20 @@ function PlanCard({
   onEditFeatures: () => void;
   onDelete: () => void;
 }) {
-  const tierKind = plan.tierKind || (plan as any).tier_kind || (
-    plan.tier === 'free' ? 'starter' :
-    plan.tier === 'basic' ? 'pro' :
-    plan.tier === 'pro' ? 'enterprise' : 'starter'
-  );
-  const featured = tierKind === 'pro';
-  const colorByTier: Record<string, string> = {
-    starter: 'border-emerald-500',
-    pro: 'border-orange-500 shadow-lg',
-    enterprise: 'border-purple-600',
-  };
-  const bgByTier: Record<string, string> = {
-    starter: 'bg-emerald-500',
-    pro: 'bg-orange-500',
-    enterprise: 'bg-purple-600',
-  };
+  // No code->kind guessing here any more. The old fallback map
+  // (free->starter, basic->pro, pro->enterprise) was a second, WRONG copy of
+  // the mapping: it had no entry for 'pro_plan'/'advanced' and silently
+  // labelled both as Starter. The API always returns tierKind; if it somehow
+  // does not, show that rather than inventing one.
+  const tierKinds = useTierKinds();
+  const tierKind = plan.tierKind || (plan as any).tier_kind || '';
+  const rung = tierKinds.find((t) => t.kind === tierKind);
+  // "Popular" = the first PAID rung of the ladder, not a hardcoded 'pro'
+  // (which is Growth's kind, and was also Enterprise's tier code).
+  const featured = rung?.rank === 1;
+  const styles = rankStyles(rung?.rank);
   return (
-    <Card className={`border-2 ${colorByTier[tierKind] || ''}`}>
+    <Card className={`border-2 ${styles.border}`}>
       <CardHeader>
         <div className="flex items-start justify-between">
           <div>
@@ -208,8 +260,8 @@ function PlanCard({
                 every render. Swap to a <div> row so the badges are
                 legal siblings. */}
             <div className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-2">
-              <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white ${bgByTier[tierKind]}`}>
-                {tierKind}
+              <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white ${styles.bg}`}>
+                {rung?.label || tierKind || 'unknown tier kind'}
               </span>
               {featured && <Badge>Popular</Badge>}
               {/* FF-402c — plans now carry BOTH prices on one row.
@@ -468,7 +520,11 @@ function EditPlanDialog({
   onSaved: () => void;
 }) {
   const [name, setName] = useState(plan.name);
-  const [tierKind, setTierKind] = useState<TierKind>((plan.tierKind as TierKind) || 'starter');
+  const tierKinds = useTierKinds();
+  // Keep the plan's ACTUAL kind, whatever it is. This used to be typed to the
+  // stale three-value union, so the Pro/Advanced plans arrived as values the
+  // select had no <option> for and rendered blank.
+  const [tierKind, setTierKind] = useState<string>(plan.tierKind || '');
   // FF-402c — edit BOTH prices on the same form (was: separate rows).
   const [priceMonthly, setPriceMonthly] = useState(plan.priceInr);
   const [priceYearly, setPriceYearly] = useState<string>(
@@ -476,7 +532,11 @@ function EditPlanDialog({
   );
   const [offerYearly, setOfferYearly] = useState(plan.priceYearlyInr != null);
   const [isActive, setIsActive] = useState(plan.isActive);
-  const yearlyForbidden = tierKind === 'starter' || priceMonthly === 0;   // FF-402e
+  // FF-402e — the bottom rung of the ladder is trial-only, so it never
+  // carries a yearly price. Read "bottom rung" off the ladder rather than
+  // matching the literal 'starter'.
+  const yearlyForbidden = (tierKinds[0] !== undefined && tierKind === tierKinds[0].kind)
+    || priceMonthly === 0;
   const [limits, setLimits] = useState<Record<string, number>>({ ...plan.limits });
   const [newLimitKey, setNewLimitKey] = useState('');
 
@@ -524,10 +584,7 @@ function EditPlanDialog({
           <div><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
           <div>
             <Label>Tier kind</Label>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={tierKind} onChange={(e) => setTierKind(e.target.value as TierKind)}>
-              {TIER_KINDS.map((tk) => <option key={tk} value={tk}>{tk}</option>)}
-            </select>
+            <TierKindSelect value={tierKind} onChange={setTierKind} options={tierKinds} />
           </div>
           <div>
             <Label>Monthly price (₹)</Label>
@@ -636,7 +693,12 @@ function CreatePlanDialog({
   // Push 18a — tier is now a free-form lowercase code (was locked to the
   // plan_tier enum). Anything matching /^[a-z0-9_]+$/ works.
   const [tier, setTier] = useState('');
-  const [tierKind, setTierKind] = useState<TierKind>('pro');
+  const tierKinds = useTierKinds();
+  // Default to the first PAID rung of the ladder (was a hardcoded 'pro',
+  // which is Growth's KIND and Enterprise's CODE - exactly the ambiguity
+  // this page kept tripping over).
+  const [tierKind, setTierKind] = useState<string>('');
+  const effectiveTierKind = tierKind || tierKinds[1]?.kind || tierKinds[0]?.kind || '';
   const [name, setName] = useState('');
   // FF-402c — one plan carries BOTH prices. Monthly is required (or 0
   // for free tiers), yearly is optional and auto-fills to 10× monthly
@@ -647,13 +709,15 @@ function CreatePlanDialog({
   // FF-402e — starter is the trial tier by design; never let it carry
   // a yearly price. Force-off the checkbox when tierKind flips to
   // starter (or the admin sets monthly to 0).
-  const yearlyForbidden = tierKind === 'starter' || priceMonthly === 0;
+  const yearlyForbidden = tierKinds[0] !== undefined
+    ? (effectiveTierKind === tierKinds[0].kind || priceMonthly === 0)
+    : priceMonthly === 0;
   const [limits, setLimits] = useState<Record<string, number>>({
     staff: 5, menu_items: 200, monthly_orders: 5000,
   });
   const [newLimitKey, setNewLimitKey] = useState('');
 
-  const tierValid = /^[a-z0-9_]+$/.test(tier);
+  const tierValid = /^[a-z0-9_]+$/.test(tier) && effectiveTierKind !== '';
   const create = useMutation({
     mutationFn: () => {
       // FF-402c — send both prices in one call. Blank yearly ⇒ auto
@@ -663,7 +727,7 @@ function CreatePlanDialog({
         ? null
         : (priceYearly === '' ? undefined : Math.round(Number(priceYearly) * 100));
       return adminApi.createPlan({
-        tier, tier_kind: tierKind, name,
+        tier, tier_kind: effectiveTierKind, name,
         price_inr_paise: Math.round(priceMonthly * 100),
         price_yearly_paise: yearlyPaise,
         is_active: true,
@@ -713,11 +777,8 @@ function CreatePlanDialog({
             )}
           </div>
           <div>
-            <Label>Tier kind (feature matrix)</Label>
-            <select className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={tierKind} onChange={(e) => setTierKind(e.target.value as TierKind)}>
-              {TIER_KINDS.map((tk) => <option key={tk} value={tk}>{tk}</option>)}
-            </select>
+            <Label>Tier kind (upgrade ladder position)</Label>
+            <TierKindSelect value={effectiveTierKind} onChange={setTierKind} options={tierKinds} />
           </div>
           <div className="col-span-2">
             <Label>Display name *</Label>

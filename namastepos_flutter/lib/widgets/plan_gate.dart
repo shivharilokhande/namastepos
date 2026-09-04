@@ -16,6 +16,36 @@ import 'package:provider/provider.dart';
 import '../constants/colors.dart';
 import '../providers/auth_provider.dart';
 import '../screens/billing/billing_screen.dart' as billing;
+import '../services/upsell_hints.dart';
+
+/// The plan the owner should buy to unlock [featureKey], AS THE SERVER NAMED
+/// IT — never worked out here.
+///
+/// 2026-09-04. This used to be `tierKind == 'starter' ? 'Pro' : 'Enterprise'`,
+/// which was wrong twice over: the kind 'pro' is the **Growth** plan (Rs 299)
+/// and the plan named **Pro** is the kind 'pro_plan', so a Growth, Pro or
+/// Advanced tenant was pitched Enterprise (Rs 1,999) with every plan in
+/// between skipped. The ladder is backend-only (services/planTiers.js); the
+/// app just prints what it is given:
+///   1. the label from the 402 FEATURE_LOCKED body for this exact feature
+///      (UpsellHints, filled by ApiService's error interceptor),
+///   2. else `plan.nextTierLabel` from /auth/me's plan summary,
+///   3. else null — and the caller says "a higher plan". We do not guess.
+String? serverUpgradeLabel(AuthProvider auth, String featureKey) =>
+    UpsellHints.instance.labelFor(featureKey) ?? auth.plan.nextTierLabel;
+
+/// "the Pro plan" / "a higher plan" — safe to drop into a sentence.
+String upgradeTargetPhrase(AuthProvider auth, String featureKey) {
+  final label = serverUpgradeLabel(auth, featureKey);
+  return label == null ? 'a higher plan' : 'the $label plan';
+}
+
+/// "You're currently on the Growth plan." Uses the server's label for the
+/// CURRENT plan; stays vague rather than naming the wrong one.
+String currentPlanPhrase(AuthProvider auth) {
+  final label = auth.plan.tierLabel ?? UpsellHints.instance.currentLabel;
+  return label == null ? 'your current plan' : 'the $label plan';
+}
 
 class PlanGate extends StatelessWidget {
   final String featureKey;
@@ -59,7 +89,9 @@ class PlanGate extends StatelessWidget {
               style: TextStyle(
                   color: unlocked ? null : AppColors.textSecondary)),
           subtitle: subtitle == null ? null : Text(subtitle),
-          trailing: unlocked ? null : _LockedBadge(currentTier: auth.plan.tierKind),
+          trailing: unlocked
+              ? null
+              : _LockedBadge(target: serverUpgradeLabel(auth, featureKey)),
           onTap: () {
             // Bug fix (2026-08-22): unlocked path used to call onTap()
             // directly without closing the drawer first. A drawer is
@@ -80,16 +112,21 @@ class PlanGate extends StatelessWidget {
 }
 
 class _LockedBadge extends StatelessWidget {
-  final String currentTier;
-  const _LockedBadge({required this.currentTier});
+  /// The plan name the SERVER named as the upgrade target, or null when we
+  /// have not been told one — then the badge reads "UPGRADE" rather than
+  /// naming a plan that might be the wrong one (or a downgrade).
+  final String? target;
+  const _LockedBadge({required this.target});
   @override
   Widget build(BuildContext context) {
-    final next = currentTier == 'starter' ? 'PRO' : 'ENTERPRISE';
+    final next = (target ?? 'Upgrade').toUpperCase();
     // P2 (2026-08-22): TalkBack needs to hear "locked, upgrade to <next>"
     // — the visual gradient + tiny padlock icon are invisible to
     // screen-reader users.
     return Semantics(
-      label: 'Locked. Upgrade to $next to unlock.',
+      label: target == null
+          ? 'Locked. Upgrade your plan to unlock.'
+          : 'Locked. Upgrade to $target to unlock.',
       button: true,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -119,7 +156,7 @@ class _DefaultLocked extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final next = auth.plan.tierKind == 'starter' ? 'Pro' : 'Enterprise';
+    final label = serverUpgradeLabel(auth, featureKey);
     return Scaffold(
       appBar: AppBar(title: const Text('Upgrade required')),
       body: Padding(
@@ -129,10 +166,12 @@ class _DefaultLocked extends StatelessWidget {
           children: [
             Icon(Icons.lock_outline, size: 64, color: AppColors.primary),
             const SizedBox(height: 16),
-            Text('Available on the $next plan',
+            Text(label == null
+                    ? 'Available on a higher plan'
+                    : 'Available on the $label plan',
                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
-            Text('You\'re currently on ${_human(auth.plan.tierKind)}. '
+            Text('You\'re on ${currentPlanPhrase(auth)}. '
                 'Upgrade to unlock "$featureKey" and many more features.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(color: AppColors.textSecondary)),
@@ -152,8 +191,7 @@ class _DefaultLocked extends StatelessWidget {
       ),
     );
   }
-  String _human(String t) =>
-      t == 'starter' ? 'the free Starter plan' :
-      t == 'pro' ? 'the Pro plan' :
-      'the Enterprise plan';
+  // _human() used to map a tier KIND to a plan NAME here — 'pro' -> "the Pro
+  // plan", which is the Growth plan. Deleted: currentPlanPhrase() prints the
+  // server's own label instead (see the top of this file).
 }

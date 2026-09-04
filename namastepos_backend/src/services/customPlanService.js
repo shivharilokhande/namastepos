@@ -17,6 +17,9 @@ const { query } = require('../config/db');
 const { NotFound, Conflict } = require('../utils/errors');
 const sub = require('./subscriptionService');
 const features = require('./featureService');
+// Ordered tier-kind ladder + rank helpers. Single source of truth — read the
+// header of that file before touching anything tier-related.
+const planTiers = require('./planTiers');
 const logger = require('../config/logger');
 
 /**
@@ -140,7 +143,13 @@ async function upsertForBusiness(businessId, body) {
   const yearly = body.priceYearlyPaise !== undefined
     ? body.priceYearlyPaise
     : (base ? base.price_yearly_paise : null);
-  const tierKind = body.tierKind || (base ? base.tier_kind : 'pro');
+  // Standalone (no base plan) MUST state a tierKind — putCustomPlanBody's
+  // .custom() rule enforces that, so this last fallback is only reachable
+  // from an internal caller that skipped validation. It was a literal 'pro',
+  // which silently granted Growth-level addon eligibility to a bespoke plan;
+  // fail closed at the bottom of the ladder instead.
+  const tierKind = body.tierKind
+    || (base ? base.tier_kind : planTiers.FALLBACK_TIER_KIND);
   const baseLimits = base
     ? (typeof base.limits === 'string' ? JSON.parse(base.limits || '{}') : (base.limits || {}))
     : {};
@@ -218,7 +227,7 @@ async function removeForBusiness(businessId, { force = false } = {}) {
   if (!row) throw new NotFound('No custom plan for this customer');
   let movedTo = null;
   if (force) {
-    const fallback = row.base_plan_tier || 'free';
+    const fallback = row.base_plan_tier || planTiers.FALLBACK_PLAN_CODE;
     movedTo = fallback;
     await require('./customerAdminService')
       .setPlanManually(businessId, fallback, { billingPeriod: 'monthly' });
@@ -234,6 +243,8 @@ async function removeForBusiness(businessId, { force = false } = {}) {
     err.code = 'CUSTOM_PLAN_ASSIGNED';
     throw err;
   }
+  // NOT a typo: plan_features.tier_kind holds a plan tier CODE since
+  // migration 040 (see services/planTiers.js). row.tier is the right value.
   await query('DELETE FROM plan_features WHERE tier_kind = $1', [row.tier]);
   await query('DELETE FROM plans WHERE id = $1', [row.id]);
   try { features.clearAllCaches(); } catch (_) { /* non-fatal */ }

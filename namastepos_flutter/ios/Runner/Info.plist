@@ -140,5 +140,20 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
+	<!-- Activation-funnel analytics (2026-09-04). iOS reports NOTHING until
+	     ios/Runner/GoogleService-Info.plist is added to the Runner target
+	     from the Firebase console (project "namastepos", bundle id
+	     in.namastepos.app) — Firebase.initializeApp() throws without it and
+	     AnalyticsService stays a silent no-op. These keys are set up front so
+	     the moment that file lands, iOS matches the Android/web
+	     configuration: the seven funnel events only, no advertising
+	     identifier, no ad personalisation, no automatic screen_view (screen
+	     names on a POS carry table labels and order ids). -->
+	<key>GOOGLE_ANALYTICS_ADID_COLLECTION_ENABLED</key>
+	<false/>
+	<key>GOOGLE_ANALYTICS_DEFAULT_ALLOW_AD_PERSONALIZATION_SIGNALS</key>
+	<false/>
+	<key>FirebaseAutomaticScreenReportingEnabled</key>
+	<false/>
 </dict>
 </plist>

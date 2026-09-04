@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '@/api/client';
+import { refreshConsent } from '@/lib/analytics';
 
 const SESSION_KEY = 'ff_anon_session_id';
 const DECISION_KEY = 'ff_cookie_decision_v1';
@@ -68,6 +69,11 @@ export function CookieBanner() {
     localStorage.setItem(DECISION_KEY, JSON.stringify({
       decision, analytics: a, marketing: m, at: new Date().toISOString(),
     }));
+    // Activation funnel: lib/analytics.ts holds funnel events in memory
+    // while this banner is open and sends nothing. Tell it the decision
+    // landed so a granted consent flushes now instead of on next reload —
+    // and so a refusal drops the held events immediately.
+    refreshConsent();
     setVisible(false);
   }
 

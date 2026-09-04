@@ -5,6 +5,11 @@ class Plan {
   final String tier;        // free | basic | pro
   final String name;
   final double priceInr;
+  /// Yearly list price, when the plan offers one. Existing server field
+  /// (serializePlan → priceYearlyInr); parsed since 2026-09-04 so
+  /// `upgrade_paid.amount_inr` reports what the owner actually paid on a
+  /// yearly cadence instead of the monthly figure.
+  final double? priceYearlyInr;
   final Map<String, int> limits;
   final Map<String, dynamic> features;
 
@@ -13,6 +18,7 @@ class Plan {
     required this.tier,
     required this.name,
     required this.priceInr,
+    this.priceYearlyInr,
     required this.limits,
     required this.features,
   });
@@ -31,6 +37,7 @@ class Plan {
       tier: m['tier'] as String? ?? 'free',
       name: m['name'] as String? ?? 'Free',
       priceInr: (m['priceInr'] as num?)?.toDouble() ?? 0,
+      priceYearlyInr: (m['priceYearlyInr'] as num?)?.toDouble(),
       limits: lim.map((k, v) => MapEntry(k, toIntSafe(v))),
       features: m['features'] as Map<String, dynamic>? ?? {},
     );
@@ -43,6 +50,10 @@ class Subscription {
   final DateTime? trialEndsAt;
   final DateTime currentPeriodEnd;
   final bool cancelAtPeriodEnd;
+  /// 'monthly' | 'yearly'. Existing server field (serializeSubscription →
+  /// billingPeriod, which is where the cadence lives since FF-402c); parsed
+  /// since 2026-09-04 for `upgrade_paid.billing_cycle`.
+  final String billingPeriod;
   final Plan? plan;
 
   Subscription({
@@ -51,6 +62,7 @@ class Subscription {
     this.trialEndsAt,
     required this.currentPeriodEnd,
     this.cancelAtPeriodEnd = false,
+    this.billingPeriod = 'monthly',
     this.plan,
   });
 
@@ -95,6 +107,7 @@ class Subscription {
         currentPeriodEnd: DateTime.tryParse(m['currentPeriodEnd']?.toString() ?? '') ??
             DateTime.fromMillisecondsSinceEpoch(0),
         cancelAtPeriodEnd: m['cancelAtPeriodEnd'] == true,
+        billingPeriod: m['billingPeriod'] as String? ?? 'monthly',
         plan: m['plan'] != null
             ? Plan.fromMap(m['plan'] as Map<String, dynamic>)
             : null,

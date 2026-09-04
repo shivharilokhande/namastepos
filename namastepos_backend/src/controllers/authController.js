@@ -21,6 +21,11 @@ const googleLoginSchema = {
     idToken: Joi.string().required(),
     // Optional: when user has multiple businesses they can specify which to activate
     businessId: Joi.string().uuid().allow(null),
+    // 2026-09-04: Google sign-UP is also a signup, so it carries the chosen
+    // plan too — otherwise "Start free trial on Pro → Continue with Google"
+    // would silently drop back to the default. Ignored for existing users
+    // (only read when a first business is created).
+    plan: Joi.string().pattern(/^[a-z][a-z0-9_-]{1,39}$/).allow('', null),
   }),
 };
 
@@ -97,6 +102,14 @@ const registerSchema = {
     name: Joi.string().max(255).allow('', null),
     businessName: Joi.string().max(255).allow('', null),
     referralCode: Joi.string().max(16).allow('', null),
+    // 2026-09-04 (pricing audit F-01/F-02): the plan card the prospect
+    // actually clicked, carried from the landing page's `?plan=` through the
+    // register form. The trial is then provisioned on THAT plan instead of
+    // silently on Starter. Same shape as billingController's changeBody so a
+    // tier code is validated identically on both paths; an unknown, retired
+    // or another tenant's private tier is ignored by resolveTrialPlanId and
+    // the default applies, so this can never be used to grant a plan.
+    plan: Joi.string().pattern(/^[a-z][a-z0-9_-]{1,39}$/).allow('', null),
   }),
 };
 
@@ -150,11 +163,15 @@ const impersonationExchangeSchema = {
 };
 
 /** Helper — build the standard session payload + plan summary. */
-async function _sessionPayload(user, { req, name }) {
+async function _sessionPayload(user, { req, name, planTier = null }) {
   let memberships = await auth.listMembershipsForUser(user.id);
   let createdBusiness = false;
   if (memberships.length === 0) {
-    await auth.createBusinessForUser(user, { name: name || user.display_name || 'My Business' });
+    await auth.createBusinessForUser(user, {
+      name: name || user.display_name || 'My Business',
+      // The plan the signup chose — the trial runs on this one.
+      planTier,
+    });
     memberships = await auth.listMembershipsForUser(user.id);
     createdBusiness = true;
     // FF-223: this is the definitive "first login" checkpoint (a new
@@ -225,11 +242,13 @@ async function _sessionPayload(user, { req, name }) {
 }
 
 const register = asyncHandler(async (req, res) => {
-  const { email, password, name, businessName, referralCode } = req.body;
+  const { email, password, name, businessName, referralCode, plan } = req.body;
   const { user } = await auth.registerWithPassword({ email, password, name });
   // D0 welcome email is fired inside _sessionPayload when it creates
   // the first business — same path for password + Google registrations.
-  const raw = await _sessionPayload(user, { req, name: businessName || name });
+  const raw = await _sessionPayload(user, {
+    req, name: businessName || name, planTier: plan || null,
+  });
   // L2 referral — if they signed up with a referral code, associate the new
   // business with it (FF-333: award happens later via cron after 30 active
   // days). Best-effort; never blocks registration.
@@ -358,7 +377,10 @@ const googleLogin = asyncHandler(async (req, res) => {
 
   // First-time user: bootstrap a business owned by them
   if (memberships.length === 0) {
-    await auth.createBusinessForUser(user, { name: profile.name });
+    await auth.createBusinessForUser(user, {
+      name: profile.name,
+      planTier: req.body.plan || null,
+    });
     memberships = await auth.listMembershipsForUser(user.id);
     createdBusiness = true;
   }

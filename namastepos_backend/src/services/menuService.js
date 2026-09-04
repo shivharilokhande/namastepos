@@ -107,7 +107,14 @@ async function byId(businessId, itemId) {
   return serialize(r.rows[0]);
 }
 
-async function create(businessId, body) {
+/**
+ * @param {object} [client] run on an open transaction's client instead of the
+ *   pool. REQUIRED when called from inside withTransaction (see bulkImport) —
+ *   a pool write would land outside the transaction and survive its rollback.
+ *   Same convention as variantService.listVariants.
+ */
+async function create(businessId, body, client = null) {
+  const run = client ? client.query.bind(client) : query;
   const {
     name, description, category = 'Food', price, costPrice = null, sku = null,
     unit = 'piece', stock = 0, reorderLevel = 10, isActive = true, isVeg = true,
@@ -128,7 +135,7 @@ async function create(businessId, body) {
     : (stock != null && Number(stock) !== 0);
 
   try {
-    const r = await query(
+    const r = await run(
       `INSERT INTO menu_items
        (business_id, name, description, category, price, cost_price, sku, unit,
         stock, reorder_level, is_active, is_veg, image_url,
@@ -320,11 +327,30 @@ async function stockHistory(businessId, itemId, { limit = 50, variantId } = {}) 
 }
 
 /**
- * Push 20b — bulk import. Used by super-admin to ingest a CSV of menu
- * items for a customer in one shot. Each row independently validated;
- * collects per-row errors instead of rolling back on the first bad row
- * so the operator sees "47/50 imported, 3 had issues" rather than an
- * all-or-nothing failure.
+ * Push 20b — bulk import. Used by the tenant menu screen, the "switch to
+ * NamastePOS" migration wizard (`/migrate` → POST /menu/bulk, the same route)
+ * and by super-admin to ingest a CSV of menu items for a customer in one shot.
+ *
+ * PLAN CAP (2026-09-04). The route used to skip `sub.enforceLimit` on the
+ * theory that "create() is limit-checked per row" — it never was: the cap
+ * lives in the ROUTE middleware, not in create(). So an owner on Starter
+ * (10 items) imported a 45-row menu successfully and only met the wall on
+ * item 46, i.e. AFTER all the work. The whole batch is now measured against
+ * the plan cap BEFORE the first row is written (subscriptionService
+ * .assertCapacity, which throws the standard 403 PLAN_LIMIT), and the item
+ * pass runs in ONE transaction, so a refusal — or any mid-import failure —
+ * leaves zero rows behind. Pass `{ enforcePlanCap: false }` for callers that
+ * are deliberately exempt (super-admin, who `enforceLimit` also skips).
+ *
+ * Only rows that would create an ACTIVE menu item count towards the cap:
+ * variant rows collapse onto a parent, `is_active=false` rows are not counted
+ * by the usage meter (`currentUsage` counts is_active = TRUE), and rows that
+ * fail validation are never written.
+ *
+ * Row-level validation is still per row: bad rows are collected as errors and
+ * skipped (each inside its own SAVEPOINT so one bad row cannot poison the
+ * transaction) so the operator sees "47/50 imported, 3 had issues" rather than
+ * losing a good file to one typo.
  *
  * Accepted row shape (all string-or-number; case-insensitive keys):
  *   name (required), price (required),
@@ -334,7 +360,7 @@ async function stockHistory(businessId, itemId, { limit = 50, variantId } = {}) 
  * Returns { inserted, skipped, errors[] } where each error is
  * { row: <index 1-based>, name, message }.
  */
-async function bulkImport(businessId, items) {
+async function bulkImport(businessId, items, { enforcePlanCap = true } = {}) {
   if (!Array.isArray(items) || items.length === 0) {
     return { inserted: 0, skipped: 0, errors: [{ row: 0, message: 'No items in payload' }] };
   }
@@ -350,6 +376,10 @@ async function bulkImport(businessId, items) {
   const variantFirstRow = new Map(); // lower(name) → 1-based row of first variant
   const createdByName = new Map(); // lower(name) → menu_item id created this batch
   let variantsApplied = 0;
+
+  // ── Pass 1: parse + validate every row. Nothing is written yet, which is
+  // what lets the cap be checked against the real number of new items.
+  const pending = []; // { row, name, body }
   for (let i = 0; i < items.length; i++) {
     const raw = items[i] || {};
     // Normalise keys to camel/snake whichever the caller used
@@ -386,8 +416,10 @@ async function bulkImport(businessId, items) {
       errors.push({ row: i + 1, name, message: 'Invalid price' });
       skipped++; continue;
     }
-    try {
-      const item = await create(businessId, {
+    pending.push({
+      row: i + 1,
+      name,
+      body: {
         name,
         price,
         description: get('description', 'Description') || null,
@@ -400,13 +432,38 @@ async function bulkImport(businessId, items) {
         hsnCode: get('hsn_code', 'hsnCode', 'HSN') || null,
         isActive: String(get('is_active', 'isActive', 'Active') ?? 'true').toLowerCase() !== 'false',
         isVeg: String(get('is_veg', 'isVeg', 'Veg') ?? 'true').toLowerCase() !== 'false',
-      });
-      createdByName.set(name.toLowerCase(), item.id);
-      inserted++;
-    } catch (e) {
-      errors.push({ row: i + 1, name, message: e.message || 'Insert failed' });
-      skipped++;
-    }
+      },
+    });
+  }
+
+  // ── The wall, BEFORE any write. Throws 403 PLAN_LIMIT for the whole file.
+  if (enforcePlanCap) {
+    const wanted = pending.filter((p) => p.body.isActive).length;
+    // eslint-disable-next-line global-require
+    await require('./subscriptionService')
+      .assertCapacity(businessId, 'menu_items', wanted);
+  }
+
+  // ── Pass 2: write. One transaction for the whole file (all-or-nothing on
+  // any unexpected failure); one SAVEPOINT per row so a single bad row is
+  // still just a skipped row and not an aborted batch.
+  if (pending.length > 0) {
+    await withTransaction(async (client) => {
+      for (const p of pending) {
+        await client.query('SAVEPOINT row_import');
+        try {
+          const item = await create(businessId, p.body, client);
+          await client.query('RELEASE SAVEPOINT row_import');
+          createdByName.set(p.name.toLowerCase(), item.id);
+          inserted++;
+        } catch (e) {
+          await client.query('ROLLBACK TO SAVEPOINT row_import');
+          await client.query('RELEASE SAVEPOINT row_import');
+          errors.push({ row: p.row, name: p.name, message: e.message || 'Insert failed' });
+          skipped++;
+        }
+      }
+    });
   }
 
   // Attach collected variants — prefer the item created in THIS batch; fall

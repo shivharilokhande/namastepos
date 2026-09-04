@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ffApi } from '@/api/namastepos';
 import { api, setSession, setBusinessCache, apiError } from '@/api/client';
+import { trackSignup, trackBusinessCreated } from '@/lib/activation';
 
 // Phone-first staff sign-in (2026-08-26): a staffer enters their mobile
 // number and POST /auth/staff-resolve returns the outlet(s) they belong to.
@@ -45,8 +46,25 @@ export function LoginPage() {
   const onGoogle = async (cred: CredentialResponse) => {
     if (!cred.credential) { toast.error('Google did not return a token'); return; }
     try {
-      const { token, refreshToken, business } = await ffApi.googleLogin(cred.credential);
+      const res = await ffApi.googleLogin(cred.credential);
+      const { token, refreshToken, business } = res;
       finish(token, refreshToken, business);
+      // Activation funnel: /auth/google is find-or-create, so "Continue
+      // with Google" on the LOGIN screen is also a real signup path (which
+      // matters — every public CTA currently lands strangers here, not on
+      // /register). Only fires when the backend says the account/business
+      // was actually created.
+      if (res?.isNewUser === true || res?.isNewBusiness === true) {
+        trackSignup({
+          method: 'google',
+          hasBusinessName: !!business?.name,
+          referralCode: null,
+        });
+        trackBusinessCreated({
+          isNew: res?.isNewBusiness === true,
+          category: business?.category || null,
+        });
+      }
     } catch (err) {
       toast.error(apiError(err));
     }

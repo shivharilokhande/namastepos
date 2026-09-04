@@ -20,6 +20,7 @@ import '../../constants/colors.dart';
 import '../../utils/error_humanizer.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/customer.dart' show LoyaltySettingsLite;
+import '../../services/analytics_service.dart';
 import '../../services/api_service.dart';
 import '../../services/printer_service.dart';
 import '../../utils/formatters.dart';
@@ -1412,16 +1413,42 @@ class _CaptainScreenState extends State<CaptainScreen> {
       // Silent if no printer is connected — staff can still settle without
       // a printer present.
       final biz = context.read<AuthProvider>().business;
+      bool billPrinted = false;
       if (sessionForPrint != null && biz != null && PrinterService.instance.hasSelectedPrinter) {
-        final printed = await PrinterService.instance.printSessionBill(
+        billPrinted = await PrinterService.instance.printSessionBill(
           session: sessionForPrint, business: biz,
         );
-        if (!printed && mounted) {
+        if (!billPrinted && mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Bill printed: failed. Use Re-print from Orders if needed.'),
           ));
         }
       }
+
+      // Activation funnel — `first_bill` for the dine-in flow. The POS
+      // "Pay & Place" path fires it too; the event is milestone-once per
+      // business, so whichever the owner reaches first wins and the other
+      // becomes a no-op. `amount_inr` is what was actually billed (session
+      // total less any settle discount). Lines come from the session's own
+      // flattened item list — the same rows printer_service prints — so the
+      // owner-authored check can reject a bill made only of the setup
+      // wizard's untouched demo items.
+      // ignore: unawaited_futures
+      Activation.firstBill(
+        orderId: sessionId,
+        amountInr: totalInr - settleDiscount,
+        paymentMode: breakdown != null ? 'split' : paymentMethod,
+        receiptChannel:
+            billPrinted ? ReceiptChannel.bluetooth : ReceiptChannel.none,
+        lines: [
+          for (final it in (sessionForPrint?['items'] as List?) ?? const [])
+            if (it is Map)
+              (
+                name: '${it['name'] ?? ''}',
+                price: (it['price'] as num?) ?? 0,
+              ),
+        ],
+      );
 
       await _load(); // refresh — table will flip to 'available'
     } catch (e) {

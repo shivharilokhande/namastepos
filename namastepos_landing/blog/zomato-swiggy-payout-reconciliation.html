@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Zomato &amp; Swiggy Order Reconciliation: Matching Payouts to Your POS</title>
+<meta name="description" content="Your aggregator payout never equals your order value. Here is what to match, the five buckets that explain every difference — commission, gateway fees, taxes, cancellations, promo funding — and a weekly routine that takes 20 minutes."/>
+<meta name="keywords" content="zomato swiggy reconciliation, aggregator payout reconciliation, restaurant online order reconciliation, swiggy payout statement, zomato commission deduction"/>
+<link rel="canonical" href="https://namastepos.in/blog/zomato-swiggy-payout-reconciliation"/>
+<meta name="robots" content="index,follow,max-image-preview:large"/>
+<meta name="theme-color" content="#0E7C4A"/>
+<link rel="icon" type="image/png" href="/favicon.png"/>
+<meta property="og:type" content="article"/>
+<meta property="og:site_name" content="NamastePOS"/>
+<meta property="og:title" content="Zomato &amp; Swiggy Order Reconciliation: Matching Payouts to Your POS"/>
+<meta property="og:description" content="What to match, the five buckets that explain every difference, and a weekly routine that takes 20 minutes."/>
+<meta property="og:url" content="https://namastepos.in/blog/zomato-swiggy-payout-reconciliation"/>
+<meta property="og:image" content="https://namastepos.in/og-image.png"/>
+<meta name="twitter:card" content="summary_large_image"/>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-YLK80GL4VY"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-YLK80GL4VY');</script>
+<script type="text/javascript">(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window,document,"clarity","script","y8fcz2fq0c");</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,400..600,0..1,0" rel="stylesheet"/>
+<link rel="stylesheet" href="/blog/blog.css"/>
+<script type="application/ld+json">
+{"@context":"https://schema.org","@graph":[
+{"@type":"BreadcrumbList","itemListElement":[
+{"@type":"ListItem","position":1,"name":"Home","item":"https://namastepos.in/"},
+{"@type":"ListItem","position":2,"name":"Blog","item":"https://namastepos.in/blog/"},
+{"@type":"ListItem","position":3,"name":"Aggregator payout reconciliation","item":"https://namastepos.in/blog/zomato-swiggy-payout-reconciliation"}]},
+{"@type":"BlogPosting","headline":"Zomato & Swiggy Order Reconciliation: Matching Payouts to Your POS","description":"What to match, the five buckets that explain every difference between order value and payout, and a weekly reconciliation routine that takes 20 minutes.","datePublished":"2026-09-04","dateModified":"2026-09-04","url":"https://namastepos.in/blog/zomato-swiggy-payout-reconciliation","author":{"@type":"Organization","name":"NamastePOS"},"publisher":{"@type":"Organization","name":"NamastePOS","logo":{"@type":"ImageObject","url":"https://namastepos.in/apple-touch-icon.png"}},"mainEntityOfPage":{"@type":"WebPage","@id":"https://namastepos.in/blog/zomato-swiggy-payout-reconciliation"},"image":"https://namastepos.in/og-image.png","inLanguage":"en-IN","isPartOf":{"@type":"Blog","@id":"https://namastepos.in/blog/#blog"}},
+{"@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"Why is my Zomato or Swiggy payout less than my order value?","acceptedAnswer":{"@type":"Answer","text":"Because several deductions sit between the two. Commission on the order value, a payment-gateway or processing charge, tax deductions the platform makes and reports, the share of any discount or promotion you agreed to fund, and reversals for cancelled or refunded orders. Add penalties and adjustments carried over from an earlier cycle and you have every line that can move the number. A payout smaller than your sales is normal; a payout you cannot explain line by line is not."}},
+{"@type":"Question","name":"How often should a restaurant reconcile aggregator payouts?","acceptedAnswer":{"@type":"Answer","text":"Weekly, on the same day each week, for about twenty minutes. Weekly beats monthly for one reason: dispute windows. Most platform disputes have a time limit, and an error you find five weeks later is usually an error you cannot claim. A short weekly habit also keeps each check small, because you are looking at one cycle rather than untangling a month."}},
+{"@type":"Question","name":"Does NamastePOS connect directly to Zomato and Swiggy?","acceptedAnswer":{"@type":"Answer","text":"Aggregator marketplace API access is granted by the platforms themselves and is gated behind their own volume and eligibility thresholds, so treat a direct connection as something a restaurant applies for rather than a switch you turn on. What NamastePOS gives you today is the reconciliation side: record every online order against its own channel, keep the platform's order ID on it, and pull a per-channel, date-range report you can line up against the payout statement. The aggregator channel is available from the Pro plan."}},
+{"@type":"Question","name":"Who pays GST on orders sold through an aggregator?","acceptedAnswer":{"@type":"Answer","text":"For restaurant service supplied through an e-commerce operator, the GST is generally paid by the operator rather than by the restaurant, so those orders do not behave like your dine-in sales in your returns even though they are real revenue in your reports. You still need to report them correctly, and your statement may also carry deductions labelled TDS or TCS. Have your CA map one statement to your returns once; after that it is a repeatable monthly step."}}]}
+]}
+</script>
+</head>
+<body>
+<header class="nav">
+  <div class="wrap nav-in">
+    <a href="/" class="brand">Namaste<span>POS</span></a>
+    <nav class="nav-links">
+      <a href="/#product">Product</a><a href="/#features">Features</a><a href="/#pricing">Pricing</a><a href="/blog/">Blog</a>
+    </nav>
+    <a href="https://app.namastepos.in/register?utm_source=blog&amp;utm_medium=cta&amp;utm_content=zomato-swiggy-payout-reconciliation" class="btn btn-amber">Start free</a>
+  </div>
+</header>
+
+<article class="article">
+  <div class="wrap">
+    <div class="crumbs"><a href="/">Home</a> › <a href="/blog/">Blog</a> › Aggregator payout reconciliation</div>
+    <h1>Zomato &amp; Swiggy Order Reconciliation: Matching Payouts to Your POS</h1>
+    <div class="meta"><span>Updated 4 Sep 2026</span><span>·</span><span>9 min read</span><span>·</span><span>Operations</span></div>
+    <p class="lede"><strong>Short answer:</strong> reconciliation means matching every online order in your own records to its line in the aggregator's payout statement, then explaining each difference. The payout is always smaller than the order value, and there are only five reasons why: <strong>commission</strong>, <strong>payment and processing charges</strong>, <strong>tax deductions</strong>, <strong>cancellations and refunds</strong>, and <strong>your share of promo funding</strong> — plus penalties and adjustments carried over from an earlier cycle. A smaller payout is normal. A payout you cannot explain line by line is money leaking.</p>
+  </div>
+
+  <div class="prose">
+    <h2>Why the payout never equals your sales</h2>
+    <p>Owners who take online orders often run two numbers in their head: what the app says the order was worth, and what actually landed in the bank. The gap between them can be 25-30% or more, and because it arrives as one lump sum on a cycle, most people stop asking questions and treat the deposit as the truth.</p>
+    <p>That is the mistake. The deposit is a net figure produced by a chain of deductions, each of which can be wrong. Commission applied to the wrong base. A cancelled order deducted twice. A discount you never agreed to fund. A penalty for a delay caused by the rider. None of these are conspiracies — at the volumes these platforms operate, ordinary errors are inevitable. But an error you never look for is an error you pay for.</p>
+
+    <h2>The five buckets of difference</h2>
+    <table>
+      <thead><tr><th>Bucket</th><th>What it is</th><th>What to check</th></tr></thead>
+      <tbody>
+        <tr><td>Commission</td><td>The platform's percentage of the order</td><td>Is the rate the one in your contract? Is it applied to the item value or to a base that includes taxes and delivery?</td></tr>
+        <tr><td>Payment &amp; processing charges</td><td>Gateway or collection fees on prepaid orders</td><td>Charged once per order, not per attempt. Cash-on-delivery orders should be treated differently from prepaid ones.</td></tr>
+        <tr><td>Taxes and statutory deductions</td><td>Amounts the platform deducts and reports, shown as TDS or TCS lines</td><td>That the figure matches what appears in your own tax records for the period</td></tr>
+        <tr><td>Cancellations &amp; refunds</td><td>Reversals for orders cancelled or refunded to the customer</td><td>Who cancelled, and at what stage. Food already cooked and dispatched is a different case from a pre-acceptance cancellation.</td></tr>
+        <tr><td>Promotions &amp; discount funding</td><td>The share of a campaign discount you agreed to bear</td><td>That the campaign was one you opted into, over the dates you opted in for, at the split you agreed</td></tr>
+      </tbody>
+    </table>
+    <p>A sixth category catches the leftovers: penalties, adjustments and recoveries carried from a previous cycle. These are the hardest to verify because they refer to events outside the statement you are holding, and they are where the largest unexplained amounts usually hide. Anything in this category deserves a question, every time.</p>
+
+    <h2>The three numbers to record per order</h2>
+    <p>You cannot reconcile what you did not record. For every online order, capture these three things in your own system at the time the order comes in:</p>
+    <ol>
+      <li><strong>The platform's order ID.</strong> This is your only reliable key for matching. Without it you are matching on timestamp and amount, which fails the moment two orders are similar.</li>
+      <li><strong>The channel.</strong> Which platform, as a distinct order source, kept separate from dine-in and takeaway. This one field is what lets you produce a per-channel sales figure to compare against a statement.</li>
+      <li><strong>The gross order value as the platform stated it,</strong> not what you would have charged for the same food in-house. Menu prices are often marked up for delivery, and reconciling against your dine-in price guarantees a mismatch on every line.</li>
+    </ol>
+    <p>Do this and the weekly job becomes arithmetic. Skip it and reconciliation becomes archaeology.</p>
+
+    <h2>A weekly routine that takes 20 minutes</h2>
+    <ol>
+      <li><strong>Download the payout statement</strong> for the cycle from each platform's partner dashboard.</li>
+      <li><strong>Pull your own per-channel report</strong> from your POS for the same dates, filtered to that platform.</li>
+      <li><strong>Compare the order count first, not the money.</strong> If the counts differ, you have missing or duplicated orders, and no amount of checking totals will find them. Counts are the fastest signal that something is structurally wrong.</li>
+      <li><strong>Compare gross order value.</strong> It should match closely. A persistent gap usually means a price mismatch on your platform menu.</li>
+      <li><strong>Walk the deductions</strong> through the five buckets above and tick each one off against your contract.</li>
+      <li><strong>List what is left unexplained</strong> and raise it that week, while the dispute window is open.</li>
+    </ol>
+    <p>Weekly beats monthly for exactly one reason: dispute windows. Most platform disputes have a time limit, and an error found five weeks later is usually an error you cannot claim. Same day each week, same twenty minutes.</p>
+
+    <div class="callout">
+      <h3>Give yourself the numbers to reconcile with</h3>
+      <p>NamastePOS records every order against its channel, keeps the platform order ID on it, and gives you per-channel and date-range reports you can export and line up against the payout statement. Aggregator channels are available from the <strong>Pro</strong> plan (₹799/mo). 7-day free trial, no card.</p>
+      <a href="https://app.namastepos.in/register?utm_source=blog&amp;utm_medium=cta&amp;utm_content=zomato-swiggy-payout-reconciliation" class="btn btn-amber">Start free — ₹0</a>
+    </div>
+
+    <h2>What the POS does, and what it doesn't</h2>
+    <p>Be clear-eyed about this, because vendors are often not. Aggregator marketplace API access is granted by the platforms themselves and gated behind their own volume and eligibility thresholds. A direct, automatic order feed is something a restaurant <em>applies for</em> when it qualifies, not a switch any POS turns on for a new single-outlet customer. Anyone promising otherwise on day one is selling you a plan, not a feature.</p>
+    <p>What a POS genuinely gives you for reconciliation work is the other half of the equation — your own trustworthy record:</p>
+    <ul>
+      <li>Online orders logged against their own channel, so per-channel revenue is a report and not a guess</li>
+      <li>The platform order ID stored on the order, so matching is exact</li>
+      <li>Date-range and item-level exports, so you can compare a cycle in a spreadsheet in minutes</li>
+      <li>The same kitchen flow for online and dine-in — one KOT queue, one <a href="/kot-software">kitchen display</a>, so online orders don't live on a separate tablet nobody reconciles</li>
+      <li>Item-level performance across channels, so you can see whether delivery is actually profitable per dish and not just per month</li>
+    </ul>
+    <p>That last point is the one owners find most useful. Once your online orders are in the same reporting system as your dine-in, you can ask the question that matters: after commission, packaging and promo funding, which dishes still make money on delivery? Usually the answer surprises people, and it changes the platform menu. Our <a href="/blog/restaurant-analytics-reports">restaurant reports guide</a> covers which views to look at.</p>
+
+    <h2>The tax part, once</h2>
+    <p>GST on restaurant service supplied through an e-commerce operator is generally paid by the operator rather than by you. So aggregator orders do not behave like your dine-in sales in your returns, even though they are real revenue in your reports — and your statement may separately carry deductions labelled TDS or TCS. This is not a thing to work out from a blog post. Take one full statement and one month of your own reports to your CA, have them map it to your returns once, and write the mapping down. After that it is a repeatable monthly step rather than a monthly argument. The <a href="/blog/restaurant-gst-rate-5-vs-18">restaurant GST rate guide</a> explains where these orders sit relative to your normal rate.</p>
+
+    <h2>Red flags in a statement</h2>
+    <ul>
+      <li><strong>Order counts that don't match your own.</strong> Always investigate before looking at money.</li>
+      <li><strong>Commission on a base that includes taxes or delivery fees</strong> when your contract says item value.</li>
+      <li><strong>Cancellation reversals for orders your kitchen actually dispatched.</strong> Keep the KOT timestamp — it is your evidence.</li>
+      <li><strong>Promo funding for a campaign you don't remember joining.</strong> Screenshot every campaign you opt into, with dates.</li>
+      <li><strong>Adjustments referencing an earlier cycle with no detail.</strong> Ask for the underlying order IDs.</li>
+      <li><strong>A payout percentage that drifts month over month</strong> with no contract change. Track net-as-a-percentage-of-gross every cycle; the trend line finds problems the individual lines hide.</li>
+    </ul>
+    <p>When you raise a dispute, send three things: the platform order ID, your own record of the order with its timestamp, and the specific line on the statement you are questioning. Vague complaints get vague answers. Specific ones get credits — and for a cloud kitchen running mostly on delivery, this twenty-minute weekly habit is often worth more than any menu change. If that's your model, our <a href="/blog/cloud-kitchen-pos-software">cloud kitchen POS guide</a> is the next thing to read.</p>
+  </div>
+
+    <h2>Related guides</h2>
+    <ul>
+      <li><a href="/restaurant-billing-software">Restaurant billing software for India</a></li>
+      <li><a href="/blog/cloud-kitchen-pos-software">POS software for cloud kitchens in India</a></li>
+      <li><a href="/blog/restaurant-analytics-reports">Restaurant analytics &amp; reports</a></li>
+      <li><a href="/blog/multi-outlet-restaurant-pos">Managing multiple outlets</a></li>
+    </ul>
+
+  <div class="faq">
+    <h2>Frequently asked questions</h2>
+    <details class="q"><summary>Why is my Zomato or Swiggy payout less than my order value?</summary><div class="a">Because several deductions sit between the two. Commission on the order value, a payment-gateway or processing charge, tax deductions the platform makes and reports, the share of any discount or promotion you agreed to fund, and reversals for cancelled or refunded orders. Add penalties and adjustments carried over from an earlier cycle and you have every line that can move the number. A payout smaller than your sales is normal; a payout you cannot explain line by line is not.</div></details>
+    <details class="q"><summary>How often should a restaurant reconcile aggregator payouts?</summary><div class="a">Weekly, on the same day each week, for about twenty minutes. Weekly beats monthly for one reason: dispute windows. Most platform disputes have a time limit, and an error you find five weeks later is usually an error you cannot claim. A short weekly habit also keeps each check small, because you are looking at one cycle rather than untangling a month.</div></details>
+    <details class="q"><summary>Does NamastePOS connect directly to Zomato and Swiggy?</summary><div class="a">Aggregator marketplace API access is granted by the platforms themselves and is gated behind their own volume and eligibility thresholds, so treat a direct connection as something a restaurant applies for rather than a switch you turn on. What NamastePOS gives you today is the reconciliation side: record every online order against its own channel, keep the platform's order ID on it, and pull a per-channel, date-range report you can line up against the payout statement. The aggregator channel is available from the Pro plan.</div></details>
+    <details class="q"><summary>Who pays GST on orders sold through an aggregator?</summary><div class="a">For restaurant service supplied through an e-commerce operator, the GST is generally paid by the operator rather than by the restaurant, so those orders do not behave like your dine-in sales in your returns even though they are real revenue in your reports. You still need to report them correctly, and your statement may also carry deductions labelled TDS or TCS. Have your CA map one statement to your returns once; after that it is a repeatable monthly step.</div></details>
+  </div>
+</article>
+
+<footer>
+  <div class="wrap foot-in">
+    <span>© 2026 NamastePOS · Restaurant billing that just works.</span>
+    <span><a href="/blog/">← All articles</a> · <a href="/#pricing">Pricing</a> · <a href="https://app.namastepos.in/register?utm_source=blog&amp;utm_medium=cta&amp;utm_content=zomato-swiggy-payout-reconciliation">Start free</a></span>
+  </div>
+</footer>
+</body>
+</html>

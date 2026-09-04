@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/analytics_service.dart';
 import '../../services/api_service.dart';
 import '../../widgets/google_logo.dart';
 
@@ -83,6 +84,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
+    // Activation funnel — cohort anchor. Fired only on the REGISTER screen;
+    // the login screen's Google button is a sign-IN on an existing account.
+    // No referral capture exists in the app (no deep-link ?ref=), so the
+    // code is empty here and only the web signup carries one.
+    Activation.signup(
+      method: 'email',
+      hasBusinessName: _businessName.text.trim().isNotEmpty,
+    );
+
     // DPDP — record the consents the user just gave. Best-effort: if
     // these calls fail (network blip) the user is still registered, and
     // the next /me/consents check will reveal the gap so the app can
@@ -109,6 +119,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (auth.error != null) _snack(auth.error!);
       return;
     }
+    // Activation funnel — see the note in _submit. Google here is a
+    // find-or-create, so `business_created.is_new` (fired from
+    // AuthProvider._postLogin) is what distinguishes a genuinely new account.
+    Activation.signup(
+      method: 'google',
+      hasBusinessName: _businessName.text.trim().isNotEmpty,
+    );
     await _recordConsents();
     // _RootGate sees auth.status flip and swaps to HomeScreen.
   }

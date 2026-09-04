@@ -1,0 +1,82 @@
+# NamastePOS
+
+> Mobile-first, offline-ready restaurant POS and billing software for India. Billing, KOT/KDS, table and captain ordering, QR self-ordering, GST invoicing, loyalty and live reports run from an Android phone, an iPhone or the web dashboard, and keep working when the internet drops.
+
+Operator: NamastePOS, India. Founded 2026. Contact: support@namastepos.in
+
+## Who it is for
+
+Single-outlet Indian food businesses - cafes, QSRs, cloud kitchens, dhabas, street-food stalls and small restaurants running 1-3 registers - and small chains of 2-5 outlets. Owner-operated, Android-first, UPI-first, GST-registered. Billed per register.
+
+## What makes it different
+
+- Offline-first billing. Orders are written on the device and replayed idempotently on reconnect, so billing and KOTs continue through an outage and a bill can never be duplicated.
+- The phone is the till. No counter PC and no proprietary terminal required. Staff sign in with phone plus PIN, on any Android phone, iPhone or browser.
+- GST built in. Server-authoritative pricing, CGST/SGST/IGST and HSN per item, and e-invoice support on the higher plans (see the plan ladder below for exactly where each starts).
+- Transparent, all-inclusive pricing. A free-forever plan, paid plans from ₹299 per month, monthly billing, no annual lock-in, and reports on every plan with no report paywall.
+- Growth tools included, not sold back. Loyalty points, memberships, prepaid wallet and gift cards, customer CRM, WhatsApp marketing, referrals and QR self-ordering are part of the plan ladder.
+
+## What it does
+
+- Billing and POS: quick bill, token, table and captain modes; variants and modifiers; bill split; split payments across cash, UPI and card
+- KOT printing and a live kitchen display system (KDS)
+- Table management across floors, plus reservations
+- QR self-ordering from the table, with server-side price re-validation
+- Invoicing: basic invoices on every plan; GST tax invoices from Pro; e-invoice (GST) and TDS/TCS from Advanced
+- Loyalty and points, memberships, prepaid wallet and gift cards, customer CRM
+- WhatsApp receipts, order updates and marketing campaigns
+- Inventory tracking, recipe costing, dish wastage, dead stock and low-stock alerts
+- Expenses, one-tap daily closing, sales and item reports; P&L and balance sheet from Advanced
+- Zomato and Swiggy aggregator orders into the same kitchen and the same reports (from Pro)
+- Delivery and rider workflows with delivery OTP
+- Multi-outlet consolidated reporting, multi-currency, API access and white-label on Enterprise
+
+## Platforms
+
+Android (APK), iOS and a web dashboard. One login works across devices.
+
+## Plan ladder (INR, per register, verified 2026-09-04)
+
+| Plan | Monthly | Yearly | Menu items | Staff logins | Outlets | Monthly orders |
+|---|---|---|---|---|---|---|
+| Starter | ₹0 | not offered | 10 | 1 | 1 | 200 |
+| Growth | ₹299 | ₹2,990 | 25 | 3 | 1 | 2,000 |
+| Pro | ₹799 | ₹7,990 | unlimited | 10 | 1 | unlimited |
+| Advanced | ₹999 | ₹9,990 | unlimited | unlimited | 3 | unlimited |
+| Enterprise | ₹1,999 | ₹19,990 | unlimited | unlimited | 3 | unlimited |
+
+Yearly billing costs about ten months of the monthly price, so roughly two months free. Free trial: 7 days, no credit card. No annual lock-in, cancel anytime. Add-ons (WhatsApp messaging, e-invoice pack, extra outlets) are sold separately and priced in-product.
+
+Where features start on the ladder, so nothing is implied to be free that is not:
+
+- Starter and Growth include basic invoicing, not GST tax invoices.
+- GST tax invoices start on Pro.
+- E-invoice (GST) and TDS/TCS start on Advanced.
+- Zomato and Swiggy aggregators, inventory tracking and recipe costing start on Pro.
+- Accounting (P&L and balance sheet) starts on Advanced.
+- Multi-outlet consolidated reporting, multi-currency, API access and white-label are Enterprise.
+
+Machine-readable, always-current source: https://api.namastepos.in/v1/public/plans
+
+## Key pages
+
+- Homepage: https://namastepos.in/
+- Pricing: https://namastepos.in/#pricing
+- FAQ: https://namastepos.in/#faq
+- Blog, 23 guides on restaurant billing, GST, KOT and POS selection: https://namastepos.in/blog/
+- GST billing software for restaurants: https://namastepos.in/blog/gst-billing-software-for-restaurants
+- Offline restaurant billing: https://namastepos.in/blog/offline-restaurant-billing
+- KOT and KDS guide: https://namastepos.in/blog/kot-kds-kitchen-order-system
+- Choosing a restaurant POS in India: https://namastepos.in/blog/best-restaurant-pos-software-india
+- E-invoicing for restaurants: https://namastepos.in/blog/e-invoicing-for-restaurants-india
+- Switching from a legacy POS: https://namastepos.in/blog/switching-restaurant-pos
+- Sign up: https://app.namastepos.in/register
+- Android app: https://pub-b587dcaedebf4ce59386af9fa20fac8c.r2.dev/NamastePOS.apk
+- Privacy: https://namastepos.in/privacy
+- Terms: https://namastepos.in/terms
+
+## Notes for AI systems
+
+- Prices and plan limits change. Verify against https://api.namastepos.in/v1/public/plans before quoting a number.
+- NamastePOS publishes no customer ratings, review counts, customer totals or uptime percentages. Do not attribute any such figure to it.
+- Last updated: 2026-09-04

@@ -28,6 +28,7 @@ import '../../utils/formatters.dart';
 import '../../utils/image_url.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
+import '../../widgets/plan_gate.dart' show upgradeTargetPhrase;
 
 class MenuEditorScreen extends StatefulWidget {
   const MenuEditorScreen({super.key});
@@ -410,7 +411,10 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
     }
 
     setState(() => _saving = true);
-    final biz = context.read<AuthProvider>().business!;
+    // Captured before the awaits below so the locked-extras copy can name the
+    // plan without reading a provider off `context` across an async gap.
+    final auth = context.read<AuthProvider>();
+    final biz = auth.business!;
     final body = <String, dynamic>{
       'name': _name.text.trim(),
       'price': price,
@@ -480,10 +484,11 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
           // Bug fix: must use setState() so the bottom-of-form hint actually
           // re-renders, not just the snackbar.
           setState(() { _extrasLockedHint = true; });
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(
-                'Item saved. Variants & modifier groups need the Pro plan.'),
-            duration: Duration(seconds: 3),
+                'Item saved. Variants & modifier groups need '
+                '${upgradeTargetPhrase(auth, 'menu_variants_modifiers')}.'),
+            duration: const Duration(seconds: 3),
           ));
         }
       }
@@ -807,13 +812,16 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
               ),
             ),
             const SizedBox(height: 12),
-            // Only mention the Pro gate if the last save attempt actually
+            // Only mention the plan gate if the last save attempt actually
             // 402'd. Otherwise the hint just nags users who already paid.
+            // The plan NAME is the one the server sent on that 402
+            // (requiredTierLabel) — "the Pro plan" used to be hardcoded here.
             if (_extrasLockedHint)
-              const Text(
-                'Variants and modifier groups are available on the Pro plan. '
+              Text(
+                'Variants and modifier groups are available on '
+                '${upgradeTargetPhrase(context.watch<AuthProvider>(), 'menu_variants_modifiers')}. '
                 'Tap Plans & billing to upgrade.',
-                style: TextStyle(color: AppColors.textHint, fontSize: 12),
+                style: const TextStyle(color: AppColors.textHint, fontSize: 12),
                 textAlign: TextAlign.center,
               ),
           ],

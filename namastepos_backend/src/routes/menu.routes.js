@@ -16,9 +16,15 @@ router.post(
   sub.enforceLimit('menu_items'),
   ...c.create,
 );
-// FF-218 — bulk CSV import. Owner-only. Skips the `sub.enforceLimit`
-// middleware because bulkImport internally calls create() per row, which
-// itself is limit-checked; running enforceLimit twice would double-count.
+// FF-218 — bulk CSV import (also the migration wizard's menu step).
+//
+// No `sub.enforceLimit` here ON PURPOSE, and the reason is NOT the one this
+// comment used to give ("bulkImport calls create() per row, which is itself
+// limit-checked" — create() has never checked a limit; the cap lives in this
+// middleware). enforceLimit only asks "room for ONE more?", which for a
+// 45-row file on a 10-item plan let the import through and refused row 46
+// after the work was done. menuService.bulkImport now measures the WHOLE file
+// against the cap before writing anything and throws the same 403 PLAN_LIMIT.
 router.post(
   '/bulk',
   requireRole(['business_owner', 'staff_manager']),

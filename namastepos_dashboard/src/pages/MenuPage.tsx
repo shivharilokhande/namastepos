@@ -31,6 +31,7 @@ import {
 import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
 import { usePlan } from '@/hooks/usePlan';
+import { trackMenuReadyAsync } from '@/lib/activation';
 import { formatINR, fullImageUrl } from '@/lib/utils';
 
 const COMBO_KEY = '__combos__';
@@ -38,6 +39,17 @@ const COMBO_KEY = '__combos__';
 export function MenuPage() {
   const qc = useQueryClient();
   const { data: items = [], isLoading } = useQuery({ queryKey: ['menu'], queryFn: ffApi.listMenu });
+
+  // Activation funnel — `menu_ready`. Watched on the LIST rather than on the
+  // create mutation because the event is a threshold crossing ("this
+  // business now has >= 3 owner-authored active items"), not an action: an
+  // item added on the phone, a CSV import or a /migrate run must all be
+  // able to trip it. trackMenuReady() is first-time-only per business and
+  // returns immediately once fired, so calling it on every refetch is free.
+  useEffect(() => {
+    if (isLoading || !Array.isArray(items) || items.length === 0) return;
+    trackMenuReadyAsync(items, 'manual');
+  }, [items, isLoading]);
 
   const [selectedCat, setSelectedCat] = useState<string>('__all__');
   const [search, setSearch] = useState('');

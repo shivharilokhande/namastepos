@@ -16,6 +16,7 @@ import { BillSplitDialog } from '@/components/BillSplitDialog';
 import { FloorCanvas } from '@/components/FloorCanvas';
 import { ffApi } from '@/api/namastepos';
 import { api, apiError, getBusinessCache } from '@/api/client';
+import { trackFirstBill } from '@/lib/activation';
 import { formatINR, formatDateTime } from '@/lib/utils';
 
 // ── Joined tables API (2026-08-25, founder request) ─────────────────────
@@ -710,6 +711,17 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
       return closeSessionApi(sessionId, body);
     },
     onSuccess: () => {
+      // Activation funnel — `first_bill`, THE activation event. The table
+      // session settling is the moment the owner's own money went through
+      // NamastePOS. Idempotent per business, so it does not matter that the
+      // pay-at-order path in NewOrderDialog also calls it.
+      trackFirstBill({
+        orderId: sessionId,
+        amountInr: Number(session?.totalInr ?? 0),
+        paymentMode: splitOn ? 'split' : paymentMethod,
+        receiptChannel: 'none',   // 'browser_print' if they hit Print bill
+        lines: (session?.items || []).map((it: any) => ({ name: it.name, price: it.price })),
+      });
       toast.success(splitOn
         ? 'Bill settled — split payment recorded'
         : `Bill settled — paid by ${paymentMethod.toUpperCase()}`);
@@ -1353,7 +1365,20 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                 a KOT exists — an empty bill helps nobody. */}
             <Button
               variant="outline"
-              onClick={() => printSessionBill(session, grouped)}
+              onClick={() => {
+                printSessionBill(session, grouped);
+                // Activation funnel: if the owner prints the bill BEFORE
+                // settling, this is the first observable bill and the
+                // channel is the browser print dialog. Idempotent — the
+                // settle path above calls the same helper.
+                trackFirstBill({
+                  orderId: sessionId,
+                  amountInr: Number(session?.totalInr ?? 0),
+                  paymentMode: activeOrders[0]?.paymentMethod || paymentMethod,
+                  receiptChannel: 'browser_print',
+                  lines: grouped.map((l: any) => ({ name: l.name, price: l.price })),
+                });
+              }}
               disabled={orders.length === 0}
             >
               <Printer className="mr-1 h-4 w-4" /> Print bill

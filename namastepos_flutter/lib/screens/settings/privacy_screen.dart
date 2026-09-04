@@ -5,6 +5,9 @@
 //   - View current consents (privacy + terms always granted; marketing
 //     toggles are opt-in)
 //   - Toggle marketing consents on/off (writes an append-only event)
+//   - Turn app usage analytics on/off (`cookies_analytics`, the same consent
+//     key the web dashboard's cookie banner writes; off by default, and the
+//     app stops reporting the moment it is switched off)
 //   - Download a JSON export of their data
 //   - File a correction request
 //   - File a grievance with the Grievance Officer
@@ -20,6 +23,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../../constants/colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/analytics_service.dart';
 import '../../services/api_service.dart';
 import 'privacy_policy_screen.dart';
 
@@ -39,6 +43,13 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
     {'key': 'marketing_sms',      'label': 'Marketing SMS',
      'help': 'Promotional SMS (rare — only for major launches).'},
   ];
+
+  // App usage analytics (2026-09-04). Same consent key the web dashboard's
+  // cookie banner writes (`cookies_analytics`), so one decision covers both
+  // and the DPDP consent log has one record per owner instead of two stories.
+  // OFF until the owner turns it on — matching the dashboard, where nothing
+  // is sent until this key is granted.
+  static const _analyticsKey = AnalyticsService.consentKey;
 
   bool _loading = true;
   Map<String, bool> _state = {};
@@ -62,6 +73,12 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
         }
       }
       final officer = await api.grievanceOfficer().catchError((_) => <String, dynamic>{});
+      // The server's consent log is the durable record — if the owner granted
+      // or withdrew analytics anywhere (this app, another device, the web
+      // dashboard's cookie banner), that record wins over the local mirror the
+      // app booted with. Absent a record, false: off by default, as on web.
+      await AnalyticsService.instance
+          .setEnabled(state[_analyticsKey] ?? false);
       if (!mounted) return;
       setState(() {
         _state = state;
@@ -83,6 +100,13 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
         source:     'mobile_app',
         context:    {'surface': 'privacy_screen'},
       );
+      // Analytics is the one consent the APP itself acts on, so apply it here
+      // rather than waiting for a restart: setEnabled() stops (or starts)
+      // reporting on the spot and persists the choice for the next launch.
+      if (key == _analyticsKey) {
+        await AnalyticsService.instance.setEnabled(granted);
+      }
+      if (!mounted) return;
       setState(() => _state[key] = granted);
       _snack(granted ? 'Consent recorded' : 'Consent withdrawn');
     } catch (e) {
@@ -203,6 +227,23 @@ class _PrivacyScreenState extends State<PrivacyScreen> {
                           style: const TextStyle(fontSize: 12)),
                       activeThumbColor: AppColors.primary,
                     )),
+
+                _section('App usage data'),
+                SwitchListTile(
+                  value: _state[_analyticsKey] ?? false,
+                  onChanged: (v) => _toggle(_analyticsKey, v),
+                  title: const Text('Share app usage',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                    'Sends us which screens and features you use, and nothing '
+                    'else — no names, phone numbers, addresses, GSTIN or bill '
+                    'amounts of your customers. It helps us see what to fix '
+                    'first. Off by default; turn it off any time.',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  isThreeLine: true,
+                  activeThumbColor: AppColors.primary,
+                ),
 
                 _section('Your data (DPDP rights)'),
                 _action(Icons.download_rounded, 'Download my data', _export),

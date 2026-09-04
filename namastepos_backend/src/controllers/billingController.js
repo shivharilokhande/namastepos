@@ -54,10 +54,54 @@ module.exports = {
     res.json({ plans: enriched });
   }),
 
-  // Current business subscription
+  // Current business subscription.
+  //
+  // 2026-09-04 — this is the route the tenant dashboard (ffApi.subscription)
+  // and the mobile app already call on every launch, so the owner-facing
+  // usage meter and the past-due grace notice ride along on it rather than
+  // needing a new endpoint or new polling. Both are nested INSIDE
+  // `subscription` on purpose: every existing client reads
+  // `response.data.subscription` and would not see a new sibling key.
+  //
+  // `usage` — remaining/limit/level per capped metric, so the dashboard can
+  //   warn at 80% and at 100% instead of letting the owner discover the cap
+  //   as a 403 mid-service. Best-effort: a failure here must never break the
+  //   billing read (or the mobile launch check that depends on it).
+  // `grace`  — when a charge has failed and we are inside
+  //   PAST_DUE_GRACE_DAYS: the amount, the exact date access ends, and a
+  //   plain-language line. Null at every other time.
   current: asyncHandler(async (req, res) => {
-    const subscription = await sub.get(req.params.businessId);
-    res.json({ subscription });
+    const businessId = req.params.businessId;
+    const subscription = await sub.get(businessId);
+    if (!subscription) return res.json({ subscription });
+    let usage = null;
+    try {
+      usage = await sub.usageSummary(businessId);
+    } catch (e) {
+      require('../config/logger').warn(`[billing] usageSummary failed for ${businessId}: ${e.message}`);
+    }
+    let grace = null;
+    try {
+      const entitlement = require('../services/planEntitlement');
+      const r = await query(
+        `SELECT s.status, s.trial_ends_at, s.past_due_at, s.last_dunning_at,
+                p.price_inr_paise, p.price_yearly_paise, s.billing_period
+           FROM subscriptions s
+           LEFT JOIN plans p ON p.id = s.plan_id
+          WHERE s.business_id = $1 LIMIT 1`,
+        [businessId],
+      );
+      const row = r.rows[0];
+      if (row) {
+        const paise = row.billing_period === 'yearly'
+          ? (row.price_yearly_paise || row.price_inr_paise || 0)
+          : (row.price_inr_paise || 0);
+        grace = entitlement.graceNotice(row, { amountInr: paise ? paise / 100 : null });
+      }
+    } catch (e) {
+      require('../config/logger').warn(`[billing] grace notice failed for ${businessId}: ${e.message}`);
+    }
+    res.json({ subscription: { ...subscription, usage, grace } });
   }),
 
   // Change plan (initiates Razorpay flow for paid plans, immediate for free)

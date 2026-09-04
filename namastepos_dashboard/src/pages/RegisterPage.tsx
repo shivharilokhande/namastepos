@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ffApi } from '@/api/namastepos';
 import { setSession, setBusinessCache, apiError } from '@/api/client';
+import { trackSignup, trackBusinessCreated } from '@/lib/activation';
 
 // DPDP — bump these every time the published policy text changes. The
 // version string is stamped on the consent_event row so we can prove
@@ -20,6 +21,13 @@ export function RegisterPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const referralCode = searchParams.get('ref') || undefined; // L2 referral link
+  // 2026-09-04 (pricing audit F-01/F-02): the plan card the visitor clicked,
+  // e.g. /register?plan=pro_plan. The backend provisions the 7-day trial on
+  // that plan instead of always on Starter — before this, every "Start free
+  // trial" button, on every card, produced a Starter account with a 10-item
+  // menu. Validated server-side against active/public/shared plans, so a
+  // hand-typed value cannot grant anything.
+  const planTier = searchParams.get('plan')?.trim() || undefined;
   const [name, setName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [email, setEmail] = useState('');
@@ -72,11 +80,31 @@ export function RegisterPage() {
     if (!cred.credential) { toast.error('Google did not return a token'); return; }
     setBusy(true);
     try {
-      const { token, refreshToken, business } = await ffApi.googleLogin(cred.credential);
+      const res = await ffApi.googleLogin(cred.credential, planTier);
+      const { token, refreshToken, business } = res;
       setSession(token, refreshToken);
       setBusinessCache(business);
+      // Activation funnel. setBusinessCache() first so the analytics
+      // identity provider can resolve business_id + signupAt.
+      trackSignup({
+        method: 'google',
+        hasBusinessName: !!business?.name,
+        referralCode,
+      });
+      trackBusinessCreated({
+        // Google sign-up is find-or-create; the backend tells us which.
+        isNew: res?.isNewBusiness === true,
+        category: business?.category || null,
+      });
       await recordSignupConsents();
-      toast.success('Welcome aboard! You\'re on the Starter plan.');
+      // 2026-09-04: this said "You're on the Starter plan", which stopped
+      // being true when the trial started provisioning the plan the visitor
+      // actually chose. Deliberately does not name a plan or a day count —
+      // the plan is resolved server-side and the trial length is
+      // env-configurable (TRIAL_DAYS), so naming either here would be a
+      // second copy of the truth waiting to drift. The exact plan and end
+      // date are on Plans & Billing.
+      toast.success('Welcome aboard! Your free trial has started — no card needed.');
       navigate('/');
     } catch (err) {
       toast.error(apiError(err));
@@ -96,12 +124,27 @@ export function RegisterPage() {
     }
     setBusy(true);
     try {
-      const { token, refreshToken, business } = await ffApi.register({
+      const res = await ffApi.register({
         email, password, name: name || undefined, businessName: businessName || undefined,
         referralCode,
+        plan: planTier,
       });
+      const { token, refreshToken, business } = res;
       setSession(token, refreshToken);
       setBusinessCache(business);
+
+      // Activation funnel — the top of it. No email, no name, no password
+      // goes anywhere near this: `signup` carries method + a boolean +
+      // the referral code only.
+      trackSignup({
+        method: 'email',
+        hasBusinessName: !!businessName.trim(),
+        referralCode,
+      });
+      trackBusinessCreated({
+        isNew: res?.isNewBusiness !== false,
+        category: business?.category || null,
+      });
 
       // DPDP — record the consents immediately so the audit trail
       // starts the same instant the account exists. Best-effort: if
@@ -110,7 +153,14 @@ export function RegisterPage() {
       // deliberately don't block the happy path.
       await recordSignupConsents();
 
-      toast.success('Welcome aboard! You\'re on the Starter plan.');
+      // 2026-09-04: this said "You're on the Starter plan", which stopped
+      // being true when the trial started provisioning the plan the visitor
+      // actually chose. Deliberately does not name a plan or a day count —
+      // the plan is resolved server-side and the trial length is
+      // env-configurable (TRIAL_DAYS), so naming either here would be a
+      // second copy of the truth waiting to drift. The exact plan and end
+      // date are on Plans & Billing.
+      toast.success('Welcome aboard! Your free trial has started — no card needed.');
       navigate('/');
     } catch (err) {
       toast.error(apiError(err));
@@ -127,7 +177,11 @@ export function RegisterPage() {
             <Utensils className="h-6 w-6" />
           </div>
           <CardTitle>Create your account</CardTitle>
-          <CardDescription>Free Starter plan — no credit card needed</CardDescription>
+          {/* 2026-09-04: was "Free Starter plan". The signup now provisions a
+              trial of the plan the visitor picked, so this no longer claims a
+              specific plan — it states the two things that are true of every
+              signup path. */}
+          <CardDescription>Free trial — no credit card needed</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={onSubmit} className="space-y-3">

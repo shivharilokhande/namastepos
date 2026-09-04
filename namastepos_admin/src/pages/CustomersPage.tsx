@@ -16,8 +16,10 @@ import { adminApi, Customer } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR, formatDate } from '@/lib/utils';
 import { useDebounce } from '@/hooks/useDebounce';
+import { useTierKinds } from '@/hooks/useTierKinds';
 
 export function CustomersPage() {
+  const tierKinds = useTierKinds();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [search, setSearch] = useState('');
@@ -190,18 +192,22 @@ export function CustomersPage() {
                   <TableCell><OutletCell c={c} /></TableCell>
                   <TableCell>
                     {c.plan ? (
-                      // Push 18a — `tier` is now free-text; bucket by `tierKind`
-                      // (starter/pro/enterprise) for consistent visual scale.
+                      // Push 18a — `tier` is a free-text CODE; bucket by the
+                      // tier KIND's ladder rank for a consistent visual scale.
+                      // 2026-09-04: this used to test tierKind against a
+                      // hardcoded starter/pro/enterprise and then fall back to
+                      // `tier === 'pro'`/`'basic'` — two namespaces in one
+                      // expression, where 'pro' means Growth as a kind and
+                      // Enterprise as a code. Rank off the ladder instead: the
+                      // bottom rung is 'secondary', every paid rung 'default'.
                       // The Customer.plan type doesn't yet include tierKind, so
                       // cast through `any` until that interface is widened.
-                      <Badge variant={
-                        ((c.plan as any).tierKind) === 'enterprise' ? 'default'
-                        : ((c.plan as any).tierKind) === 'pro' ? 'default'
-                        : ((c.plan as any).tierKind) === 'starter' ? 'secondary'
-                        : c.plan.tier === 'pro' ? 'default'
-                        : c.plan.tier === 'basic' ? 'secondary'
-                        : 'muted'
-                      }>
+                      <Badge variant={(() => {
+                        const rank = tierKinds
+                          .find((t) => t.kind === (c.plan as any).tierKind)?.rank;
+                        if (rank === undefined) return 'muted';
+                        return rank === 0 ? 'secondary' : 'default';
+                      })()}>
                         {c.plan.name}
                       </Badge>
                     ) : <span className="text-muted-foreground">—</span>}

@@ -20,6 +20,7 @@ import '../../constants/colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/home_bottom_nav.dart';
+import '../../widgets/plan_gate.dart' show upgradeTargetPhrase;
 import '../../widgets/home_drawer_button.dart';
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -45,7 +46,9 @@ class _ModifierGroupsScreenState extends State<ModifierGroupsScreen> {
   }
 
   Future<void> _load() async {
-    final biz = context.read<AuthProvider>().business;
+    // Captured before any await — see the note in _save().
+    final auth = context.read<AuthProvider>();
+    final biz = auth.business;
     if (biz == null) return;
     setState(() { _loading = true; _error = null; });
     try {
@@ -56,8 +59,13 @@ class _ModifierGroupsScreenState extends State<ModifierGroupsScreen> {
       if (!mounted) return; // FB-20
       // 402 here means the business is on Starter — we still show the empty
       // state with a clear hint instead of an angry error screen.
+      // The plan name comes from the server's 402 body (requiredTierLabel),
+      // never from a guess: "Pro" used to be hardcoded here, and on the live
+      // five-plan ladder that is not necessarily the plan that unlocks this.
       setState(() => _error = e.statusCode == 402
-          ? 'Modifier groups are a Pro feature. Upgrade to manage them.'
+          ? 'Modifier groups need '
+              '${upgradeTargetPhrase(auth, 'menu_variants_modifiers')}. '
+              'Upgrade to manage them.'
           : 'Couldn\'t load modifier groups: ${e.message}');
     } catch (e) {
       setState(() => _error = 'Couldn\'t load modifier groups: $e');
@@ -256,7 +264,8 @@ class _ModifierGroupEditScreenState extends State<_ModifierGroupEditScreen> {
     }
 
     setState(() => _saving = true);
-    final biz = context.read<AuthProvider>().business!;
+    final auth = context.read<AuthProvider>();
+    final biz = auth.business!;
     final body = <String, dynamic>{
       if (widget.group?['id'] != null) 'id': widget.group!['id'],
       'name': _name.text.trim(),
@@ -271,8 +280,12 @@ class _ModifierGroupEditScreenState extends State<_ModifierGroupEditScreen> {
       if (!mounted) return;
       Navigator.pop(context, true);
     } on ApiException catch (e) {
+      // `auth` was captured before the await on purpose — reading a provider
+      // off `context` after an async gap is exactly what
+      // use_build_context_synchronously warns about, and CI fails on warnings.
       _toast(e.statusCode == 402
-          ? 'Pro plan required to manage modifier groups'
+          ? 'Managing modifier groups needs '
+              '${upgradeTargetPhrase(auth, 'menu_variants_modifiers')}'
           : 'Save failed: ${e.message}');
     } catch (e) {
       _toast('Save failed: $e');

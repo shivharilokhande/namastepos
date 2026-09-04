@@ -191,6 +191,26 @@ const env = {
   // default, migration 002). Single source of truth now lives here.
   TRIAL_DAYS: parseInt(required('TRIAL_DAYS', '7'), 10),
 
+  // 2026-09-04 (pricing audit F-01): which plan a signup's free trial is
+  // provisioned on when the signup itself doesn't name one. Blank (the
+  // default) means "resolve the cheapest paid, public, shared plan at
+  // runtime" — deliberately NOT a hardcoded tier code, because the live
+  // ladder is admin-editable and the tier codes drift (`pro_plan` is Pro,
+  // `pro` is Enterprise). Set to e.g. `pro_plan` on Render to trial the plan
+  // marketing points at. An unknown/retired/private value is ignored and the
+  // runtime default applies, so a typo can never break signup.
+  TRIAL_PLAN_TIER: (process.env.TRIAL_PLAN_TIER || '').trim(),
+
+  // 2026-09-04 (retention audit F-02): how long a `past_due` subscription
+  // keeps its features while dunning runs. Before this, one failed autopay
+  // stripped a working restaurant down to the Starter feature set before the
+  // owner had read the first email. 7 days matches the dunning ladder
+  // (day 0 / 3 / 7). 0 restores the old strip-immediately behaviour.
+  PAST_DUE_GRACE_DAYS: (() => {
+    const n = parseInt(process.env.PAST_DUE_GRACE_DAYS || '7', 10);
+    return Number.isFinite(n) && n >= 0 ? n : 7;
+  })(),
+
   // NP-112 (2026-09-03): server-side order tax/discount enforcement mode.
   //   'log'     (default) — accept client-sent tax/discount, but warn when
   //             the tax differs > ₹1 from the menu-derived GST or a discount

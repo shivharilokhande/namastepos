@@ -31,6 +31,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
+import { trackMenuReadyFromServer } from '@/lib/activation';
 import { parseCsv, downloadCsv, type CsvRow } from '@/lib/csv';
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -365,6 +366,9 @@ function ImportStep({ config, onResult, result }: {
     },
     onSuccess: (r) => {
       onResult(r);
+      // Activation funnel — a switcher's menu arriving via /migrate is the
+      // strongest `menu_ready` there is; attribute it to this wizard.
+      if (config.key === 'menu' && r.imported > 0) trackMenuReadyFromServer('migrate');
       qc.invalidateQueries({ queryKey: ['menu'] });
       qc.invalidateQueries({ queryKey: ['customers'] });
       qc.invalidateQueries({ queryKey: ['expenses'] });

@@ -2,6 +2,7 @@
 
 import axios, { AxiosError } from 'axios';
 import { toast } from 'sonner';
+import { track, recordBlockedMetric } from '@/lib/analytics';
 
 const baseURL = import.meta.env.VITE_API_URL || '/v1';
 
@@ -221,8 +222,49 @@ let refreshing: Promise<void> | null = null;
 
 api.interceptors.response.use(
   (r) => r,
-  async (err: AxiosError<{ error?: string; message?: string; code?: string }>) => {
+  async (err: AxiosError<{
+    error?: string; message?: string; code?: string;
+    details?: { metric?: string; limit?: number; current?: number; plan?: string };
+  }>) => {
     const orig = err.config!;
+
+    // Activation funnel (2026-09-04) — `plan_limit_hit`.
+    //
+    // Hooked HERE, in the one error path every business-scoped call already
+    // flows through, so every capped metric reports itself with zero
+    // per-call wiring: subscriptionService.enforceLimit() is an Express
+    // middleware in front of POST /menu, /orders, /staff, /ops/tables and
+    // /ops/floors, and it always fails the same way — Forbidden (403) with
+    // error='PLAN_LIMIT' and details={metric,limit,current,plan}. The
+    // atomic incrementUsage() backstop raises the same code as a 402, so
+    // both statuses are accepted.
+    //
+    // This is the event that turns the pricing cliff into a number, and it
+    // feeds upgrade_paid.blocked_metric — hence recordBlockedMetric().
+    const data = err.response?.data;
+    if (data?.error === 'PLAN_LIMIT' || data?.code === 'PLAN_LIMIT') {
+      try {
+        const d = data.details || {};
+        // Fall back to parsing "Plan limit reached for <metric>: 10/10" when
+        // the 402 backstop path throws without details.
+        const metric = d.metric
+          || /Plan limit reached for ([a-z_]+)/i.exec(String(data.message || ''))?.[1]
+          || 'unknown';
+        const limit = typeof d.limit === 'number' ? d.limit : null;
+        // What they tried to create: the count that was refused, +1.
+        const attempted = typeof d.current === 'number'
+          ? d.current + 1
+          : (limit !== null ? limit + 1 : null);
+        track('plan_limit_hit', {
+          metric,
+          limit,
+          attempted,
+          tier: d.plan || null,
+        });
+        recordBlockedMetric(metric);
+      } catch { /* analytics must never mask an API error */ }
+    }
+
     if (err.response?.status === 401 && !(orig as any)._retry) {
       (orig as any)._retry = true;
       try {

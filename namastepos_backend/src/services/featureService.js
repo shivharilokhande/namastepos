@@ -1,8 +1,11 @@
 // Feature-gating service (Push 2 of the tier-system rollout).
 //
-// Each tier (starter / pro / enterprise) maps to a set of feature keys in
-// the plan_features table. A business's active subscription resolves to
-// exactly one tier_kind. To gate an endpoint:
+// Each plan maps to a set of feature keys in the plan_features table (whose
+// `tier_kind` column has held a plan tier CODE since migration 040 — see
+// services/planTiers.js for the code-vs-kind distinction and the live
+// mapping; the string 'pro' means different plans in the two namespaces).
+// A business's active subscription resolves to exactly one plan, hence one
+// tier code and one tier_kind. To gate an endpoint:
 //
 //   const requireFeature = require('../middleware/requireFeature');
 //   router.post('/kds-poll', requireFeature('kds'), handler);
@@ -16,6 +19,10 @@
 
 const { query, withTransaction } = require('../config/db');
 const cacheBus = require('../utils/cacheBus');
+const entitlement = require('./planEntitlement');
+// Ordered tier-kind ladder + rank helpers. Single source of truth — read the
+// header of that file before touching anything tier-related.
+const planTiers = require('./planTiers');
 
 const TTL_MS = 60_000; // 1-minute soft cache
 const cache = new Map(); // bid → { expires, tierKind, features:Set }
@@ -51,28 +58,49 @@ function _publishInvalidate(payload) {
  * not just per tier_kind concept.
  */
 async function resolveTierKind(businessId) {
+  // §4.6 hard block (2026-08-23): an expired trial used to keep granting its
+  // Pro/Enterprise features forever because we only checked status='trialing'
+  // and ignored trial_ends_at. Now a trial only counts while it hasn't
+  // expired; once it lapses (and no paid 'active' sub exists) the business
+  // falls through to the free/starter tier server-side. This is enforced in
+  // the DB resolution, not just the UI.
+  //
+  // 2026-09-04 (retention audit F-02): the entitlement condition moved OUT of
+  // this query into planEntitlement.entitledSql() and now also covers a
+  // `past_due` grace window — a failed card no longer strips a working
+  // restaurant the instant the webhook lands. One predicate, two callers
+  // (this feature gate and subscriptionService's limit gate), so the two can
+  // never disagree about who is entitled.
   const r = await query(
-    // §4.6 hard block (2026-08-23): an expired trial used to keep granting its
-    // Pro/Enterprise features forever because we only checked status='trialing'
-    // and ignored trial_ends_at. Now a trial only counts while it hasn't
-    // expired; once it lapses (and no paid 'active' sub exists) the business
-    // falls through to the free/starter tier server-side. This is enforced in
-    // the DB resolution, not just the UI.
-    `SELECT p.tier, p.tier_kind
+    `SELECT p.tier, p.tier_kind, s.status,
+            s.trial_ends_at, s.past_due_at, s.last_dunning_at
        FROM subscriptions s
        JOIN plans p ON p.id = s.plan_id
       WHERE s.business_id = $1
-        AND (
-          s.status = 'active'
-          OR (s.status = 'trialing'
-              AND (s.trial_ends_at IS NULL OR s.trial_ends_at > NOW()))
-        )
+        AND ${entitlement.entitledSql('s')}
       ORDER BY s.updated_at DESC NULLS LAST
       LIMIT 1`,
     [businessId],
   );
-  if (r.rowCount === 0) return { tier: 'free', tier_kind: 'starter' };
-  return { tier: r.rows[0].tier, tier_kind: r.rows[0].tier_kind };
+  if (r.rowCount === 0) {
+    return {
+      tier: planTiers.FALLBACK_PLAN_CODE,
+      tier_kind: planTiers.FALLBACK_TIER_KIND,
+      entitled: false,
+      expiresAtMs: null,
+    };
+  }
+  const row = r.rows[0];
+  const c = entitlement.classify(row);
+  return {
+    tier: row.tier,
+    tier_kind: row.tier_kind,
+    // Additive: existing callers (requireFeature, featureGate,
+    // multiOutlet.routes) read only `tier` / `tier_kind`.
+    entitled: true,
+    reason: c.reason,
+    expiresAtMs: c.expiresAt ? c.expiresAt.getTime() : null,
+  };
 }
 
 /**
@@ -140,8 +168,23 @@ async function _load(businessId) {
       else features.delete(row.feature_key);
     }
   } catch (_) { /* fail open — plan+addon features still apply */ }
+  // Cache lifetime (2026-09-04, retention audit F-02). The soft TTL is the
+  // normal case, but an entitlement that is only true UNTIL a known instant
+  // (a trial's end, a past_due grace deadline) must not outlive that instant:
+  // otherwise a tenant whose grace expired at 20:00 keeps loyalty, reports and
+  // aggregator ingestion until 20:01, and — worse — a peer node that never
+  // receives a Redis invalidation (no REDIS_URL, or a rolling deploy where the
+  // channel name differs) would serve the stale "still in grace" answer for a
+  // full TTL. Capping the entry at the deadline closes both: every node
+  // derives the same deadline from the same row, with no cross-node message
+  // needed. Nothing extends past the soft TTL — this only ever shortens it.
+  const now = Date.now();
+  let expires = now + TTL_MS;
+  if (typeof resolved.expiresAtMs === 'number' && resolved.expiresAtMs > now) {
+    expires = Math.min(expires, resolved.expiresAtMs);
+  }
   const entry = {
-    expires: Date.now() + TTL_MS,
+    expires,
     tier: resolved.tier,
     tierKind: resolved.tier_kind,
     features,
@@ -159,12 +202,33 @@ async function hasFeature(businessId, featureKey) {
   return entry.features.has(featureKey);
 }
 
-/** Compact summary used by /v1/auth/me to bootstrap the dashboard. */
+/**
+ * Compact summary used by /v1/auth/me to bootstrap the dashboard and the
+ * mobile app.
+ *
+ * 2026-09-04 (tier-code trap, mobile half): the three label fields are
+ * ADDITIVE and exist so a CLIENT NEVER COMPUTES AN UPGRADE TARGET ITSELF.
+ * The Flutter app used to render `tierKind == 'starter' ? 'Pro' :
+ * 'Enterprise'`, which told every Growth / Pro / Advanced tenant to jump
+ * straight to Enterprise (Rs 1,999) — the kind 'pro' IS Growth, and the plan
+ * named Pro is the kind 'pro_plan'. The ladder lives in services/planTiers.js
+ * and only the server reads it; clients display these strings verbatim and
+ * fall back to something non-specific ("a higher plan") when they are absent.
+ * Same values the 402 FEATURE_LOCKED body carries as currentTierLabel /
+ * requiredTierLabel.
+ */
 async function planSummary(businessId) {
   const entry = await _load(businessId);
+  const nextKind = planTiers.nextKindUp(entry.tierKind);
   return {
     tier: entry.tier, // Push 18b — plan code (free/basic/...)
     tierKind: entry.tierKind, // legacy: tier category (starter/pro/...)
+    // Owner-facing name of the CURRENT kind ('pro_plan' -> 'Pro').
+    tierLabel: planTiers.labelOf(entry.tierKind),
+    // The one plan up the ladder, or null when there is nowhere to upsell
+    // (top of ladder, or a bespoke per-customer plan). Never guessed.
+    nextTierKind: nextKind || null,
+    nextTierLabel: nextKind ? planTiers.labelOf(nextKind) : null,
     features: [...entry.features],
   };
 }
@@ -183,16 +247,26 @@ function clearAllCaches() {
   _publishInvalidate('*'); // tell other instances to clear too
 }
 
+/**
+ * The next tier KIND up from `tierKind`, or null when there is nothing to
+ * upsell (top of ladder, a custom per-customer plan, or an unknown kind).
+ *
+ * 2026-09-04: this used to hold its own three-entry ladder
+ * `{ starter: 'pro', pro: 'enterprise', enterprise: null }` with a
+ * `: 'pro'` fallback, and both halves were wrong against the live five-kind
+ * ladder: 'pro_plan' and 'advanced' were absent, so a Pro (Rs 799) or
+ * Advanced (Rs 999) tenant was told to "upgrade to pro" — the KIND 'pro' is
+ * Growth at Rs 299, i.e. a downgrade — and Growth itself was pitched
+ * Enterprise (Rs 1,999), skipping the two plans in between. Now delegated
+ * to the ordered ladder in services/planTiers.js. Do not re-add a local map.
+ */
 function nextTierUp(tierKind) {
-  // 2026-09-03 (custom plans): a custom per-customer plan has no meaningful
-  // "next tier up" — return null so clients hide the upgrade CTA instead of
-  // pitching a generic 'pro' upsell to a bespoke-priced tenant. Applies both
-  // to the tier CODE form ('custom-xxxxxxxx') and any unknown input.
-  if (!tierKind || String(tierKind).startsWith('custom-')) return null;
-  const ladder = { starter: 'pro', pro: 'enterprise', enterprise: null };
-  // `in` check: enterprise legitimately maps to null (top tier) — the old
-  // `[tierKind] || 'pro'` coerced that null into a bogus 'pro' upsell.
-  return tierKind in ladder ? ladder[tierKind] : 'pro';
+  return planTiers.nextKindUp(tierKind);
+}
+
+/** Owner-facing name for a tier kind ('pro_plan' -> 'Pro'). */
+function tierLabel(tierKind) {
+  return planTiers.labelOf(tierKind);
 }
 
 // Push 14d — feature catalog: the master list of every feature key the
@@ -316,6 +390,7 @@ module.exports = {
   clearCache,
   clearAllCaches,
   nextTierUp,
+  tierLabel,
   listFeatureCatalog,
   listTierFeatures,
   setTierFeatures,

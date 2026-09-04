@@ -117,6 +117,16 @@ dependencies:
   firebase_core: ^3.8.0
   firebase_messaging: ^15.1.5
 
+  # Activation-funnel analytics (2026-09-04). The web dashboard reports the
+  # seven funnel events via gtag; the phone is the till, so most first_kot /
+  # first_bill events happen HERE and a web-only funnel undercounts
+  # activation badly. Same contract on both sides — see
+  # lib/services/analytics_service.dart. Android is fully configured
+  # (android/app/google-services.json + the google-services gradle plugin);
+  # iOS needs ios/Runner/GoogleService-Info.plist from the Firebase console
+  # before it reports anything, and stays a silent no-op until it exists.
+  firebase_analytics: ^11.3.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

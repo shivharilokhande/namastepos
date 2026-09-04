@@ -3732,15 +3732,9 @@
     "semantic_hash": ""
   },
   ".github/workflows/ci.yml": {
-    "mtime": 1788523760.5350223,
-    "seen": 1788523803.1043851,
-    "ast_hash": "13f6408dc629f902dd337f5b6e813e67",
-    "semantic_hash": ""
-  },
-  ".github/workflows/keepalive.yml": {
-    "mtime": 1787588433.4642591,
-    "seen": 1788263774.585551,
-    "ast_hash": "8022cabb6f03ca2df56b62544e07b7a4",
+    "mtime": 1788525492.8542373,
+    "seen": 1788525505.296073,
+    "ast_hash": "fb6b58d74bf45c140400b834133a95f4",
     "semantic_hash": ""
   },
   "HARDCODE_AUDIT_2026-08-24.md": {
@@ -3774,9 +3768,9 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1787572473.0484917,
-    "seen": 1788263774.585554,
-    "ast_hash": "3ab25bb20e75d8ccdcf971764db950b6",
+    "mtime": 1788525621.322124,
+    "seen": 1788525727.710449,
+    "ast_hash": "ea058fe0a5d3f91b1a33c0fbadc2fdcd",
     "semantic_hash": ""
   },
   "docker-compose.yml": {
@@ -5184,9 +5178,9 @@
     "semantic_hash": ""
   },
   "docs/DR_DRILL.md": {
-    "mtime": 1788522276.403053,
-    "seen": 1788522652.118114,
-    "ast_hash": "e6a15d84080ba1929d0fd2a3bcf99972",
+    "mtime": 1788528068.417819,
+    "seen": 1788528079.517041,
+    "ast_hash": "257b6a2a43b6e73bc2a386cd62e3c862",
     "semantic_hash": ""
   },
   "load/README.md": {
@@ -5217,6 +5211,132 @@
     "mtime": 1788522037.216229,
     "seen": 1788522937.039903,
     "ast_hash": "ee4161ffdc30c1b9e4fb5df27be795ec",
+    "semantic_hash": ""
+  },
+  ".claude/agents/product-behavioral-nudge-engine.md": {
+    "mtime": 1788526149.459884,
+    "seen": 1788528079.517025,
+    "ast_hash": "360f16b09d65f92d14c44aa993231394",
+    "semantic_hash": ""
+  },
+  ".claude/agents/product-feedback-synthesizer.md": {
+    "mtime": 1788526149.4806857,
+    "seen": 1788528079.517026,
+    "ast_hash": "ecc3c3cb652f63625579e25773dfa620",
+    "semantic_hash": ""
+  },
+  ".claude/agents/product-manager.md": {
+    "mtime": 1788526149.498243,
+    "seen": 1788528079.5170271,
+    "ast_hash": "f35b0eb48dcbdd729081020b912c82e3",
+    "semantic_hash": ""
+  },
+  ".claude/agents/product-sprint-prioritizer.md": {
+    "mtime": 1788526149.5156863,
+    "seen": 1788528079.5170271,
+    "ast_hash": "ee46423b5a2f07694262758c5699c821",
+    "semantic_hash": ""
+  },
+  ".claude/agents/product-trend-researcher.md": {
+    "mtime": 1788526149.532669,
+    "seen": 1788528079.517028,
+    "ast_hash": "ddd713027d92da7198369ed35ce27e09",
+    "semantic_hash": ""
+  },
+  ".claude/agents/project-management-experiment-tracker.md": {
+    "mtime": 1788526147.1541116,
+    "seen": 1788528079.517028,
+    "ast_hash": "e820825d58ed113591e7b0f637604ce0",
+    "semantic_hash": ""
+  },
+  ".claude/agents/project-management-jira-workflow-steward.md": {
+    "mtime": 1788526147.1748471,
+    "seen": 1788528079.517029,
+    "ast_hash": "d2675727f9c1e0bffb8166e7764c71a5",
+    "semantic_hash": ""
+  },
+  ".claude/agents/project-management-meeting-notes-specialist.md": {
+    "mtime": 1788526147.1926851,
+    "seen": 1788528079.517029,
+    "ast_hash": "e804d6fc7ec749fcf8d6532e70ea386d",
+    "semantic_hash": ""
+  },
+  ".claude/agents/project-management-project-shepherd.md": {
+    "mtime": 1788526147.2112226,
+    "seen": 1788528079.51703,
+    "ast_hash": "1b159280d1c182689aa337aa63852784",
+    "semantic_hash": ""
+  },
+  ".claude/agents/project-management-studio-operations.md": {
+    "mtime": 1788526147.228655,
+    "seen": 1788528079.51703,
+    "ast_hash": "e0655a30719b118aac7ef0190e9f4111",
+    "semantic_hash": ""
+  },
+  ".claude/agents/project-management-studio-producer.md": {
+    "mtime": 1788526147.2466574,
+    "seen": 1788528079.51703,
+    "ast_hash": "b097d2d2e54cc89e580169d16ba5cc55",
+    "semantic_hash": ""
+  },
+  ".claude/agents/project-manager-senior.md": {
+    "mtime": 1788526147.2649536,
+    "seen": 1788528079.517031,
+    "ast_hash": "2d3ac22245ef9e568e66e270cd17f34d",
+    "semantic_hash": ""
+  },
+  ".claude/agents/testing-accessibility-auditor.md": {
+    "mtime": 1788526161.9157023,
+    "seen": 1788528079.517031,
+    "ast_hash": "bdbda6d649a884b9952814737f34317b",
+    "semantic_hash": ""
+  },
+  ".claude/agents/testing-api-tester.md": {
+    "mtime": 1788526161.9357324,
+    "seen": 1788528079.517032,
+    "ast_hash": "c47a81eafb2e0e65e6acd305b5501fa4",
+    "semantic_hash": ""
+  },
+  ".claude/agents/testing-evidence-collector.md": {
+    "mtime": 1788526161.9529014,
+    "seen": 1788528079.517032,
+    "ast_hash": "fa6b9a9c9b28ff62948555f97181a3b5",
+    "semantic_hash": ""
+  },
+  ".claude/agents/testing-performance-benchmarker.md": {
+    "mtime": 1788526161.9698808,
+    "seen": 1788528079.517032,
+    "ast_hash": "150d2e82956be9fcf64f7f43158d24d3",
+    "semantic_hash": ""
+  },
+  ".claude/agents/testing-reality-checker.md": {
+    "mtime": 1788526161.9877772,
+    "seen": 1788528079.5170329,
+    "ast_hash": "8993038664ce38aa0d7e52c96aab2d4d",
+    "semantic_hash": ""
+  },
+  ".claude/agents/testing-test-automation-engineer.md": {
+    "mtime": 1788526162.004498,
+    "seen": 1788528079.5170329,
+    "ast_hash": "a72e524475e83244ff3b1c91b09b47fd",
+    "semantic_hash": ""
+  },
+  ".claude/agents/testing-test-results-analyzer.md": {
+    "mtime": 1788526162.0226886,
+    "seen": 1788528079.5170329,
+    "ast_hash": "0ffd1b486572985ac09d13af3cd207ab",
+    "semantic_hash": ""
+  },
+  ".claude/agents/testing-tool-evaluator.md": {
+    "mtime": 1788526162.0395062,
+    "seen": 1788528079.517034,
+    "ast_hash": "f7a6448863b571506dab66c0ba350b77",
+    "semantic_hash": ""
+  },
+  ".claude/agents/testing-workflow-optimizer.md": {
+    "mtime": 1788526162.0578496,
+    "seen": 1788528079.517034,
+    "ast_hash": "33f928d72a59c9493007a49032a5efcb",
     "semantic_hash": ""
   }
 }

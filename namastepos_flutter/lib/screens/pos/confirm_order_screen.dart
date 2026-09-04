@@ -12,6 +12,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/orders_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../providers/subscription_provider.dart';
+import '../../services/analytics_service.dart';
 import '../../services/api_service.dart';
 import '../../services/printer_service.dart';
 // PaperSize is now re-exported from our local stub, no longer from esc_pos_utils.
@@ -260,7 +261,16 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
 
     Order? order;
     bool printed = false;
+    bool whatsAppSent = false;
     String? _printError; // P1 fix: surface printer failures to the owner
+    // Activation funnel: capture the billed lines BEFORE the create clears
+    // the cart. Menu price (not unitPrice) on purpose — the owner-authored
+    // check compares against the setup wizard's default prices, and surge /
+    // variant deltas would otherwise make an untouched demo row look
+    // owner-edited and fake an activation.
+    final billedLines = orders.cart
+        .map((c) => (name: c.item.name, price: c.item.price as num))
+        .toList(growable: false);
     try {
       // Coupon discount stacks onto the manual discount — the backend order
       // stores a single discount amount, so send the combined figure.
@@ -335,9 +345,46 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
           settings.autoWhatsAppOnReady && hasAutoWhatsApp) {
         try {
           await WhatsAppService.instance.notifyOrderConfirmed(order, biz);
+          whatsAppSent = true;
         } catch (e) {
           debugPrint('[POS] whatsapp notify failed: $e');
         }
+      }
+
+      // ── Activation funnel ────────────────────────────────────────────────
+      // Both events are milestone-once per business, so calling them on every
+      // order is free after the first. Inside the try (not after the mounted
+      // check) so an owner who navigates away the instant the order lands is
+      // still counted.
+      //
+      // first_kot: the KOT is generated server-side inside the order-create
+      // transaction (orderService -> kotService.generateTickets), so a
+      // successful create IS the KOT fire — same as web, where no separate
+      // "fire KOT" call exists. Fires for BOTH the KOT-only save and a paid
+      // order, because both send food to the kitchen.
+      final bizId = biz.id;
+      // ignore: unawaited_futures
+      Activation.firstKot(
+        orderId: order.id,
+        stationCount: () async =>
+            (await ApiService.instance.listStations(bizId)).length,
+      );
+      // first_bill — THE activation event. Only a real settle counts; a
+      // KOT-only save takes no money, so the table-session settle in
+      // captain_screen fires it for that flow instead.
+      if (!kotOnly) {
+        // ignore: unawaited_futures
+        Activation.firstBill(
+          orderId: order.id,
+          amountInr: order.total,
+          paymentMode: (_splits != null && _splits!.isNotEmpty)
+              ? 'split'
+              : _payment.name,
+          receiptChannel: printed
+              ? ReceiptChannel.bluetooth
+              : (whatsAppSent ? ReceiptChannel.whatsapp : ReceiptChannel.none),
+          lines: billedLines,
+        );
       }
     } catch (e) {
       // Order-create failure — surface a humanised error and let the

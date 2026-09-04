@@ -747,7 +747,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // + prepaid wallet) is still shipped. Behind the
               // `memberships` staff permission + `loyalty` plan feature.
               if (_can('surge') || _can('qr_codes') || _can('memberships'))
-                _drawerSection('Enterprise'),
+                // 2026-09-04: was labelled 'Enterprise'. Every other section
+                // here names what the tools DO; this one named a plan — and
+                // named the wrong one (memberships/loyalty and QR ordering are
+                // not Enterprise-only). Plan names belong to the server.
+                _drawerSection('Growth tools'),
               if (_can('memberships'))
                 PlanGate.tile(
                   featureKey: 'loyalty',

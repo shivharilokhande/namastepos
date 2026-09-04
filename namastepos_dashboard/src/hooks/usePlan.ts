@@ -8,20 +8,31 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { ffApi } from '@/api/namastepos';
+import { isTopTier, tierAtLeast, tierLabel, TIER_KIND_LADDER } from '@/lib/planTiers';
 
 const STARTER_DEFAULT = {
-  tierKind: 'starter',
+  tierKind: TIER_KIND_LADDER[0],
   features: ['pos','orders','token_generation','tables_single_floor',
     'menu_basic','reports_basic','expenses','invoice_basic',
     'staff_lite','customers_basic'],
 };
 
 export interface PlanState {
-  tierKind: 'starter' | 'pro' | 'enterprise';
+  // A tier KIND (not a plan tier code), and the list is open-ended — see
+  // @/lib/planTiers. This was typed 'starter' | 'pro' | 'enterprise', a
+  // three-value union that had drifted from the live five-kind ladder, so
+  // the 'pro_plan' and 'advanced' kinds were mistyped at every use site.
+  tierKind: string;
+  /** Owner-facing name for tierKind ('pro_plan' -> 'Pro'). */
+  tierLabel: string;
   features: string[];
   has: (key: string) => boolean;
+  /** True when the plan sits at or above `kind` on the ladder. */
+  atLeast: (kind: string) => boolean;
   isStarter: boolean;
+  /** At or above Growth (kind 'pro') — i.e. any paid plan. */
   isPro: boolean;
+  /** The TOP rung of the ladder. Used to hide "View plans". */
   isEnterprise: boolean;
 }
 
@@ -39,11 +50,13 @@ export function usePlan(): PlanState {
     || STARTER_DEFAULT;
   const set = new Set(plan.features);
   return {
-    tierKind: plan.tierKind as PlanState['tierKind'],
+    tierKind: plan.tierKind,
+    tierLabel: tierLabel(plan.tierKind),
     features: plan.features,
     has: (key: string) => set.has(key),
-    isStarter: plan.tierKind === 'starter',
-    isPro: plan.tierKind === 'pro',
-    isEnterprise: plan.tierKind === 'enterprise',
+    atLeast: (kind: string) => tierAtLeast(plan.tierKind, kind),
+    isStarter: plan.tierKind === TIER_KIND_LADDER[0],
+    isPro: tierAtLeast(plan.tierKind, 'pro'),
+    isEnterprise: isTopTier(plan.tierKind),
   };
 }

@@ -20,6 +20,7 @@ import 'providers/expenses_provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/subscription_provider.dart';
 import 'providers/tables_provider.dart';
+import 'services/analytics_service.dart';
 import 'services/api_service.dart';
 import 'services/database_service.dart';
 import 'services/notification_service.dart';
@@ -84,6 +85,13 @@ Future<void> main() async {
     // paid Apple Developer APNs key, so this is a guarded no-op on iOS and
     // never blocks boot. Token registration itself happens post-login.
     await NotificationService.instance.initPush();
+    // Activation-funnel analytics (2026-09-04). MUST run after initPush()
+    // because that is what calls Firebase.initializeApp() on Android;
+    // bootstrap() reuses the already-initialised default app and only tries
+    // to initialise one itself on a platform initPush skipped (iOS), where it
+    // fails harmlessly for want of a GoogleService-Info.plist and leaves the
+    // whole module a silent no-op. Never throws, never blocks boot.
+    await AnalyticsService.instance.bootstrap();
     // Restore the owner's language choice (en/hi) before the first
     // frame so all runtime strings render in the right language on
     // relaunch. Non-blocking failure — if prefs aren't ready, we fall
@@ -112,7 +120,26 @@ Future<void> main() async {
     runApp(
       MultiProvider(
         providers: [
-          ChangeNotifierProvider(create: (_) => AuthProvider()),
+          ChangeNotifierProvider(create: (_) {
+            final auth = AuthProvider();
+            // Analytics identity, wired ONCE and only here. Keeping this out
+            // of AnalyticsService is what lets that module import nothing
+            // from providers/ or screens/ — which in turn is what lets
+            // ApiService's own error interceptor emit `plan_limit_hit`
+            // without an import cycle. `signupAt` is the EXISTING
+            // Business.createdAt (self-registration creates the business
+            // inline with the account, so business creation IS signup); no
+            // new server field was invented for minutes_since_signup /
+            // within_24h.
+            AnalyticsService.instance.setIdentityProvider(
+              () => AnalyticsIdentity(
+                businessId: auth.business?.id,
+                signupAt: auth.business?.createdAt,
+                planTier: auth.plan.tierKind,
+              ),
+            );
+            return auth;
+          }),
           // NP-115: every provider holding tenant data is a ProxyProvider on
           // AuthProvider. `update` fires on every auth notifyListeners and
           // pushes the session's business id into the provider; when it

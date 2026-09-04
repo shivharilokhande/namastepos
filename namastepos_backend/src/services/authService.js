@@ -189,7 +189,69 @@ async function getMembership(userId, businessId) {
 
 // ── First-time business setup ────────────────────────────────────────────
 
-async function createBusinessForUser(user, { name }) {
+/**
+ * Resolve which plan a brand-new signup's trial runs on.
+ *
+ * VERIFIED BUG THIS FIXES (pricing audit F-01, 2026-09-04): this used to be a
+ * literal `(SELECT id FROM plans WHERE tier = 'free')`. Every "Start free
+ * trial" button — including the ones on the Growth / Pro / Advanced /
+ * Enterprise cards — produced a Starter account: 10 menu items, 2 tables, 200
+ * orders/month. The prospect evaluated a plan nobody sells to their segment
+ * and never saw the product they would have paid for.
+ *
+ * Selection order:
+ *   1. `requestedTier` — the tier the signup actually chose (the plan card
+ *      they clicked, carried through `?plan=` → register body).
+ *   2. `env.TRIAL_PLAN_TIER` — the operator's default, set on Render.
+ *   3. The cheapest PAID public shared plan. Resolved at runtime rather than
+ *      hardcoded: the live ladder is admin-editable and the tier codes are
+ *      genuinely confusing (`pro_plan` is the plan named "Pro", while `pro` is
+ *      Enterprise), so any literal here would rot or mis-assign.
+ *   4. The free plan. Last resort — signup must never fail because the plan
+ *      table is in an odd state.
+ *
+ * A candidate is only eligible if it is active, public, and shared
+ * (`business_id IS NULL`). That is what stops a signup query string from
+ * attaching another tenant's bespoke custom plan (migration 074) or a retired
+ * internal plan to a stranger's trial.
+ */
+async function resolveTrialPlanId(requestedTier) {
+  const eligible = async (tier) => {
+    if (!tier || typeof tier !== 'string') return null;
+    const r = await query(
+      `SELECT id FROM plans
+        WHERE tier = $1
+          AND is_active = TRUE
+          AND business_id IS NULL
+          AND is_public IS NOT FALSE
+        LIMIT 1`,
+      [tier],
+    );
+    return r.rows[0]?.id || null;
+  };
+
+  // 1 + 2 — an explicit choice, then the operator default.
+  for (const tier of [requestedTier, env.TRIAL_PLAN_TIER]) {
+    const id = await eligible(tier);
+    if (id) return id;
+  }
+  // 3 — cheapest paid shared public plan.
+  const paid = await query(
+    `SELECT id FROM plans
+      WHERE is_active = TRUE
+        AND business_id IS NULL
+        AND is_public IS NOT FALSE
+        AND price_inr_paise > 0
+      ORDER BY price_inr_paise ASC
+      LIMIT 1`,
+  );
+  if (paid.rows[0]?.id) return paid.rows[0].id;
+  // 4 — free plan fallback (pre-2026-09-04 behaviour).
+  const free = await eligible('free');
+  return free;
+}
+
+async function createBusinessForUser(user, { name, planTier = null }) {
   // Create both a businesses row (legacy, identifies tenant) AND link via
   // business_users with role=business_owner.
   // Legacy `businesses` table also stores google_sub/email so existing
@@ -212,17 +274,96 @@ async function createBusinessForUser(user, { name }) {
      ON CONFLICT (business_id, user_id) DO NOTHING`,
     [business.id, user.id],
   );
-  // Default subscription = Free trial. Hardcode-audit fix (2026-08-24):
-  // trial length is env.TRIAL_DAYS (single source of truth), not an
-  // inline SQL literal.
+  // Default subscription = a TRIAL OF THE CHOSEN PLAN. Hardcode-audit fix
+  // (2026-08-24): trial length is env.TRIAL_DAYS (single source of truth),
+  // not an inline SQL literal. Plan-choice fix (2026-09-04): the plan is
+  // resolved by resolveTrialPlanId() instead of being pinned to `tier='free'`.
+  //
+  // WHY THIS DOES NOT VIOLATE THE "never activate a paid plan for free in
+  // production" GUARD (billingController.changePlan → PAYMENTS_UNAVAILABLE
+  // when Razorpay is not live). That guard exists so a rotated or missing
+  // Razorpay key can never turn a paid *purchase* into a free permanent
+  // entitlement. What we write here is deliberately different in all three
+  // respects that matter:
+  //   • status is 'trialing', never 'active' — the paid-subscription state is
+  //     only ever reached through the Razorpay webhook or an explicit
+  //     super-admin assignment,
+  //   • it is time-boxed by a non-null trial_ends_at, and
+  //     planEntitlement.entitledSql() stops honouring it the moment that
+  //     passes, so entitlement expires without anyone having to remember to
+  //     revoke it,
+  //   • no charge, mandate or invoice is created, and no gateway call is made.
+  // A time-boxed trial of an advertised plan is the product we sell; it is not
+  // a free activation of one. The guard on the purchase path is untouched.
+  const trialPlanId = await resolveTrialPlanId(planTier);
   await query(
-    `INSERT INTO subscriptions (business_id, plan_id, status, trial_ends_at, current_period_end)
-     VALUES ($1, (SELECT id FROM plans WHERE tier = 'free'),
+    `INSERT INTO subscriptions
+       (business_id, plan_id, trial_plan_id, status, trial_ends_at, current_period_end)
+     VALUES ($1, $3, $3,
              'trialing', NOW() + make_interval(days => $2), NOW() + make_interval(days => $2))
      ON CONFLICT (business_id) DO NOTHING`,
-    [business.id, env.TRIAL_DAYS],
+    [business.id, env.TRIAL_DAYS, trialPlanId],
   );
   return business;
+}
+
+/**
+ * Explicit trial-expiry downgrade (retention audit F-01, 2026-09-04).
+ *
+ * Expiry used to be a SILENT resolution change: once `trial_ends_at` passed,
+ * featureService fell through to starter while the subscription row still said
+ * "trialing on Pro". Nothing was written, nothing was told to the owner, and
+ * `subscriptionService.get()` — which the limit gate reads — still handed out
+ * the trialled plan's caps.
+ *
+ * This moves the row itself: onto the free/starter plan, status 'active' (a
+ * genuine free plan, not a lapsed trial), with `trial_downgraded_at` stamped
+ * and `trial_plan_id` preserved so we can say what lapsed and re-offer it.
+ * Returns one row per downgraded business for the caller to notify.
+ *
+ * Idempotent: the WHERE clause excludes anything already downgraded or already
+ * on the free plan, so re-running it is a no-op.
+ */
+async function expireLapsedTrials({ limit = 500 } = {}) {
+  const free = await query(
+    `SELECT id, tier FROM plans
+      WHERE is_active = TRUE AND business_id IS NULL AND price_inr_paise = 0
+      ORDER BY created_at ASC LIMIT 1`,
+  );
+  const freePlan = free.rows[0];
+  if (!freePlan) return [];
+  const r = await query(
+    `UPDATE subscriptions s
+        SET plan_id = $1,
+            status = 'active',
+            trial_downgraded_at = NOW(),
+            -- Roll the period forward with the downgrade. Without this the
+            -- tenant's Billing page reads "Renews on <yesterday>" until the
+            -- nightly self-heal picks it up, and the self-heal runs BEFORE
+            -- this sweep in the 02:00 block — so it would be a full day late.
+            current_period_start = NOW(),
+            current_period_end = NOW() + INTERVAL '1 month',
+            updated_at = NOW()
+      WHERE s.business_id IN (
+              SELECT business_id FROM subscriptions
+               WHERE status = 'trialing'
+                 AND trial_ends_at IS NOT NULL
+                 AND trial_ends_at <= NOW()
+                 AND trial_downgraded_at IS NULL
+                 AND plan_id <> $1
+               ORDER BY trial_ends_at ASC
+               LIMIT $2
+            )
+      RETURNING s.business_id, s.trial_plan_id, s.trial_ends_at`,
+    [freePlan.id, limit],
+  );
+  // Entitlement changed for these tenants — drop the per-business feature
+  // cache (and tell peer nodes) so the downgrade is visible immediately
+  // rather than on the next TTL sweep.
+  for (const row of r.rows) {
+    try { require('./featureService').clearCache(row.business_id); } catch (_) { /* non-fatal */ }
+  }
+  return r.rows;
 }
 
 // ── Sessions / tokens ────────────────────────────────────────────────────
@@ -416,6 +557,8 @@ module.exports = {
   listMembershipsForUser,
   getMembership,
   createBusinessForUser,
+  resolveTrialPlanId,
+  expireLapsedTrials,
   issueSession,
   refreshSession,
   revokeRefreshToken,

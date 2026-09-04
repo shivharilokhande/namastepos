@@ -32,6 +32,10 @@ module.exports = function requireFeature(featureKey) {
         feature: featureKey,
         currentTier,
         requiredTier,
+        // Raw kinds stay in currentTier/requiredTier for API compatibility;
+        // the labels are what clients should show ('pro_plan' -> 'Pro').
+        currentTierLabel: features.tierLabel(currentTier),
+        requiredTierLabel: features.tierLabel(requiredTier),
         upgradeUrl: '/billing',
       });
     } catch (err) {

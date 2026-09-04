@@ -4,6 +4,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'analytics_service.dart';
+import 'upsell_hints.dart';
+
 class ApiException implements Exception {
   final int? statusCode;
   final String message;
@@ -138,6 +141,15 @@ class ApiService {
         handler.next(options);
       },
       onError: (e, handler) async {
+        // Activation funnel (2026-09-04): every plan-cap refusal, wherever in
+        // the app it happened. This interceptor is the ONE place every
+        // request's failure passes through, which is why the hook lives here
+        // rather than in each screen — the dashboard hooks the identical
+        // point in its own api/client.ts.
+        _maybeTrackPlanLimit(e);
+        // Upsell copy (2026-09-04): remember the plan label the SERVER names
+        // on a feature lock, so no screen ever computes its own "next plan up".
+        _maybeRememberUpsell(e);
         // Don't try to refresh on the refresh endpoint itself, otherwise
         // we recurse forever when the refresh token is revoked.
         final path = e.requestOptions.path;
@@ -171,6 +183,56 @@ class ApiService {
         handler.next(e);
       },
     );
+  }
+
+  /// Emit `plan_limit_hit` when the backend refuses a create because the
+  /// plan's cap is full. Wire shape (subscriptionService.enforceLimit →
+  /// errorHandler): `{ error: 'PLAN_LIMIT', message, details: { metric,
+  /// limit, current, plan } }` with a 403. 402 is accepted too because an
+  /// older race-backstop path in the same service used that status.
+  ///
+  /// Analytics must never interfere with error handling, so this is
+  /// fire-and-forget inside a total try/catch.
+  void _maybeTrackPlanLimit(DioException e) {
+    try {
+      if (AnalyticsService.instance.disabled) return;
+      final status = e.response?.statusCode;
+      if (status != 403 && status != 402) return;
+      final data = e.response?.data;
+      if (data is! Map) return;
+      if (data['error'] != 'PLAN_LIMIT' && data['code'] != 'PLAN_LIMIT') return;
+      final details = data['details'];
+      if (details is! Map) return;
+      Activation.planLimitHit(details.cast<String, dynamic>());
+    } catch (_) { /* analytics never breaks a request */ }
+  }
+
+  /// Cache the SERVER's upgrade labels off a feature lock.
+  ///
+  /// Wire shape (middleware/featureGate.js and middleware/requireFeature.js):
+  /// `{ error: 'FEATURE_LOCKED', feature, currentTier, requiredTier,
+  ///    currentTierLabel, requiredTierLabel, message, upgradeUrl }` with 402.
+  /// The raw `currentTier`/`requiredTier` are tier KINDS ('pro' is the Growth
+  /// plan, 'pro_plan' is the plan named Pro) — only the *Label fields are for
+  /// display, which is why nothing here reads the kinds. The bulk 403
+  /// PLAN_LIMIT body carries the same label under `details.requiredTierLabel`.
+  ///
+  /// Never throws: a display hint must not interfere with error handling.
+  void _maybeRememberUpsell(DioException e) {
+    try {
+      final status = e.response?.statusCode;
+      if (status != 402 && status != 403) return;
+      final data = e.response?.data;
+      if (data is! Map) return;
+      final details = data['details'];
+      String? str(Object? v) => v is String ? v : null;
+      UpsellHints.instance.remember(
+        feature: str(data['feature']),
+        requiredTierLabel: str(data['requiredTierLabel'])
+            ?? (details is Map ? str(details['requiredTierLabel']) : null),
+        currentTierLabel: str(data['currentTierLabel']),
+      );
+    } catch (_) { /* display hint only */ }
   }
 
   Future<bool> _refresh() {
@@ -499,18 +561,30 @@ class ApiService {
   ///   { subscriptionId, razorpayKeyId, plan: {...},
   ///     checkoutOptions: { key, subscription_id, name, description, theme } }
   ///
-  /// Tier-name translation: the mobile UI talks in tier_kind values
-  /// (starter / pro / enterprise) but the backend's Joi validator still
-  /// expects the legacy `tier` values (free / basic / pro). We map at the
-  /// boundary so the rest of the app can stay on the new vocabulary.
-  /// See migrations/031_plan_features.sql for the historical mapping.
+  /// Tier-name translation: the mobile UI talks in tier KINDS but the
+  /// backend's Joi validator expects the plan `tier` CODE. The two namespaces
+  /// overlap on the word "pro" and mean different plans (backend
+  /// services/planTiers.js, LIVE_PLAN_CODE_TO_KIND):
+  ///
+  ///   plan name  | kind         | tier code | price
+  ///   Starter    | 'starter'    | 'free'    | Rs 0
+  ///   Growth     | 'pro'        | 'basic'   | Rs 299
+  ///   Pro        | 'pro_plan'   | 'pro_plan'| Rs 799
+  ///   Advanced   | 'advanced'   | 'advanced'| Rs 999
+  ///   Enterprise | 'enterprise' | 'pro'     | Rs 1,999
+  ///
+  /// Only the three kinds whose code DIFFERS need mapping; the other two are
+  /// listed anyway so nobody reading this has to work out which. An unknown
+  /// kind passes through untouched and the backend validates it.
   Future<Map<String, dynamic>> changePlan(
       String businessId, String tierKind,
       {String billingPeriod = 'monthly'}) async {
     const tierKindToLegacy = {
       'starter': 'free',
-      'pro': 'basic',
-      'enterprise': 'pro',
+      'pro': 'basic', // Growth (Rs 299) — NOT the plan named Pro
+      'pro_plan': 'pro_plan', // the plan named Pro (Rs 799)
+      'advanced': 'advanced',
+      'enterprise': 'pro', // Enterprise's CODE is the bare 'pro'
     };
     final legacyTier = tierKindToLegacy[tierKind] ?? tierKind;
     final r = await _wrap(() => _dio.post(

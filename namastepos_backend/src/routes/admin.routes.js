@@ -380,7 +380,10 @@ router.delete(
 
 // ── Plans ──────────────────────────────────────────────────────────────
 router.get('/plans', requirePermission('plans.read'), c.listPlans);
-router.put('/plans/:tier', requirePermission('plans.change'), audit.middlewareLog('plans', 'update', (req) => ({ type: 'plan', id: req.params.tier })), c.updatePlan);
+router.put('/plans/:tier', requirePermission('plans.change'), audit.middlewareLog('plans', 'update', (req) => ({ type: 'plan', id: req.params.tier })), ...c.updatePlan);
+// The ordered tier-kind ladder + labels, so the admin UI's tier_kind picker
+// is fed by the backend's single source of truth instead of its own copy.
+router.get('/tier-kinds', requirePermission('plans.read'), c.tierKinds);
 router.post('/plans', requirePermission('plans.change'), audit.middlewareLog('plans', 'create', (req, b) => ({ type: 'plan', id: b.plan?.tier })), ...c.createPlan);
 router.delete('/plans/:tier', requirePermission('plans.change'), audit.middlewareLog('plans', 'delete', (req) => ({ type: 'plan', id: req.params.tier })), c.deletePlan);
 router.post('/razorpay/sync', requirePermission('plans.change'), c.syncRazorpayPlans);

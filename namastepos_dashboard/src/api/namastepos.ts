@@ -17,6 +17,70 @@ function _triggerBlobDownload(data: Blob, filename: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+// ── Plan limits + past-due grace (2026-09-04) ────────────────────────────
+//
+// Both ride on GET /businesses/:id/billing, the call the dashboard and the
+// mobile app already make. They exist so an owner can never hit a plan wall
+// (or lose features to a failed card) without having been told first —
+// before this, the 80%-of-cap warning lived only in the super-admin console
+// and `past_due` stripped features the instant the webhook landed.
+
+/** One capped metric on the effective plan. Unlimited metrics are omitted. */
+export interface PlanUsageMetric {
+  metric: 'monthly_orders' | 'menu_items' | 'staff' | 'tables' | 'floors' | string;
+  /** Owner-readable name, e.g. "bills this month". */
+  label: string;
+  limit: number;
+  current: number;
+  remaining: number;
+  /** Percent of the cap used. Can exceed 100 after a reconciliation. */
+  pct: number;
+  /** ok < 80% | warn >= 80% | critical >= 100% (the next attempt 403s). */
+  level: 'ok' | 'warn' | 'critical';
+  /** Plain-language line to show the owner. */
+  message: string;
+}
+
+export interface PlanUsage {
+  planTier: string | null;
+  planName: string | null;
+  /**
+   * False when the plan being metered is NOT the subscribed plan — a lapsed
+   * trial or a past-grace `past_due`, both of which fall back to Starter's
+   * caps. Lets the banner explain why the numbers changed.
+   */
+  entitled: boolean;
+  reason: string;
+  warnAtPct: number;
+  metrics: PlanUsageMetric[];
+}
+
+/** Present only while a failed charge is inside the grace window. */
+export interface PastDueGrace {
+  inGrace: true;
+  graceEndsAt: string;
+  graceDaysLeft: number;
+  graceDays: number;
+  amountInr: number | null;
+  message: string;
+}
+
+/**
+ * Only the fields this change introduced are typed narrowly. `status` and
+ * `plan` are named because the banners branch on them; everything else stays
+ * permissive (`any` via the index signature) so the existing pages that read
+ * this object — BillingPage, StaffPage, lib/activation — keep compiling
+ * exactly as they did when the call was untyped. Tightening the rest is a
+ * separate job, not a side effect of adding a banner.
+ */
+export interface Subscription {
+  status: string;
+  plan: Record<string, any> | null;
+  usage?: PlanUsage | null;
+  grace?: PastDueGrace | null;
+  [key: string]: any;
+}
+
 // ── Multi-outlet types (2026-09-03) ──────────────────────────────────────
 // One row per business the SIGNED-IN user holds an active business_users
 // row for. GET /outlet-groups/my-outlets is deliberately NOT plan-gated,
@@ -108,11 +172,17 @@ export interface FulfilmentTransitionBody {
 
 export const ffApi = {
   // Auth
-  googleLogin: (idToken: string) =>
-    api.post('/auth/google', { idToken }).then((r) => r.data),
+  // `plan` (2026-09-04): the plan card the visitor clicked, forwarded from
+  // `?plan=` on the signup link. The backend provisions the 7-day trial on
+  // THAT plan instead of always on Starter, so "Start free trial" on the Pro
+  // card now actually trials Pro. Ignored for an existing user (Google
+  // sign-in is find-or-create), and an unknown tier silently falls back to
+  // the default — it is not a way to grant yourself a plan.
+  googleLogin: (idToken: string, plan?: string) =>
+    api.post('/auth/google', { idToken, plan }).then((r) => r.data),
   passwordLogin: (email: string, password: string) =>
     api.post('/auth/login', { email, password }).then((r) => r.data),
-  register: (body: { email: string; password: string; name?: string; businessName?: string; referralCode?: string }) =>
+  register: (body: { email: string; password: string; name?: string; businessName?: string; referralCode?: string; plan?: string }) =>
     api.post('/auth/register', body).then((r) => r.data),
   me: () => api.get('/auth/me').then((r) => r.data),
   patchMe: (patch: any) => api.patch('/auth/me', patch).then((r) => r.data),
@@ -571,7 +641,12 @@ export const ffApi = {
   },
 
   // Billing
-  subscription: () => {
+  //
+  // 2026-09-04: the response's `subscription` now also carries `usage` (the
+  // owner-facing plan-limit meter) and `grace` (the past-due grace notice).
+  // Both are nested inside `subscription` server-side precisely so this call
+  // shape — and the mobile app's identical one — did not have to change.
+  subscription: (): Promise<Subscription | null> => {
     const b = getBusinessCache();
     return api.get(`/businesses/${b.id}/billing`).then((r) => r.data.subscription);
   },
