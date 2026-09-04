@@ -53,7 +53,8 @@ beforeAll(async () => {
 
 afterAll(async () => { await closePool(); });
 
-const asAdmin = () => ({ Authorization: `Bearer ${adminToken}` });
+// 2026-09-04: the admin API accepts the httpOnly `ff_admin` cookie only.
+const asAdmin = () => ({ Cookie: `ff_admin=${adminToken}` });
 
 describe('NP-143 — admin support list pagination', () => {
   it('respects limit and returns the full total', async () => {

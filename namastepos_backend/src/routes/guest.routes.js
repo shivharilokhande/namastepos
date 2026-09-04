@@ -28,12 +28,26 @@ const otpSendLimiter = rateLimit({
   message: { error: 'RATE_LIMITED', message: 'Too many verification attempts. Try again in a minute.' },
 });
 
+// Security review 2026-09-04 (item 4): /benefit/verify was covered only by the
+// shared 100/min tokenLimiter. It is now the ONLY endpoint that discloses
+// whether a phone holds a membership (the answer moved behind the OTP), and it
+// is a 6-digit-code check — so it gets its own tight per-IP budget on top of
+// otpService's 5-attempts-per-request cap. 10/min is far more than a real
+// diner needs (they type one code) and far less than a useful guessing rate.
+const otpVerifyLimiter = rateLimit({
+  windowMs: 60_000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'RATE_LIMITED', message: 'Too many attempts. Try again in a minute.' },
+});
+
 router.get('/menu/:token', tokenLimiter, c.menu);
 router.post('/orders/:token', tokenLimiter, ...c.placeOrder);
 router.get('/orders/:token/:orderId', tokenLimiter, c.orderStatus);
 // Guest membership-benefit OTP gate (2026-08-30)
 router.post('/benefit/check/:token', otpSendLimiter, tokenLimiter, ...c.benefitCheck);
-router.post('/benefit/verify/:token', tokenLimiter, ...c.benefitVerify);
+router.post('/benefit/verify/:token', otpVerifyLimiter, tokenLimiter, ...c.benefitVerify);
 // FF-250 — guest can pay via Razorpay Checkout without any NamastePOS login
 router.post('/orders/:token/:orderId/pay', tokenLimiter, c.createCheckoutOrder);
 router.post('/orders/:token/:orderId/confirm-pay', tokenLimiter, ...c.confirmPayment);

@@ -34,10 +34,15 @@ async function fetch(businessId) {
     // 2. Menu items at or below reorder level. Uses is_active (menu_items
     //    has no deleted_at column — active=false is the soft-delete flag).
     query(
+      // NP-205 (2026-09-04): only TRACKED items can be "low" (migration 084).
+      // Untracked items sit at stock 0 forever, so this card used to be a
+      // wall of every dish on the menu for anyone not doing dish-level
+      // inventory — which made the whole Action Centre look broken.
       `SELECT id, name, stock, reorder_level, unit
          FROM menu_items
         WHERE business_id = $1
           AND is_active = TRUE
+          AND track_stock = TRUE
           AND reorder_level IS NOT NULL
           AND stock <= reorder_level
         ORDER BY stock ASC

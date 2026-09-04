@@ -296,6 +296,26 @@ async function _runOnce() {
       } catch (e) {
         logger.error(`[usage-reconcile] nightly reconciliation failed: ${e.message}`);
       }
+      // NP-401 (2026-09-04): idempotency-key retention. Every gated mutation
+      // writes one row to idempotency_keys (migration 085), so without a sweep
+      // the table grows with traffic forever. Keys are only useful while a
+      // client might still retry — the offline outbox gives up after ~25 min —
+      // so 7 days (IDEMPOTENCY_RETENTION_DAYS) is generous and still bounded.
+      // Unconditional: a DELETE on an indexed timestamp, nothing to gate.
+      try {
+        const swept = await _track(
+          'idempotency-sweep',
+          () => require('../middleware/idempotent').sweep(),
+        );
+        if (swept.deleted > 0) {
+          logger.info(
+            `[idempotency-sweep] pruned ${swept.deleted} key(s) older than `
+            + `${swept.retentionDays}d`,
+          );
+        }
+      } catch (e) {
+        logger.warn(`[idempotency-sweep] nightly prune failed: ${e.message}`);
+      }
       // NP-121 (2026-09-03): revenue-integrity sweep — plan-price drift,
       // refunds stuck pending >48h, webhook deliveries dead in-flight >1h.
       // DEFAULT OFF: runs only when REVENUE_INTEGRITY_CRON=true. Emails

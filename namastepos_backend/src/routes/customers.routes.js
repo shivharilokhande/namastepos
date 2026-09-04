@@ -6,6 +6,7 @@ const c = require('../controllers/customerController');
 const { requireAuth, requireBusinessOwnership, requireRole } = require('../middleware/auth');
 const requireAddon = require('../middleware/requireAddon');
 const noPlatformStaff = require('../middleware/noPlatformStaff');
+const idempotent = require('../middleware/idempotent');
 
 const router = express.Router({ mergeParams: true });
 // 2026-09-03: plan-granted 'loyalty' (or an admin override) opens the CRM
@@ -28,6 +29,10 @@ router.use(
 // Customer CRUD
 router.get('/', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), ...c.list);
 router.get('/lookup', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), c.lookup); // ?phone=…
+// NP-401 note: POST / is an UPSERT keyed on the phone number and PATCH
+// /:customerId sets absolute field values — replaying either is already a
+// no-op (no duplicate row, no drifting balance), so neither is gated. The
+// points endpoint below is the one that moves a RELATIVE balance.
 router.post('/', ...c.upsert);
 router.get('/:customerId', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), c.get);
 router.patch('/:customerId', ...c.update);
@@ -35,6 +40,11 @@ router.delete('/:customerId', requireRole(['business_owner']), c.remove);
 router.post(
   '/:customerId/points',
   requireRole(['business_owner', 'staff_manager']),
+  // NP-401 (2026-09-04): `points` is a signed DELTA written straight onto
+  // customers.points_balance plus a loyalty_transactions row. A replay grants
+  // (or burns) the points twice and leaves two ledger rows whose
+  // balance_after values contradict each other.
+  idempotent('POST /customers/:customerId/points'),
   ...c.adjustPoints,
 );
 

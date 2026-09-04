@@ -18,6 +18,10 @@ function serializeVariant(r) {
     costPrice: r.cost_price != null ? parseFloat(r.cost_price) : null,
     sku: r.sku,
     stock: r.stock != null ? parseFloat(r.stock) : null,
+    // NP-205 (migration 084): this variant owns its stock. FALSE = unlimited
+    // (the number above is ignored by the order path); TRUE = finite, and
+    // <= 0 means SOLD OUT — POS pickers must not offer it.
+    trackStock: r.track_stock === true,
     isActive: r.is_active,
     displayOrder: r.display_order,
   };
@@ -61,25 +65,46 @@ async function setVariants(businessId, menuItemId, variants) {
       if (!v.label || v.price == null) {
         throw new BadRequest('Each variant needs a label + price');
       }
+      // NP-205 (migration 084): the menu editor sets this variant's OWN stock
+      // and whether it is tracked at all.
+      //   · `trackStock` sent explicitly → honoured verbatim (the editor's
+      //     toggle), including turning tracking OFF while a stale count sits
+      //     in the column.
+      //   · not sent → inferred the same way `create`/the 084 backfill do:
+      //     a non-null, non-zero stock means the owner meant to track it.
+      //     Older clients (the shipped mobile build, the CSV importer) send
+      //     `{label, price}` only, so inference is what keeps them correct
+      //     instead of silently writing untracked rows.
+      // COALESCE on the UPDATE is deliberate: `stock` is replace-all like the
+      // rest of the row, but `track_stock` must never be reset to FALSE just
+      // because a caller omitted it.
+      const trackStock = v.trackStock !== undefined
+        ? !!v.trackStock
+        : (v.stock != null && Number(v.stock) !== 0 ? true : null);
       if (v.id) {
         await client.query(
           `UPDATE menu_item_variants
               SET label = $1, price = $2, cost_price = $3, sku = $4,
                   stock = $5, is_active = COALESCE($6, is_active),
-                  display_order = COALESCE($7, display_order)
+                  display_order = COALESCE($7, display_order),
+                  track_stock = COALESCE($10::boolean, track_stock)
             WHERE id = $8 AND business_id = $9`,
           [v.label, v.price, v.costPrice ?? null, v.sku ?? null,
-            v.stock ?? null, v.isActive, v.displayOrder, v.id, businessId],
+            v.stock ?? null, v.isActive, v.displayOrder, v.id, businessId,
+            trackStock],
         );
         keepIds.add(v.id);
       } else {
         const ins = await client.query(
           `INSERT INTO menu_item_variants
-             (business_id, menu_item_id, label, price, cost_price, sku, stock, display_order, is_active)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 100), COALESCE($9, TRUE))
+             (business_id, menu_item_id, label, price, cost_price, sku, stock,
+              display_order, is_active, track_stock)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 100),
+                   COALESCE($9, TRUE), COALESCE($10::boolean, FALSE))
            RETURNING id`,
           [businessId, menuItemId, v.label, v.price, v.costPrice ?? null,
-            v.sku ?? null, v.stock ?? null, v.displayOrder, v.isActive],
+            v.sku ?? null, v.stock ?? null, v.displayOrder, v.isActive,
+            trackStock],
         );
         keepIds.add(ins.rows[0].id);
       }

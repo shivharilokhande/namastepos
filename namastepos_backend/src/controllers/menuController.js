@@ -22,6 +22,13 @@ const itemBody = Joi.object({
   sku: Joi.string().max(50).allow('', null),
   unit: Joi.string().valid('piece', 'kg', 'gram', 'liter', 'ml', 'plate').default('piece'),
   stock: Joi.number().min(0).precision(2).default(0),
+  // NP-205 (migration 084): explicit "is this item's stock finite?".
+  // NO Joi default on purpose — `undefined` is meaningful: menuService.create
+  // then infers it from `stock` (non-zero ⇒ track), which is what keeps every
+  // already-shipped client and the CSV importer behaving correctly. A default
+  // here would make every legacy create write `track_stock = false` and turn
+  // the whole feature off for them.
+  trackStock: Joi.boolean(),
   reorderLevel: Joi.number().min(0).precision(2).default(10),
   isActive: Joi.boolean().default(true),
   isVeg: Joi.boolean().default(true),
@@ -54,13 +61,43 @@ const stockBody = Joi.object({
   delta: Joi.number().required(),
   reason: Joi.string().valid('purchase', 'sale', 'waste', 'adjustment', 'returned', 'transfer').default('adjustment'),
   note: Joi.string().max(500).allow('', null),
+  // NP-205: optional override. Omitted → the service infers (a non-zero
+  // balance means the owner is tracking). Sent → obeyed, so an owner can
+  // switch an item back to "unlimited" from the inventory screen.
+  trackStock: Joi.boolean(),
 });
+
+// NP-205 — one variant row of the menu editor's replace-all list. `unknown`
+// stays open because this schema is NEW on an endpoint that never validated
+// its body: an older client sending a field we don't know about must keep
+// working exactly as it did. The typed fields below are the ones the service
+// writes, so a string where a number belongs is now a 400 instead of a
+// `NaN` that Postgres rejects mid-transaction.
+const variantRow = Joi.object({
+  id: Joi.string().uuid(),
+  label: Joi.string().min(1).max(80).required(),
+  price: Joi.number().min(0).precision(2).required(),
+  costPrice: Joi.number().min(0).precision(2).allow(null),
+  sku: Joi.string().max(50).allow('', null),
+  // Per-variant stock (migration 084). null = no count recorded.
+  stock: Joi.number().precision(2).allow(null),
+  trackStock: Joi.boolean(),
+  isActive: Joi.boolean(),
+  displayOrder: Joi.number().integer().min(0).max(9999),
+}).unknown(true);
+
+const variantsBody = Joi.object({
+  variants: Joi.array().items(variantRow).max(50).default([]),
+}).unknown(true);
 
 const listQuery = Joi.object({
   category: Joi.string().max(50),
   isActive: Joi.boolean(),
   isCombo: Joi.boolean(),
   search: Joi.string().max(100),
+  // NP-205: hydrate each item with its active variants (one extra query).
+  // Opt-in — see menuService.list for why it isn't always on.
+  withVariants: Joi.boolean(),
 });
 
 // FF-218: bulk-import body — array of rows, header names are lenient
@@ -115,9 +152,25 @@ module.exports = {
       res.json({ item });
     }),
   ],
+  // NP-205 — variant twin of adjustStock. Same body, same reason enum, same
+  // response envelope shape as the item endpoint ({ variant } instead of
+  // { item }) so the inventory screens can reuse their adjust control.
+  adjustVariantStock: [
+    validate({ body: stockBody }),
+    asyncHandler(async (req, res) => {
+      const variant = await menu.adjustVariantStock(
+        req.params.businessId, req.params.variantId, req.body,
+      );
+      res.json({ variant });
+    }),
+  ],
   history: asyncHandler(async (req, res) => {
     const history = await menu.stockHistory(req.params.businessId, req.params.itemId, {
       limit: Math.min(parseInt(req.query.limit || '50', 10), 200),
+      // NP-205: `?variantId=` narrows the dish's movements to one size. The
+      // ledger's menu_item_id is always the parent, so without the filter
+      // this still returns every size together (what the item screen wants).
+      variantId: req.query.variantId || null,
     });
     res.json({ history });
   }),
@@ -126,10 +179,15 @@ module.exports = {
   listVariants: asyncHandler(async (req, res) => {
     res.json({ variants: await variants.listVariants(req.params.businessId, req.params.itemId) });
   }),
-  setVariants: asyncHandler(async (req, res) => {
-    const out = await variants.setVariants(req.params.businessId, req.params.itemId, req.body.variants || []);
-    res.json({ variants: out });
-  }),
+  setVariants: [
+    validate({ body: variantsBody }),
+    asyncHandler(async (req, res) => {
+      const out = await variants.setVariants(
+        req.params.businessId, req.params.itemId, req.body.variants || [],
+      );
+      res.json({ variants: out });
+    }),
+  ],
   getItemGroups: asyncHandler(async (req, res) => {
     res.json({ groupIds: await variants.getItemModifierGroups(req.params.businessId, req.params.itemId) });
   }),

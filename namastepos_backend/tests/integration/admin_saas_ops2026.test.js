@@ -52,7 +52,12 @@ async function makeAdmin(email, role) {
   });
 }
 
-const auth = (t) => ({ Authorization: `Bearer ${t}` });
+// Security review 2026-09-04 (item 2): the admin API no longer accepts
+// `Authorization: Bearer` — the super-admin session comes from the httpOnly
+// `ff_admin` cookie only. We send BOTH here because this helper is also used
+// with a TENANT token to assert that a tenant principal is refused on /admin
+// (which must still reach the tenant Bearer path where relevant).
+const auth = (t) => ({ Authorization: `Bearer ${t}`, Cookie: `ff_admin=${t}` });
 
 // A paid plan + an active subscription, so MRR / usage / dunning have
 // something real to report.

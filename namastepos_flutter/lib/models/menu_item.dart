@@ -40,6 +40,15 @@ class MenuItem {
   final String? sku;
   final MenuUnit unit;
   final double stock;
+  // NP-205 (migration 084) — is [stock] a real count?
+  //   false → unlimited: sales never reduce it and it can never be "out".
+  //   true  → finite: sales deduct it and <= 0 means SOLD OUT.
+  // Before this flag, 0 meant either thing and every screen guessed
+  // differently — the QR menu told diners "only 0 left" for dishes the POS
+  // was happily selling. NOT cached in sqflite (like soldOutUntil) so the
+  // local schema is untouched; an offline read defaults to false = unlimited,
+  // which fails OPEN — the server still enforces the real count on create.
+  final bool trackStock;
   final double reorderLevel;
   final bool isActive;
   final bool isVeg;
@@ -62,6 +71,7 @@ class MenuItem {
     this.sku,
     this.unit = MenuUnit.piece,
     this.stock = 0,
+    this.trackStock = false,
     this.reorderLevel = 10,
     this.isActive = true,
     this.isVeg = true,
@@ -71,7 +81,16 @@ class MenuItem {
     required this.updatedAt,
   });
 
-  bool get isLowStock => stock <= reorderLevel;
+  // NP-205: only a TRACKED item can be low or out. Every untracked dish sits
+  // at 0 forever, so an unguarded `stock <= reorderLevel` marked a whole menu
+  // "LOW" and the inventory list was a wall of amber.
+  bool get isLowStock => trackStock && stock <= reorderLevel;
+  // Deliberately NOT folded into [isSoldOut]: for a dish WITH variants the
+  // parent's stock is no longer deducted at all (each size owns its own), so
+  // a stale parent 0 must not grey the dish out in the POS grid while Large
+  // is sitting in the fridge. Sold-out-by-count is decided per variant in
+  // item_config_sheet, and server-side under a row lock either way.
+  bool get isOutOfStock => trackStock && stock <= 0;
   bool get isSoldOut =>
       soldOutUntil != null && soldOutUntil!.isAfter(DateTime.now());
   double get margin => costPrice == null ? 0 : (price - costPrice!);
@@ -88,6 +107,7 @@ class MenuItem {
     String? sku,
     MenuUnit? unit,
     double? stock,
+    bool? trackStock,
     double? reorderLevel,
     bool? isActive,
     bool? isVeg,
@@ -104,10 +124,13 @@ class MenuItem {
       sku: sku ?? this.sku,
       unit: unit ?? this.unit,
       stock: stock ?? this.stock,
+      trackStock: trackStock ?? this.trackStock,
       reorderLevel: reorderLevel ?? this.reorderLevel,
       isActive: isActive ?? this.isActive,
       isVeg: isVeg ?? this.isVeg,
       imageUrl: imageUrl ?? this.imageUrl,
+      // Local-only field, not persisted in sqflite — keep it across copies.
+      soldOutUntil: soldOutUntil,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );
@@ -124,6 +147,9 @@ class MenuItem {
         sku: m['sku'] as String?,
         unit: menuUnitFromString(m['unit'] as String?),
         stock: (m['stock'] as num?)?.toDouble() ?? 0,
+        // Not a column in the local cache (see the field's doc) — an offline
+        // read is "unlimited", and the server re-checks on order create.
+        trackStock: false,
         reorderLevel: (m['reorderLevel'] as num?)?.toDouble() ?? 10,
         isActive: (m['isActive'] as int? ?? 1) == 1,
         isVeg: (m['isVeg'] as int? ?? 1) == 1,
@@ -149,6 +175,9 @@ class MenuItem {
         sku: m['sku'] as String?,
         unit: menuUnitFromString(m['unit'] as String?),
         stock: (m['stock'] as num?)?.toDouble() ?? 0,
+        // NP-205 (migration 084). Absent on an older backend ⇒ false ⇒
+        // unlimited, i.e. the pre-084 behaviour of never blocking a sale.
+        trackStock: m['trackStock'] == true,
         reorderLevel: (m['reorderLevel'] as num?)?.toDouble() ?? 10,
         isActive: m['isActive'] is bool ? m['isActive'] as bool
                 : ((m['isActive'] as int?) ?? 1) == 1,

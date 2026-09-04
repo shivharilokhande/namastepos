@@ -54,6 +54,19 @@ function can(role, perm) {
 const ROLE_TTL_MS = 30_000;
 const _roleCache = new Map(); // adminId → { role, exp }
 
+// Security review 2026-09-04 (item 1): `invalidateRole` existed but only
+// cleared THIS process's Map, so on a multi-instance deploy a demotion or
+// deactivation performed on instance A left instance B honouring the old role
+// (up to settings.write / team management for a demoted super_admin) until B's
+// own TTL lapsed. Route it through the shared cache bus so every instance
+// drops the entry. No REDIS_URL → local-only, exactly as before.
+const cacheBus = require('../utils/cacheBus');
+
+cacheBus.subscribe(cacheBus.TOPIC.ADMIN_USER, (adminId) => {
+  if (!adminId || adminId === '*') _roleCache.clear();
+  else _roleCache.delete(adminId);
+});
+
 async function _liveRole(adminId) {
   const hit = _roleCache.get(adminId);
   if (hit && hit.exp > Date.now()) return hit.role;
@@ -67,8 +80,14 @@ async function _liveRole(adminId) {
 }
 
 // Let callers (e.g. role change / deactivation handlers) drop a stale entry so
-// the change takes effect immediately rather than after the TTL.
-function invalidateRole(adminId) { _roleCache.delete(adminId); }
+// the change takes effect immediately rather than after the TTL — on EVERY
+// instance, not just the one that handled the write. This also clears
+// middleware/auth.js's `is_active` cache, which subscribes to the same topic:
+// a deactivation has to invalidate both or the admin keeps read access.
+function invalidateRole(adminId) {
+  if (!adminId) return;
+  cacheBus.publish(cacheBus.TOPIC.ADMIN_USER, adminId);
+}
 
 /**
  * Express middleware factory.

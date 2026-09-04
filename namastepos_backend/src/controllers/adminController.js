@@ -30,12 +30,30 @@ const loginBody = Joi.object({
 // httpOnly cookie. Mirrors the proven `ff_refresh` pattern used by the
 // dashboard — admin + api are subdomains of one site, so SameSite=strict
 // cookies round-trip cross-subdomain. Path is scoped to the admin API so the
-// cookie's blast radius is just /v1/admin/*. We STILL return the token in the
-// JSON body, so Bearer-mode clients keep working (dual-mode); the frontend
-// prefers the cookie and only falls back to Bearer if the cookie doesn't
-// round-trip. Auth acceptance (cookie OR Bearer) lives in middleware/auth.js.
+// cookie's blast radius is just /v1/admin/*.
+//
+// 2026-09-04 (security review, item 2): the dual-mode phase is over. Auth
+// acceptance is cookie-ONLY (middleware/auth.js `_decodeAdmin`) and these
+// endpoints no longer echo the raw admin JWT back in the JSON body.
+//
+// Returning it was the last way for JavaScript in the admin origin to get
+// hold of a complete super-admin credential — and a stolen one is replayable
+// from anywhere, since any HTTP client can set a `Cookie:` header. The
+// frontend never needed the value, only the flow signal, so the body now
+// carries booleans (`authenticated` / `requires2fa` / `mustEnrol2fa`) and the
+// credential exists solely as an httpOnly cookie the browser manages.
 const env = require('../config/env');
 const csrf = require('../middleware/csrf');
+
+/**
+ * Strip the access token from an auth response before it goes on the wire.
+ * The service layer still returns it (that is how _setAdminSession gets it);
+ * this is the boundary where it stops being visible to the client.
+ */
+function _publicAuthBody(r) {
+  const { token, ...rest } = r;
+  return { ...rest, authenticated: !!token && r.mustEnrol2fa !== true };
+}
 
 const ADMIN_COOKIE = 'ff_admin';
 const ADMIN_COOKIE_OPTS = {
@@ -65,7 +83,7 @@ const login = [
   asyncHandler(async (req, res) => {
     const r = await adminTeam.login(req.body.email, req.body.password);
     if (r.token) _setAdminSession(res, r.token);
-    res.json(r);
+    res.json(_publicAuthBody(r));
   }),
 ];
 
@@ -90,7 +108,7 @@ const twoFaVerify = [
   asyncHandler(async (req, res) => {
     const r = await adminTeam.complete2faLogin(req.body.challengeId, req.body.code);
     if (r.token) _setAdminSession(res, r.token);
-    res.json(r);
+    res.json(_publicAuthBody(r));
   }),
 ];
 
@@ -117,7 +135,8 @@ const twoFaEnrolConfirm = [
         role: req.user.role,
       });
       _setAdminSession(res, token);
-      return res.json({ ...r, token });
+      // The full session is now in the cookie; the body only says so.
+      return res.json({ ...r, authenticated: true });
     }
     res.json(r);
   }),

@@ -5,6 +5,7 @@ const express = require('express');
 const c = require('../controllers/ingredientController');
 const { requireAuth, requireBusinessOwnership, requireRole } = require('../middleware/auth');
 const requireAddon = require('../middleware/requireAddon');
+const idempotent = require('../middleware/idempotent');
 
 const router = express.Router({ mergeParams: true });
 router.use(requireAuth, requireBusinessOwnership, requireAddon('recipe-costing'));
@@ -16,8 +17,22 @@ router.get('/_report/food-cost', requireRole(['business_owner', 'staff_manager']
 router.get('/:ingredientId', c.get);
 router.patch('/:ingredientId', requireRole(['business_owner', 'staff_manager']), ...c.update);
 router.delete('/:ingredientId', requireRole(['business_owner']), c.remove);
-router.post('/:ingredientId/purchase', requireRole(['business_owner', 'staff_manager']), ...c.purchase);
-router.post('/:ingredientId/adjust', requireRole(['business_owner', 'staff_manager']), ...c.adjust);
+// NP-401 (2026-09-04): both of these are RELATIVE stock movements that also
+// move the weighted-average cost, so a replay after a lost response books the
+// goods receipt / adjustment twice and corrupts food-cost reporting. Deduped
+// on the client's Idempotency-Key; no header → unchanged behaviour.
+router.post(
+  '/:ingredientId/purchase',
+  requireRole(['business_owner', 'staff_manager']),
+  idempotent('POST /ingredients/:ingredientId/purchase'),
+  ...c.purchase,
+);
+router.post(
+  '/:ingredientId/adjust',
+  requireRole(['business_owner', 'staff_manager']),
+  idempotent('POST /ingredients/:ingredientId/adjust'),
+  ...c.adjust,
+);
 
 // Recipes (one recipe per menu_item)
 router.get('/_recipes/:menuItemId', c.getRecipe);

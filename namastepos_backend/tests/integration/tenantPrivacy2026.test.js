@@ -54,7 +54,9 @@ async function giveFreeSubscription(businessId) {
   );
 }
 
-const auth = (t) => ({ Authorization: `Bearer ${t}` });
+// 2026-09-04: admin auth is cookie-only (`ff_admin`); tenant auth stays Bearer.
+// This helper serves both kinds of token, so it supplies both.
+const auth = (t) => ({ Authorization: `Bearer ${t}`, Cookie: `ff_admin=${t}` });
 
 beforeAll(async () => {
   await resetDb();

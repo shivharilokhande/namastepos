@@ -16,6 +16,11 @@ function serialize(row) {
     sku: row.sku,
     unit: row.unit,
     stock: parseFloat(row.stock),
+    // NP-205 (migration 084): FALSE = stock not tracked (unlimited — the
+    // number above is ignored by the order path); TRUE = finite, and <= 0
+    // means SOLD OUT. Every UI that renders "Out of stock" must read this
+    // first, or an untracked item at 0 looks sold out when it isn't.
+    trackStock: row.track_stock === true,
     reorderLevel: parseFloat(row.reorder_level),
     isActive: row.is_active,
     isVeg: row.is_veg,
@@ -39,7 +44,9 @@ function serialize(row) {
   };
 }
 
-async function list(businessId, { category, isActive, isCombo, search } = {}) {
+async function list(businessId, {
+  category, isActive, isCombo, search, withVariants,
+} = {}) {
   const where = ['business_id = $1'];
   const values = [businessId];
   let idx = 2;
@@ -59,7 +66,36 @@ async function list(businessId, { category, isActive, isCombo, search } = {}) {
      ORDER BY category ASC, display_order ASC, name ASC`,
     values,
   );
-  return r.rows.map(serialize);
+  const items = r.rows.map(serialize);
+
+  // NP-205 — `?withVariants=true` hydrates each item with its ACTIVE variants
+  // in ONE extra query.
+  //
+  // WHY this exists: the web POS (NewOrderDialog) decided whether to open the
+  // variant/modifier picker from `item.variants`, but `GET /menu` never
+  // returned that key — so on the dashboard a dish with sizes was added
+  // straight to the cart at the parent price and the picker was dead code.
+  // The inventory screens need the same payload to show a row per size.
+  // Opt-in rather than always-on so the existing consumers (offline sync,
+  // aggregator menu push, mobile menu cache) keep their exact response shape
+  // and cost.
+  if (withVariants && items.length > 0) {
+    const { serializeVariant } = require('./variantService');
+    const vr = await query(
+      `SELECT * FROM menu_item_variants
+        WHERE business_id = $1 AND menu_item_id = ANY($2::uuid[])
+          AND is_active = TRUE
+        ORDER BY display_order, label`,
+      [businessId, items.map((i) => i.id)],
+    );
+    const byItem = new Map();
+    for (const row of vr.rows) {
+      if (!byItem.has(row.menu_item_id)) byItem.set(row.menu_item_id, []);
+      byItem.get(row.menu_item_id).push(serializeVariant(row));
+    }
+    for (const it of items) it.variants = byItem.get(it.id) || [];
+  }
+  return items;
 }
 
 async function byId(businessId, itemId) {
@@ -81,21 +117,31 @@ async function create(businessId, body) {
     displayOrder = 100, tags = null,
   } = body;
 
+  // NP-205 (migration 084): tracking is EXPLICIT. When the caller doesn't say,
+  // infer it exactly the way the 084 backfill did — an owner who typed an
+  // opening stock meant to track it; stock 0 / omitted means "unlimited".
+  // Without this inference every CSV import and every existing client (which
+  // sends `stock` but not `trackStock`) would create items whose stock is
+  // silently ignored by the order path.
+  const trackStock = body.trackStock !== undefined
+    ? !!body.trackStock
+    : (stock != null && Number(stock) !== 0);
+
   try {
     const r = await query(
       `INSERT INTO menu_items
        (business_id, name, description, category, price, cost_price, sku, unit,
         stock, reorder_level, is_active, is_veg, image_url,
         is_combo, combo_items, prep_minutes, display_order, tags,
-        gst_pct, hsn_code)
+        gst_pct, hsn_code, track_stock)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-               COALESCE($19, 5),$20)
+               COALESCE($19, 5),$20,$21)
        RETURNING *`,
       [businessId, name, description, category, price, costPrice, sku, unit,
         stock, reorderLevel, isActive, isVeg, imageUrl,
         isCombo, comboItems ? JSON.stringify(comboItems) : null,
         prepMinutes, displayOrder, tags,
-        body.gstPct, body.hsnCode],
+        body.gstPct, body.hsnCode, trackStock],
     );
     return serialize(r.rows[0]);
   } catch (err) {
@@ -114,6 +160,10 @@ async function update(businessId, itemId, body) {
     sku: 'sku',
     unit: 'unit',
     stock: 'stock',
+    // NP-205: no inference on UPDATE — a partial edit that touches `stock`
+    // must not flip a deliberate tracking choice behind the owner's back
+    // (that is the `noDefaults` lesson from 2026-08-23 applied to a boolean).
+    trackStock: 'track_stock',
     reorderLevel: 'reorder_level',
     isActive: 'is_active',
     isVeg: 'is_veg',
@@ -157,20 +207,37 @@ async function softDelete(businessId, itemId) {
   return { id: r.rows[0].id };
 }
 
-/** Adjust stock and log an inventory transaction. */
-async function adjustStock(businessId, itemId, { delta, reason = 'adjustment', note = null }) {
+/**
+ * Adjust stock and log an inventory transaction.
+ *
+ * NP-205: recording a count IS the act of choosing to track. An owner who
+ * opens Inventory and books "+10 received" on an item that was never tracked
+ * expects the number to mean something afterwards, so a non-zero balance
+ * turns tracking ON (same rule as the 084 backfill and `create` above).
+ * `trackStock` in the body overrides that outright — including turning
+ * tracking OFF, which is how an owner says "stop nagging me about this one,
+ * it's unlimited" without having to zero the count first.
+ */
+async function adjustStock(
+  businessId,
+  itemId,
+  { delta, reason = 'adjustment', note = null, trackStock = undefined },
+) {
   return withTransaction(async (client) => {
     const cur = await client.query(
-      'SELECT stock FROM menu_items WHERE business_id = $1 AND id = $2 FOR UPDATE',
+      'SELECT stock, track_stock FROM menu_items WHERE business_id = $1 AND id = $2 FOR UPDATE',
       [businessId, itemId],
     );
     if (cur.rowCount === 0) throw new NotFound('Menu item not found');
     const before = parseFloat(cur.rows[0].stock);
     const after = before + delta;
+    const track = trackStock !== undefined
+      ? !!trackStock
+      : (cur.rows[0].track_stock === true || after !== 0);
 
     const upd = await client.query(
-      'UPDATE menu_items SET stock = $1 WHERE id = $2 RETURNING *',
-      [after, itemId],
+      'UPDATE menu_items SET stock = $1, track_stock = $2 WHERE id = $3 RETURNING *',
+      [after, track, itemId],
     );
     await client.query(
       `INSERT INTO inventory_transactions
@@ -182,16 +249,67 @@ async function adjustStock(businessId, itemId, { delta, reason = 'adjustment', n
   });
 }
 
-async function stockHistory(businessId, itemId, { limit = 50 } = {}) {
+/**
+ * NP-205 — the variant twin of `adjustStock`, so an inventory screen can set
+ * one size's count without PUTting the whole variant list back (which is
+ * replace-all and would race with a concurrent menu edit).
+ *
+ * Tenant-scoped through `menu_item_variants.business_id`, and the parent id
+ * is resolved from the row itself so the ledger's `menu_item_id` (still the
+ * PARENT, see 084) can never be spoofed by the caller.
+ */
+async function adjustVariantStock(
+  businessId,
+  variantId,
+  { delta, reason = 'adjustment', note = null, trackStock = undefined },
+) {
+  const variants = require('./variantService');
+  return withTransaction(async (client) => {
+    const cur = await client.query(
+      `SELECT id, menu_item_id, stock, track_stock FROM menu_item_variants
+        WHERE business_id = $1 AND id = $2 FOR UPDATE`,
+      [businessId, variantId],
+    );
+    if (cur.rowCount === 0) throw new NotFound('Variant not found');
+    // NULL stock (013's "share parent stock") starts from 0 — under NP-205 a
+    // variant tracks its own stock or is unlimited; there is no sharing.
+    const before = cur.rows[0].stock == null ? 0 : parseFloat(cur.rows[0].stock);
+    const after = before + delta;
+    const track = trackStock !== undefined
+      ? !!trackStock
+      : (cur.rows[0].track_stock === true || after !== 0);
+
+    const upd = await client.query(
+      `UPDATE menu_item_variants SET stock = $1, track_stock = $2
+        WHERE id = $3 RETURNING *`,
+      [after, track, variantId],
+    );
+    await client.query(
+      `INSERT INTO inventory_transactions
+       (business_id, menu_item_id, variant_id, qty_change, balance_after, reason, note)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [businessId, cur.rows[0].menu_item_id, variantId, delta, after, reason, note],
+    );
+    return variants.serializeVariant(upd.rows[0]);
+  });
+}
+
+async function stockHistory(businessId, itemId, { limit = 50, variantId } = {}) {
+  // NP-205: `menu_item_id` on the ledger is always the PARENT, so the item
+  // history keeps showing every movement of the dish (all sizes together) —
+  // that is what the owner wants on the item screen. `variantId` narrows it
+  // to one size for the variant row's own history drawer.
   const r = await query(
     `SELECT * FROM inventory_transactions
      WHERE business_id = $1 AND menu_item_id = $2
+       AND ($4::uuid IS NULL OR variant_id = $4::uuid)
      ORDER BY created_at DESC LIMIT $3`,
-    [businessId, itemId, limit],
+    [businessId, itemId, limit, variantId || null],
   );
   return r.rows.map((row) => ({
     id: row.id,
     menuItemId: row.menu_item_id,
+    variantId: row.variant_id || null,
     qtyChange: parseFloat(row.qty_change),
     balanceAfter: parseFloat(row.balance_after),
     reason: row.reason,
@@ -329,4 +447,15 @@ async function bulkImport(businessId, items) {
   return { inserted, skipped, errors, variants: variantsApplied };
 }
 
-module.exports = { serialize, list, byId, create, update, softDelete, adjustStock, stockHistory, bulkImport };
+module.exports = {
+  serialize,
+  list,
+  byId,
+  create,
+  update,
+  softDelete,
+  adjustStock,
+  adjustVariantStock,
+  stockHistory,
+  bulkImport,
+};

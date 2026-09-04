@@ -273,6 +273,10 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
   String _unit = 'piece';
   bool _isVeg = true;
   bool _isActive = true;
+  // NP-205 (migration 084): is this item's stock a real count? Off =
+  // unlimited. Explicit, because `stock = 0` used to mean either "sold out"
+  // or "not counted" and every screen guessed differently.
+  bool _trackStock = false;
   String _imageUrl = '';
   bool _uploading = false;
   bool _saving = false;
@@ -306,6 +310,7 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
     _unit = m?.unit.name ?? 'piece';
     _isVeg = m?.isVeg ?? true;
     _isActive = m?.isActive ?? true;
+    _trackStock = m?.trackStock ?? false;
     _imageUrl = m?.imageUrl ?? '';
     // Kick off the extras fetch (variants + catalog groups + currently
     // attached IDs). Failures are non-fatal — Starter plans 402 and the
@@ -333,7 +338,15 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
         final variants = await api.listVariants(biz.id, itemId);
         _variants
           ..clear()
-          ..addAll(variants.map((v) => _VariantDraft.fromJson(v as Map)));
+          // Deletes are SOFT server-side (is_active = false, to keep
+          // historical order_items.variant_id valid) and listVariants
+          // returns those rows too — seeding them back made a size the owner
+          // removed reappear every time the editor opened, and the
+          // replace-all save then resurrected it. Same filter the dashboard
+          // editor applies.
+          ..addAll(variants
+              .where((v) => (v as Map)['isActive'] != false)
+              .map((v) => _VariantDraft.fromJson(v as Map)));
       } catch (_) { /* keep editor usable even if fetch fails */ }
       try {
         final ids = await api.getItemModifierGroupIds(biz.id, itemId);
@@ -406,6 +419,10 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
       if (_sku.text.isNotEmpty) 'sku': _sku.text.trim(),
       'unit': _unit,
       'stock': double.tryParse(_stock.text) ?? 0,
+      // Always sent (NP-205): the server only infers tracking from a non-zero
+      // stock when the key is ABSENT, and an owner switching an item back to
+      // "unlimited" while a count still shows has to be able to say so.
+      'trackStock': _trackStock,
       'reorderLevel': double.tryParse(_reorder.text) ?? 10,
       'costPrice': double.tryParse(_costPrice.text) ?? 0,
       'isVeg': _isVeg,
@@ -656,12 +673,31 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
                 Expanded(
                   child: TextField(
                     controller: _stock,
+                    enabled: _trackStock,
                     keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                        labelText: 'Stock', border: OutlineInputBorder()),
+                    decoration: InputDecoration(
+                        labelText: 'Stock',
+                        hintText: _trackStock ? null : 'unlimited',
+                        border: const OutlineInputBorder()),
                   ),
                 ),
               ],
+            ),
+            // NP-205 (migration 084) — explicit tracking for the item itself.
+            CheckboxListTile(
+              value: _trackStock,
+              onChanged: (b) => setState(() => _trackStock = b ?? false),
+              title: const Text('Track stock for this item',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+              subtitle: const Text(
+                'Off = unlimited: sales never reduce it and it can never show '
+                'as sold out. On = sales deduct it and 0 stops the sale.',
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              ),
+              dense: true,
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              activeColor: AppColors.primary,
             ),
             const SizedBox(height: 10),
             Row(
@@ -834,53 +870,124 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
 
   Widget _variantRow(int i) {
     final v = _variants[i];
+    // NP-205: two rows per variant — identity/price on top, its own stock
+    // below. A single Row with five fields is unusable on a 5" phone in a
+    // busy kitchen, which is the screen this actually gets used on.
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            flex: 3,
-            child: TextFormField(
-              initialValue: v.label,
-              decoration: const InputDecoration(
-                labelText: 'Label',
-                isDense: true,
-                border: OutlineInputBorder(),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextFormField(
+                  initialValue: v.label,
+                  decoration: const InputDecoration(
+                    labelText: 'Label',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (t) => v.label = t,
+                ),
               ),
-              onChanged: (t) => v.label = t,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            flex: 2,
-            child: TextFormField(
-              initialValue: v.price.toString(),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                labelText: 'Price ₹',
-                isDense: true,
-                border: OutlineInputBorder(),
+              const SizedBox(width: 6),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  initialValue: v.price.toString(),
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Price ₹',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (t) => v.price = double.tryParse(t) ?? 0,
+                ),
               ),
-              onChanged: (t) => v.price = double.tryParse(t) ?? 0,
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            flex: 2,
-            child: TextFormField(
-              initialValue: v.sku,
-              decoration: const InputDecoration(
-                labelText: 'SKU',
-                isDense: true,
-                border: OutlineInputBorder(),
+              const SizedBox(width: 6),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  initialValue: v.sku,
+                  decoration: const InputDecoration(
+                    labelText: 'SKU',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (t) => v.sku = t,
+                ),
               ),
-              onChanged: (t) => v.sku = t,
-            ),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, size: 20),
+                color: AppColors.error,
+                onPressed: () => setState(() => _variants.removeAt(i)),
+              ),
+            ],
           ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, size: 20),
-            color: AppColors.error,
-            onPressed: () => setState(() => _variants.removeAt(i)),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  // Rebuilt when tracking toggles, so the key carries the
+                  // flag — otherwise Flutter reuses the old field state and
+                  // the seeded value (below) never appears.
+                  key: ValueKey('vstock-$i-${v.trackStock}'),
+                  initialValue: v.stock?.toString() ?? '',
+                  enabled: v.trackStock,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: 'Stock',
+                    hintText: v.trackStock ? 'units left' : 'unlimited',
+                    isDense: true,
+                    border: const OutlineInputBorder(),
+                  ),
+                  onChanged: (t) =>
+                      v.stock = t.trim().isEmpty ? null : double.tryParse(t),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 3,
+                child: InkWell(
+                  onTap: () => setState(() {
+                    v.trackStock = !v.trackStock;
+                    // Turning tracking ON with no count yet would land on 0 —
+                    // which reads as SOLD OUT — so seed from the item's own
+                    // stock. Never silently 86 a dish somebody was only
+                    // trying to start counting.
+                    if (v.trackStock && v.stock == null) {
+                      v.stock = double.tryParse(_stock.text) ?? 0;
+                    }
+                  }),
+                  child: Row(
+                    children: [
+                      Checkbox(
+                        value: v.trackStock,
+                        visualDensity: VisualDensity.compact,
+                        activeColor: AppColors.primary,
+                        onChanged: (b) => setState(() {
+                          v.trackStock = b ?? false;
+                          if (v.trackStock && v.stock == null) {
+                            v.stock = double.tryParse(_stock.text) ?? 0;
+                          }
+                        }),
+                      ),
+                      const Expanded(
+                        child: Text(
+                          'Track stock for this size',
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -994,14 +1101,31 @@ class _VariantDraft {
   String label;
   double price;
   String sku;
+  // NP-205 (migration 084) — this variant's OWN stock. `stock` is null when
+  // no count has been recorded; `trackStock` is what decides whether the
+  // number means anything at all (off = unlimited, on = finite and 0 is sold
+  // out). Both are always SENT so an owner can turn tracking off while a
+  // stale count still sits in the column — the server only falls back to
+  // inferring the flag when the key is absent.
+  double? stock;
+  bool trackStock;
 
-  _VariantDraft({this.id, required this.label, required this.price, this.sku = ''});
+  _VariantDraft({
+    this.id,
+    required this.label,
+    required this.price,
+    this.sku = '',
+    this.stock,
+    this.trackStock = false,
+  });
 
   factory _VariantDraft.fromJson(Map v) => _VariantDraft(
         id: v['id']?.toString(),
         label: v['label']?.toString() ?? '',
         price: (v['price'] as num?)?.toDouble() ?? 0,
         sku: v['sku']?.toString() ?? '',
+        stock: (v['stock'] as num?)?.toDouble(),
+        trackStock: v['trackStock'] == true,
       );
 
   Map<String, dynamic> toJson() => {
@@ -1009,5 +1133,7 @@ class _VariantDraft {
         'label': label.trim(),
         'price': price,
         if (sku.trim().isNotEmpty) 'sku': sku.trim(),
+        'stock': trackStock ? (stock ?? 0) : stock,
+        'trackStock': trackStock,
       };
 }

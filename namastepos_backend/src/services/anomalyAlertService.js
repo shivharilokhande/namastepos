@@ -81,8 +81,15 @@ async function checkStockOut(biz) {
   const r = await query(
     // Bug fix (B6): menu_items has no `deleted_at` column;
     // `is_active` is the soft-delete flag we already check.
+    // NP-205 (2026-09-04): `AND track_stock = TRUE`. Without it this alert
+    // fired on every item whose stock nobody had ever entered — the whole
+    // menu of a restaurant that doesn't do dish-level inventory sits at 0 —
+    // so the owner got a nightly WhatsApp naming five perfectly available
+    // dishes and learned to ignore the channel. Zero only means "out" when
+    // the owner said they were counting (migration 084).
     `SELECT name FROM menu_items
       WHERE business_id = $1
+        AND track_stock = TRUE
         AND stock <= 0
         AND is_active = TRUE
         AND (sold_out_until IS NULL OR sold_out_until <= NOW())

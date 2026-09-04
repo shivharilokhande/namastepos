@@ -13,6 +13,18 @@ const { NotFound, Unauthorized } = require('../utils/errors');
 
 const TOKEN_KIND = 'qr-menu';
 
+// Security review 2026-09-04 (item 5): pin the signature algorithm.
+//
+// `jwt.verify(token, secret)` with no `algorithms` allowlist lets the TOKEN
+// choose how it is validated — the classic algorithm-confusion foothold. With
+// jsonwebtoken >= 9 the worst variants are already blocked (`alg: none` is
+// rejected unless you pass algorithms:['none'], and an HMAC-signed token is
+// refused when the key is an asymmetric KeyObject), so this specific call was
+// not exploitable today. It was, however, one library upgrade or one "let's
+// move QR tokens to RS256" refactor away from being exploitable, and the
+// tenant path (utils/jwt.js) already pinned HS256. Pinned here to match.
+const JWT_ALGS = ['HS256'];
+
 // ── Settings ────────────────────────────────────────────────────────────
 function serializeSettings(s) {
   if (!s) return null;
@@ -128,7 +140,7 @@ async function issueTokenForTable(businessId, tableId) {
         kind: TOKEN_KIND,
         salt: crypto.randomBytes(8).toString('hex') },
       env.JWT_SECRET,
-      { issuer: 'namastepos-qr' },
+      { issuer: 'namastepos-qr', algorithm: JWT_ALGS[0] },
     );
     await query('UPDATE tables SET qr_token = $1 WHERE id = $2', [token, tableId]);
     return token;
@@ -159,7 +171,10 @@ async function verifyToken(token) {
   if (!token) throw new Unauthorized('Missing QR token');
   let payload;
   try {
-    payload = jwt.verify(token, env.JWT_SECRET, { issuer: 'namastepos-qr' });
+    payload = jwt.verify(token, env.JWT_SECRET, {
+      issuer: 'namastepos-qr',
+      algorithms: JWT_ALGS,
+    });
   } catch (_) {
     throw new Unauthorized('Invalid QR token');
   }

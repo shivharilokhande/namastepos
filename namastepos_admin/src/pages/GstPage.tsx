@@ -30,11 +30,11 @@ export function GstPage() {
   });
 
   const downloadCsv = async () => {
-    // NP-107: go through the shared axios instance — in cookie mode
-    // getAdminToken() is null, so the old raw fetch sent no credentials
-    // and (with no res.ok check) saved the 401 JSON as a .csv. Axios
-    // attaches the cookie/CSRF (or Bearer fallback) and rejects on
-    // non-2xx, so an error becomes a toast, never a file.
+    // NP-107: go through the shared axios instance. The old raw fetch built
+    // its own URL and sent no credentials, so in cookie mode it saved the
+    // 401 JSON body as a .csv. Axios attaches the ff_admin cookie + CSRF
+    // header and rejects on non-2xx, so an error becomes a toast, never a
+    // file. (2026-09-04: there is no Bearer fallback any more — cookie only.)
     try {
       const blob = await adminApi.gstr1Csv(month);
       const url = URL.createObjectURL(blob);

@@ -1,7 +1,9 @@
 // NamastePOS backend - order service
 //
-// Order creation is atomic: insert order → insert order_items →
-// decrement menu_items.stock → log inventory_transactions, all in a single txn.
+// Order creation is atomic: insert order → insert order_items → decrement the
+// TRACKED stock the line came out of (menu_item_variants.stock when the line
+// names a variant, else menu_items.stock — NP-205 / migration 084) → log
+// inventory_transactions, all in a single txn.
 // Supports idempotency via client_id (so a mobile retry never duplicates).
 
 const { query, withTransaction } = require('../config/db');
@@ -311,13 +313,20 @@ async function create(businessId, body, opts = {}) {
     // Everything a line references is loaded ONCE, tenant-scoped, inside the
     // txn. Nothing the client asserted about a variant's price or a
     // modifier's delta is used — only its ID is taken as input.
-    const variantIds = [...new Set(items.map((i) => i.variantId).filter(Boolean))];
+    // NP-205 (2026-09-04): this query now also takes the variant row LOCKS
+    // (and reads `stock` / `track_stock`) because variants own their stock as
+    // of migration 084 — selling a Large deducts Large. Locking here rather
+    // than lazily at deduction time keeps the acquisition order deterministic
+    // across concurrent orders — menu_items by id, THEN variants by id —
+    // which is what stops two multi-line orders from deadlocking each other.
+    const variantIds = [...new Set(items.map((i) => i.variantId).filter(Boolean))].sort();
     const variantById = new Map();
     if (variantIds.length > 0) {
       const vr = await client.query(
-        `SELECT id, menu_item_id, label, price, is_active
+        `SELECT id, menu_item_id, label, price, is_active, stock, track_stock
            FROM menu_item_variants
-          WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+          WHERE business_id = $1 AND id = ANY($2::uuid[])
+          ORDER BY id FOR UPDATE`,
         [businessId, variantIds],
       );
       for (const r of vr.rows) variantById.set(r.id, r);
@@ -1116,13 +1125,31 @@ async function create(businessId, body, opts = {}) {
       // P0-4 fix: lock the row, then validate stock won't go negative BEFORE
       // we deduct. Two concurrent guest orders on the last unit used to both
       // pass and both insert; the FOR UPDATE plus the check below serialises
-      // them. We only enforce on guest/dineIn paths — staff are allowed to
-      // sell into a negative stock for now (will revisit when we expose
-      // "allow oversell" toggle to owners).
+      // them.
       // Unmapped aggregator items have no menu_item_id — skip stock.
+      //
+      // NP-205 (2026-09-04, migration 084) — TWO changes here:
+      //
+      //  (a) A line that names a VARIANT deducts THAT VARIANT'S row, never the
+      //      parent's. Variants have owned a `stock` column since 013 but
+      //      nothing ever moved it, so selling a Large decremented the dish's
+      //      shared pool and left "Large: 4 left" on screen forever. The
+      //      variant row is already locked (bulk `FOR UPDATE` up top, in id
+      //      order); it is re-read here so two lines of the SAME variant on one
+      //      order see each other's deduction.
+      //  (b) `track_stock` replaces every heuristic about what `stock = 0`
+      //      meant. FALSE → unlimited: not decremented, not blocked, no ledger
+      //      row (it was the `before > 0` test that used to guess this, which
+      //      silently drove untracked items to −37). TRUE → finite: deduct,
+      //      and a line that would go below zero is SOLD OUT → 400.
+      //
+      // The `trustedChannel` (allowUnmappedItems) exemption is unchanged and
+      // covers BOTH levels: an aggregator order was already accepted on the
+      // platform, so it must not be rejected by our count — it still deducts
+      // (into the negative if need be) so the owner sees reality.
       const cur = it.menuItemId
         ? await client.query(
-          `SELECT stock, name, sold_out_until FROM menu_items
+          `SELECT stock, name, sold_out_until, track_stock FROM menu_items
             WHERE business_id = $1 AND id = $2 FOR UPDATE`,
           [businessId, it.menuItemId],
         )
@@ -1135,30 +1162,65 @@ async function create(businessId, body, opts = {}) {
         // NP-201: the exemption is now keyed off `trustedChannel`
         // (allowUnmappedItems) instead of the client-supplied `source`, so a
         // cashier tagging an order source:'other' no longer sells 86'd stock.
+        // NP-205: item-level 86 is orthogonal to per-variant stock and still
+        // applies to variant lines — 86'ing a dish takes every size off sale.
         if (!allowUnmappedItems
             && cur.rows[0].sold_out_until
             && new Date(cur.rows[0].sold_out_until) > new Date()) {
           throw new BadRequest(`${cur.rows[0].name} is sold out`);
         }
-        const before = parseFloat(cur.rows[0].stock);
-        const after = before - Number(it.qty);
-        if (source === 'dineIn' && before > 0 && after < 0) {
-          // Soft-reject only when stock had been tracked (>0). Items with
-          // stock=0 are assumed "not tracked".
-          throw new BadRequest(
-            `${cur.rows[0].name} only has ${before} left, ${it.qty} requested`,
+        // Which row owns this line's stock: the variant if the line named one
+        // (already validated + locked above), else the parent item.
+        const target = it.variantId
+          ? await client.query(
+            `SELECT id, label, stock, track_stock FROM menu_item_variants
+              WHERE business_id = $1 AND id = $2 FOR UPDATE`,
+            [businessId, it.variantId],
+          )
+          : cur;
+        if (target.rowCount > 0 && target.rows[0].track_stock === true) {
+          // A tracked variant with NULL stock is treated as 0. (013 documented
+          // NULL as "share parent stock"; under NP-205 a variant either tracks
+          // its own stock or is unlimited — there is no sharing, so a tracked
+          // row with no number recorded has nothing to sell.)
+          const before = target.rows[0].stock == null
+            ? 0 : parseFloat(target.rows[0].stock);
+          const after = before - Number(it.qty);
+          if (after < 0 && !allowUnmappedItems) {
+            const label = it.variantId
+              ? `${cur.rows[0].name} (${target.rows[0].label})`
+              : cur.rows[0].name;
+            throw new HttpError(
+              400,
+              before <= 0
+                ? `${label} is sold out`
+                : `${label} only has ${before} left, ${it.qty} requested`,
+              'OUT_OF_STOCK',
+            );
+          }
+          if (it.variantId) {
+            await client.query(
+              'UPDATE menu_item_variants SET stock = $1 WHERE id = $2',
+              [after, it.variantId],
+            );
+          } else {
+            await client.query(
+              'UPDATE menu_items SET stock = $1 WHERE id = $2',
+              [after, it.menuItemId],
+            );
+          }
+          // Ledger. `menu_item_id` keeps holding the PARENT id (so every
+          // existing per-dish report and the stock-history screen still total
+          // correctly) and `variant_id` (084) records which size it came out
+          // of, so audit can tell "3 Large" from "3 Small".
+          await client.query(
+            `INSERT INTO inventory_transactions
+             (business_id, menu_item_id, variant_id, qty_change, balance_after, reason, order_id)
+             VALUES ($1, $2, $3, $4, $5, 'sale', $6)`,
+            [businessId, it.menuItemId, it.variantId || null,
+              -Number(it.qty), after, orderRow.id],
           );
         }
-        await client.query(
-          'UPDATE menu_items SET stock = $1 WHERE id = $2',
-          [after, it.menuItemId],
-        );
-        await client.query(
-          `INSERT INTO inventory_transactions
-           (business_id, menu_item_id, qty_change, balance_after, reason, order_id)
-           VALUES ($1, $2, $3, $4, 'sale', $5)`,
-          [businessId, it.menuItemId, -Number(it.qty), after, orderRow.id],
-        );
       }
     }
 
@@ -1828,24 +1890,39 @@ async function updateStatus(businessId, orderId, status, reason = null, reasonCo
       // the SAME txn as the status flip — atomic, and the conditional
       // UPDATE above guarantees it runs at most once per order.
       // (a) Return stock deducted at create for each line item.
+      // NP-205 (2026-09-04): give it back to the SAME row it was taken from.
+      // A cancelled "2 × Pizza Large" used to credit the parent dish's pool,
+      // so the Large stayed short by 2 forever while the parent inflated by 2
+      // — the cancel actually made the count worse than not cancelling. The
+      // `WHERE track_stock = TRUE` on both statements is the other half of
+      // the contract: nothing was deducted from an untracked row at create,
+      // so nothing may be credited back to one here (rowCount 0 → no ledger
+      // row either), which is what used to make ingredient stock drift.
       const its = await client.query(
-        `SELECT menu_item_id, qty FROM order_items
+        `SELECT menu_item_id, variant_id, qty FROM order_items
           WHERE order_id = $1 AND menu_item_id IS NOT NULL`,
         [orderId],
       );
       for (const it of its.rows) {
-        const restored = await client.query(
-          `UPDATE menu_items SET stock = stock + $1
-            WHERE business_id = $2 AND id = $3
-            RETURNING stock`,
-          [it.qty, businessId, it.menu_item_id],
-        );
+        const restored = it.variant_id
+          ? await client.query(
+            `UPDATE menu_item_variants SET stock = COALESCE(stock, 0) + $1
+              WHERE business_id = $2 AND id = $3 AND track_stock = TRUE
+              RETURNING stock`,
+            [it.qty, businessId, it.variant_id],
+          )
+          : await client.query(
+            `UPDATE menu_items SET stock = stock + $1
+              WHERE business_id = $2 AND id = $3 AND track_stock = TRUE
+              RETURNING stock`,
+            [it.qty, businessId, it.menu_item_id],
+          );
         if (restored.rowCount > 0) {
           await client.query(
             `INSERT INTO inventory_transactions
-               (business_id, menu_item_id, qty_change, balance_after, reason, order_id)
-             VALUES ($1, $2, $3, $4, 'returned', $5)`,
-            [businessId, it.menu_item_id, it.qty,
+               (business_id, menu_item_id, variant_id, qty_change, balance_after, reason, order_id)
+             VALUES ($1, $2, $3, $4, $5, 'returned', $6)`,
+            [businessId, it.menu_item_id, it.variant_id || null, it.qty,
               restored.rows[0].stock, orderId],
           );
         }

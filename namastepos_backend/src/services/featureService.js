@@ -15,8 +15,7 @@
 // plan change by calling clearCache(businessId) from subscriptionService.
 
 const { query, withTransaction } = require('../config/db');
-const env = require('../config/env');
-const logger = require('../config/logger');
+const cacheBus = require('../utils/cacheBus');
 
 const TTL_MS = 60_000; // 1-minute soft cache
 const cache = new Map(); // bid → { expires, tierKind, features:Set }
@@ -26,32 +25,23 @@ const cache = new Map(); // bid → { expires, tierKind, features:Set }
 // on one instance is invisible to others for up to TTL. When REDIS_URL is set
 // we publish invalidations over Redis pub/sub so every node drops the stale
 // entry immediately; the local Map stays the hot path. Fully OPTIONAL — with
-// no REDIS_URL this is a no-op and behaviour is exactly as before (fine for
-// single-instance). ioredis is lazy-required so it isn't needed until used.
-const CACHE_CHANNEL = 'namastepos:feature-cache:invalidate';
-let _redisPub = null;
-let _redisReady = false;
-(function initRedis() {
-  if (!env.REDIS_URL) return;
-  try {
-    const Redis = require('ioredis');
-    _redisPub = new Redis(env.REDIS_URL, { lazyConnect: false, maxRetriesPerRequest: 2 });
-    _redisPub.on('error', (e) => logger.warn(`[featureCache] redis pub error: ${e.message}`));
-    const sub = new Redis(env.REDIS_URL, { maxRetriesPerRequest: 2 });
-    sub.on('error', (e) => logger.warn(`[featureCache] redis sub error: ${e.message}`));
-    sub.subscribe(CACHE_CHANNEL).then(() => { _redisReady = true; }).catch(() => {});
-    sub.on('message', (_ch, msg) => {
-      if (msg === '*') cache.clear();
-      else if (msg) cache.delete(msg);
-    });
-  } catch (e) {
-    logger.warn(`[featureCache] redis disabled (ioredis missing or bad REDIS_URL): ${e.message}`);
-  }
-}());
+// no REDIS_URL this is local-only and behaviour is exactly as before (fine for
+// single-instance).
+//
+// 2026-09-04: this used to own a private ioredis pub/sub pair. Three more
+// process-local caches needed the same treatment (auth membership, admin
+// is_active, admin RBAC role), so the mechanism moved to utils/cacheBus —
+// one publisher + one subscriber for the whole process, addressed by topic.
+// Behaviour here is unchanged; only the transport is shared. NOTE the channel
+// name changed with it, so during a rolling deploy old and new instances do
+// not hear each other's feature invalidations (they fall back to the 60s TTL);
+// harmless on today's single-instance prod.
+cacheBus.subscribe(cacheBus.TOPIC.FEATURE, (bid) => {
+  if (bid === '*' || !bid) cache.clear();
+  else cache.delete(bid);
+});
 function _publishInvalidate(payload) {
-  if (_redisPub && _redisReady) {
-    _redisPub.publish(CACHE_CHANNEL, payload).catch(() => {});
-  }
+  cacheBus.publish(cacheBus.TOPIC.FEATURE, payload);
 }
 
 /**
@@ -314,7 +304,8 @@ async function setTierFeatures(tierKind, featureKeys) {
 // cross-instance cache invalidation is actually live, not just configured.
 // Read-only, no side effects.
 function cacheStatus() {
-  return { redisConfigured: !!env.REDIS_URL, redisReady: _redisReady };
+  const s = cacheBus.status();
+  return { redisConfigured: s.configured, redisReady: s.ready };
 }
 
 module.exports = {

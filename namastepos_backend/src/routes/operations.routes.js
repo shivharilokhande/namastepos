@@ -12,6 +12,7 @@ const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const { requireRole, requireStaffPerm } = require('../middleware/auth');
+const idempotent = require('../middleware/idempotent');
 
 const dailyClosing = require('../services/dailyClosingService');
 const wastage = require('../services/wastageService');
@@ -87,6 +88,13 @@ router.post(
     notes: Joi.string().max(2000).allow('', null),
     signature: Joi.string().max(255).allow('', null),
   }) }),
+  // NP-401 (2026-09-04): dailyClosing.close already refuses a second close for
+  // the same date (Conflict 'Day already closed'), so there is no duplicate
+  // side effect — but the RETRY of a committed-then-lost close gets that 409,
+  // which the offline outbox treats as a permanent rejection and dead-letters.
+  // The cashier is told "close failed" on a day that is actually closed and
+  // locked. idempotent() replays the original 201 instead.
+  idempotent('POST /daily-closings'),
   asyncHandler(async (req, res) => res.status(201).json({ closing: await dailyClosing.close(req.params.businessId, {
     ...req.body, closedByUserId: req.user?.id,
   }) })),
@@ -119,6 +127,11 @@ router.post(
     reason: Joi.string().valid('expired', 'spilled', 'over_prep', 'extra_prepared', 'damaged', 'other').required(),
     note: Joi.string().max(500).allow('', null),
   }) }),
+  // NP-401 (2026-09-04): the worst non-money double-apply after stock adjust —
+  // wastage.log INSERTs a wastage_log row AND decrements ingredient stock by
+  // qty in the same txn. A replay writes a phantom second loss and takes the
+  // stock down twice, so food-cost and reorder alerts both go wrong.
+  idempotent('POST /wastage'),
   asyncHandler(async (req, res) => res.status(201).json({ entry: await wastage.log(req.params.businessId, req.body, req.user?.id) })),
 );
 
@@ -153,6 +166,9 @@ router.post(
     specialRequests: Joi.string().max(1000).allow('', null),
     source: Joi.string().max(40).default('phone'),
   }) }),
+  // NP-401 (2026-09-04): plain INSERT, no natural key — a replay double-books
+  // the party (and can hold two tables for one booking).
+  idempotent('POST /reservations'),
   asyncHandler(async (req, res) => res.status(201).json({ reservation: await reservation.create(req.params.businessId, req.body, req.user?.id) })),
 );
 router.put('/reservations/:id', asyncHandler(async (req, res) => res.json({ reservation: await reservation.update(req.params.businessId, req.params.id, req.body) })));
@@ -166,6 +182,9 @@ router.post(
     partySize: Joi.number().integer().positive().required(),
     estimatedWaitMin: Joi.number().integer().min(0),
   }) }),
+  // NP-401: same plain-INSERT hazard as /reservations — a replay puts the same
+  // party in the queue twice and skews the quoted wait for everyone behind.
+  idempotent('POST /wait-list'),
   asyncHandler(async (req, res) => res.status(201).json({ entry: await reservation.addToWaitList(req.params.businessId, req.body) })),
 );
 

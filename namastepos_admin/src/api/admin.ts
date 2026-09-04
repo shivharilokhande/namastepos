@@ -258,12 +258,15 @@ export interface PlatformHealth {
 export const adminApi = {
   // Login may return either a token (no 2FA) or a 2FA challenge for enrolled
   // admins. The caller must handle both shapes.
+  // 2026-09-04: these no longer return an access token. The session is the
+  // httpOnly ff_admin cookie the response sets; the body only carries the
+  // flow signal (`authenticated` / `requires2fa` / `mustEnrol2fa`).
   login: (email: string, password: string) =>
-    api.post<{ token?: string; admin?: Admin; requires2fa?: boolean; challengeId?: string; mustEnrol2fa?: boolean }>(
+    api.post<{ authenticated?: boolean; admin?: Admin; requires2fa?: boolean; challengeId?: string; mustEnrol2fa?: boolean }>(
       '/admin/auth/login', { email, password }).then((r) => r.data),
-  // Complete a 2FA-gated login → returns the real access token.
+  // Complete a 2FA-gated login → sets the session cookie.
   verify2fa: (challengeId: string, code: string) =>
-    api.post<{ token: string; admin: Admin }>('/admin/auth/2fa/verify', { challengeId, code })
+    api.post<{ authenticated: boolean; admin: Admin }>('/admin/auth/2fa/verify', { challengeId, code })
        .then((r) => r.data),
   // 2FA enrolment (current admin). Start returns the otpauth URI + one-time
   // recovery codes; confirm activates it; disable requires a current code.
@@ -271,7 +274,8 @@ export const adminApi = {
     api.post<{ otpauth: string; secret: string; recoveryCodes: string[] }>('/admin/auth/2fa/enrol')
        .then((r) => r.data),
   enrol2faConfirm: (code: string) =>
-    api.post<{ enrolled: boolean; token?: string }>('/admin/auth/2fa/enrol/confirm', { code }).then((r) => r.data),
+    api.post<{ enrolled: boolean; authenticated?: boolean }>('/admin/auth/2fa/enrol/confirm', { code })
+       .then((r) => r.data),
   disable2fa: (code: string) =>
     api.post<{ disabled: boolean }>('/admin/auth/2fa/disable', { code }).then((r) => r.data),
   me: () => api.get<{ admin: Admin }>('/admin/auth/me').then((r) => r.data.admin),
@@ -418,11 +422,10 @@ export const adminApi = {
   // GST
   gstSummary: (month: string) =>
     api.get<{ summary: any }>('/admin/gst/summary', { params: { month } }).then((r) => r.data.summary),
-  // NP-107: fetch the CSV through the shared axios instance so cookie-mode
-  // auth (ff_admin cookie + CSRF interceptor) works — the old raw-URL +
-  // getAdminToken() path sent no credentials in cookie mode and saved the
-  // 401 JSON body as a .csv. Axios rejects on non-2xx, so callers never
-  // save an error body.
+  // NP-107: fetch the CSV through the shared axios instance so cookie auth
+  // (ff_admin cookie + CSRF interceptor) works — the old raw-URL path sent no
+  // credentials and saved the 401 JSON body as a .csv. Axios rejects on
+  // non-2xx, so callers never save an error body.
   gstr1Csv: (month: string) =>
     api.get<Blob>('/admin/gst/gstr1.csv', { params: { month }, responseType: 'blob' })
       .then((r) => r.data),

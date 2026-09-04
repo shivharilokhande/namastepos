@@ -63,6 +63,24 @@ const env = {
   JWT_EXPIRES_IN: required('JWT_EXPIRES_IN', nodeEnv === 'production' ? '1h' : '30m'),
   REFRESH_TOKEN_EXPIRES_IN_DAYS: parseInt(required('REFRESH_TOKEN_EXPIRES_IN_DAYS', '30'), 10),
 
+  // Security review 2026-09-04 (item 3): key-encryption key for admin TOTP
+  // secrets (admin_users.totp_secret_enc, AES-256-GCM).
+  //
+  // OPTIONAL, but strongly recommended. Until this was introduced the KEK was
+  // derived from JWT_SECRET, which coupled two unrelated lifecycles:
+  //   • rotating JWT_SECRET — a routine and sometimes urgent operation —
+  //     permanently bricked every admin's 2FA (the stored secrets could no
+  //     longer be decrypted, so nobody could complete a 2FA login), and
+  //   • one leaked value compromised both session signing AND the 2FA seeds.
+  //
+  // Generate with:   openssl rand -base64 32
+  // Unset → twoFactorService falls back to the JWT_SECRET-derived key and logs
+  // a startup warning. It never fails boot: taking prod down over a missing
+  // optional key would be a worse outcome than the coupling it fixes.
+  // Existing rows stay readable either way (see twoFactorService for the
+  // versioned-ciphertext + lazy re-encryption scheme).
+  TOTP_ENC_KEY: process.env.TOTP_ENC_KEY || '',
+
   GOOGLE_CLIENT_IDS: required('GOOGLE_CLIENT_IDS', '')
     .split(',').map((s) => s.trim()).filter(Boolean),
   // QA-8 P1: optional Workspace domain restriction. If set, only Google

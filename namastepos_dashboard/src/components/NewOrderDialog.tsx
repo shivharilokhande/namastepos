@@ -84,6 +84,22 @@ type CartLine = {
 
 type PreviousLine = { name: string; qty: number; price: number; lineTotal: number };
 
+// ── NP-205 sold-out rules (migration 084) ───────────────────────────────
+// `trackStock` is what makes a count mean anything: OFF = unlimited (the
+// number in `stock` is ignored by the order path, so it must never read as
+// sold out — that ambiguity is why an untracked menu at 0 used to look
+// entirely unavailable), ON = finite, and empty means the server will reject
+// the sale with 400 OUT_OF_STOCK. Mirror that here so the cashier is stopped
+// at the tile instead of at the failed bill.
+const variantSoldOut = (v: any) => v.trackStock === true && Number(v.stock ?? 0) <= 0;
+// A dish with sizes is only unsellable when EVERY size is gone — one empty
+// size must not hide the ones still in the kitchen.
+const itemSoldOut = (m: any) => {
+  const vs = Array.isArray(m.variants) ? m.variants : [];
+  if (vs.length > 0) return vs.every(variantSoldOut);
+  return m.trackStock === true && Number(m.stock ?? 0) <= 0;
+};
+
 type Props = {
   onClose: () => void;
   existingSession?: { id: string; tableId: string; tableLabel?: string;
@@ -140,7 +156,17 @@ export function NewOrderDialog({
   const [lastAddedItemId, setLastAddedItemId] = useState<string | null>(null);
 
   // ── Data ──────────────────────────────────────────────────────────────
-  const { data: menu = [] } = useQuery({ queryKey: ['menu'], queryFn: () => ffApi.listMenu() });
+  // NP-205 — `withVariants` so `item.variants` is actually populated. This
+  // component has always branched on `item.variants` to decide whether to
+  // open the size/add-on picker, but GET /menu never returned that key: a
+  // dish with sizes was silently added to the cart at the PARENT price and
+  // the picker below was unreachable. Key stays prefixed ['menu', …] so the
+  // existing `invalidateQueries(['menu'])` calls after a menu edit still
+  // refresh it.
+  const { data: menu = [] } = useQuery({
+    queryKey: ['menu', 'withVariants'],
+    queryFn: () => ffApi.listMenuWithVariants(),
+  });
   const { data: tables = [] } = useQuery({ queryKey: ['ops-tables'], queryFn: () => ffApi.listOpsTables() });
   const { data: modGroups = [] } = useQuery({
     queryKey: ['modifier-groups'], queryFn: () => ffApi.listModifierGroups(),
@@ -572,24 +598,36 @@ export function NewOrderDialog({
               <div key={cat}>
                 <div className="text-xs font-bold uppercase tracking-wide text-muted-foreground mb-2">{cat}</div>
                 <div className="grid grid-cols-2 gap-2">
-                  {items.map((m: any) => (
-                    <button key={m.id} onClick={() => addItem(m)}
-                      className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent text-left transition-colors">
-                      <div className="min-w-0">
-                        <div className="font-medium truncate flex items-center gap-1">
-                          {m.name}
-                          {Array.isArray(m.variants) && m.variants.length > 0 && (
-                            <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded">VAR</span>
-                          )}
-                          {Array.isArray(m.modifierGroupIds) && m.modifierGroupIds.length > 0 && (
-                            <span className="text-[9px] bg-purple-100 text-purple-700 px-1 rounded">MOD</span>
-                          )}
+                  {items.map((m: any) => {
+                    // NP-205: nothing left of any size ⇒ not billable. The
+                    // server refuses it anyway; refusing at the tile saves
+                    // the cashier a rolled-back order in front of a queue.
+                    const out = itemSoldOut(m);
+                    return (
+                      <button key={m.id} onClick={() => addItem(m)} disabled={out}
+                        title={out ? 'Sold out — no stock left' : undefined}
+                        className={`flex items-center justify-between p-3 rounded-lg border bg-card text-left transition-colors ${
+                          out ? 'opacity-50 cursor-not-allowed' : 'hover:bg-accent'
+                        }`}>
+                        <div className="min-w-0">
+                          <div className="font-medium truncate flex items-center gap-1">
+                            {m.name}
+                            {Array.isArray(m.variants) && m.variants.length > 0 && (
+                              <span className="text-[9px] bg-blue-100 text-blue-700 px-1 rounded">VAR</span>
+                            )}
+                            {Array.isArray(m.modifierGroupIds) && m.modifierGroupIds.length > 0 && (
+                              <span className="text-[9px] bg-purple-100 text-purple-700 px-1 rounded">MOD</span>
+                            )}
+                            {out && (
+                              <span className="text-[9px] bg-red-100 text-red-700 px-1 rounded">SOLD OUT</span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground">{formatINR(m.price)}</div>
                         </div>
-                        <div className="text-xs text-muted-foreground">{formatINR(m.price)}</div>
-                      </div>
-                      <Plus className="h-4 w-4 text-primary shrink-0" />
-                    </button>
-                  ))}
+                        <Plus className="h-4 w-4 text-primary shrink-0" />
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             ))}
@@ -942,7 +980,12 @@ function ItemConfigDialog({
   const variants = Array.isArray(item.variants) && item.variants.length > 0
     ? item.variants
     : [{ id: null, label: '', price: parseFloat(item.price) }];
-  const [variantId, setVariantId] = useState<string | null>(variants[0].id);
+  // NP-205 — a TRACKED size with nothing left is sold out (migration 084):
+  // the server will 400 the order, so the picker must not offer it. Untracked
+  // sizes are unlimited and always sellable, whatever number sits in `stock`
+  // (which is exactly the distinction `trackStock` was added to make).
+  const firstAvailable = variants.find((v: any) => !variantSoldOut(v)) || variants[0];
+  const [variantId, setVariantId] = useState<string | null>(firstAvailable.id);
 
   // Attached modifier groups
   const attachedIds: string[] = item.modifierGroupIds || [];
@@ -954,7 +997,7 @@ function ItemConfigDialog({
     return s;
   });
 
-  const variant = variants.find((v: any) => v.id === variantId) || variants[0];
+  const variant = variants.find((v: any) => v.id === variantId) || firstAvailable;
   let unitPrice = parseFloat(variant.price);
   const chosenMods: ModLine[] = [];
   for (const g of groups) {
@@ -991,14 +1034,21 @@ function ItemConfigDialog({
             <div>
               <div className="text-xs font-bold uppercase mb-2">Variant</div>
               <div className="flex flex-wrap gap-1">
-                {variants.map((v: any) => (
-                  <button key={v.id || 'base'} onClick={() => setVariantId(v.id)}
-                    className={`px-3 py-1.5 rounded-md border text-sm ${
-                      variantId === v.id ? 'border-primary bg-primary/10 text-primary' : 'border-input'
-                    }`}>
-                    {v.label || 'Standard'} · {formatINR(v.price)}
-                  </button>
-                ))}
+                {variants.map((v: any) => {
+                  const out = variantSoldOut(v);
+                  return (
+                    <button key={v.id || 'base'} onClick={() => setVariantId(v.id)}
+                      disabled={out}
+                      title={out ? 'Sold out — no stock left of this size' : undefined}
+                      className={`px-3 py-1.5 rounded-md border text-sm ${
+                        out ? 'border-input opacity-50 line-through cursor-not-allowed'
+                          : variantId === v.id ? 'border-primary bg-primary/10 text-primary' : 'border-input'
+                      }`}>
+                      {v.label || 'Standard'} · {formatINR(v.price)}
+                      {out && <span className="ml-1 text-[10px] font-bold text-destructive">SOLD OUT</span>}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           )}

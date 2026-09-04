@@ -6,26 +6,56 @@
 
 const { verifyAccessToken } = require('../utils/jwt');
 const { Unauthorized, Forbidden } = require('../utils/errors');
+const cacheBus = require('../utils/cacheBus');
 
-function _decode(req) {
-  // Prefer the Authorization header (Bearer-mode clients). Fall back to the
-  // httpOnly `ff_admin` cookie (2026-08-28 admin cookie-auth) so the token no
-  // longer has to live in localStorage. Dual-mode: either source works.
-  const header = req.headers.authorization || '';
-  let token = null;
-  if (header.startsWith('Bearer ')) {
-    token = header.slice('Bearer '.length).trim();
-  } else if (req.cookies && req.cookies.ff_admin) {
-    token = req.cookies.ff_admin;
-  }
-  if (!token) {
-    throw new Unauthorized('Missing or malformed Authorization header');
-  }
+function _verify(token) {
   try {
     return verifyAccessToken(token);
   } catch (_) {
     throw new Unauthorized('Invalid or expired token');
   }
+}
+
+/**
+ * Tenant / business principals: Bearer only.
+ *
+ * The mobile app and the tenant dashboard are Bearer clients (the dashboard
+ * holds its access token in memory and re-bootstraps from the `ff_refresh`
+ * httpOnly cookie), so the Authorization header stays the tenant contract.
+ */
+function _decode(req) {
+  const header = req.headers.authorization || '';
+  if (!header.startsWith('Bearer ')) {
+    throw new Unauthorized('Missing or malformed Authorization header');
+  }
+  const token = header.slice('Bearer '.length).trim();
+  if (!token) throw new Unauthorized('Missing or malformed Authorization header');
+  return _verify(token);
+}
+
+/**
+ * Platform-admin principals: the httpOnly `ff_admin` cookie ONLY.
+ *
+ * Security review 2026-09-04 (item 2). Admin auth moved to an httpOnly cookie
+ * on 2026-08-28 precisely so the highest-privilege token in the product would
+ * stop being readable by JavaScript — but this function kept accepting
+ * `Authorization: Bearer` as well, and the admin SPA kept a localStorage
+ * "zero-lockout" fallback that wrote the raw admin JWT there on any definitive
+ * 401 from the cookie probe. That combination meant one XSS in the admin
+ * console could still exfiltrate a full super-admin session, which is the exact
+ * risk the cookie redesign existed to remove. Both halves are now gone: the
+ * SPA no longer stores a token, and this path no longer accepts a header.
+ *
+ * The cookie is `httpOnly; SameSite=Strict; Secure` (prod) and Path-scoped to
+ * `${API_PREFIX}/admin`, so its blast radius is the admin API alone and the
+ * browser never attaches it to a cross-site request.
+ */
+function _decodeAdmin(req) {
+  const token = req.cookies && req.cookies.ff_admin;
+  if (!token) {
+    throw new Unauthorized('Admin session cookie missing — sign in again');
+  }
+  return _verify(token);
 }
 
 /** Any authenticated principal. */
@@ -57,6 +87,17 @@ function requireAuth(req, _res, next) {
 const _adminActiveCache = new Map(); // adminId → { active, expiresAt }
 const ADMIN_CACHE_TTL_MS = 30 * 1000;
 
+// Security review 2026-09-04 (item 1): the TTL was the ONLY thing bounding how
+// long a deactivated admin kept working, and on >1 instance a deactivation
+// performed on one node never reached the others' copy of this Map at all.
+// adminTeamService now publishes on the shared cache bus; drop the local entry
+// on receive. Without REDIS_URL this still fires locally (single-instance is
+// correct immediately) and remote nodes fall back to the TTL, as before.
+cacheBus.subscribe(cacheBus.TOPIC.ADMIN_USER, (adminId) => {
+  if (!adminId || adminId === '*') _adminActiveCache.clear();
+  else _adminActiveCache.delete(adminId);
+});
+
 async function _adminActive(adminId) {
   if (!adminId) return false;
   const cached = _adminActiveCache.get(adminId);
@@ -74,7 +115,7 @@ async function _adminActive(adminId) {
 /** Restrict to super admins only. */
 async function requireSuperAdmin(req, _res, next) {
   try {
-    const payload = _decode(req);
+    const payload = _decodeAdmin(req);
     if (!payload.isSuperAdmin) return next(new Forbidden('Super admin access required'));
     // S3: reject tokens whose admin account has since been deactivated.
     if (!(await _adminActive(payload.sid))) {
@@ -196,6 +237,51 @@ async function requireBusinessOwnership(req, _res, next) {
 const _roleCache = new Map(); // key → { membership: {role, permissions}|null, expiresAt }
 const ROLE_CACHE_TTL_MS = 30 * 1000;
 
+// ── Cross-instance membership invalidation (security review 2026-09-04) ────
+// The 30s TTL was the ONLY bound on how long a revoked or downgraded staff
+// member kept their old role + permissions, and it was a per-process bound:
+// on a multi-instance deploy the owner's "Remove staff" click landed on one
+// node, and the other nodes kept serving the sacked cook's cached permissions
+// until their own TTL lapsed. Worse, there was no invalidation hook at all —
+// even the node that handled the write waited out its own TTL.
+//
+// Every write site that changes business_users.role / .permissions /
+// .is_active now calls invalidateMembership(); this drops the local entry and
+// (when REDIS_URL is set) tells every other instance to do the same, using the
+// same shared bus featureService uses. With no Redis the local drop still
+// happens — so single-instance revocation is now INSTANT rather than ≤30s —
+// and remote instances fall back to the TTL exactly as today.
+function _membershipKey(userId, businessId) { return `${userId}:${businessId}`; }
+
+function _dropMembershipLocal({ businessId, userId } = {}) {
+  if (!businessId) return;
+  if (!userId || userId === '*') {
+    // Whole-business drop (outlet delete, plan-cap prune of many staff).
+    const suffix = `:${businessId}`;
+    for (const key of _roleCache.keys()) {
+      if (key.endsWith(suffix)) _roleCache.delete(key);
+    }
+    return;
+  }
+  _roleCache.delete(_membershipKey(userId, businessId));
+}
+
+cacheBus.subscribe(cacheBus.TOPIC.MEMBERSHIP, _dropMembershipLocal);
+
+/**
+ * Drop the cached membership for one (userId, businessId) — or for EVERY
+ * member of a business when `userId` is omitted or '*'.
+ *
+ * Call this from any code path that changes a `business_users` row's role,
+ * permissions or is_active. Cheap, synchronous locally, best-effort remotely;
+ * it must never throw into the caller's transaction, so callers wrap it in a
+ * try/catch and treat failure as non-fatal (worst case we're back to the TTL).
+ */
+function invalidateMembership(businessId, userId = '*') {
+  if (!businessId) return;
+  cacheBus.publish(cacheBus.TOPIC.MEMBERSHIP, { businessId, userId: userId || '*' });
+}
+
 /**
  * Live membership lookup (role + explicit permission list), 30s-cached per
  * (userId, businessId). NP-201: this used to select only `role`; it now also
@@ -204,7 +290,7 @@ const ROLE_CACHE_TTL_MS = 30 * 1000;
  * Returns null when the user is not an active member.
  */
 async function _currentMembership(userId, businessId) {
-  const key = `${userId}:${businessId}`;
+  const key = _membershipKey(userId, businessId);
   const cached = _roleCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.membership;
 
@@ -371,4 +457,8 @@ module.exports = {
   requireRole,
   requireStaffPerm,
   requireNotImpersonating,
+  // Cache invalidation (security review 2026-09-04). Exported for the services
+  // that mutate business_users, and for tests.
+  invalidateMembership,
+  _currentMembership,
 };

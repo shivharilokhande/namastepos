@@ -1,0 +1,147 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NamastePOS System Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#F6F7F4; --surface:#FFFFFF; --ink:#20261F; --muted:#5C6659; --line:#DDE2D8;
+  --accent:#1D6B3F; --accent-soft:#E4EFE6;
+  --crit:#A81D1D; --crit-bg:#F9E9E7; --high:#B4470E; --high-bg:#FAEDE3;
+  --med:#8A6206; --med-bg:#F7F0DC; --low:#57636F; --low-bg:#EBEFF2;
+  --code-bg:#EEF1EA;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#171A15; --surface:#20241D; --ink:#E8EBE2; --muted:#9AA491; --line:#343A2F;
+    --accent:#6FBF8E; --accent-soft:#24352A;
+    --crit:#F2938B; --crit-bg:#3A2320; --high:#F0A36C; --high-bg:#382718;
+    --med:#E2C25E; --med-bg:#352E17; --low:#A6B2BD; --low-bg:#272E33;
+    --code-bg:#2A2F26;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#171A15; --surface:#20241D; --ink:#E8EBE2; --muted:#9AA491; --line:#343A2F;
+  --accent:#6FBF8E; --accent-soft:#24352A;
+  --crit:#F2938B; --crit-bg:#3A2320; --high:#F0A36C; --high-bg:#382718;
+  --med:#E2C25E; --med-bg:#352E17; --low:#A6B2BD; --low-bg:#272E33;
+  --code-bg:#2A2F26;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:16px/1.55 "Source Sans 3",system-ui,sans-serif;margin:0;padding:0 20px 80px}
+.wrap{max-width:980px;margin:0 auto}
+header{padding:44px 0 8px}
+.eyebrow{font:600 12px/1 "IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h1{font:800 clamp(28px,5vw,42px)/1.1 Archivo,system-ui,sans-serif;margin:10px 0 6px;text-wrap:balance}
+.sub{color:var(--muted);max-width:70ch;margin:0}
+h2{font:700 22px/1.2 Archivo,system-ui,sans-serif;margin:44px 0 6px;text-wrap:balance}
+h3{font:600 17px/1.3 Archivo,system-ui,sans-serif;margin:24px 0 8px}
+p{max-width:74ch}
+code{font:13.5px/1.5 "IBM Plex Mono",monospace;background:var(--code-bg);padding:1px 5px;border-radius:4px;word-break:break-all}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin:26px 0 4px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px}
+.card .k{font:600 12px/1 "IBM Plex Mono",monospace;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.card .v{font:700 30px/1.15 Archivo,sans-serif;margin-top:8px;font-variant-numeric:tabular-nums}
+.card .d{color:var(--muted);font-size:13.5px;margin-top:4px}
+.verdict{background:var(--surface);border:1px solid var(--line);border-left:5px solid var(--high);border-radius:10px;padding:18px 22px;margin:22px 0}
+.verdict strong{font-family:Archivo,sans-serif}
+.pill{display:inline-block;font:600 11.5px/1 "IBM Plex Mono",monospace;letter-spacing:.06em;padding:4px 8px;border-radius:99px;white-space:nowrap}
+.p-crit{color:var(--crit);background:var(--crit-bg)} .p-high{color:var(--high);background:var(--high-bg)}
+.p-med{color:var(--med);background:var(--med-bg)} .p-low{color:var(--low);background:var(--low-bg)}
+.p-ok{color:var(--accent);background:var(--accent-soft)}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin:14px 0}
+table{border-collapse:collapse;width:100%;min-width:760px;font-size:14.5px}
+th{font:600 12px/1.3 "IBM Plex Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:10px 14px;border-bottom:1px solid var(--line)}
+td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td.sev{white-space:nowrap}
+.p0list{counter-reset:p0;list-style:none;padding:0;margin:14px 0}
+.p0list li{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 18px 14px 56px;margin:10px 0;position:relative}
+.p0list li::before{counter-increment:p0;content:counter(p0);position:absolute;left:16px;top:14px;font:800 18px/1 Archivo,sans-serif;color:var(--crit)}
+.p0list .where{font:500 12.5px/1.5 "IBM Plex Mono",monospace;color:var(--muted);display:block;margin-top:4px}
+.good{list-style:none;padding:0;margin:12px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:8px}
+.good li{background:var(--accent-soft);color:var(--ink);border-radius:8px;padding:9px 13px;font-size:14px}
+.good li::before{content:"✓ ";color:var(--accent);font-weight:700}
+.note{border:1px dashed var(--line);border-radius:10px;padding:14px 18px;color:var(--muted);font-size:14.5px;margin:16px 0}
+footer{margin-top:56px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+@media (prefers-reduced-motion: no-preference){ html{scroll-behavior:smooth} }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Full-system review · 2026-09-01 · commit b68dbcd</div>
+  <h1>NamastePOS System Review</h1>
+  <p class="sub">Three independent deep reviews — backend, web frontends, Flutter app — verified against live code, plus a product-strategy read. Known-fixed classes from earlier passes were excluded; everything below is new and was confirmed by reading the surrounding code, not pattern-matched.</p>
+</header>
+
+<div class="cards">
+  <div class="card"><div class="k">Findings</div><div class="v">46</div><div class="d">7 High · 18 Medium · 21 Low</div></div>
+  <div class="card"><div class="k">Backend</div><div class="v">16</div><div class="d">2 High — cross-tenant roster, yearly billing</div></div>
+  <div class="card"><div class="k">Web (dash + admin)</div><div class="v">17</div><div class="d">3 High — token exposure, GSTR exports</div></div>
+  <div class="card"><div class="k">Flutter</div><div class="v">13</div><div class="d">2 High — offline loss, tenant residue</div></div>
+</div>
+
+<div class="verdict">
+  <strong>Verdict: Request Changes — one hardening sprint before the growth push.</strong><br>
+  The codebase is in unusually good shape for a solo build: money paths are transactional, webhooks signature-verified, tenant scoping near-universal, secrets fail loudly. But the seven High findings cluster exactly on the product's three headline promises — GST compliance, offline-first, and shared-device staff login — plus the yearly revenue path. Fix P0 before spending another rupee on acquisition.
+</div>
+
+<h2>P0 — fix before next deploy / release</h2>
+<ol class="p0list">
+  <li><strong>Yearly subscribers never get their plan.</strong> Webhook plan lookup matches <code>razorpay_plan_id</code> only; yearly charges hit <code>razorpay_plan_id_yearly</code>, so a paying yearly customer keeps the old tier. Add <code>OR razorpay_plan_id_yearly = $1</code>.<span class="where">backend · src/services/razorpayService.js:446</span></li>
+  <li><strong>Cross-tenant staff roster dump (FB-17 half-closed).</strong> <code>staffPicker</code> takes <code>req.body.businessId</code> with no ownership check — any authed user can enumerate another restaurant's PIN-holding staff. Reject when it ≠ <code>req.user.businessId</code>.<span class="where">backend · src/controllers/authController.js:585</span></li>
+  <li><strong>Every offline status update is silently lost.</strong> Outbox injects <code>clientId</code> into all queued bodies; the status PUT's Joi rejects unknown keys → 400 → instant dead-letter. Offline cancels keep counting as revenue. Inject <code>clientId</code> only on order-create.<span class="where">flutter · lib/services/offline_outbox.dart:67</span></li>
+  <li><strong>Logout never wipes local SQLite or the outbox.</strong> On a shared phone the next restaurant inherits the previous tenant's orders/customers, and stale money mutations replay under the new token. Wipe both DBs in <code>logoutFull</code>.<span class="where">flutter · lib/services/auth_service.dart:314</span></li>
+  <li><strong><code>window.__ffGetToken</code> re-exposes the in-memory token.</strong> Crisp and Razorpay scripts run on the authed origin and can call the global — undoing the L-1 migration. Gate behind <code>import.meta.env.DEV</code>.<span class="where">dashboard · src/api/client.ts:61</span></li>
+  <li><strong>GSTR-1/3B exports are broken in production — both apps.</strong> Dashboard <code>window.open</code> sends no auth → 401 every click; admin download only worked in deprecated Bearer mode and saves the 401 JSON as a .csv. This is the statutory file owners hand their CA. Use the existing <code>_triggerBlobDownload</code> axios pattern.<span class="where">dashboard · ReportsPage.tsx:216 · admin · GstPage.tsx:30</span></li>
+</ol>
+
+<h2>P1 — this sprint</h2>
+<div class="tblwrap"><table>
+  <tr><th>Sev</th><th>Where</th><th>Issue → fix</th></tr>
+  <tr><td class="sev"><span class="pill p-med">MED</span></td><td><code>razorpayService.js:269</code></td><td>Webhook dedup keys on <code>payload.id</code>, which Razorpay doesn't send — replay protection is silently off. Key on <code>x-razorpay-event-id</code> header; make the insert-gate atomic (<code>RETURNING</code>, bail on 0 rows).</td></tr>
+  <tr><td class="sev"><span class="pill p-med">MED</span></td><td><code>refundService.js:326</code></td><td>Gateway refunds insert as <code>pending</code> with a TODO and no worker — "refund initiated" is a lie. Wire the existing Razorpay refund call or surface "manual refund required".</td></tr>
+  <tr><td class="sev"><span class="pill p-med">MED</span></td><td><code>sentry.ts</code> (both web apps)</td><td>ESM <code>require()</code> throws and is swallowed — Sentry has never initialized in production. Static-import it. You are currently blind to every P0 above.</td></tr>
+  <tr><td class="sev"><span class="pill p-med">MED</span></td><td>admin <code>client.ts:47</code></td><td>Bearer fallback fires on any transient probe failure and persists the JWT in localStorage for the session. Retry once; fall back only on definitive 401.</td></tr>
+  <tr><td class="sev"><span class="pill p-med">MED</span></td><td><code>orderService.js:181</code></td><td>Server trusts client-sent <code>tax</code> and unlimited <code>discount</code> — a cashier can zero GST. Recompute tax server-side; route discounts through the approval threshold.</td></tr>
+  <tr><td class="sev"><span class="pill p-med">MED</span></td><td>flutter <code>auth_provider.dart:410</code> + providers</td><td>Logout leaves <code>_plan</code> and Orders/Menu/Tables provider state in RAM — paid entitlements and old-tenant data leak to the next login. Add a <code>resetForLogout()</code> fan-out.</td></tr>
+  <tr><td class="sev"><span class="pill p-med">MED</span></td><td>flutter <code>customer_detail_screen.dart:202</code></td><td>Membership sale has no double-tap guard and no idempotency key — timeout + re-tap double-debits the wallet. Add <code>_busy</code> guard + client key.</td></tr>
+  <tr><td class="sev"><span class="pill p-med">MED</span></td><td>dashboard <code>TablesPage.tsx:797</code></td><td>Settle dialog renders nothing on session-fetch error (e.g. settled from mobile between polls) — cashier is stuck. Render shell with loading/error states.</td></tr>
+  <tr><td class="sev"><span class="pill p-med">MED</span></td><td>dashboard <code>OrdersPage.tsx:201</code></td><td>Multi-KOT "mark ready/collected": double-fire possible, <code>Promise.all</code> partial failure leaves bill half-flipped. useMutation + <code>allSettled</code>.</td></tr>
+  <tr><td class="sev"><span class="pill p-med">MED</span></td><td>compliance + guest routes</td><td>Public DPDP writes and member-OTP send lack route-level rate limits (SMS cost pump). Add strict per-IP limiters.</td></tr>
+</table></div>
+
+<h2>P2 — backlog (verified, lower blast radius)</h2>
+<div class="tblwrap"><table>
+  <tr><th>Area</th><th>Items</th></tr>
+  <tr><td>Backend money</td><td>Settle discount &gt; head-order total silently evaporates the excess (<code>tableService.js:453</code>); invoice force-rounds to whole rupee ignoring round-off mode (<code>taxInvoiceService.js:195</code>); gift-card redeem doesn't normalize code case (<code>giftCardService.js:317</code>); orders use NUMERIC INR while wallet/refunds use paise — standing convention split, plan a migration.</td></tr>
+  <tr><td>Backend auth/perf</td><td><code>requireOwner</code> trusts stale JWT role (multiOutlet routes); admin <code>listTickets</code> unbounded; analytics cron serial per business; impersonation token rides URL fragment + clipboard — swap for one-time handoff code; <code>sprintsAll.routes.js</code> (1005 lines) and <code>orderService.js</code> (1591) worth splitting.</td></tr>
+  <tr><td>Dashboard</td><td>ExpensesPage unbounded (no LIMIT server-side); money-page queries render errors as empty states (Billing, Customers); refund labels round away paise; <code>formatINR</code> decimals mode still drops <code>.00</code> (locals <code>inr2</code> duplicated); channel-tab counts computed from current page; invoice PDF <code>window.open</code> after await gets popup-blocked; un-debounced customer search (both apps); Crisp identity reads a key nothing writes.</td></tr>
+  <tr><td>Flutter</td><td>Orders tab rewrites full 500-order cache every 5s (delta poll instead); outbox burns retry budget while signed out → valid orders dead-letter in ~25 min; <code>_maybeOfferMembership</code> outside try/finally can freeze Confirm; ExpenseRepo swallow-all catch → ghost/duplicate expenses; release-build <code>print()</code> of response bodies; MPIN PBKDF2 blocks UI isolate (use <code>compute()</code>); POS grid uses <code>Image.network</code> (use CachedNetworkImage); dashboard KPIs fold a 500-capped list (source from <code>/reports/daily</code>).</td></tr>
+</table></div>
+
+<h2>What held up under scrutiny</h2>
+<ul class="good">
+  <li>Webhook signatures: Razorpay, Meta WA, aggregator — HMAC + timingSafeEqual</li>
+  <li>Wallet / gift-card / OTP / refund races closed with atomic conditional updates</li>
+  <li>Tenant scoping near-universal; super-admin read-only enforced</li>
+  <li>Secrets fail loudly; Joi noDefaults discipline held</li>
+  <li>Dashboard: zero dangerouslySetInnerHTML; all print paths escape; logout clears query cache</li>
+  <li>Orders + Customers now server-paginated (50/page)</li>
+  <li>Flutter: secure storage discipline, single-flight refresh, idempotent order-create</li>
+  <li>No cert overrides, no deep-link surface, no token logging in the app</li>
+  <li>Indexes in migrations match hot query paths</li>
+</ul>
+
+<h2>Product read — the sharp-PM take</h2>
+<p><strong>Your bugs are concentrated exactly in your positioning.</strong> NamastePOS pitches three things a legacy POS can't do: real GST compliance, offline-first reliability, and staff-friendly shared-device login. The review found the worst defect in each: the GSTR export a CA needs 401s on every click, offline cancellations vanish silently, and a shared phone leaks one restaurant's data into the next. None of these show up in tests — they show up in the exact moments that decide renewal. The hardening sprint isn't tech debt; it's the product promise.</p>
+<p><strong>The riskiest assumption is no longer in the code.</strong> 51 features, a 5-tier ladder, live billing — the engineering is ahead of distribution. Every open founder thread (Meta WhatsApp, directory backlinks, GBP verification) is GTM, and none has a measurable hypothesis attached. After P0: pick <em>one</em> acquisition experiment and instrument it. The strongest candidate is WhatsApp-first onboarding once the Meta number connects — OTP-over-WhatsApp is already built, it's the channel Indian restaurant owners actually live in, and it costs nothing to test against the current email/Google flow.</p>
+<p><strong>You would not have known any of this was broken.</strong> Sentry has never fired in production, the webhook dedup silently no-ops, dead-lettered offline orders vanish without a counter, and a yearly subscriber quietly keeps a free tier. The cheapest product investment this month is a <em>revenue-integrity cron</em>: daily reconciliation of active subscriptions vs. plan rows, dead-letter counts, and refund-pending age — one email to you when anything drifts. It converts "we'd never know" into "we know by breakfast".</p>
+<p><strong>What to explicitly not do right now:</strong> no new POS features. The mobile-parity list and the nice-to-have admin items (tags/segments, lead pipeline) cost focus that P0 + one growth experiment need. Revisit after the first ten paying tenants renew.</p>
+
+<div class="note">Scope: static review of commit <code>b68dbcd</code> by three parallel agents (backend 50 tool-calls, web 42, Flutter 28), each instructed to verify findings by reading surrounding code and to exclude the classes already fixed in the 2026-08 passes. Line numbers are as of this commit. Not covered: landing site, infra config on Render/Cloudflare, and live-traffic behavior.</div>
+
+<footer>NamastePOS · full-system review · generated 2026-09-01 · sources: namastepos_backend, namastepos_dashboard, namastepos_admin, namastepos_flutter @ b68dbcd</footer>
+</div>

@@ -303,6 +303,31 @@ class ApiService {
     return (r as Map)['items'] as List? ?? const [];
   }
 
+  /// NP-205 — the menu with each item's ACTIVE variants inlined as
+  /// `variants: [{id, label, price, stock, trackStock, ...}]`.
+  ///
+  /// Deliberately NOT routed through MenuProvider / the sqflite cache: the
+  /// local `menu_items` table has no variant schema, and the inventory screen
+  /// is the only place that needs the whole tree in one shot. Falls back
+  /// gracefully — a backend that predates `?withVariants` simply returns
+  /// items without the key.
+  Future<Map<String, List<dynamic>>> listMenuVariantsByItem(
+      String businessId) async {
+    final r = await _wrap(() => _dio.get(
+      '/businesses/$businessId/menu',
+      queryParameters: {'withVariants': true},
+    ));
+    final items = (r as Map)['items'] as List? ?? const [];
+    final out = <String, List<dynamic>>{};
+    for (final it in items) {
+      final m = it as Map;
+      final vs = m['variants'] as List?;
+      if (vs == null || vs.isEmpty) continue;
+      out[m['id'] as String] = vs;
+    }
+    return out;
+  }
+
   Future<Map<String, dynamic>> upsertMenuItem(
       String businessId, Map<String, dynamic> body, {String? id}) async {
     final r = await _wrap(() => id == null
@@ -811,6 +836,30 @@ class ApiService {
     // Backend wraps the row under { item: {...} }
     final item = ((r as Map)['item']) as Map;
     return item.cast<String, dynamic>();
+  }
+
+  /// NP-205 — the variant twin of [adjustStock] (migration 084: each variant
+  /// owns its stock). Books a delta against ONE size without touching the
+  /// replace-all variant list, which would race a concurrent menu edit.
+  /// Same body + reason enum; the row comes back under `{ variant: {...} }`.
+  Future<Map<String, dynamic>> adjustVariantStock({
+    required String businessId,
+    required String menuItemId,
+    required String variantId,
+    required double delta,
+    String reason = 'adjustment',
+    String? note,
+  }) async {
+    final r = await _wrap(() => _dio.put(
+      '/businesses/$businessId/menu/$menuItemId/variants/$variantId/stock',
+      data: {
+        'delta': delta,
+        'reason': reason,
+        if (note != null && note.isNotEmpty) 'note': note,
+      },
+    ));
+    final variant = ((r as Map)['variant']) as Map;
+    return variant.cast<String, dynamic>();
   }
 
   /// FF-304 mobile refund — partial or full. Backend accepts either

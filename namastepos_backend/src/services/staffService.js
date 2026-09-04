@@ -6,6 +6,27 @@ const bcrypt = require('../utils/bcrypt');
 const { query } = require('../config/db');
 const { NotFound, Conflict, BadRequest } = require('../utils/errors');
 
+/**
+ * Security review 2026-09-04 (item 1) — drop the cached RBAC membership for a
+ * staff member (or, with no userId, for every member of the business) the
+ * moment their role / permissions / active flag changes.
+ *
+ * middleware/auth.js caches `business_users.role + permissions` for 30s per
+ * (userId, businessId) to keep the permission gate off the hot path. Nothing
+ * used to invalidate it, so "Remove staff" / "change role" / "untick a
+ * permission" took up to 30 seconds to bite — on EVERY instance, with no
+ * cross-instance signal at all. This helper publishes on the shared Redis
+ * cache bus (local-only when REDIS_URL is unset).
+ *
+ * Deliberately non-throwing: a cache miss is a 30s staleness, never a reason
+ * to fail the owner's write.
+ */
+function _invalidateMembership(businessId, userId) {
+  try {
+    require('../middleware/auth').invalidateMembership(businessId, userId);
+  } catch (_) { /* non-fatal — worst case we fall back to the TTL */ }
+}
+
 const STAFF_ROLES = [
   'staff_manager',
   'staff_captain',
@@ -236,6 +257,9 @@ async function acceptInvite({ token, user }) {
       WHERE id = $1`,
     [invite.id],
   );
+  // The upsert above may have REACTIVATED a previously removed member with a
+  // new role — an entry for them can already be cached.
+  _invalidateMembership(invite.business_id, user.id);
   return { businessId: invite.business_id, role: invite.role };
 }
 
@@ -247,6 +271,7 @@ async function updateRole({ businessId, userId, role }) {
     [role, businessId, userId],
   );
   if (r.rowCount === 0) throw new NotFound('Member not found');
+  _invalidateMembership(businessId, userId);
   return r.rows[0];
 }
 
@@ -261,6 +286,9 @@ async function removeStaff({ businessId, userId, actingUserId }) {
     [businessId, userId],
   );
   if (r.rowCount === 0) throw new NotFound('Member not found');
+  // THE case this whole mechanism exists for: a removed staff member must
+  // stop authorising on the next request, not 30s later on one instance only.
+  _invalidateMembership(businessId, userId);
   return r.rows[0];
 }
 
@@ -370,6 +398,9 @@ async function createStaffWithPin(businessId, body) {
       'UPDATE users SET display_name = $1 WHERE id = $2',
       [displayName, userId],
     );
+    // Undelete path: role + is_active just changed on an existing row, so a
+    // stale "not a member" / old-role entry may be cached.
+    _invalidateMembership(businessId, userId);
     const fresh = await query(
       `SELECT bu.user_id, bu.business_id, bu.role, bu.display_name, bu.pin_hash,
               bu.is_active, bu.joined_at, bu.permissions, u.email, u.phone
@@ -461,6 +492,10 @@ async function createStaffWithPin(businessId, body) {
     }
     throw err;
   }
+
+  // The upsert's DO UPDATE branch can revive a soft-deleted member with a new
+  // role + permission list, so an existing cache entry must go.
+  _invalidateMembership(businessId, userId);
 
   // 2026-08-22: driver staff also get a drivers-table record so the
   // delivery-assignment picker sees them immediately. Best-effort —
@@ -554,6 +589,9 @@ async function updateStaffWithPin(businessId, userId, patch) {
     if (r.rowCount === 0) {
       throw new NotFound('Staff member not found (owner cannot be edited here)');
     }
+    // role / is_active / permissions may all have moved in this statement —
+    // this is the "owner unticked a permission" path.
+    _invalidateMembership(businessId, userId);
   }
 
   if (userSets.length > 0) {
@@ -769,6 +807,7 @@ async function complyStaffLimit(businessId) {
       WHERE business_id = $1 AND user_id = ANY($2::uuid[])`,
     [businessId, toDeactivate],
   );
+  for (const uid of toDeactivate) _invalidateMembership(businessId, uid);
   return {
     cap,
     keptCount: cap,

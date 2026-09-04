@@ -1,0 +1,5030 @@
+{
+  ".mcp.json": {
+    "mtime": 1787572473.066991,
+    "seen": 1788258612.0782552,
+    "ast_hash": "0400f2da0e6c8f683a0e403471268bab",
+    "semantic_hash": "0400f2da0e6c8f683a0e403471268bab"
+  },
+  "foodflow_admin/.vite/deps/_metadata.json": {
+    "mtime": 1787572473.0867834,
+    "seen": 1788258612.07826,
+    "ast_hash": "65516c2179f1a8bf03d5cce5ffc74c20",
+    "semantic_hash": "65516c2179f1a8bf03d5cce5ffc74c20"
+  },
+  "foodflow_admin/.vite/deps/package.json": {
+    "mtime": 1787572473.0870132,
+    "seen": 1788258612.078262,
+    "ast_hash": "d0707362e90f00edd12435e9d3b9d71c",
+    "semantic_hash": "d0707362e90f00edd12435e9d3b9d71c"
+  },
+  "foodflow_dashboard/.vite/deps/_metadata.json": {
+    "mtime": 1787572473.087431,
+    "seen": 1788258612.078263,
+    "ast_hash": "0a66c58889d6123e41aa272d722a609f",
+    "semantic_hash": "0a66c58889d6123e41aa272d722a609f"
+  },
+  "foodflow_dashboard/.vite/deps/package.json": {
+    "mtime": 1787572473.0876007,
+    "seen": 1788258612.078263,
+    "ast_hash": "d0707362e90f00edd12435e9d3b9d71c",
+    "semantic_hash": "d0707362e90f00edd12435e9d3b9d71c"
+  },
+  "load-test/k6-mixed-workload.js": {
+    "mtime": 1787572473.0885255,
+    "seen": 1788258612.078264,
+    "ast_hash": "e5966ba11131c73ee514285977d7419f",
+    "semantic_hash": "e5966ba11131c73ee514285977d7419f"
+  },
+  "namastepos_admin/.reticle.json": {
+    "mtime": 1788082786.440139,
+    "seen": 1788258612.0782652,
+    "ast_hash": "4b7969a825636ea85939b68a84ba81fa",
+    "semantic_hash": "4b7969a825636ea85939b68a84ba81fa"
+  },
+  "namastepos_admin/package.json": {
+    "mtime": 1788082786.34021,
+    "seen": 1788258612.0782652,
+    "ast_hash": "8cce2b17e5bd18b26fa1598ff1be44ea",
+    "semantic_hash": "8cce2b17e5bd18b26fa1598ff1be44ea"
+  },
+  "namastepos_admin/playwright.config.ts": {
+    "mtime": 1787572473.0904644,
+    "seen": 1788258612.0782661,
+    "ast_hash": "5852823a722e389c729739ba3dfb7ae5",
+    "semantic_hash": "5852823a722e389c729739ba3dfb7ae5"
+  },
+  "namastepos_admin/postcss.config.js": {
+    "mtime": 1787572473.0907419,
+    "seen": 1788258612.0782669,
+    "ast_hash": "4acb6a30c0858e1e9ceb649da060dca5",
+    "semantic_hash": "4acb6a30c0858e1e9ceb649da060dca5"
+  },
+  "namastepos_admin/src/App.tsx": {
+    "mtime": 1788431286.3017416,
+    "seen": 1788431777.063912,
+    "ast_hash": "8c693b94bebdcafafe4137b66daf5396",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/api/admin.ts": {
+    "mtime": 1788436036.7712543,
+    "seen": 1788436929.2737331,
+    "ast_hash": "a2f6bd01e41ed84410ef67ee58f44fa8",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/api/client.ts": {
+    "mtime": 1788423691.031991,
+    "seen": 1788423695.4731588,
+    "ast_hash": "3ac794e7676bab89ae787759fa2b66f5",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/components/Layout.tsx": {
+    "mtime": 1788431308.0396702,
+    "seen": 1788431777.063936,
+    "ast_hash": "2f5c4da1dba382219d9f565728cae6d3",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/components/ui/badge.tsx": {
+    "mtime": 1787572473.0926132,
+    "seen": 1788258612.07827,
+    "ast_hash": "67a29d4d6fcafaa0f3a70cbbbe3174aa",
+    "semantic_hash": "67a29d4d6fcafaa0f3a70cbbbe3174aa"
+  },
+  "namastepos_admin/src/components/ui/button.tsx": {
+    "mtime": 1787572473.092879,
+    "seen": 1788258612.078271,
+    "ast_hash": "4b99f10d3edcf4448e57c4fe955f5e77",
+    "semantic_hash": "4b99f10d3edcf4448e57c4fe955f5e77"
+  },
+  "namastepos_admin/src/components/ui/card.tsx": {
+    "mtime": 1787572473.0931034,
+    "seen": 1788258612.078271,
+    "ast_hash": "ca779e46ce800179366e82e48432f959",
+    "semantic_hash": "ca779e46ce800179366e82e48432f959"
+  },
+  "namastepos_admin/src/components/ui/dialog.tsx": {
+    "mtime": 1787572473.0933704,
+    "seen": 1788258612.078272,
+    "ast_hash": "da24a42294e9edd286089c127bf8bf21",
+    "semantic_hash": "da24a42294e9edd286089c127bf8bf21"
+  },
+  "namastepos_admin/src/components/ui/input.tsx": {
+    "mtime": 1787572473.0937235,
+    "seen": 1788258612.078272,
+    "ast_hash": "d5959721ba86f81b631924f0d2bbbf33",
+    "semantic_hash": "d5959721ba86f81b631924f0d2bbbf33"
+  },
+  "namastepos_admin/src/components/ui/label.tsx": {
+    "mtime": 1787572473.0941715,
+    "seen": 1788258612.078273,
+    "ast_hash": "6cd02436a573c9c021642b13f100b7b0",
+    "semantic_hash": "6cd02436a573c9c021642b13f100b7b0"
+  },
+  "namastepos_admin/src/components/ui/table.tsx": {
+    "mtime": 1787572473.0945106,
+    "seen": 1788258612.078274,
+    "ast_hash": "2743c3a756c8f2a2a4256c19b2f2983a",
+    "semantic_hash": "2743c3a756c8f2a2a4256c19b2f2983a"
+  },
+  "namastepos_admin/src/lib/sentry.ts": {
+    "mtime": 1788423691.0322692,
+    "seen": 1788423695.47329,
+    "ast_hash": "a35f74f7661f08ea9c30bedbda1d6af6",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/lib/utils.ts": {
+    "mtime": 1787572473.095456,
+    "seen": 1788258612.078275,
+    "ast_hash": "298962f9701ec174341ebb3011b5e100",
+    "semantic_hash": "298962f9701ec174341ebb3011b5e100"
+  },
+  "namastepos_admin/src/main.tsx": {
+    "mtime": 1788082801.8826892,
+    "seen": 1788258612.0782762,
+    "ast_hash": "4a30c1179951c05b34b9f9de2f7e66ab",
+    "semantic_hash": "4a30c1179951c05b34b9f9de2f7e66ab"
+  },
+  "namastepos_admin/src/pages/AddonsPage.tsx": {
+    "mtime": 1788428692.6591334,
+    "seen": 1788428696.803224,
+    "ast_hash": "c408eb2ffc1a95a2b8bc23637915891e",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/pages/AdminTeamPage.tsx": {
+    "mtime": 1787572473.0966115,
+    "seen": 1788258612.078277,
+    "ast_hash": "b921067157e4533fa9bafcfcde373e1f",
+    "semantic_hash": "b921067157e4533fa9bafcfcde373e1f"
+  },
+  "namastepos_admin/src/pages/AuditPage.tsx": {
+    "mtime": 1787572473.0969317,
+    "seen": 1788258612.078277,
+    "ast_hash": "c641eb78baa6416f80a011f7c725a68d",
+    "semantic_hash": "c641eb78baa6416f80a011f7c725a68d"
+  },
+  "namastepos_admin/src/pages/BroadcastPage.tsx": {
+    "mtime": 1787898157.8536294,
+    "seen": 1788258612.0782778,
+    "ast_hash": "b2f39607b863aec110d08b348393377b",
+    "semantic_hash": "b2f39607b863aec110d08b348393377b"
+  },
+  "namastepos_admin/src/pages/CompliancePage.tsx": {
+    "mtime": 1787922969.9052052,
+    "seen": 1788258612.0782778,
+    "ast_hash": "c6f485caae8610b07902e2073e138103",
+    "semantic_hash": "c6f485caae8610b07902e2073e138103"
+  },
+  "namastepos_admin/src/pages/CouponsPage.tsx": {
+    "mtime": 1787669546.1733465,
+    "seen": 1788258612.078279,
+    "ast_hash": "e8da037eb47a34006a7b74ec528673ca",
+    "semantic_hash": "e8da037eb47a34006a7b74ec528673ca"
+  },
+  "namastepos_admin/src/pages/CrmPage.tsx": {
+    "mtime": 1788083762.3752456,
+    "seen": 1788258612.078279,
+    "ast_hash": "966670ccbbc8036843b12097a1e4ff4f",
+    "semantic_hash": "966670ccbbc8036843b12097a1e4ff4f"
+  },
+  "namastepos_admin/src/pages/CustomerDetailPage.tsx": {
+    "mtime": 1788436429.3431141,
+    "seen": 1788436929.273748,
+    "ast_hash": "34db102a4558eea86951930a9f26f38b",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/pages/CustomersPage.tsx": {
+    "mtime": 1788436061.1664722,
+    "seen": 1788436929.2737489,
+    "ast_hash": "d4921d75c4b8be8423c37a98521d5206",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/pages/DashboardPage.tsx": {
+    "mtime": 1787572473.0988877,
+    "seen": 1788258612.078281,
+    "ast_hash": "0f23546f08e2e81cb5252441ae0e082d",
+    "semantic_hash": "0f23546f08e2e81cb5252441ae0e082d"
+  },
+  "namastepos_admin/src/pages/FinancePage.tsx": {
+    "mtime": 1787572473.0992906,
+    "seen": 1788258612.078281,
+    "ast_hash": "860b18d91a18f914fffcfd2ceb3585bf",
+    "semantic_hash": "860b18d91a18f914fffcfd2ceb3585bf"
+  },
+  "namastepos_admin/src/pages/GstPage.tsx": {
+    "mtime": 1788423691.0329204,
+    "seen": 1788423695.47345,
+    "ast_hash": "2d400dd7a25ef28f8ab96538ab23e23f",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/pages/LoginPage.tsx": {
+    "mtime": 1787914701.2244766,
+    "seen": 1788258612.0782819,
+    "ast_hash": "03f8284e373bf2a8540db378c69f087a",
+    "semantic_hash": "03f8284e373bf2a8540db378c69f087a"
+  },
+  "namastepos_admin/src/pages/MetricsPage.tsx": {
+    "mtime": 1787572473.1001568,
+    "seen": 1788258612.078283,
+    "ast_hash": "95049c8d4fd9cd24e858a8f3c15dfb3e",
+    "semantic_hash": "95049c8d4fd9cd24e858a8f3c15dfb3e"
+  },
+  "namastepos_admin/src/pages/NotFoundPage.tsx": {
+    "mtime": 1787572473.1004183,
+    "seen": 1788258612.078283,
+    "ast_hash": "dce1c8f030528f4ddec94b612fce6249",
+    "semantic_hash": "dce1c8f030528f4ddec94b612fce6249"
+  },
+  "namastepos_admin/src/pages/PlansPage.tsx": {
+    "mtime": 1788428692.659921,
+    "seen": 1788428696.803466,
+    "ast_hash": "ea11947398f0ba1d84a862a5a927d83d",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/pages/ReferralsPage.tsx": {
+    "mtime": 1787900040.653735,
+    "seen": 1788258612.078284,
+    "ast_hash": "ca590e1ac7bf87a13b5c80ca26f5f343",
+    "semantic_hash": "ca590e1ac7bf87a13b5c80ca26f5f343"
+  },
+  "namastepos_admin/src/pages/RefundsPage.tsx": {
+    "mtime": 1787669538.0079615,
+    "seen": 1788258612.078285,
+    "ast_hash": "1d54af69908f2f3e05032c383794d26a",
+    "semantic_hash": "1d54af69908f2f3e05032c383794d26a"
+  },
+  "namastepos_admin/src/pages/ReportsPage.tsx": {
+    "mtime": 1787572473.1015723,
+    "seen": 1788258612.078285,
+    "ast_hash": "022363c8fa02ff4461852cef54d79b23",
+    "semantic_hash": "022363c8fa02ff4461852cef54d79b23"
+  },
+  "namastepos_admin/src/pages/SettingsPage.tsx": {
+    "mtime": 1788431275.0930977,
+    "seen": 1788431777.064497,
+    "ast_hash": "0627a3ea4f4d5fc6a02ea3f38a095cb9",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/pages/SubscriptionsPage.tsx": {
+    "mtime": 1787794066.704996,
+    "seen": 1788258612.0782862,
+    "ast_hash": "5be198935310331d74b3a86725897782",
+    "semantic_hash": "5be198935310331d74b3a86725897782"
+  },
+  "namastepos_admin/src/pages/SupportPage.tsx": {
+    "mtime": 1788423691.0332108,
+    "seen": 1788423695.473574,
+    "ast_hash": "ccb2d5b0acd83238c79eaeeaf4aad653",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/pages/WebhooksPage.tsx": {
+    "mtime": 1787572473.1022894,
+    "seen": 1788258612.0782871,
+    "ast_hash": "bd3c37c5b00aff3ebae41b30db6324af",
+    "semantic_hash": "bd3c37c5b00aff3ebae41b30db6324af"
+  },
+  "namastepos_admin/src/reticle-dev.ts": {
+    "mtime": 1788082815.2786198,
+    "seen": 1788258612.0782878,
+    "ast_hash": "8fa3b2f68b095ec9cdf4a0d30da3972e",
+    "semantic_hash": "8fa3b2f68b095ec9cdf4a0d30da3972e"
+  },
+  "namastepos_admin/src/vite-env.d.ts": {
+    "mtime": 1787572473.1025584,
+    "seen": 1788258612.0782878,
+    "ast_hash": "7e8e0171e868cf8a7a4fe267821fb0b6",
+    "semantic_hash": "7e8e0171e868cf8a7a4fe267821fb0b6"
+  },
+  "namastepos_admin/tailwind.config.js": {
+    "mtime": 1787572473.1027668,
+    "seen": 1788258612.0782888,
+    "ast_hash": "508f9a188d3d82bc238d5d0fd18dd19f",
+    "semantic_hash": "508f9a188d3d82bc238d5d0fd18dd19f"
+  },
+  "namastepos_admin/tests/e2e/smoke.spec.ts": {
+    "mtime": 1787572473.1030955,
+    "seen": 1788258612.0782888,
+    "ast_hash": "2bd4f84ef6a6b5b968ba828455f769e7",
+    "semantic_hash": "2bd4f84ef6a6b5b968ba828455f769e7"
+  },
+  "namastepos_admin/tsconfig.json": {
+    "mtime": 1787572473.1034062,
+    "seen": 1788258612.07829,
+    "ast_hash": "8ca5d8f973a070b157c6055255ceeac9",
+    "semantic_hash": "8ca5d8f973a070b157c6055255ceeac9"
+  },
+  "namastepos_admin/vite.config.ts": {
+    "mtime": 1788082786.4402769,
+    "seen": 1788258612.07829,
+    "ast_hash": "ad51fc9eb34840c6e9cfefea8b688965",
+    "semantic_hash": "ad51fc9eb34840c6e9cfefea8b688965"
+  },
+  "namastepos_backend/.eslintrc.json": {
+    "mtime": 1787572473.1050615,
+    "seen": 1788258612.078291,
+    "ast_hash": "070c5c9fa40d9b2b84bbe9ad764838fc",
+    "semantic_hash": "070c5c9fa40d9b2b84bbe9ad764838fc"
+  },
+  "namastepos_backend/ecosystem.config.js": {
+    "mtime": 1787572473.133586,
+    "seen": 1788258612.078291,
+    "ast_hash": "a8a85c9cf8b47d5caaf4277166b390cf",
+    "semantic_hash": "a8a85c9cf8b47d5caaf4277166b390cf"
+  },
+  "namastepos_backend/package.json": {
+    "mtime": 1787909533.0933213,
+    "seen": 1788258612.078292,
+    "ast_hash": "3fc1226762528e69e8a5149f5eb3cdeb",
+    "semantic_hash": "3fc1226762528e69e8a5149f5eb3cdeb"
+  },
+  "namastepos_backend/scripts/idor-audit.js": {
+    "mtime": 1787572473.1404793,
+    "seen": 1788258612.078292,
+    "ast_hash": "e9ab3924a006635c613d64a983cd2686",
+    "semantic_hash": "e9ab3924a006635c613d64a983cd2686"
+  },
+  "namastepos_backend/scripts/migrate.js": {
+    "mtime": 1787904941.0346706,
+    "seen": 1788258612.078293,
+    "ast_hash": "86c89d0936c4afb646fbb55f6788c0ba",
+    "semantic_hash": "86c89d0936c4afb646fbb55f6788c0ba"
+  },
+  "namastepos_backend/scripts/rotate-super-admin.js": {
+    "mtime": 1787572473.1417003,
+    "seen": 1788258612.078293,
+    "ast_hash": "b493474aaf95a5e0a04813a248d1da24",
+    "semantic_hash": "b493474aaf95a5e0a04813a248d1da24"
+  },
+  "namastepos_backend/scripts/test-migrations.sh": {
+    "mtime": 1787572473.1430633,
+    "seen": 1788258612.078294,
+    "ast_hash": "c170ecca37dc712c60f06e58fca8d769",
+    "semantic_hash": "c170ecca37dc712c60f06e58fca8d769"
+  },
+  "namastepos_backend/src/app.js": {
+    "mtime": 1788423691.034506,
+    "seen": 1788423695.473759,
+    "ast_hash": "08ed388ffe7fd83e9caa9319a40df7df",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/config/db.js": {
+    "mtime": 1788199117.989801,
+    "seen": 1788258612.078295,
+    "ast_hash": "ad59de01ab0977ca883f71da6c30fb32",
+    "semantic_hash": "ad59de01ab0977ca883f71da6c30fb32"
+  },
+  "namastepos_backend/src/config/env.js": {
+    "mtime": 1788423691.0346727,
+    "seen": 1788423695.4737742,
+    "ast_hash": "95bf0dc9b86409c8d43eb2211d8af2c1",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/config/logger.js": {
+    "mtime": 1787572473.1446943,
+    "seen": 1788258612.078296,
+    "ast_hash": "a18a62fb9d0e2a305ef09db389e70ebd",
+    "semantic_hash": "a18a62fb9d0e2a305ef09db389e70ebd"
+  },
+  "namastepos_backend/src/config/sentry.js": {
+    "mtime": 1787572473.145051,
+    "seen": 1788258612.078296,
+    "ast_hash": "c88308ccf2242b2105bea66a199379f2",
+    "semantic_hash": "c88308ccf2242b2105bea66a199379f2"
+  },
+  "namastepos_backend/src/controllers/addonController.js": {
+    "mtime": 1788428692.6606674,
+    "seen": 1788428696.803961,
+    "ast_hash": "b251a25291929608fe5676736e80a58d",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/controllers/adminController.js": {
+    "mtime": 1788436003.7756426,
+    "seen": 1788436929.273825,
+    "ast_hash": "a1de7cfb9acff88c1e9e6e8d1aabcfd0",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/controllers/authController.js": {
+    "mtime": 1788433014.0474956,
+    "seen": 1788433836.746891,
+    "ast_hash": "383dab474de3c7b7e5585cdd4e3f432f",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/controllers/billingController.js": {
+    "mtime": 1788428692.6611898,
+    "seen": 1788428696.803982,
+    "ast_hash": "3aa60c9abf8f5dc20bc1e593327a0966",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/controllers/complianceController.js": {
+    "mtime": 1787922868.220098,
+    "seen": 1788258612.0782988,
+    "ast_hash": "8eff1eea3f49da4fa80755d012a4030c",
+    "semantic_hash": "8eff1eea3f49da4fa80755d012a4030c"
+  },
+  "namastepos_backend/src/controllers/customerController.js": {
+    "mtime": 1787572473.1470966,
+    "seen": 1788258612.0782988,
+    "ast_hash": "f739798b6127155c06b0b60dcabdda86",
+    "semantic_hash": "f739798b6127155c06b0b60dcabdda86"
+  },
+  "namastepos_backend/src/controllers/expenseController.js": {
+    "mtime": 1788423691.0355594,
+    "seen": 1788423695.4738612,
+    "ast_hash": "cf23273b9b02c4b907525a6895dbb89a",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/controllers/guestController.js": {
+    "mtime": 1788423691.0357072,
+    "seen": 1788423695.4738612,
+    "ast_hash": "9b6077d5e17771d0bf6427303dcc862e",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/controllers/ingredientController.js": {
+    "mtime": 1787572473.1480181,
+    "seen": 1788258612.078301,
+    "ast_hash": "accae3828bf493031be70f2c264d7430",
+    "semantic_hash": "accae3828bf493031be70f2c264d7430"
+  },
+  "namastepos_backend/src/controllers/menuController.js": {
+    "mtime": 1787572473.148608,
+    "seen": 1788258612.078301,
+    "ast_hash": "eeb1a6a78c460dce58d455b3362feea0",
+    "semantic_hash": "eeb1a6a78c460dce58d455b3362feea0"
+  },
+  "namastepos_backend/src/controllers/opsController.js": {
+    "mtime": 1788263609.898069,
+    "seen": 1788263774.5852659,
+    "ast_hash": "d7f1f4bd6dcb8af3dae371dae0ecf1fa",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/controllers/orderController.js": {
+    "mtime": 1788423691.0359352,
+    "seen": 1788423695.473901,
+    "ast_hash": "3c56bcab4d778c59e9c48ab70558e941",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/controllers/reportsController.js": {
+    "mtime": 1787572473.1498132,
+    "seen": 1788258612.078302,
+    "ast_hash": "2c242207fb247e3cea251b1f6fbdef21",
+    "semantic_hash": "2c242207fb247e3cea251b1f6fbdef21"
+  },
+  "namastepos_backend/src/controllers/staffController.js": {
+    "mtime": 1787572473.1501794,
+    "seen": 1788258612.0783029,
+    "ast_hash": "e733b141eef1ebb0dede60ea3ef2dc16",
+    "semantic_hash": "e733b141eef1ebb0dede60ea3ef2dc16"
+  },
+  "namastepos_backend/src/controllers/taxInvoiceController.js": {
+    "mtime": 1787572473.1504097,
+    "seen": 1788258612.0783029,
+    "ast_hash": "426d8e8b8ab39a2d95650f3fc0430bca",
+    "semantic_hash": "426d8e8b8ab39a2d95650f3fc0430bca"
+  },
+  "namastepos_backend/src/middleware/adminRbac.js": {
+    "mtime": 1788079117.3923686,
+    "seen": 1788258612.078304,
+    "ast_hash": "fb6baa4b2c548a8d872b60d22d73fa2e",
+    "semantic_hash": "fb6baa4b2c548a8d872b60d22d73fa2e"
+  },
+  "namastepos_backend/src/middleware/auth.js": {
+    "mtime": 1788435540.278134,
+    "seen": 1788436929.273834,
+    "ast_hash": "14f36db1115367ca91d1bfe1e70eb131",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/middleware/csrf.js": {
+    "mtime": 1787918644.6648889,
+    "seen": 1788258612.078305,
+    "ast_hash": "4503f7a517625d93c2be8d6735434549",
+    "semantic_hash": "4503f7a517625d93c2be8d6735434549"
+  },
+  "namastepos_backend/src/middleware/errorHandler.js": {
+    "mtime": 1787572473.152187,
+    "seen": 1788258612.078306,
+    "ast_hash": "eb71f762b20b53f7da0a64de398351ba",
+    "semantic_hash": "eb71f762b20b53f7da0a64de398351ba"
+  },
+  "namastepos_backend/src/middleware/featureGate.js": {
+    "mtime": 1788428692.6614208,
+    "seen": 1788428696.804254,
+    "ast_hash": "0e9e43f4aa4917b7be92c2e66fd12a1d",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/middleware/requireAddon.js": {
+    "mtime": 1788428692.6616175,
+    "seen": 1788428696.804255,
+    "ast_hash": "1047accf63ad40b9678e83e96e75be74",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/middleware/requireFeature.js": {
+    "mtime": 1787904996.9786124,
+    "seen": 1788258612.0783072,
+    "ast_hash": "072eed638f76efb8630d2df0e855dc23",
+    "semantic_hash": "072eed638f76efb8630d2df0e855dc23"
+  },
+  "namastepos_backend/src/middleware/validate.js": {
+    "mtime": 1787572473.1538086,
+    "seen": 1788258612.078308,
+    "ast_hash": "c6f6980cda007d4d43c0422919aff858",
+    "semantic_hash": "c6f6980cda007d4d43c0422919aff858"
+  },
+  "namastepos_backend/src/routes/addons.routes.js": {
+    "mtime": 1787659114.5678594,
+    "seen": 1788258612.078308,
+    "ast_hash": "ad34c989b335fe685d5c5647608559bb",
+    "semantic_hash": "ad34c989b335fe685d5c5647608559bb"
+  },
+  "namastepos_backend/src/routes/admin.routes.js": {
+    "mtime": 1788436010.3189278,
+    "seen": 1788436929.2738402,
+    "ast_hash": "48750601d275b336235f70719617ac59",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/aggregatorWebhooks.routes.js": {
+    "mtime": 1787572473.1549783,
+    "seen": 1788258612.078309,
+    "ast_hash": "4e7a4df5f2cfba304a0e9df60d80897d",
+    "semantic_hash": "4e7a4df5f2cfba304a0e9df60d80897d"
+  },
+  "namastepos_backend/src/routes/auth.routes.js": {
+    "mtime": 1788435296.0424562,
+    "seen": 1788436929.273841,
+    "ast_hash": "1d5093053c8adb40882d85c0e6593ba2",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/billing.routes.js": {
+    "mtime": 1788435203.238501,
+    "seen": 1788436929.2738419,
+    "ast_hash": "2f9af62a1a501431aa30d2c18222fded",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/compliance.routes.js": {
+    "mtime": 1788423691.0366,
+    "seen": 1788423695.474098,
+    "ast_hash": "3245de0c405ea20d86ad6692c0c7eadd",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/customers.routes.js": {
+    "mtime": 1788436232.7891634,
+    "seen": 1788436929.273843,
+    "ast_hash": "ff292b625678758b3d998db9f82ba2bd",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/expenses.routes.js": {
+    "mtime": 1788435168.61946,
+    "seen": 1788436929.273844,
+    "ast_hash": "479304def0f751b23e004b90a161fa54",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/finalSprint.routes.js": {
+    "mtime": 1787652307.638765,
+    "seen": 1788258612.078312,
+    "ast_hash": "93de148cfeda70a0b90aff046bd02a8c",
+    "semantic_hash": "93de148cfeda70a0b90aff046bd02a8c"
+  },
+  "namastepos_backend/src/routes/guest.routes.js": {
+    "mtime": 1788423691.0373473,
+    "seen": 1788423695.474138,
+    "ast_hash": "b448d2fd06dfbbcf252a28a5ff44d4ab",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/ingredients.routes.js": {
+    "mtime": 1787572473.1584044,
+    "seen": 1788258612.0783129,
+    "ast_hash": "9ef11e54f3b11149ae55f0b48984fb3c",
+    "semantic_hash": "9ef11e54f3b11149ae55f0b48984fb3c"
+  },
+  "namastepos_backend/src/routes/invitations.routes.js": {
+    "mtime": 1787572473.15876,
+    "seen": 1788258612.078314,
+    "ast_hash": "fe86dba2c275e337cbf8d347e083c41a",
+    "semantic_hash": "fe86dba2c275e337cbf8d347e083c41a"
+  },
+  "namastepos_backend/src/routes/me.routes.js": {
+    "mtime": 1787572473.1590002,
+    "seen": 1788258612.078314,
+    "ast_hash": "9f7c12e9ed02dd6639aceefa16abfe49",
+    "semantic_hash": "9f7c12e9ed02dd6639aceefa16abfe49"
+  },
+  "namastepos_backend/src/routes/menu.routes.js": {
+    "mtime": 1787572473.1592946,
+    "seen": 1788258612.078315,
+    "ast_hash": "9003ccf64936f62a30cacb6a929ba9bd",
+    "semantic_hash": "9003ccf64936f62a30cacb6a929ba9bd"
+  },
+  "namastepos_backend/src/routes/metaWhatsappWebhook.routes.js": {
+    "mtime": 1787902659.77259,
+    "seen": 1788258612.078315,
+    "ast_hash": "9e86cb44a3acac72a5c115b84e39f669",
+    "semantic_hash": "9e86cb44a3acac72a5c115b84e39f669"
+  },
+  "namastepos_backend/src/routes/multiOutlet.routes.js": {
+    "mtime": 1788436655.4968598,
+    "seen": 1788436929.2738502,
+    "ast_hash": "ff4bf7eb3a6bc00507f4cc4cd1469dbb",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/ops.routes.js": {
+    "mtime": 1787668031.0678425,
+    "seen": 1788258612.078316,
+    "ast_hash": "67c9c97ee2d1a5b62521bc39e4bbff85",
+    "semantic_hash": "67c9c97ee2d1a5b62521bc39e4bbff85"
+  },
+  "namastepos_backend/src/routes/orders.routes.js": {
+    "mtime": 1787760463.622611,
+    "seen": 1788258612.0783172,
+    "ast_hash": "b1bcd1477912d455c38c181eb71eef65",
+    "semantic_hash": "b1bcd1477912d455c38c181eb71eef65"
+  },
+  "namastepos_backend/src/routes/publicSite.routes.js": {
+    "mtime": 1787572473.1613238,
+    "seen": 1788258612.0783172,
+    "ast_hash": "6f5c42bfd63cd34bd8fe413203339d96",
+    "semantic_hash": "6f5c42bfd63cd34bd8fe413203339d96"
+  },
+  "namastepos_backend/src/routes/reports.routes.js": {
+    "mtime": 1788435129.921438,
+    "seen": 1788436929.2738528,
+    "ast_hash": "9a53368ddc8df5dcce816ad20d508f2d",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/siteRender.routes.js": {
+    "mtime": 1788199247.2312188,
+    "seen": 1788258612.078318,
+    "ast_hash": "5494ef23c6d3ac63957411d6ec5a048b",
+    "semantic_hash": "5494ef23c6d3ac63957411d6ec5a048b"
+  },
+  "namastepos_backend/src/routes/sprint1Extras.routes.js": {
+    "mtime": 1788428692.6630504,
+    "seen": 1788428696.804688,
+    "ast_hash": "7caaeb768067d4f113c7a7223c76e165",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/sprintsAll.routes.js": {
+    "mtime": 1788423691.0385396,
+    "seen": 1788423695.474278,
+    "ast_hash": "2cc96bb481366ec80509f5d8bf908ade",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/staff.routes.js": {
+    "mtime": 1788435174.4675047,
+    "seen": 1788436929.273857,
+    "ast_hash": "00821d6f27f2410e70afc036d7ab4b0e",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/support.routes.js": {
+    "mtime": 1788423691.038745,
+    "seen": 1788423695.4742908,
+    "ast_hash": "a75d26fcb5b79ef1cfd772c064269252",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/taxInvoices.routes.js": {
+    "mtime": 1787572473.163601,
+    "seen": 1788258612.07832,
+    "ast_hash": "c40bef537b24dc6d640376d9fb8eb943",
+    "semantic_hash": "c40bef537b24dc6d640376d9fb8eb943"
+  },
+  "namastepos_backend/src/routes/uploads.routes.js": {
+    "mtime": 1788199171.6611614,
+    "seen": 1788258612.078321,
+    "ast_hash": "2b4b0dc514bc428505c5c124657a7304",
+    "semantic_hash": "2b4b0dc514bc428505c5c124657a7304"
+  },
+  "namastepos_backend/src/routes/whatsappWebhook.routes.js": {
+    "mtime": 1787572473.164243,
+    "seen": 1788258612.078321,
+    "ast_hash": "4d696d256ceb28c674a3aaad3e8d1b1d",
+    "semantic_hash": "4d696d256ceb28c674a3aaad3e8d1b1d"
+  },
+  "namastepos_backend/src/server.js": {
+    "mtime": 1787572473.164584,
+    "seen": 1788258612.078322,
+    "ast_hash": "c637ab7550f7f064a9e67264ca071d70",
+    "semantic_hash": "c637ab7550f7f064a9e67264ca071d70"
+  },
+  "namastepos_backend/src/services/accountingExportService.js": {
+    "mtime": 1787661807.4066083,
+    "seen": 1788258612.078322,
+    "ast_hash": "c16c4a11ba64d0f0c8d40eb2bbcd3a79",
+    "semantic_hash": "c16c4a11ba64d0f0c8d40eb2bbcd3a79"
+  },
+  "namastepos_backend/src/services/actionCenterService.js": {
+    "mtime": 1787572473.1658192,
+    "seen": 1788258612.078323,
+    "ast_hash": "0e1807dbd2d86c71a6a04b32a4dd69d9",
+    "semantic_hash": "0e1807dbd2d86c71a6a04b32a4dd69d9"
+  },
+  "namastepos_backend/src/services/addonService.js": {
+    "mtime": 1788432858.280416,
+    "seen": 1788433836.747925,
+    "ast_hash": "9e255ce2eb551fda946b52ca8f2c207e",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/adminService.js": {
+    "mtime": 1788436396.9554152,
+    "seen": 1788436929.273862,
+    "ast_hash": "b0b23307517114e27608d2e29904e154",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/adminTeamService.js": {
+    "mtime": 1788079135.1581912,
+    "seen": 1788258612.078324,
+    "ast_hash": "d4afa9810c70424782a13ffd756e617a",
+    "semantic_hash": "d4afa9810c70424782a13ffd756e617a"
+  },
+  "namastepos_backend/src/services/aggregatorLinkService.js": {
+    "mtime": 1787572473.1684697,
+    "seen": 1788258612.078324,
+    "ast_hash": "6382f8ebc4a7d826cd8ca4c3b44205cb",
+    "semantic_hash": "6382f8ebc4a7d826cd8ca4c3b44205cb"
+  },
+  "namastepos_backend/src/services/aggregatorMenuSyncService.js": {
+    "mtime": 1787572473.169253,
+    "seen": 1788258612.078325,
+    "ast_hash": "094d3a1d3ed8bb283675a22be9d3cb84",
+    "semantic_hash": "094d3a1d3ed8bb283675a22be9d3cb84"
+  },
+  "namastepos_backend/src/services/aggregatorService.js": {
+    "mtime": 1788423691.039121,
+    "seen": 1788423695.4744189,
+    "ast_hash": "ff669bb6eacbf7a69e612addd2cd6347",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/anomalyAlertService.js": {
+    "mtime": 1787572473.170206,
+    "seen": 1788258612.078326,
+    "ast_hash": "165169d29184836ffcc3322fb8ee2057",
+    "semantic_hash": "165169d29184836ffcc3322fb8ee2057"
+  },
+  "namastepos_backend/src/services/auditService.js": {
+    "mtime": 1787909234.6612644,
+    "seen": 1788258612.078326,
+    "ast_hash": "89d1fc0d38f10d024da478b983151b8f",
+    "semantic_hash": "89d1fc0d38f10d024da478b983151b8f"
+  },
+  "namastepos_backend/src/services/authService.js": {
+    "mtime": 1787748300.932511,
+    "seen": 1788258612.078327,
+    "ast_hash": "771e768388989c519f8e7ff43504c0c5",
+    "semantic_hash": "771e768388989c519f8e7ff43504c0c5"
+  },
+  "namastepos_backend/src/services/bankReconcileService.js": {
+    "mtime": 1787572473.1713269,
+    "seen": 1788258612.078327,
+    "ast_hash": "cb6424ebd61da13b8490dd7463d88628",
+    "semantic_hash": "cb6424ebd61da13b8490dd7463d88628"
+  },
+  "namastepos_backend/src/services/barFifoService.js": {
+    "mtime": 1787572473.1716406,
+    "seen": 1788258612.0783281,
+    "ast_hash": "4d55f8e031d881d144a5d240a4980256",
+    "semantic_hash": "4d55f8e031d881d144a5d240a4980256"
+  },
+  "namastepos_backend/src/services/billSplitService.js": {
+    "mtime": 1787904818.8061447,
+    "seen": 1788258612.0783281,
+    "ast_hash": "d6c801cf6456a66ca31be05f73ce1e3d",
+    "semantic_hash": "d6c801cf6456a66ca31be05f73ce1e3d"
+  },
+  "namastepos_backend/src/services/billTemplateService.js": {
+    "mtime": 1787572473.1733391,
+    "seen": 1788258612.078329,
+    "ast_hash": "b84989d6e324f012e5a512fcd099ba80",
+    "semantic_hash": "b84989d6e324f012e5a512fcd099ba80"
+  },
+  "namastepos_backend/src/services/broadcastService.js": {
+    "mtime": 1787898106.8451712,
+    "seen": 1788258612.078329,
+    "ast_hash": "79882a7c754649bd5ef2c90c0090a216",
+    "semantic_hash": "79882a7c754649bd5ef2c90c0090a216"
+  },
+  "namastepos_backend/src/services/cancelReasonService.js": {
+    "mtime": 1787572473.1736407,
+    "seen": 1788258612.07833,
+    "ast_hash": "0a88f2aac61e55e2763e343946a6a278",
+    "semantic_hash": "0a88f2aac61e55e2763e343946a6a278"
+  },
+  "namastepos_backend/src/services/complianceService.js": {
+    "mtime": 1787673048.4560797,
+    "seen": 1788258612.07833,
+    "ast_hash": "9cee71c764082e28754e18d0189c17b7",
+    "semantic_hash": "9cee71c764082e28754e18d0189c17b7"
+  },
+  "namastepos_backend/src/services/couponService.js": {
+    "mtime": 1787904754.4321027,
+    "seen": 1788258612.078331,
+    "ast_hash": "19e4f8a02e1caabd3d12b74c12892188",
+    "semantic_hash": "19e4f8a02e1caabd3d12b74c12892188"
+  },
+  "namastepos_backend/src/services/crmService.js": {
+    "mtime": 1787897977.8662517,
+    "seen": 1788258612.078331,
+    "ast_hash": "0f0836b4f7449c3bcc9c2a6685c28593",
+    "semantic_hash": "0f0836b4f7449c3bcc9c2a6685c28593"
+  },
+  "namastepos_backend/src/services/cronWorker.js": {
+    "mtime": 1788430772.7099802,
+    "seen": 1788431777.0676842,
+    "ast_hash": "31cd63d90a66d2d434edf22b316b938f",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/customerAdminService.js": {
+    "mtime": 1788436636.6261775,
+    "seen": 1788436929.2738729,
+    "ast_hash": "721a6f53a29fa289f2ae059079209061",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/customerHistoryService.js": {
+    "mtime": 1787572473.1761093,
+    "seen": 1788258612.078333,
+    "ast_hash": "5c795eda6d67980f4503e06b65cb193a",
+    "semantic_hash": "5c795eda6d67980f4503e06b65cb193a"
+  },
+  "namastepos_backend/src/services/customerService.js": {
+    "mtime": 1787572473.17704,
+    "seen": 1788258612.078333,
+    "ast_hash": "8de583caeab4af238652567c7ff2b98f",
+    "semantic_hash": "8de583caeab4af238652567c7ff2b98f"
+  },
+  "namastepos_backend/src/services/dailyClosingService.js": {
+    "mtime": 1787572473.1777358,
+    "seen": 1788258612.0783339,
+    "ast_hash": "4d3be721177a891d9fe22a64f6c572c5",
+    "semantic_hash": "4d3be721177a891d9fe22a64f6c572c5"
+  },
+  "namastepos_backend/src/services/deliveryZoneService.js": {
+    "mtime": 1787572473.1780648,
+    "seen": 1788258612.0783339,
+    "ast_hash": "37017a9fa1e1118003a5256447c7c650",
+    "semantic_hash": "37017a9fa1e1118003a5256447c7c650"
+  },
+  "namastepos_backend/src/services/detailReportsService.js": {
+    "mtime": 1788076924.1204717,
+    "seen": 1788258612.078335,
+    "ast_hash": "1e1ad1ee3c2e9ed49e3c4da149c7c53e",
+    "semantic_hash": "1e1ad1ee3c2e9ed49e3c4da149c7c53e"
+  },
+  "namastepos_backend/src/services/discountApprovalService.js": {
+    "mtime": 1787572473.1788347,
+    "seen": 1788258612.078335,
+    "ast_hash": "e68bd3660d7dede589e69921f73b5a5c",
+    "semantic_hash": "e68bd3660d7dede589e69921f73b5a5c"
+  },
+  "namastepos_backend/src/services/driverService.js": {
+    "mtime": 1787572473.1793094,
+    "seen": 1788258612.078336,
+    "ast_hash": "38474952f9175fc2b9c5e5a278465171",
+    "semantic_hash": "38474952f9175fc2b9c5e5a278465171"
+  },
+  "namastepos_backend/src/services/dunningService.js": {
+    "mtime": 1787794092.3520176,
+    "seen": 1788258612.078336,
+    "ast_hash": "64207deb5cdb0620f026c9ef5df7b66a",
+    "semantic_hash": "64207deb5cdb0620f026c9ef5df7b66a"
+  },
+  "namastepos_backend/src/services/emailService.js": {
+    "mtime": 1787674702.7544627,
+    "seen": 1788258612.078336,
+    "ast_hash": "7cd2bec920557d0534a5f16ef398b37a",
+    "semantic_hash": "7cd2bec920557d0534a5f16ef398b37a"
+  },
+  "namastepos_backend/src/services/ewayBillService.js": {
+    "mtime": 1787572473.1798317,
+    "seen": 1788258612.078337,
+    "ast_hash": "d2c4c1e188517ff2489bb5df8b70a72d",
+    "semantic_hash": "d2c4c1e188517ff2489bb5df8b70a72d"
+  },
+  "namastepos_backend/src/services/expenseService.js": {
+    "mtime": 1788423691.0396316,
+    "seen": 1788423695.474719,
+    "ast_hash": "aee15eaef3e8508c5c28eae8777b7917",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/featureFlagsService.js": {
+    "mtime": 1788428692.6640224,
+    "seen": 1788428696.805374,
+    "ast_hash": "14ba51cc915c1fd112c91be73c5eb326",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/featureService.js": {
+    "mtime": 1788430710.5843723,
+    "seen": 1788431777.067904,
+    "ast_hash": "653a931182a9eaec65abe17b28953a08",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/foodCouponService.js": {
+    "mtime": 1787668015.0069096,
+    "seen": 1788258612.078339,
+    "ast_hash": "f63ee4d066dfcee64fef0febd7812731",
+    "semantic_hash": "f63ee4d066dfcee64fef0febd7812731"
+  },
+  "namastepos_backend/src/services/forceCloseSessionService.js": {
+    "mtime": 1787572473.1813207,
+    "seen": 1788258612.078339,
+    "ast_hash": "97e5a2d0e36bae4554634852640f6e4b",
+    "semantic_hash": "97e5a2d0e36bae4554634852640f6e4b"
+  },
+  "namastepos_backend/src/services/forecastService.js": {
+    "mtime": 1787572473.1815639,
+    "seen": 1788258612.07834,
+    "ast_hash": "d389f57683ec0c6951600ee431b38798",
+    "semantic_hash": "d389f57683ec0c6951600ee431b38798"
+  },
+  "namastepos_backend/src/services/fxService.js": {
+    "mtime": 1787572473.1818688,
+    "seen": 1788258612.07834,
+    "ast_hash": "5d15a31aff2a3e23c7c3dc7dfad1d4de",
+    "semantic_hash": "5d15a31aff2a3e23c7c3dc7dfad1d4de"
+  },
+  "namastepos_backend/src/services/giftCardService.js": {
+    "mtime": 1788423691.0397952,
+    "seen": 1788423695.474796,
+    "ast_hash": "88bb2387115c6222483953e1e1590f06",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/googleService.js": {
+    "mtime": 1787572473.182528,
+    "seen": 1788258612.078341,
+    "ast_hash": "c77bd0b47b34dcf18e64a523725e6e60",
+    "semantic_hash": "c77bd0b47b34dcf18e64a523725e6e60"
+  },
+  "namastepos_backend/src/services/gstService.js": {
+    "mtime": 1787924324.5221121,
+    "seen": 1788258612.078342,
+    "ast_hash": "4379c6a98b5290c524db23fb87f38b1a",
+    "semantic_hash": "4379c6a98b5290c524db23fb87f38b1a"
+  },
+  "namastepos_backend/src/services/gstService2.js": {
+    "mtime": 1787572473.1831894,
+    "seen": 1788258612.078342,
+    "ast_hash": "e3813e799616614e874e46059969416e",
+    "semantic_hash": "e3813e799616614e874e46059969416e"
+  },
+  "namastepos_backend/src/services/gstrExportService.js": {
+    "mtime": 1787572473.183609,
+    "seen": 1788258612.078343,
+    "ast_hash": "5430949948f3f40da213e44efa3490e0",
+    "semantic_hash": "5430949948f3f40da213e44efa3490e0"
+  },
+  "namastepos_backend/src/services/incomeStatementService.js": {
+    "mtime": 1787664259.076742,
+    "seen": 1788258612.078343,
+    "ast_hash": "b4db5f2d46e9fcd5b9db9a3d1082bf90",
+    "semantic_hash": "b4db5f2d46e9fcd5b9db9a3d1082bf90"
+  },
+  "namastepos_backend/src/services/ingredientService.js": {
+    "mtime": 1787572473.184354,
+    "seen": 1788258612.078343,
+    "ast_hash": "b5e45d6248420a1e78ebb92ac43c7fdf",
+    "semantic_hash": "b5e45d6248420a1e78ebb92ac43c7fdf"
+  },
+  "namastepos_backend/src/services/kdsService.js": {
+    "mtime": 1787572473.1845965,
+    "seen": 1788258612.0783439,
+    "ast_hash": "7a3fed27486fa83c8116f7b267e96744",
+    "semantic_hash": "7a3fed27486fa83c8116f7b267e96744"
+  },
+  "namastepos_backend/src/services/kotService.js": {
+    "mtime": 1788076999.7181349,
+    "seen": 1788258612.0783439,
+    "ast_hash": "4fa365b653fe8d039def9dd6d2d08dc4",
+    "semantic_hash": "4fa365b653fe8d039def9dd6d2d08dc4"
+  },
+  "namastepos_backend/src/services/lateDeliveryService.js": {
+    "mtime": 1787572473.1856246,
+    "seen": 1788258612.078345,
+    "ast_hash": "d97b3de12534b85885ad1ca639e28b38",
+    "semantic_hash": "d97b3de12534b85885ad1ca639e28b38"
+  },
+  "namastepos_backend/src/services/loyaltyService.js": {
+    "mtime": 1787572473.1862707,
+    "seen": 1788258612.078345,
+    "ast_hash": "0a0f3b846e69142cfaf5abede583fe3c",
+    "semantic_hash": "0a0f3b846e69142cfaf5abede583fe3c"
+  },
+  "namastepos_backend/src/services/marketplaceService.js": {
+    "mtime": 1787572473.186571,
+    "seen": 1788258612.078346,
+    "ast_hash": "147037957c6d8d0024c23d98f7358edf",
+    "semantic_hash": "147037957c6d8d0024c23d98f7358edf"
+  },
+  "namastepos_backend/src/services/membershipService.js": {
+    "mtime": 1788423691.0400126,
+    "seen": 1788423695.474935,
+    "ast_hash": "a12129915d868bb357f8586d37b275a7",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/menuEngineeringService.js": {
+    "mtime": 1787572473.1874762,
+    "seen": 1788258612.078347,
+    "ast_hash": "102b84ae3d521a997887f9126e11f619",
+    "semantic_hash": "102b84ae3d521a997887f9126e11f619"
+  },
+  "namastepos_backend/src/services/menuService.js": {
+    "mtime": 1788428692.6646242,
+    "seen": 1788428696.805699,
+    "ast_hash": "deeb9d67b6110c224cff6b634a7b32dc",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/multiOutletService.js": {
+    "mtime": 1788436625.540101,
+    "seen": 1788436929.273893,
+    "ast_hash": "8cdcf062e70d9d53bc83dfed0f3e8555",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/npsService.js": {
+    "mtime": 1787572473.1887755,
+    "seen": 1788258612.078349,
+    "ast_hash": "b3f341000fa29ea0b52ac6ff106f1ad4",
+    "semantic_hash": "b3f341000fa29ea0b52ac6ff106f1ad4"
+  },
+  "namastepos_backend/src/services/onboardingEmailService.js": {
+    "mtime": 1787572473.1892989,
+    "seen": 1788258612.078349,
+    "ast_hash": "e48ad25e63619aa6af2cd6e05f6197bb",
+    "semantic_hash": "e48ad25e63619aa6af2cd6e05f6197bb"
+  },
+  "namastepos_backend/src/services/orderService.js": {
+    "mtime": 1788428692.6653032,
+    "seen": 1788428696.805753,
+    "ast_hash": "f68a5d73fb616d3caa4ba58fd0e896a4",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/otpService.js": {
+    "mtime": 1787904787.7649703,
+    "seen": 1788258612.07835,
+    "ast_hash": "0547d1a193c846024627f6fe55b99504",
+    "semantic_hash": "0547d1a193c846024627f6fe55b99504"
+  },
+  "namastepos_backend/src/services/ownerDigestService.js": {
+    "mtime": 1787572473.1910343,
+    "seen": 1788258612.078351,
+    "ast_hash": "a88f57c812082f569aae242b748d8e82",
+    "semantic_hash": "a88f57c812082f569aae242b748d8e82"
+  },
+  "namastepos_backend/src/services/platformReportsService.js": {
+    "mtime": 1788257350.9902785,
+    "seen": 1788258612.078351,
+    "ast_hash": "0f8c74f91ece70856f456d33774990d8",
+    "semantic_hash": "0f8c74f91ece70856f456d33774990d8"
+  },
+  "namastepos_backend/src/services/pnlService.js": {
+    "mtime": 1787761839.1376183,
+    "seen": 1788258612.078351,
+    "ast_hash": "051caf0d02014b5ce033f078386d180b",
+    "semantic_hash": "051caf0d02014b5ce033f078386d180b"
+  },
+  "namastepos_backend/src/services/printerService.js": {
+    "mtime": 1787572473.193194,
+    "seen": 1788258612.078352,
+    "ast_hash": "5dc7707c34410772098f13a3f4f71c52",
+    "semantic_hash": "5dc7707c34410772098f13a3f4f71c52"
+  },
+  "namastepos_backend/src/services/promoRulesService.js": {
+    "mtime": 1787572473.193582,
+    "seen": 1788258612.078352,
+    "ast_hash": "31cc95dd99ba4cd799d9b4fa5b388850",
+    "semantic_hash": "31cc95dd99ba4cd799d9b4fa5b388850"
+  },
+  "namastepos_backend/src/services/pushService.js": {
+    "mtime": 1787572473.1940994,
+    "seen": 1788258612.078353,
+    "ast_hash": "354388a0fe350de92d06a74862f9edfd",
+    "semantic_hash": "354388a0fe350de92d06a74862f9edfd"
+  },
+  "namastepos_backend/src/services/qrService.js": {
+    "mtime": 1787572473.194484,
+    "seen": 1788258612.078353,
+    "ast_hash": "12f489ff325e35e825ad02f2b5cb199d",
+    "semantic_hash": "12f489ff325e35e825ad02f2b5cb199d"
+  },
+  "namastepos_backend/src/services/razorpayService.js": {
+    "mtime": 1788428692.6656196,
+    "seen": 1788428696.805897,
+    "ast_hash": "e2db31e867bda925efd31021c8427b7b",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/recipeService.js": {
+    "mtime": 1788081540.187022,
+    "seen": 1788258612.078354,
+    "ast_hash": "9e94bd0832a28e11e43508e2e2a1d41e",
+    "semantic_hash": "9e94bd0832a28e11e43508e2e2a1d41e"
+  },
+  "namastepos_backend/src/services/referralService.js": {
+    "mtime": 1787899994.868325,
+    "seen": 1788258612.0783548,
+    "ast_hash": "d6ee7ab3c65aa632872f498259006db6",
+    "semantic_hash": "d6ee7ab3c65aa632872f498259006db6"
+  },
+  "namastepos_backend/src/services/refundReconcileService.js": {
+    "mtime": 1788423691.0408368,
+    "seen": 1788423695.475125,
+    "ast_hash": "50be6ffb124b73a0f7863b6ab928de73",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/refundService.js": {
+    "mtime": 1788423691.0409672,
+    "seen": 1788423695.475126,
+    "ast_hash": "726ada2f8d0bfabec24ebe65b9fc3f08",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/reportExporters.js": {
+    "mtime": 1787659555.6865046,
+    "seen": 1788258612.078356,
+    "ast_hash": "e907b5b92ec9ffb1f6db7b69336b3464",
+    "semantic_hash": "e907b5b92ec9ffb1f6db7b69336b3464"
+  },
+  "namastepos_backend/src/services/reportService.js": {
+    "mtime": 1788262567.0372157,
+    "seen": 1788263774.585332,
+    "ast_hash": "64a073dfcd8e2b30453081ff71c9075f",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/reservationService.js": {
+    "mtime": 1788077020.669097,
+    "seen": 1788258612.078357,
+    "ast_hash": "3b12f3c67d68b81e1c4eaf51a0dd77da",
+    "semantic_hash": "3b12f3c67d68b81e1c4eaf51a0dd77da"
+  },
+  "namastepos_backend/src/services/retailService.js": {
+    "mtime": 1787572473.1978905,
+    "seen": 1788258612.078357,
+    "ast_hash": "7173ca1d9c069b472b089076e494421f",
+    "semantic_hash": "7173ca1d9c069b472b089076e494421f"
+  },
+  "namastepos_backend/src/services/retentionService.js": {
+    "mtime": 1787922847.3383527,
+    "seen": 1788258612.078358,
+    "ast_hash": "0d980cd02d7e3ba0314a0b24060c7135",
+    "semantic_hash": "0d980cd02d7e3ba0314a0b24060c7135"
+  },
+  "namastepos_backend/src/services/revenueLeakageService.js": {
+    "mtime": 1787572473.1983864,
+    "seen": 1788258612.078358,
+    "ast_hash": "069c28fd4aaeea611b98fc4cc1c7905a",
+    "semantic_hash": "069c28fd4aaeea611b98fc4cc1c7905a"
+  },
+  "namastepos_backend/src/services/reviewsService.js": {
+    "mtime": 1788091253.6792955,
+    "seen": 1788258612.0783591,
+    "ast_hash": "c712c9ca3b89add6d5590a2dd94d1c5e",
+    "semantic_hash": "c712c9ca3b89add6d5590a2dd94d1c5e"
+  },
+  "namastepos_backend/src/services/settingsService.js": {
+    "mtime": 1787572473.1990442,
+    "seen": 1788258612.0783591,
+    "ast_hash": "35dfc535bd04114aab271bf88ef8ff56",
+    "semantic_hash": "35dfc535bd04114aab271bf88ef8ff56"
+  },
+  "namastepos_backend/src/services/siteService.js": {
+    "mtime": 1787572473.1993222,
+    "seen": 1788258612.07836,
+    "ast_hash": "d9c2fc375efad55c9703ee6fe2a850c1",
+    "semantic_hash": "d9c2fc375efad55c9703ee6fe2a850c1"
+  },
+  "namastepos_backend/src/services/staffService.js": {
+    "mtime": 1788435160.1598873,
+    "seen": 1788436929.27391,
+    "ast_hash": "0ac8f3e972ac441c38142c18eb117ddd",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/staffShiftService.js": {
+    "mtime": 1787572473.2001486,
+    "seen": 1788258612.078361,
+    "ast_hash": "db2543de49c854d32b2860c74ed447aa",
+    "semantic_hash": "db2543de49c854d32b2860c74ed447aa"
+  },
+  "namastepos_backend/src/services/storageService.js": {
+    "mtime": 1787640960.1456568,
+    "seen": 1788258612.078361,
+    "ast_hash": "1b56c38854082b5ef16902cf132648ef",
+    "semantic_hash": "1b56c38854082b5ef16902cf132648ef"
+  },
+  "namastepos_backend/src/services/subscriptionInvoiceService.js": {
+    "mtime": 1787748136.8965826,
+    "seen": 1788258612.0783622,
+    "ast_hash": "0c35ed58e36d7a1b2c60c3a4a317b177",
+    "semantic_hash": "0c35ed58e36d7a1b2c60c3a4a317b177"
+  },
+  "namastepos_backend/src/services/subscriptionService.js": {
+    "mtime": 1788436633.5154002,
+    "seen": 1788436929.273912,
+    "ast_hash": "c77460ae80403ea60d3b34acdc279006",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/supportService.js": {
+    "mtime": 1788423691.0412755,
+    "seen": 1788423695.475303,
+    "ast_hash": "775e93949fd71b90dc3800e0bb19a9b0",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/surgePricingService.js": {
+    "mtime": 1787572473.201746,
+    "seen": 1788258612.078363,
+    "ast_hash": "b4fb1c66332129f089c0f922e6a499d5",
+    "semantic_hash": "b4fb1c66332129f089c0f922e6a499d5"
+  },
+  "namastepos_backend/src/services/tableService.js": {
+    "mtime": 1788423691.041432,
+    "seen": 1788423695.475316,
+    "ast_hash": "60d61217544917e956d5a2a789ddace2",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/taxInvoiceService.js": {
+    "mtime": 1788423691.0415792,
+    "seen": 1788423695.475317,
+    "ast_hash": "91511174f22445d05e70dc48250f0a61",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/tdsTcsService.js": {
+    "mtime": 1787572473.2030218,
+    "seen": 1788258612.078364,
+    "ast_hash": "2534efb19c4d53294f17ca00e02b6598",
+    "semantic_hash": "2534efb19c4d53294f17ca00e02b6598"
+  },
+  "namastepos_backend/src/services/twoFactorService.js": {
+    "mtime": 1787669431.604554,
+    "seen": 1788258612.0783648,
+    "ast_hash": "0617e1d04bf2e278b344e7e15345b9d3",
+    "semantic_hash": "0617e1d04bf2e278b344e7e15345b9d3"
+  },
+  "namastepos_backend/src/services/upsellService.js": {
+    "mtime": 1787572473.2038333,
+    "seen": 1788258612.0783648,
+    "ast_hash": "9d1ed9409366d9b9bcd8fee6a03c08d5",
+    "semantic_hash": "9d1ed9409366d9b9bcd8fee6a03c08d5"
+  },
+  "namastepos_backend/src/services/variantService.js": {
+    "mtime": 1788071292.2575383,
+    "seen": 1788258612.078366,
+    "ast_hash": "1a187d83e6fdb69d7334f1e27c19494e",
+    "semantic_hash": "1a187d83e6fdb69d7334f1e27c19494e"
+  },
+  "namastepos_backend/src/services/wastageService.js": {
+    "mtime": 1788077007.9180655,
+    "seen": 1788258612.078366,
+    "ast_hash": "b944e6f3da7005c8ba2e767eb423700c",
+    "semantic_hash": "b944e6f3da7005c8ba2e767eb423700c"
+  },
+  "namastepos_backend/src/services/whatsappService.js": {
+    "mtime": 1787902597.4097557,
+    "seen": 1788258612.078367,
+    "ast_hash": "b7d82b8e346175dc1b8d8266e9092bce",
+    "semantic_hash": "b7d82b8e346175dc1b8d8266e9092bce"
+  },
+  "namastepos_backend/src/utils/asyncHandler.js": {
+    "mtime": 1787572473.2053874,
+    "seen": 1788258612.078367,
+    "ast_hash": "8a4cc983a17b519474ac6bb7c22be2a0",
+    "semantic_hash": "8a4cc983a17b519474ac6bb7c22be2a0"
+  },
+  "namastepos_backend/src/utils/bcrypt.js": {
+    "mtime": 1787572473.2056298,
+    "seen": 1788258612.078368,
+    "ast_hash": "02f642f35c2390ddd442bd3640014ec0",
+    "semantic_hash": "02f642f35c2390ddd442bd3640014ec0"
+  },
+  "namastepos_backend/src/utils/errors.js": {
+    "mtime": 1787572473.205878,
+    "seen": 1788258612.078368,
+    "ast_hash": "348ea3b01a534a608d4b6e20c517dafa",
+    "semantic_hash": "348ea3b01a534a608d4b6e20c517dafa"
+  },
+  "namastepos_backend/src/utils/jwt.js": {
+    "mtime": 1787572473.206162,
+    "seen": 1788258612.078368,
+    "ast_hash": "01ce7011902eb26d9c9df37c951207e5",
+    "semantic_hash": "01ce7011902eb26d9c9df37c951207e5"
+  },
+  "namastepos_backend/src/utils/tokenPrinter.js": {
+    "mtime": 1787572473.2064228,
+    "seen": 1788258612.0783691,
+    "ast_hash": "0c299823f400b3ae39ebb0c5d951ae24",
+    "semantic_hash": "0c299823f400b3ae39ebb0c5d951ae24"
+  },
+  "namastepos_backend/tests/globalTeardown.js": {
+    "mtime": 1787572473.2067592,
+    "seen": 1788258612.0783691,
+    "ast_hash": "b81251267aee20ce27d130dab1f8916a",
+    "semantic_hash": "b81251267aee20ce27d130dab1f8916a"
+  },
+  "namastepos_backend/tests/integration/admin-customers.test.js": {
+    "mtime": 1787572473.2071323,
+    "seen": 1788258612.07837,
+    "ast_hash": "0b7e12c335adf7ec93ea9c4fc29a204b",
+    "semantic_hash": "0b7e12c335adf7ec93ea9c4fc29a204b"
+  },
+  "namastepos_backend/tests/integration/adminSecurity2026.test.js": {
+    "mtime": 1788077243.7341444,
+    "seen": 1788258612.07837,
+    "ast_hash": "a43440e89e5bb2a77f0bdd74d566b0cf",
+    "semantic_hash": "a43440e89e5bb2a77f0bdd74d566b0cf"
+  },
+  "namastepos_backend/tests/integration/auth.test.js": {
+    "mtime": 1787572473.20741,
+    "seen": 1788258612.078371,
+    "ast_hash": "94850558068e202e8ebefe651fefc7ed",
+    "semantic_hash": "94850558068e202e8ebefe651fefc7ed"
+  },
+  "namastepos_backend/tests/integration/autowallet2026.test.js": {
+    "mtime": 1788087960.9394305,
+    "seen": 1788258612.078371,
+    "ast_hash": "7edd2b40ed668621ee9cdd271f1e3fe8",
+    "semantic_hash": "7edd2b40ed668621ee9cdd271f1e3fe8"
+  },
+  "namastepos_backend/tests/integration/billing.test.js": {
+    "mtime": 1787572473.20768,
+    "seen": 1788258612.078371,
+    "ast_hash": "9a9b76a7c4c154d34aa7824f394d95c8",
+    "semantic_hash": "9a9b76a7c4c154d34aa7824f394d95c8"
+  },
+  "namastepos_backend/tests/integration/compliance.test.js": {
+    "mtime": 1787572473.2081566,
+    "seen": 1788258612.078372,
+    "ast_hash": "cec9b6ac6ad5df482539dede4e2841f4",
+    "semantic_hash": "cec9b6ac6ad5df482539dede4e2841f4"
+  },
+  "namastepos_backend/tests/integration/couponcap2026.test.js": {
+    "mtime": 1788249016.7693362,
+    "seen": 1788258612.078372,
+    "ast_hash": "4fc383e050f1a97f6f039de338a5aea1",
+    "semantic_hash": "4fc383e050f1a97f6f039de338a5aea1"
+  },
+  "namastepos_backend/tests/integration/crossTenant.test.js": {
+    "mtime": 1787572473.2084193,
+    "seen": 1788258612.0783732,
+    "ast_hash": "ecf6f26111b7106e7bf47fbf172761ee",
+    "semantic_hash": "ecf6f26111b7106e7bf47fbf172761ee"
+  },
+  "namastepos_backend/tests/integration/customers.test.js": {
+    "mtime": 1787572473.208701,
+    "seen": 1788258612.0783732,
+    "ast_hash": "f092584dffa122dd287ff00695718579",
+    "semantic_hash": "f092584dffa122dd287ff00695718579"
+  },
+  "namastepos_backend/tests/integration/expenses-reports.test.js": {
+    "mtime": 1787572473.2089965,
+    "seen": 1788258612.078374,
+    "ast_hash": "6b71f996e6a1b6d060d2b7d3f2c8ded5",
+    "semantic_hash": "6b71f996e6a1b6d060d2b7d3f2c8ded5"
+  },
+  "namastepos_backend/tests/integration/guest_benefit2026.test.js": {
+    "mtime": 1788084710.187518,
+    "seen": 1788258612.078374,
+    "ast_hash": "3e561c049fb8de892e42163e6dff9708",
+    "semantic_hash": "3e561c049fb8de892e42163e6dff9708"
+  },
+  "namastepos_backend/tests/integration/hardening2026.test.js": {
+    "mtime": 1788079313.1614432,
+    "seen": 1788258612.0783749,
+    "ast_hash": "bcf9d9c233840775ee130e371bb07105",
+    "semantic_hash": "bcf9d9c233840775ee130e371bb07105"
+  },
+  "namastepos_backend/tests/integration/membership_crud.test.js": {
+    "mtime": 1787572473.209268,
+    "seen": 1788258612.0783749,
+    "ast_hash": "770f741ecc1fe824fea0c0d12e7315b9",
+    "semantic_hash": "770f741ecc1fe824fea0c0d12e7315b9"
+  },
+  "namastepos_backend/tests/integration/menu.test.js": {
+    "mtime": 1787572473.209529,
+    "seen": 1788258612.078376,
+    "ast_hash": "765c1eab3e9ea40c9cf31fe56f605556",
+    "semantic_hash": "765c1eab3e9ea40c9cf31fe56f605556"
+  },
+  "namastepos_backend/tests/integration/money_regressions2026.test.js": {
+    "mtime": 1788082637.6871421,
+    "seen": 1788258612.078376,
+    "ast_hash": "77508e4b0b3fb8902fc12b85717cdbf1",
+    "semantic_hash": "77508e4b0b3fb8902fc12b85717cdbf1"
+  },
+  "namastepos_backend/tests/integration/ops.test.js": {
+    "mtime": 1787572473.2099519,
+    "seen": 1788258612.078377,
+    "ast_hash": "dbd7ad0a9dfb752e033b13df0f6dec67",
+    "semantic_hash": "dbd7ad0a9dfb752e033b13df0f6dec67"
+  },
+  "namastepos_backend/tests/integration/orders.test.js": {
+    "mtime": 1787572473.21035,
+    "seen": 1788258612.078377,
+    "ast_hash": "a9c789949d0aba50575078812e7ee921",
+    "semantic_hash": "a9c789949d0aba50575078812e7ee921"
+  },
+  "namastepos_backend/tests/integration/rbac.matrix.test.js": {
+    "mtime": 1787572473.210864,
+    "seen": 1788258612.078378,
+    "ast_hash": "3d18a87c32d63cf585fb711b532f53ff",
+    "semantic_hash": "3d18a87c32d63cf585fb711b532f53ff"
+  },
+  "namastepos_backend/tests/integration/security_fixes.test.js": {
+    "mtime": 1787572473.211391,
+    "seen": 1788258612.078378,
+    "ast_hash": "aa03ccb3768ab361c6f36daecc6bbc47",
+    "semantic_hash": "aa03ccb3768ab361c6f36daecc6bbc47"
+  },
+  "namastepos_backend/tests/integration/staff.test.js": {
+    "mtime": 1788255489.2445185,
+    "seen": 1788258612.078378,
+    "ast_hash": "c0a9a9fefa4240c85976ff562ca0d60e",
+    "semantic_hash": "c0a9a9fefa4240c85976ff562ca0d60e"
+  },
+  "namastepos_backend/tests/integration/staffpicker_auth2026.test.js": {
+    "mtime": 1788423691.0431237,
+    "seen": 1788423695.475731,
+    "ast_hash": "e6206a419da39216457c07116a0c291e",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/tax-invoices.test.js": {
+    "mtime": 1787572473.2119467,
+    "seen": 1788258612.078379,
+    "ast_hash": "2701a7c7ee62faf8758fe982dea8ae83",
+    "semantic_hash": "2701a7c7ee62faf8758fe982dea8ae83"
+  },
+  "namastepos_backend/tests/integration/uploads.test.js": {
+    "mtime": 1787572473.2124288,
+    "seen": 1788258612.07838,
+    "ast_hash": "349fc8f7bdb630631fd29ea6a963b464",
+    "semantic_hash": "349fc8f7bdb630631fd29ea6a963b464"
+  },
+  "namastepos_backend/tests/integration/whatsapp-webhook.test.js": {
+    "mtime": 1787593850.7009342,
+    "seen": 1788258612.07838,
+    "ast_hash": "e1aae7b97f7a17e6dbcd7e11b338964d",
+    "semantic_hash": "e1aae7b97f7a17e6dbcd7e11b338964d"
+  },
+  "namastepos_backend/tests/load/order_race.k6.js": {
+    "mtime": 1787572473.2132,
+    "seen": 1788258612.078381,
+    "ast_hash": "75ae82a2312eea66bc65af4b719dfcaa",
+    "semantic_hash": "75ae82a2312eea66bc65af4b719dfcaa"
+  },
+  "namastepos_backend/tests/setup.js": {
+    "mtime": 1787904960.2557561,
+    "seen": 1788258612.078381,
+    "ast_hash": "190b610c9a62a6bad873d34f0b2e53c8",
+    "semantic_hash": "190b610c9a62a6bad873d34f0b2e53c8"
+  },
+  "namastepos_backend/tests/unit/aggregatorSig.test.js": {
+    "mtime": 1787572473.2140207,
+    "seen": 1788258612.078382,
+    "ast_hash": "49a4b1a5bc89ef08c0670ed9f296ca44",
+    "semantic_hash": "49a4b1a5bc89ef08c0670ed9f296ca44"
+  },
+  "namastepos_backend/tests/unit/billMath.test.js": {
+    "mtime": 1787572473.2142735,
+    "seen": 1788258612.078382,
+    "ast_hash": "8948aa38ddd51558c819a284c7191a24",
+    "semantic_hash": "8948aa38ddd51558c819a284c7191a24"
+  },
+  "namastepos_backend/tests/unit/billSplit.test.js": {
+    "mtime": 1787572473.2144976,
+    "seen": 1788258612.078382,
+    "ast_hash": "ffce516723d03eca9799c0e812f85368",
+    "semantic_hash": "ffce516723d03eca9799c0e812f85368"
+  },
+  "namastepos_backend/tests/unit/fxConvert.test.js": {
+    "mtime": 1787572473.2147331,
+    "seen": 1788258612.0783832,
+    "ast_hash": "df97164556378899ec87afbf16bbbebf",
+    "semantic_hash": "df97164556378899ec87afbf16bbbebf"
+  },
+  "namastepos_backend/tests/unit/gst.test.js": {
+    "mtime": 1787572473.215036,
+    "seen": 1788258612.0783832,
+    "ast_hash": "7541a4297b058272999f2098048624f6",
+    "semantic_hash": "7541a4297b058272999f2098048624f6"
+  },
+  "namastepos_backend/tests/unit/jwt.test.js": {
+    "mtime": 1787572473.21531,
+    "seen": 1788258612.0783842,
+    "ast_hash": "5f22e37739a81f2b513cf1f554068009",
+    "semantic_hash": "5f22e37739a81f2b513cf1f554068009"
+  },
+  "namastepos_backend/tests/unit/onboardingEmail.test.js": {
+    "mtime": 1787572473.2155368,
+    "seen": 1788258612.0783842,
+    "ast_hash": "76d7c4a929ccf2a1c86a34771ff56630",
+    "semantic_hash": "76d7c4a929ccf2a1c86a34771ff56630"
+  },
+  "namastepos_backend/tests/unit/orderTransitions.test.js": {
+    "mtime": 1787572473.2157829,
+    "seen": 1788258612.0783849,
+    "ast_hash": "d666b1bd8d6bfa5b78dfdf8f5f7e797a",
+    "semantic_hash": "d666b1bd8d6bfa5b78dfdf8f5f7e797a"
+  },
+  "namastepos_backend/tests/unit/otpNormalize.test.js": {
+    "mtime": 1787572473.2160783,
+    "seen": 1788258612.0783849,
+    "ast_hash": "36924313db103a67bd238d34134a03d7",
+    "semantic_hash": "36924313db103a67bd238d34134a03d7"
+  },
+  "namastepos_backend/tests/unit/pnl.test.js": {
+    "mtime": 1787572473.2163343,
+    "seen": 1788258612.0783858,
+    "ast_hash": "90b7e0d3ee45d41b61bead2626960171",
+    "semantic_hash": "90b7e0d3ee45d41b61bead2626960171"
+  },
+  "namastepos_backend/tests/unit/printerRender.test.js": {
+    "mtime": 1787572473.216612,
+    "seen": 1788258612.0783858,
+    "ast_hash": "01a656d9f335ad27a091a30a8df15d95",
+    "semantic_hash": "01a656d9f335ad27a091a30a8df15d95"
+  },
+  "namastepos_backend/tests/unit/sentryScrubber.test.js": {
+    "mtime": 1787572473.2170422,
+    "seen": 1788258612.078387,
+    "ast_hash": "b6c041ad44d62d78c37d9306f6a86fe6",
+    "semantic_hash": "b6c041ad44d62d78c37d9306f6a86fe6"
+  },
+  "namastepos_backend/tests/unit/tokenPrinter.test.js": {
+    "mtime": 1787572473.2173636,
+    "seen": 1788258612.078387,
+    "ast_hash": "b15006b054f65b5f9029911d8404381e",
+    "semantic_hash": "b15006b054f65b5f9029911d8404381e"
+  },
+  "namastepos_backend/tests/unit/twoFactor.test.js": {
+    "mtime": 1787572473.2176404,
+    "seen": 1788258612.078388,
+    "ast_hash": "21bdc8a60f5c6c2c47a6b824fee7e023",
+    "semantic_hash": "21bdc8a60f5c6c2c47a6b824fee7e023"
+  },
+  "namastepos_backend/tests/unit/validate.test.js": {
+    "mtime": 1787572473.2179039,
+    "seen": 1788258612.078388,
+    "ast_hash": "71fe702996db67e660c592c8bcffb063",
+    "semantic_hash": "71fe702996db67e660c592c8bcffb063"
+  },
+  "namastepos_backend/tests/unit/variants.test.js": {
+    "mtime": 1787572473.2182531,
+    "seen": 1788258612.078389,
+    "ast_hash": "710d945a957664c2a0d021f60bb97c7b",
+    "semantic_hash": "710d945a957664c2a0d021f60bb97c7b"
+  },
+  "namastepos_backend/tests/unit/voiceParse.test.js": {
+    "mtime": 1787572473.218707,
+    "seen": 1788258612.078389,
+    "ast_hash": "c2edb9157fa23f112ce1bf8b1002c9b2",
+    "semantic_hash": "c2edb9157fa23f112ce1bf8b1002c9b2"
+  },
+  "namastepos_dashboard/.reticle.json": {
+    "mtime": 1788071649.9158342,
+    "seen": 1788258612.078389,
+    "ast_hash": "8d877e4fe3fa23b7aa37806890eca550",
+    "semantic_hash": "8d877e4fe3fa23b7aa37806890eca550"
+  },
+  "namastepos_dashboard/package.json": {
+    "mtime": 1788071649.8167892,
+    "seen": 1788258612.0783901,
+    "ast_hash": "78b538f6710047cca98090fbe807a719",
+    "semantic_hash": "78b538f6710047cca98090fbe807a719"
+  },
+  "namastepos_dashboard/playwright.config.ts": {
+    "mtime": 1787572473.2214193,
+    "seen": 1788258612.0783901,
+    "ast_hash": "04a401c25955f709c4184b3196357fe9",
+    "semantic_hash": "04a401c25955f709c4184b3196357fe9"
+  },
+  "namastepos_dashboard/postcss.config.js": {
+    "mtime": 1787572473.2216055,
+    "seen": 1788258612.078391,
+    "ast_hash": "4acb6a30c0858e1e9ceb649da060dca5",
+    "semantic_hash": "4acb6a30c0858e1e9ceb649da060dca5"
+  },
+  "namastepos_dashboard/src/App.tsx": {
+    "mtime": 1788433424.8090484,
+    "seen": 1788433836.750824,
+    "ast_hash": "901a615aded7ebacf972eafdde5440ab",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/api/client.ts": {
+    "mtime": 1788433253.4633994,
+    "seen": 1788433836.750825,
+    "ast_hash": "721be387b5b69d42ea7051370cd12d4a",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/api/guest.ts": {
+    "mtime": 1788082533.3293908,
+    "seen": 1788258612.078392,
+    "ast_hash": "5672ed356c777cb28f0f1498dabaa582",
+    "semantic_hash": "5672ed356c777cb28f0f1498dabaa582"
+  },
+  "namastepos_dashboard/src/api/namastepos.ts": {
+    "mtime": 1788436676.513801,
+    "seen": 1788436929.273963,
+    "ast_hash": "f04b0882917ae7bcd6b778b6d9f33d9d",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/components/BillSplitDialog.tsx": {
+    "mtime": 1788193860.2394638,
+    "seen": 1788258612.078393,
+    "ast_hash": "2624c0f156cc1be5f1a00bbe66b9d62f",
+    "semantic_hash": "2624c0f156cc1be5f1a00bbe66b9d62f"
+  },
+  "namastepos_dashboard/src/components/CookieBanner.tsx": {
+    "mtime": 1787572473.2245755,
+    "seen": 1788258612.0783942,
+    "ast_hash": "ad73ee9a281c0d98aea1e74a4fc961c9",
+    "semantic_hash": "ad73ee9a281c0d98aea1e74a4fc961c9"
+  },
+  "namastepos_dashboard/src/components/CrispChat.tsx": {
+    "mtime": 1787572473.2248557,
+    "seen": 1788258612.0783942,
+    "ast_hash": "d55b6dc69bc5b5ba1b1950bff7f5cce8",
+    "semantic_hash": "d55b6dc69bc5b5ba1b1950bff7f5cce8"
+  },
+  "namastepos_dashboard/src/components/CustomerDetailDrawer.tsx": {
+    "mtime": 1787665162.695152,
+    "seen": 1788258612.078395,
+    "ast_hash": "a8c6b0eba1d53f8d8cd891e571525d54",
+    "semantic_hash": "a8c6b0eba1d53f8d8cd891e571525d54"
+  },
+  "namastepos_dashboard/src/components/FirstOrderTour.tsx": {
+    "mtime": 1787631235.659944,
+    "seen": 1788258612.078395,
+    "ast_hash": "c71f788fb6cde0ae9233d52f330ddc6e",
+    "semantic_hash": "c71f788fb6cde0ae9233d52f330ddc6e"
+  },
+  "namastepos_dashboard/src/components/FloorCanvas.tsx": {
+    "mtime": 1787572473.2255533,
+    "seen": 1788258612.0783958,
+    "ast_hash": "3ef8722d5283ca1213952a83c3f2be4a",
+    "semantic_hash": "3ef8722d5283ca1213952a83c3f2be4a"
+  },
+  "namastepos_dashboard/src/components/GuestBillPanel.tsx": {
+    "mtime": 1787905455.7176466,
+    "seen": 1788258612.0783958,
+    "ast_hash": "bf76cc184dd702212ff3f3b65131a1a3",
+    "semantic_hash": "bf76cc184dd702212ff3f3b65131a1a3"
+  },
+  "namastepos_dashboard/src/components/ImpersonationBanner.tsx": {
+    "mtime": 1787572473.2265148,
+    "seen": 1788258612.078397,
+    "ast_hash": "61038f6bc710e2362386cde4d20d2156",
+    "semantic_hash": "61038f6bc710e2362386cde4d20d2156"
+  },
+  "namastepos_dashboard/src/components/Layout.tsx": {
+    "mtime": 1788433370.6135492,
+    "seen": 1788433836.750995,
+    "ast_hash": "765e49955a1eecf1de089a5168785a27",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/components/MenuCsvImportDialog.tsx": {
+    "mtime": 1787572473.2276788,
+    "seen": 1788258612.078397,
+    "ast_hash": "2f2b29b5c55452e7449ccd5d6fa6b7f1",
+    "semantic_hash": "2f2b29b5c55452e7449ccd5d6fa6b7f1"
+  },
+  "namastepos_dashboard/src/components/NewOrderDialog.tsx": {
+    "mtime": 1788088557.4898212,
+    "seen": 1788258612.078398,
+    "ast_hash": "e34e3fd65d5f561d20f9f9e8494f75a9",
+    "semantic_hash": "e34e3fd65d5f561d20f9f9e8494f75a9"
+  },
+  "namastepos_dashboard/src/components/SkuAutoMapDialog.tsx": {
+    "mtime": 1787572473.2288005,
+    "seen": 1788258612.078398,
+    "ast_hash": "a43c54e4f9d4631219675abddea9a98e",
+    "semantic_hash": "a43c54e4f9d4631219675abddea9a98e"
+  },
+  "namastepos_dashboard/src/components/VoiceCommand.tsx": {
+    "mtime": 1787572473.2290902,
+    "seen": 1788258612.078399,
+    "ast_hash": "ff5a22c40c9533e0074c9cbfbad42e55",
+    "semantic_hash": "ff5a22c40c9533e0074c9cbfbad42e55"
+  },
+  "namastepos_dashboard/src/components/ui/badge.tsx": {
+    "mtime": 1787572473.229347,
+    "seen": 1788258612.078399,
+    "ast_hash": "67a29d4d6fcafaa0f3a70cbbbe3174aa",
+    "semantic_hash": "67a29d4d6fcafaa0f3a70cbbbe3174aa"
+  },
+  "namastepos_dashboard/src/components/ui/button.tsx": {
+    "mtime": 1787572473.229641,
+    "seen": 1788258612.0784,
+    "ast_hash": "4b99f10d3edcf4448e57c4fe955f5e77",
+    "semantic_hash": "4b99f10d3edcf4448e57c4fe955f5e77"
+  },
+  "namastepos_dashboard/src/components/ui/card.tsx": {
+    "mtime": 1787572473.2299182,
+    "seen": 1788258612.0784,
+    "ast_hash": "ca779e46ce800179366e82e48432f959",
+    "semantic_hash": "ca779e46ce800179366e82e48432f959"
+  },
+  "namastepos_dashboard/src/components/ui/date-input.tsx": {
+    "mtime": 1787572473.230205,
+    "seen": 1788258612.078401,
+    "ast_hash": "6ee49f5d28b5220cf4bd889683ba2498",
+    "semantic_hash": "6ee49f5d28b5220cf4bd889683ba2498"
+  },
+  "namastepos_dashboard/src/components/ui/dialog.tsx": {
+    "mtime": 1787572473.2303834,
+    "seen": 1788258612.078401,
+    "ast_hash": "da24a42294e9edd286089c127bf8bf21",
+    "semantic_hash": "da24a42294e9edd286089c127bf8bf21"
+  },
+  "namastepos_dashboard/src/components/ui/input.tsx": {
+    "mtime": 1787572473.2305532,
+    "seen": 1788258612.078402,
+    "ast_hash": "d5959721ba86f81b631924f0d2bbbf33",
+    "semantic_hash": "d5959721ba86f81b631924f0d2bbbf33"
+  },
+  "namastepos_dashboard/src/components/ui/label.tsx": {
+    "mtime": 1787572473.2307606,
+    "seen": 1788258612.078402,
+    "ast_hash": "6cd02436a573c9c021642b13f100b7b0",
+    "semantic_hash": "6cd02436a573c9c021642b13f100b7b0"
+  },
+  "namastepos_dashboard/src/components/ui/table.tsx": {
+    "mtime": 1787572473.231066,
+    "seen": 1788258612.078402,
+    "ast_hash": "2743c3a756c8f2a2a4256c19b2f2983a",
+    "semantic_hash": "2743c3a756c8f2a2a4256c19b2f2983a"
+  },
+  "namastepos_dashboard/src/hooks/useAddons.ts": {
+    "mtime": 1787572473.2313924,
+    "seen": 1788258612.078403,
+    "ast_hash": "b8fb0a1cef30b45d7ab3ca58ecf76cb4",
+    "semantic_hash": "b8fb0a1cef30b45d7ab3ca58ecf76cb4"
+  },
+  "namastepos_dashboard/src/hooks/usePlan.ts": {
+    "mtime": 1787572473.231706,
+    "seen": 1788258612.078403,
+    "ast_hash": "4c55a4c45cea55e715ddc9cec2a6c004",
+    "semantic_hash": "4c55a4c45cea55e715ddc9cec2a6c004"
+  },
+  "namastepos_dashboard/src/i18n/en.json": {
+    "mtime": 1787572473.2320907,
+    "seen": 1788258612.0784042,
+    "ast_hash": "ddc87c7c4e5ca420d25def5af324c8c2",
+    "semantic_hash": "ddc87c7c4e5ca420d25def5af324c8c2"
+  },
+  "namastepos_dashboard/src/i18n/hi.json": {
+    "mtime": 1787572473.2323601,
+    "seen": 1788258612.0784042,
+    "ast_hash": "32efc2cd25b229bc148f078add94f88d",
+    "semantic_hash": "32efc2cd25b229bc148f078add94f88d"
+  },
+  "namastepos_dashboard/src/i18n/index.ts": {
+    "mtime": 1787572473.2326224,
+    "seen": 1788258612.0784051,
+    "ast_hash": "fd02edcfdf8ac27d7e744c30831a1be4",
+    "semantic_hash": "fd02edcfdf8ac27d7e744c30831a1be4"
+  },
+  "namastepos_dashboard/src/lib/btPrinter.ts": {
+    "mtime": 1787661932.310281,
+    "seen": 1788258612.0784051,
+    "ast_hash": "c65210268a611799585bda0cc3fd85ea",
+    "semantic_hash": "c65210268a611799585bda0cc3fd85ea"
+  },
+  "namastepos_dashboard/src/lib/receiptPrint.ts": {
+    "mtime": 1787659219.501598,
+    "seen": 1788258612.0784059,
+    "ast_hash": "68678ed801144b980c29a5a6810b3dd0",
+    "semantic_hash": "68678ed801144b980c29a5a6810b3dd0"
+  },
+  "namastepos_dashboard/src/lib/sentry.ts": {
+    "mtime": 1788423691.0436566,
+    "seen": 1788423695.4764748,
+    "ast_hash": "6b27ee159c626965822cd748bd2505bf",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/lib/utils.ts": {
+    "mtime": 1788423691.0437748,
+    "seen": 1788423695.476476,
+    "ast_hash": "598501e96df93b7f5c2cf56b21d18f47",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/main.tsx": {
+    "mtime": 1788071696.760009,
+    "seen": 1788258612.0784068,
+    "ast_hash": "7fd29deeec6a74f6d94a2fb8915c86cf",
+    "semantic_hash": "7fd29deeec6a74f6d94a2fb8915c86cf"
+  },
+  "namastepos_dashboard/src/pages/AccountingPage.tsx": {
+    "mtime": 1787572473.235646,
+    "seen": 1788258612.078408,
+    "ast_hash": "2077ac1a88fef11ea0a971ad6cbe8f72",
+    "semantic_hash": "2077ac1a88fef11ea0a971ad6cbe8f72"
+  },
+  "namastepos_dashboard/src/pages/AccountingReportsPage.tsx": {
+    "mtime": 1787572473.2363887,
+    "seen": 1788258612.078408,
+    "ast_hash": "518122556c230c285b060545a89b6f3e",
+    "semantic_hash": "518122556c230c285b060545a89b6f3e"
+  },
+  "namastepos_dashboard/src/pages/ActionCenterPage.tsx": {
+    "mtime": 1787572473.236988,
+    "seen": 1788258612.078409,
+    "ast_hash": "d2ce68613954541526e4ff02e389551d",
+    "semantic_hash": "d2ce68613954541526e4ff02e389551d"
+  },
+  "namastepos_dashboard/src/pages/AggregatorsPage.tsx": {
+    "mtime": 1787572473.2376904,
+    "seen": 1788258612.078409,
+    "ast_hash": "de97aed5d20903b8f04e18c4f6cdcbff",
+    "semantic_hash": "de97aed5d20903b8f04e18c4f6cdcbff"
+  },
+  "namastepos_dashboard/src/pages/B2BInvoiceTemplatePage.tsx": {
+    "mtime": 1787572473.2386792,
+    "seen": 1788258612.07841,
+    "ast_hash": "9c180965b0e99999d036ef80bf14bb1c",
+    "semantic_hash": "9c180965b0e99999d036ef80bf14bb1c"
+  },
+  "namastepos_dashboard/src/pages/BankReconcilePage.tsx": {
+    "mtime": 1787572473.23929,
+    "seen": 1788258612.07841,
+    "ast_hash": "7216eb0182b34e1364ad0a207a4ba972",
+    "semantic_hash": "7216eb0182b34e1364ad0a207a4ba972"
+  },
+  "namastepos_dashboard/src/pages/BillTemplatePage.tsx": {
+    "mtime": 1787572473.2397726,
+    "seen": 1788258612.078411,
+    "ast_hash": "0e37415d08bc6212bd3765b9ff98fa59",
+    "semantic_hash": "0e37415d08bc6212bd3765b9ff98fa59"
+  },
+  "namastepos_dashboard/src/pages/BillingPage.tsx": {
+    "mtime": 1788423691.0439327,
+    "seen": 1788423695.476578,
+    "ast_hash": "b903615e65f114b5535b6d979991740a",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/BulkImportPage.tsx": {
+    "mtime": 1788428692.6682737,
+    "seen": 1788428696.808285,
+    "ast_hash": "fc0d3fc24a935b57519cef45ceeddf90",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/CampaignsPage.tsx": {
+    "mtime": 1787659061.0084755,
+    "seen": 1788258612.078412,
+    "ast_hash": "d47534cdb23921f17543a4306ad44908",
+    "semantic_hash": "d47534cdb23921f17543a4306ad44908"
+  },
+  "namastepos_dashboard/src/pages/CaptainPage.tsx": {
+    "mtime": 1787572473.242655,
+    "seen": 1788258612.078412,
+    "ast_hash": "09491e5e86f701aab56e1768e88d6587",
+    "semantic_hash": "09491e5e86f701aab56e1768e88d6587"
+  },
+  "namastepos_dashboard/src/pages/CouponsPage.tsx": {
+    "mtime": 1787652446.2291856,
+    "seen": 1788258612.078413,
+    "ast_hash": "995795d60fcc91c222c8ba1249125e92",
+    "semantic_hash": "995795d60fcc91c222c8ba1249125e92"
+  },
+  "namastepos_dashboard/src/pages/CustomersPage.tsx": {
+    "mtime": 1788423691.0440848,
+    "seen": 1788423695.47663,
+    "ast_hash": "b7121857c70e5630979d8dbf30c072ab",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/DailyClosingPage.tsx": {
+    "mtime": 1787651613.7434697,
+    "seen": 1788258612.078414,
+    "ast_hash": "2bab6a7b219ca51b63e06e8d757d3e5e",
+    "semantic_hash": "2bab6a7b219ca51b63e06e8d757d3e5e"
+  },
+  "namastepos_dashboard/src/pages/DashboardPage.tsx": {
+    "mtime": 1788264578.31542,
+    "seen": 1788264658.224036,
+    "ast_hash": "76ceb465189bd14fe6d7cd0825317428",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/DriversPage.tsx": {
+    "mtime": 1787572473.2458718,
+    "seen": 1788258612.0784152,
+    "ast_hash": "213e22dacfb2f39633911c6417f7b32b",
+    "semantic_hash": "213e22dacfb2f39633911c6417f7b32b"
+  },
+  "namastepos_dashboard/src/pages/ExpensesPage.tsx": {
+    "mtime": 1788423691.044239,
+    "seen": 1788423695.476668,
+    "ast_hash": "8ab591dc4cd4710e04b914f21bcec619",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/ForecastPage.tsx": {
+    "mtime": 1787572473.2473185,
+    "seen": 1788258612.0784159,
+    "ast_hash": "585688e6f5255f21e07f796c471a38d1",
+    "semantic_hash": "585688e6f5255f21e07f796c471a38d1"
+  },
+  "namastepos_dashboard/src/pages/GuestMenuPage.tsx": {
+    "mtime": 1788083933.0823379,
+    "seen": 1788258612.0784159,
+    "ast_hash": "1e3a1525be604236ec5f43b83c323b0a",
+    "semantic_hash": "1e3a1525be604236ec5f43b83c323b0a"
+  },
+  "namastepos_dashboard/src/pages/HeatMapPage.tsx": {
+    "mtime": 1787572473.2482145,
+    "seen": 1788258612.0784168,
+    "ast_hash": "03f72ca08e5d16ab1a5e19375865daa9",
+    "semantic_hash": "03f72ca08e5d16ab1a5e19375865daa9"
+  },
+  "namastepos_dashboard/src/pages/HelpCenterPage.tsx": {
+    "mtime": 1787572473.2487056,
+    "seen": 1788258612.0784168,
+    "ast_hash": "880f48f5f04df1568a3ace7beb796716",
+    "semantic_hash": "880f48f5f04df1568a3ace7beb796716"
+  },
+  "namastepos_dashboard/src/pages/IngredientsPage.tsx": {
+    "mtime": 1787572473.2491264,
+    "seen": 1788258612.078418,
+    "ast_hash": "ae244d8ee99d37c44deb3387a6c640e0",
+    "semantic_hash": "ae244d8ee99d37c44deb3387a6c640e0"
+  },
+  "namastepos_dashboard/src/pages/InventoryPage.tsx": {
+    "mtime": 1787650657.0509813,
+    "seen": 1788258612.078418,
+    "ast_hash": "5388f0b4ee0ce9ef2b89ed6609a8232f",
+    "semantic_hash": "5388f0b4ee0ce9ef2b89ed6609a8232f"
+  },
+  "namastepos_dashboard/src/pages/InvoicesPage.tsx": {
+    "mtime": 1788423691.0443745,
+    "seen": 1788423695.476743,
+    "ast_hash": "666a87d5eeb4fcbee7981f8ff42e7570",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/KdsPage.tsx": {
+    "mtime": 1787572473.250167,
+    "seen": 1788258612.078419,
+    "ast_hash": "8595cabcf9ec24af216c40e16acd4e15",
+    "semantic_hash": "8595cabcf9ec24af216c40e16acd4e15"
+  },
+  "namastepos_dashboard/src/pages/KotPage.tsx": {
+    "mtime": 1787651575.4092155,
+    "seen": 1788258612.078419,
+    "ast_hash": "711341adef99107d420ec8fe395e0cb4",
+    "semantic_hash": "711341adef99107d420ec8fe395e0cb4"
+  },
+  "namastepos_dashboard/src/pages/LegalPage.tsx": {
+    "mtime": 1787572473.251919,
+    "seen": 1788258612.07842,
+    "ast_hash": "fabc523cca6a2b91dbf8ddad2f99ec12",
+    "semantic_hash": "fabc523cca6a2b91dbf8ddad2f99ec12"
+  },
+  "namastepos_dashboard/src/pages/LoginPage.tsx": {
+    "mtime": 1787744894.4306018,
+    "seen": 1788258612.07842,
+    "ast_hash": "06f7589007fb1000085f5fc13ec80d3b",
+    "semantic_hash": "06f7589007fb1000085f5fc13ec80d3b"
+  },
+  "namastepos_dashboard/src/pages/MarketplacePage.tsx": {
+    "mtime": 1787659141.4378355,
+    "seen": 1788258612.0784209,
+    "ast_hash": "adbff3398295bd5d95f1490d912d2fbd",
+    "semantic_hash": "adbff3398295bd5d95f1490d912d2fbd"
+  },
+  "namastepos_dashboard/src/pages/MembershipsPage.tsx": {
+    "mtime": 1787762073.9234188,
+    "seen": 1788258612.0784209,
+    "ast_hash": "61e782f8248bc2bc25d666c79f686e80",
+    "semantic_hash": "61e782f8248bc2bc25d666c79f686e80"
+  },
+  "namastepos_dashboard/src/pages/MenuPage.tsx": {
+    "mtime": 1787659138.7654634,
+    "seen": 1788258612.078422,
+    "ast_hash": "04239a6629dde127382035649eb6c4df",
+    "semantic_hash": "04239a6629dde127382035649eb6c4df"
+  },
+  "namastepos_dashboard/src/pages/ModifierGroupsPage.tsx": {
+    "mtime": 1787651570.6003342,
+    "seen": 1788258612.078422,
+    "ast_hash": "4f9294c67d893deb3635d44a2b22db29",
+    "semantic_hash": "4f9294c67d893deb3635d44a2b22db29"
+  },
+  "namastepos_dashboard/src/pages/NotFoundPage.tsx": {
+    "mtime": 1787572473.2553935,
+    "seen": 1788258612.078423,
+    "ast_hash": "151a6062966911657216379e3b27cf66",
+    "semantic_hash": "151a6062966911657216379e3b27cf66"
+  },
+  "namastepos_dashboard/src/pages/OnlineSitePage.tsx": {
+    "mtime": 1787652845.7177281,
+    "seen": 1788258612.078423,
+    "ast_hash": "00ec7e478dd18f526c5147396edf8d60",
+    "semantic_hash": "00ec7e478dd18f526c5147396edf8d60"
+  },
+  "namastepos_dashboard/src/pages/OrdersPage.tsx": {
+    "mtime": 1788423691.044538,
+    "seen": 1788423695.476869,
+    "ast_hash": "6b46c01782e739680fa5a861c6420ce1",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/PrintersPage.tsx": {
+    "mtime": 1787661904.1004689,
+    "seen": 1788258612.078424,
+    "ast_hash": "299c388e2b51077b4d2e5046f81ea916",
+    "semantic_hash": "299c388e2b51077b4d2e5046f81ea916"
+  },
+  "namastepos_dashboard/src/pages/PrivacyPage.tsx": {
+    "mtime": 1787659266.8318923,
+    "seen": 1788258612.078424,
+    "ast_hash": "0c59edef00fc11202c0b18ff853862aa",
+    "semantic_hash": "0c59edef00fc11202c0b18ff853862aa"
+  },
+  "namastepos_dashboard/src/pages/PublicOrderTrackerPage.tsx": {
+    "mtime": 1787572473.2576933,
+    "seen": 1788258612.0784252,
+    "ast_hash": "8acad156dbd270420a871ac3da86746f",
+    "semantic_hash": "8acad156dbd270420a871ac3da86746f"
+  },
+  "namastepos_dashboard/src/pages/QrCodesPage.tsx": {
+    "mtime": 1787572473.2581382,
+    "seen": 1788258612.0784252,
+    "ast_hash": "4b35619f38e34430ddbd4688b9e2d108",
+    "semantic_hash": "4b35619f38e34430ddbd4688b9e2d108"
+  },
+  "namastepos_dashboard/src/pages/RecurringInvoicesPage.tsx": {
+    "mtime": 1787572473.2587092,
+    "seen": 1788258612.0784261,
+    "ast_hash": "b3532776c69e07fe2fb3dae86eb8b029",
+    "semantic_hash": "b3532776c69e07fe2fb3dae86eb8b029"
+  },
+  "namastepos_dashboard/src/pages/ReferPage.tsx": {
+    "mtime": 1787901170.8684962,
+    "seen": 1788258612.0784261,
+    "ast_hash": "ff2c8bae2bf87bb6e82344fb21273184",
+    "semantic_hash": "ff2c8bae2bf87bb6e82344fb21273184"
+  },
+  "namastepos_dashboard/src/pages/RefundsPage.tsx": {
+    "mtime": 1787658941.6151597,
+    "seen": 1788258612.0784268,
+    "ast_hash": "fa06f83541151c42ceccffa913ca53f9",
+    "semantic_hash": "fa06f83541151c42ceccffa913ca53f9"
+  },
+  "namastepos_dashboard/src/pages/RegisterPage.tsx": {
+    "mtime": 1787901348.7110717,
+    "seen": 1788258612.07843,
+    "ast_hash": "9733e7364844dd546efb2c6bec2f95e0",
+    "semantic_hash": "9733e7364844dd546efb2c6bec2f95e0"
+  },
+  "namastepos_dashboard/src/pages/ReportsPage.tsx": {
+    "mtime": 1788423691.0447187,
+    "seen": 1788423695.47697,
+    "ast_hash": "5124a86519b9e36c286c8d80595f2ce4",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/ReservationWidgetPage.tsx": {
+    "mtime": 1787572473.262707,
+    "seen": 1788258612.078431,
+    "ast_hash": "0ea4cb69c22fecc25ba0af94d13dffd7",
+    "semantic_hash": "0ea4cb69c22fecc25ba0af94d13dffd7"
+  },
+  "namastepos_dashboard/src/pages/ReservationsPage.tsx": {
+    "mtime": 1787651558.5544825,
+    "seen": 1788258612.078432,
+    "ast_hash": "bee8d2d6d63c680ab495f4f515dd7280",
+    "semantic_hash": "bee8d2d6d63c680ab495f4f515dd7280"
+  },
+  "namastepos_dashboard/src/pages/RetailPage.tsx": {
+    "mtime": 1787572473.2642999,
+    "seen": 1788258612.078432,
+    "ast_hash": "4d94022766bcc611da7ceda9179af258",
+    "semantic_hash": "4d94022766bcc611da7ceda9179af258"
+  },
+  "namastepos_dashboard/src/pages/RevenueLeakagePage.tsx": {
+    "mtime": 1787572473.2650774,
+    "seen": 1788258612.078433,
+    "ast_hash": "2a4f8b11d0496416bbaf4f86f8f5463e",
+    "semantic_hash": "2a4f8b11d0496416bbaf4f86f8f5463e"
+  },
+  "namastepos_dashboard/src/pages/ReviewsPage.tsx": {
+    "mtime": 1787650575.5006871,
+    "seen": 1788258612.078433,
+    "ast_hash": "803c461ab0a69dcbec1b27d1dedb2d09",
+    "semantic_hash": "803c461ab0a69dcbec1b27d1dedb2d09"
+  },
+  "namastepos_dashboard/src/pages/SettingsPage.tsx": {
+    "mtime": 1787748357.4486866,
+    "seen": 1788258612.078433,
+    "ast_hash": "4e50e25ff2dbc9b8386446c7435afdb9",
+    "semantic_hash": "4e50e25ff2dbc9b8386446c7435afdb9"
+  },
+  "namastepos_dashboard/src/pages/SetupWizardPage.tsx": {
+    "mtime": 1787572473.2670953,
+    "seen": 1788258612.078434,
+    "ast_hash": "3da18df96054c40e8ea51d987321832c",
+    "semantic_hash": "3da18df96054c40e8ea51d987321832c"
+  },
+  "namastepos_dashboard/src/pages/StaffPage.tsx": {
+    "mtime": 1787572473.2677097,
+    "seen": 1788258612.078434,
+    "ast_hash": "5e2be428b4644e8a3954c78865b002c1",
+    "semantic_hash": "5e2be428b4644e8a3954c78865b002c1"
+  },
+  "namastepos_dashboard/src/pages/SupportPage.tsx": {
+    "mtime": 1787901150.6714394,
+    "seen": 1788258612.0784352,
+    "ast_hash": "2bc2b89b526f7b891368c4bd51eaa391",
+    "semantic_hash": "2bc2b89b526f7b891368c4bd51eaa391"
+  },
+  "namastepos_dashboard/src/pages/SurgePage.tsx": {
+    "mtime": 1787572473.2685387,
+    "seen": 1788258612.0784352,
+    "ast_hash": "bd40f135b45bf55a5737b9a02362d5e2",
+    "semantic_hash": "bd40f135b45bf55a5737b9a02362d5e2"
+  },
+  "namastepos_dashboard/src/pages/TablesPage.tsx": {
+    "mtime": 1788423691.0449152,
+    "seen": 1788423695.477095,
+    "ast_hash": "b4e5411a472827bb766a383e588269f5",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/WastagePage.tsx": {
+    "mtime": 1787660871.7919502,
+    "seen": 1788258612.0784361,
+    "ast_hash": "962afb8529f4223350891f06dea58787",
+    "semantic_hash": "962afb8529f4223350891f06dea58787"
+  },
+  "namastepos_dashboard/src/reticle-dev.ts": {
+    "mtime": 1788071706.8225803,
+    "seen": 1788258612.078437,
+    "ast_hash": "ed792de05332bffb27cea7986a462382",
+    "semantic_hash": "ed792de05332bffb27cea7986a462382"
+  },
+  "namastepos_dashboard/src/vite-env.d.ts": {
+    "mtime": 1787572473.2712448,
+    "seen": 1788258612.078437,
+    "ast_hash": "7e8e0171e868cf8a7a4fe267821fb0b6",
+    "semantic_hash": "7e8e0171e868cf8a7a4fe267821fb0b6"
+  },
+  "namastepos_dashboard/tailwind.config.js": {
+    "mtime": 1787572473.2714481,
+    "seen": 1788258612.0784378,
+    "ast_hash": "508f9a188d3d82bc238d5d0fd18dd19f",
+    "semantic_hash": "508f9a188d3d82bc238d5d0fd18dd19f"
+  },
+  "namastepos_dashboard/tests/e2e/csv-import.spec.ts": {
+    "mtime": 1787572473.2719555,
+    "seen": 1788258612.0784378,
+    "ast_hash": "a80eed59af98d66eb135e19cf70117bb",
+    "semantic_hash": "a80eed59af98d66eb135e19cf70117bb"
+  },
+  "namastepos_dashboard/tests/e2e/login.spec.ts": {
+    "mtime": 1787572473.2722754,
+    "seen": 1788258612.078439,
+    "ast_hash": "0a676a7d36d86468ef5a9859e560c75d",
+    "semantic_hash": "0a676a7d36d86468ef5a9859e560c75d"
+  },
+  "namastepos_dashboard/tests/e2e/public-routes.spec.ts": {
+    "mtime": 1787572473.2728982,
+    "seen": 1788258612.078439,
+    "ast_hash": "5a610f01aeddf3f27947822c36cdf828",
+    "semantic_hash": "5a610f01aeddf3f27947822c36cdf828"
+  },
+  "namastepos_dashboard/tests/e2e/setup-wizard.spec.ts": {
+    "mtime": 1787572473.273437,
+    "seen": 1788258612.07844,
+    "ast_hash": "069c1d6c69003f99aa91dee643df8398",
+    "semantic_hash": "069c1d6c69003f99aa91dee643df8398"
+  },
+  "namastepos_dashboard/testsprite_tests/standard_prd.json": {
+    "mtime": 1787572473.2738945,
+    "seen": 1788258612.07844,
+    "ast_hash": "d3979d4d7e1a59593148a47fb2f962d5",
+    "semantic_hash": "d3979d4d7e1a59593148a47fb2f962d5"
+  },
+  "namastepos_dashboard/testsprite_tests/testsprite_frontend_test_plan.json": {
+    "mtime": 1787572473.2745454,
+    "seen": 1788258612.07844,
+    "ast_hash": "2ff88f5abcb45a774ddad02b92e3bb26",
+    "semantic_hash": "2ff88f5abcb45a774ddad02b92e3bb26"
+  },
+  "namastepos_dashboard/tsconfig.json": {
+    "mtime": 1787572473.2766402,
+    "seen": 1788258612.078441,
+    "ast_hash": "8ca5d8f973a070b157c6055255ceeac9",
+    "semantic_hash": "8ca5d8f973a070b157c6055255ceeac9"
+  },
+  "namastepos_dashboard/vite.config.ts": {
+    "mtime": 1788071649.9160879,
+    "seen": 1788258612.078441,
+    "ast_hash": "af09f3ac4a29884881810004e1bb0bf2",
+    "semantic_hash": "af09f3ac4a29884881810004e1bb0bf2"
+  },
+  "namastepos_flutter/android/app/build.gradle": {
+    "mtime": 1787729373.0363212,
+    "seen": 1788258612.078442,
+    "ast_hash": "c1b5950495a3670fcd23d8ead61d73c9",
+    "semantic_hash": "c1b5950495a3670fcd23d8ead61d73c9"
+  },
+  "namastepos_flutter/android/app/google-services.json": {
+    "mtime": 1787729223.254812,
+    "seen": 1788258612.078442,
+    "ast_hash": "078affab7d30fe21cef4d136c8e740a4",
+    "semantic_hash": "078affab7d30fe21cef4d136c8e740a4"
+  },
+  "namastepos_flutter/android/app/src/main/kotlin/in/namastepos/app/MainActivity.kt": {
+    "mtime": 1787572473.3010159,
+    "seen": 1788258612.078443,
+    "ast_hash": "714ad3ac08b3357759daf1f4c11d99ff",
+    "semantic_hash": "714ad3ac08b3357759daf1f4c11d99ff"
+  },
+  "namastepos_flutter/android/build.gradle": {
+    "mtime": 1787572473.309345,
+    "seen": 1788258612.078443,
+    "ast_hash": "49bd0f7b88d0a680032394990a85627f",
+    "semantic_hash": "49bd0f7b88d0a680032394990a85627f"
+  },
+  "namastepos_flutter/android/settings.gradle": {
+    "mtime": 1787729365.758222,
+    "seen": 1788258612.078444,
+    "ast_hash": "8b48f04feb66a3d85822bb919aed4d66",
+    "semantic_hash": "8b48f04feb66a3d85822bb919aed4d66"
+  },
+  "namastepos_flutter/ios/Runner/AppDelegate.swift": {
+    "mtime": 1787572473.3394177,
+    "seen": 1788258612.078444,
+    "ast_hash": "2bd8469f2a4b701ff582f6574e58b13c",
+    "semantic_hash": "2bd8469f2a4b701ff582f6574e58b13c"
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json": {
+    "mtime": 1787765301.842466,
+    "seen": 1788258612.078445,
+    "ast_hash": "c870f277d0c83d1af12f8dc2d368879a",
+    "semantic_hash": "c870f277d0c83d1af12f8dc2d368879a"
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/LaunchImage.imageset/Contents.json": {
+    "mtime": 1787572473.3677874,
+    "seen": 1788258612.078445,
+    "ast_hash": "770f4f65e02ca2fc57f46f4f4148d15d",
+    "semantic_hash": "770f4f65e02ca2fc57f46f4f4148d15d"
+  },
+  "namastepos_flutter/ios/Runner/Runner-Bridging-Header.h": {
+    "mtime": 1787572473.3735514,
+    "seen": 1788258612.078445,
+    "ast_hash": "e07862ac930ed4d8479185d52c6cc66d",
+    "semantic_hash": "e07862ac930ed4d8479185d52c6cc66d"
+  },
+  "namastepos_flutter/ios/Runner/SceneDelegate.swift": {
+    "mtime": 1787572473.3756292,
+    "seen": 1788258612.0784461,
+    "ast_hash": "748d701e783e68faf618c00464257a19",
+    "semantic_hash": "748d701e783e68faf618c00464257a19"
+  },
+  "namastepos_flutter/ios/RunnerTests/RunnerTests.swift": {
+    "mtime": 1787572473.3766084,
+    "seen": 1788258612.0784461,
+    "ast_hash": "a225a382d14d7b16b6f602a5c1d49331",
+    "semantic_hash": "a225a382d14d7b16b6f602a5c1d49331"
+  },
+  "namastepos_flutter/lib/app.dart": {
+    "mtime": 1787742258.763885,
+    "seen": 1788258612.078447,
+    "ast_hash": "381db42de1a97dafa4b7a49d5ef79a8b",
+    "semantic_hash": "381db42de1a97dafa4b7a49d5ef79a8b"
+  },
+  "namastepos_flutter/lib/config/app_config.dart": {
+    "mtime": 1787572473.3789802,
+    "seen": 1788258612.078447,
+    "ast_hash": "38828cb4f907732f847611b5be9d1d40",
+    "semantic_hash": "38828cb4f907732f847611b5be9d1d40"
+  },
+  "namastepos_flutter/lib/constants/colors.dart": {
+    "mtime": 1787572473.379446,
+    "seen": 1788258612.078448,
+    "ast_hash": "59b0192559fb540ced0c293e7036ddc6",
+    "semantic_hash": "59b0192559fb540ced0c293e7036ddc6"
+  },
+  "namastepos_flutter/lib/constants/strings.dart": {
+    "mtime": 1787572473.3798428,
+    "seen": 1788258612.078448,
+    "ast_hash": "73ded5b0636b39768090e95f07b893e1",
+    "semantic_hash": "73ded5b0636b39768090e95f07b893e1"
+  },
+  "namastepos_flutter/lib/constants/theme.dart": {
+    "mtime": 1787572473.3804986,
+    "seen": 1788258612.078449,
+    "ast_hash": "e7f7e3bf460544d8cffe3dfa7d71952d",
+    "semantic_hash": "e7f7e3bf460544d8cffe3dfa7d71952d"
+  },
+  "namastepos_flutter/lib/main.dart": {
+    "mtime": 1788423691.0451705,
+    "seen": 1788423695.477479,
+    "ast_hash": "b0e941a9bb8ee695536ffc44fec8e5d8",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/models/business.dart": {
+    "mtime": 1787572473.3813484,
+    "seen": 1788258612.07845,
+    "ast_hash": "3a0aa33cc85d0f7fd8dc25bf3879518d",
+    "semantic_hash": "3a0aa33cc85d0f7fd8dc25bf3879518d"
+  },
+  "namastepos_flutter/lib/models/cart_item.dart": {
+    "mtime": 1787572473.381679,
+    "seen": 1788258612.07845,
+    "ast_hash": "ca3842d9b0a1beb636c04a6dead4f01f",
+    "semantic_hash": "ca3842d9b0a1beb636c04a6dead4f01f"
+  },
+  "namastepos_flutter/lib/models/customer.dart": {
+    "mtime": 1787572473.3823042,
+    "seen": 1788258612.078451,
+    "ast_hash": "238a84d914976aa961881c363b1bb5f2",
+    "semantic_hash": "238a84d914976aa961881c363b1bb5f2"
+  },
+  "namastepos_flutter/lib/models/expense.dart": {
+    "mtime": 1788423691.0453618,
+    "seen": 1788423695.4775171,
+    "ast_hash": "177db9b0db402eebd8895ebead3daa70",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/models/inventory_transaction.dart": {
+    "mtime": 1787572473.3829799,
+    "seen": 1788258612.078451,
+    "ast_hash": "8f3f820537627f726b1c75e461051fa7",
+    "semantic_hash": "8f3f820537627f726b1c75e461051fa7"
+  },
+  "namastepos_flutter/lib/models/menu_item.dart": {
+    "mtime": 1787572473.3835106,
+    "seen": 1788258612.0784519,
+    "ast_hash": "c1cdc7bcc8dc66ede7c1a54e4af315fd",
+    "semantic_hash": "c1cdc7bcc8dc66ede7c1a54e4af315fd"
+  },
+  "namastepos_flutter/lib/models/order.dart": {
+    "mtime": 1788254186.028277,
+    "seen": 1788258612.0784519,
+    "ast_hash": "22218dd8b8febd18985e1158ab40126b",
+    "semantic_hash": "22218dd8b8febd18985e1158ab40126b"
+  },
+  "namastepos_flutter/lib/models/plan_info.dart": {
+    "mtime": 1787572473.3852353,
+    "seen": 1788258612.078453,
+    "ast_hash": "37226359638fc92043d96399d328cf9e",
+    "semantic_hash": "37226359638fc92043d96399d328cf9e"
+  },
+  "namastepos_flutter/lib/models/report.dart": {
+    "mtime": 1787572473.3856714,
+    "seen": 1788258612.078453,
+    "ast_hash": "685545ce3f298756a88af1710351c78f",
+    "semantic_hash": "685545ce3f298756a88af1710351c78f"
+  },
+  "namastepos_flutter/lib/models/subscription.dart": {
+    "mtime": 1787572473.3861523,
+    "seen": 1788258612.078454,
+    "ast_hash": "4a8dc08716c375888a9c3bca822f7fe3",
+    "semantic_hash": "4a8dc08716c375888a9c3bca822f7fe3"
+  },
+  "namastepos_flutter/lib/providers/auth_provider.dart": {
+    "mtime": 1788435564.525719,
+    "seen": 1788436929.2740421,
+    "ast_hash": "5b1fa128ae98595051d02e22aeb84013",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/providers/expenses_provider.dart": {
+    "mtime": 1788423691.0457537,
+    "seen": 1788423695.4775932,
+    "ast_hash": "b7627f876973f52e551edea7ebf0b7ad",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/providers/inventory_provider.dart": {
+    "mtime": 1788423691.0458853,
+    "seen": 1788423695.4775941,
+    "ast_hash": "1d9040f62173c5b45761453285e181e2",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/providers/menu_provider.dart": {
+    "mtime": 1788423691.046017,
+    "seen": 1788423695.4775941,
+    "ast_hash": "39f23824bf749c1f48fc8f372a8489bd",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/providers/orders_provider.dart": {
+    "mtime": 1788423691.046257,
+    "seen": 1788423695.4775949,
+    "ast_hash": "23e124ea7b25f1588aa3abe46fba7a1e",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/providers/settings_provider.dart": {
+    "mtime": 1787572473.3892474,
+    "seen": 1788258612.078457,
+    "ast_hash": "bca49f708da1ff0b238fc1abe196de6b",
+    "semantic_hash": "bca49f708da1ff0b238fc1abe196de6b"
+  },
+  "namastepos_flutter/lib/providers/subscription_provider.dart": {
+    "mtime": 1788423691.046374,
+    "seen": 1788423695.4776099,
+    "ast_hash": "322a5bfa4f89f319c16dd6017ee6242b",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/providers/tables_provider.dart": {
+    "mtime": 1788423691.0464823,
+    "seen": 1788423695.4776099,
+    "ast_hash": "c9df8256db9f51132616ae7d008c70a3",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/auth/login_screen.dart": {
+    "mtime": 1787743551.058088,
+    "seen": 1788258612.078458,
+    "ast_hash": "cb941b04b8b037b2a73a2439b34345eb",
+    "semantic_hash": "cb941b04b8b037b2a73a2439b34345eb"
+  },
+  "namastepos_flutter/lib/screens/auth/mpin_lock_screen.dart": {
+    "mtime": 1788423691.046617,
+    "seen": 1788423695.477626,
+    "ast_hash": "ab01af57edf2666b1e0172b9a67d4bfe",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/auth/onboarding_screen.dart": {
+    "mtime": 1787572473.3908818,
+    "seen": 1788258612.0784588,
+    "ast_hash": "7b228787dbc538944f7142a59a5517b4",
+    "semantic_hash": "7b228787dbc538944f7142a59a5517b4"
+  },
+  "namastepos_flutter/lib/screens/auth/otp_screen.dart": {
+    "mtime": 1787572473.391315,
+    "seen": 1788258612.0784588,
+    "ast_hash": "597176a1f909b7c59588bf6ce7711ac4",
+    "semantic_hash": "597176a1f909b7c59588bf6ce7711ac4"
+  },
+  "namastepos_flutter/lib/screens/auth/pin_login_screen.dart": {
+    "mtime": 1787744923.1363807,
+    "seen": 1788258612.07846,
+    "ast_hash": "bf5c3dfdd8c550f625c149d4df696485",
+    "semantic_hash": "bf5c3dfdd8c550f625c149d4df696485"
+  },
+  "namastepos_flutter/lib/screens/auth/register_screen.dart": {
+    "mtime": 1787631141.7432613,
+    "seen": 1788258612.07846,
+    "ast_hash": "747567236174ed43607bee37d042aa0c",
+    "semantic_hash": "747567236174ed43607bee37d042aa0c"
+  },
+  "namastepos_flutter/lib/screens/billing/billing_screen.dart": {
+    "mtime": 1787901589.4396005,
+    "seen": 1788258612.078461,
+    "ast_hash": "5dbbba5ae03ac311c77948055bee6dbb",
+    "semantic_hash": "5dbbba5ae03ac311c77948055bee6dbb"
+  },
+  "namastepos_flutter/lib/screens/billing/trial_expired_screen.dart": {
+    "mtime": 1787572473.393412,
+    "seen": 1788258612.078461,
+    "ast_hash": "d35e8063a55f9c2523f4dcde24e2151a",
+    "semantic_hash": "d35e8063a55f9c2523f4dcde24e2151a"
+  },
+  "namastepos_flutter/lib/screens/captain/captain_screen.dart": {
+    "mtime": 1788264292.2692456,
+    "seen": 1788264658.224094,
+    "ast_hash": "71bdee1ba7504ccb274fb95d52655da7",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/customers/customer_detail_screen.dart": {
+    "mtime": 1788423691.0467608,
+    "seen": 1788423695.4777238,
+    "ast_hash": "0b9c6f9bb8c766ac7357ee9a343b3ff3",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/customers/customers_screen.dart": {
+    "mtime": 1787572473.3953881,
+    "seen": 1788258612.078463,
+    "ast_hash": "ee2e48222ba64a7dda0847b275953711",
+    "semantic_hash": "ee2e48222ba64a7dda0847b275953711"
+  },
+  "namastepos_flutter/lib/screens/driver/driver_screen.dart": {
+    "mtime": 1788084615.8924649,
+    "seen": 1788258612.078463,
+    "ast_hash": "16c1d588fd7bc33b722199d87e463a82",
+    "semantic_hash": "16c1d588fd7bc33b722199d87e463a82"
+  },
+  "namastepos_flutter/lib/screens/expenses/add_expense_screen.dart": {
+    "mtime": 1788423691.0469484,
+    "seen": 1788423695.477754,
+    "ast_hash": "403448a12f4e9c78ee7c2935d863d460",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/expenses/expenses_screen.dart": {
+    "mtime": 1788423691.047123,
+    "seen": 1788423695.477754,
+    "ast_hash": "871ebbf9df4bb3f2eda7587fbea83054",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/home/dashboard_screen.dart": {
+    "mtime": 1788266637.5417361,
+    "seen": 1788267576.0158122,
+    "ast_hash": "e81c0fc1c0bed5bdf6d88b976cf70d90",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/home/home_screen.dart": {
+    "mtime": 1788435492.3228886,
+    "seen": 1788436929.274056,
+    "ast_hash": "3cc94631c71c7bac676f2e3fe1b3aac0",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/inventory/inventory_screen.dart": {
+    "mtime": 1787681125.2279022,
+    "seen": 1788258612.078465,
+    "ast_hash": "a8d5b35d0df50dec19cbfd26edbb6de8",
+    "semantic_hash": "a8d5b35d0df50dec19cbfd26edbb6de8"
+  },
+  "namastepos_flutter/lib/screens/inventory/item_detail_screen.dart": {
+    "mtime": 1787572473.3985047,
+    "seen": 1788258612.078466,
+    "ast_hash": "3a3d426b06de95d7e882d364224dab15",
+    "semantic_hash": "3a3d426b06de95d7e882d364224dab15"
+  },
+  "namastepos_flutter/lib/screens/invoices/tax_invoices_screen.dart": {
+    "mtime": 1787572473.3989565,
+    "seen": 1788258612.078466,
+    "ast_hash": "47559395c4f42fc82a743e21dad93a94",
+    "semantic_hash": "47559395c4f42fc82a743e21dad93a94"
+  },
+  "namastepos_flutter/lib/screens/kitchen/kds_screen.dart": {
+    "mtime": 1787572473.3994622,
+    "seen": 1788258612.0784671,
+    "ast_hash": "4e205553a1c071ee8573f2bf89e74081",
+    "semantic_hash": "4e205553a1c071ee8573f2bf89e74081"
+  },
+  "namastepos_flutter/lib/screens/marketplace/marketplace_screen.dart": {
+    "mtime": 1788428692.668892,
+    "seen": 1788428696.810494,
+    "ast_hash": "3498f029cee36c19109ae885f81a5cca",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/menu/edit_item_screen.dart": {
+    "mtime": 1787681125.218466,
+    "seen": 1788258612.078468,
+    "ast_hash": "be1656a798fa8e7a4a2d885881f6a63f",
+    "semantic_hash": "be1656a798fa8e7a4a2d885881f6a63f"
+  },
+  "namastepos_flutter/lib/screens/menu/menu_editor_screen.dart": {
+    "mtime": 1788423691.0475807,
+    "seen": 1788423695.477869,
+    "ast_hash": "d9301182a3ecf69183eb1c7c700a0757",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/menu/menu_screen.dart": {
+    "mtime": 1787572473.401661,
+    "seen": 1788258612.078469,
+    "ast_hash": "13e746de223b5731cc3329a22f4152a8",
+    "semantic_hash": "13e746de223b5731cc3329a22f4152a8"
+  },
+  "namastepos_flutter/lib/screens/menu/modifier_groups_screen.dart": {
+    "mtime": 1788254273.0580738,
+    "seen": 1788258612.078469,
+    "ast_hash": "470414f2b29a1e34711e94d219b20038",
+    "semantic_hash": "470414f2b29a1e34711e94d219b20038"
+  },
+  "namastepos_flutter/lib/screens/onboarding/setup_wizard_screen.dart": {
+    "mtime": 1787745130.3634417,
+    "seen": 1788258612.07847,
+    "ast_hash": "36a5ad86eddb6ed2174a952fc36635f8",
+    "semantic_hash": "36a5ad86eddb6ed2174a952fc36635f8"
+  },
+  "namastepos_flutter/lib/screens/ops/coupons_screen.dart": {
+    "mtime": 1787679747.013209,
+    "seen": 1788258612.07847,
+    "ast_hash": "b801d4aae7a395b70e2822df21e3685d",
+    "semantic_hash": "b801d4aae7a395b70e2822df21e3685d"
+  },
+  "namastepos_flutter/lib/screens/ops/daily_closing_screen.dart": {
+    "mtime": 1787905311.2181969,
+    "seen": 1788258612.078471,
+    "ast_hash": "05e1d5f9aeac2b8407deaea4a1911573",
+    "semantic_hash": "05e1d5f9aeac2b8407deaea4a1911573"
+  },
+  "namastepos_flutter/lib/screens/ops/reservations_screen.dart": {
+    "mtime": 1787745081.2101536,
+    "seen": 1788258612.078471,
+    "ast_hash": "12748832112075fbe889e64dbf06921d",
+    "semantic_hash": "12748832112075fbe889e64dbf06921d"
+  },
+  "namastepos_flutter/lib/screens/ops/reviews_screen.dart": {
+    "mtime": 1788089480.6242669,
+    "seen": 1788258612.078471,
+    "ast_hash": "9318938d99b186e0efe8d35674c2520c",
+    "semantic_hash": "9318938d99b186e0efe8d35674c2520c"
+  },
+  "namastepos_flutter/lib/screens/ops/wastage_screen.dart": {
+    "mtime": 1787681229.46892,
+    "seen": 1788258612.078472,
+    "ast_hash": "3a8a29bc61093ccfb75327fd4a4b7772",
+    "semantic_hash": "3a8a29bc61093ccfb75327fd4a4b7772"
+  },
+  "namastepos_flutter/lib/screens/orders/order_detail_screen.dart": {
+    "mtime": 1787905220.0985293,
+    "seen": 1788258612.078472,
+    "ast_hash": "c70114fc1fc8cdd1e2777af2e4621dc7",
+    "semantic_hash": "c70114fc1fc8cdd1e2777af2e4621dc7"
+  },
+  "namastepos_flutter/lib/screens/orders/orders_screen.dart": {
+    "mtime": 1788423691.047849,
+    "seen": 1788423695.477995,
+    "ast_hash": "1421f70364dd33e8d092f55f47647d8f",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/orders/refunds_screen.dart": {
+    "mtime": 1787679641.263676,
+    "seen": 1788258612.0784729,
+    "ast_hash": "0d74035b7aa023735ff727f1cf5c4b4d",
+    "semantic_hash": "0d74035b7aa023735ff727f1cf5c4b4d"
+  },
+  "namastepos_flutter/lib/screens/pos/confirm_order_screen.dart": {
+    "mtime": 1788423691.0482256,
+    "seen": 1788423695.478009,
+    "ast_hash": "7d62b04517996515a91415906276a320",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/pos/item_config_sheet.dart": {
+    "mtime": 1787572473.4077806,
+    "seen": 1788258612.078474,
+    "ast_hash": "a4677a562d3d124411c8bccd3dff8f9b",
+    "semantic_hash": "a4677a562d3d124411c8bccd3dff8f9b"
+  },
+  "namastepos_flutter/lib/screens/pos/new_order_screen.dart": {
+    "mtime": 1788423691.048471,
+    "seen": 1788423695.4780228,
+    "ast_hash": "5e40a42b7e2e619d3cc1d5a9e27f9420",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/pos/pos_screen.dart": {
+    "mtime": 1787572473.409854,
+    "seen": 1788258612.078475,
+    "ast_hash": "e5f9774265daf2e161333a9bafa5cbc0",
+    "semantic_hash": "e5f9774265daf2e161333a9bafa5cbc0"
+  },
+  "namastepos_flutter/lib/screens/qr/qr_codes_screen.dart": {
+    "mtime": 1787572473.4109917,
+    "seen": 1788258612.078476,
+    "ast_hash": "7fe16dc91d82663aab4b87250bad49d9",
+    "semantic_hash": "7fe16dc91d82663aab4b87250bad49d9"
+  },
+  "namastepos_flutter/lib/screens/reports/income_statement_screen.dart": {
+    "mtime": 1788254192.9200242,
+    "seen": 1788258612.078476,
+    "ast_hash": "285a73c82a448cd3cddcbc552d6ef2db",
+    "semantic_hash": "285a73c82a448cd3cddcbc552d6ef2db"
+  },
+  "namastepos_flutter/lib/screens/reports/monthly_report.dart": {
+    "mtime": 1788252593.2898886,
+    "seen": 1788258612.0784771,
+    "ast_hash": "2092a52c989b755c2ef2509c223cdf33",
+    "semantic_hash": "2092a52c989b755c2ef2509c223cdf33"
+  },
+  "namastepos_flutter/lib/screens/reports/register_reports_screen.dart": {
+    "mtime": 1788252667.5690296,
+    "seen": 1788258612.0784771,
+    "ast_hash": "ce40e3998365c728fb4bcfaf0cee984d",
+    "semantic_hash": "ce40e3998365c728fb4bcfaf0cee984d"
+  },
+  "namastepos_flutter/lib/screens/reports/reports_screen.dart": {
+    "mtime": 1788252585.3967113,
+    "seen": 1788258612.078478,
+    "ast_hash": "e63b2e753a9ebe1f4b2ee3550ab9cc52",
+    "semantic_hash": "e63b2e753a9ebe1f4b2ee3550ab9cc52"
+  },
+  "namastepos_flutter/lib/screens/reports/tip_report_screen.dart": {
+    "mtime": 1788254265.2422254,
+    "seen": 1788258612.078478,
+    "ast_hash": "a59b2b0bc2e72d93bca73be59e02b50c",
+    "semantic_hash": "a59b2b0bc2e72d93bca73be59e02b50c"
+  },
+  "namastepos_flutter/lib/screens/settings/aggregators_screen.dart": {
+    "mtime": 1787572473.4137332,
+    "seen": 1788258612.078479,
+    "ast_hash": "edc60234b2bb5e7d782c897003da9182",
+    "semantic_hash": "edc60234b2bb5e7d782c897003da9182"
+  },
+  "namastepos_flutter/lib/screens/settings/back_office_screens.dart": {
+    "mtime": 1787762813.0405116,
+    "seen": 1788258612.078479,
+    "ast_hash": "7e66b0fcd6812e773722d4ac189c651d",
+    "semantic_hash": "7e66b0fcd6812e773722d4ac189c651d"
+  },
+  "namastepos_flutter/lib/screens/settings/business_info_screen.dart": {
+    "mtime": 1787572473.414621,
+    "seen": 1788258612.0784798,
+    "ast_hash": "adc4767593a9c23c58872b70231cc12b",
+    "semantic_hash": "adc4767593a9c23c58872b70231cc12b"
+  },
+  "namastepos_flutter/lib/screens/settings/members_screen.dart": {
+    "mtime": 1787762797.8999145,
+    "seen": 1788258612.0784798,
+    "ast_hash": "bb35214ca918540a88a0985fe4748dd1",
+    "semantic_hash": "bb35214ca918540a88a0985fe4748dd1"
+  },
+  "namastepos_flutter/lib/screens/settings/printer_setup_screen.dart": {
+    "mtime": 1787572473.415077,
+    "seen": 1788258612.0784798,
+    "ast_hash": "6eb92b31819fe5c964ba2ad1276c384a",
+    "semantic_hash": "6eb92b31819fe5c964ba2ad1276c384a"
+  },
+  "namastepos_flutter/lib/screens/settings/privacy_policy_screen.dart": {
+    "mtime": 1787572473.415487,
+    "seen": 1788258612.078481,
+    "ast_hash": "c2748b895db861e352d1d5237ba4f906",
+    "semantic_hash": "c2748b895db861e352d1d5237ba4f906"
+  },
+  "namastepos_flutter/lib/screens/settings/privacy_screen.dart": {
+    "mtime": 1788423691.0486827,
+    "seen": 1788423695.4782069,
+    "ast_hash": "3b882ff1dea4b9dfc490578f3c13a303",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/screens/settings/refer_screen.dart": {
+    "mtime": 1787901489.3180714,
+    "seen": 1788258612.078482,
+    "ast_hash": "4686fc3e164282df37140323fba38c9a",
+    "semantic_hash": "4686fc3e164282df37140323fba38c9a"
+  },
+  "namastepos_flutter/lib/screens/settings/settings_screen.dart": {
+    "mtime": 1787572473.4163303,
+    "seen": 1788258612.078482,
+    "ast_hash": "fb61836ca7f47517d14b2e821deee8b1",
+    "semantic_hash": "fb61836ca7f47517d14b2e821deee8b1"
+  },
+  "namastepos_flutter/lib/screens/settings/support_screen.dart": {
+    "mtime": 1788254329.8135846,
+    "seen": 1788258612.0784829,
+    "ast_hash": "d4658b64adedac790c8d959019acb6fd",
+    "semantic_hash": "d4658b64adedac790c8d959019acb6fd"
+  },
+  "namastepos_flutter/lib/screens/splash_screen.dart": {
+    "mtime": 1787572473.4166334,
+    "seen": 1788258612.0784829,
+    "ast_hash": "a7bd5ac9b322f60b5b8ddfda4d032950",
+    "semantic_hash": "a7bd5ac9b322f60b5b8ddfda4d032950"
+  },
+  "namastepos_flutter/lib/screens/staff/staff_screen.dart": {
+    "mtime": 1787745030.1315815,
+    "seen": 1788258612.078484,
+    "ast_hash": "ae320b76cbcc13c54223efbc9c9d9ba1",
+    "semantic_hash": "ae320b76cbcc13c54223efbc9c9d9ba1"
+  },
+  "namastepos_flutter/lib/screens/tables/bill_split_screen.dart": {
+    "mtime": 1788254250.8401923,
+    "seen": 1788258612.078484,
+    "ast_hash": "4c7dc72a23ae4213b91ca52de08867d4",
+    "semantic_hash": "4c7dc72a23ae4213b91ca52de08867d4"
+  },
+  "namastepos_flutter/lib/screens/tables/tables_editor_screen.dart": {
+    "mtime": 1788254287.7855415,
+    "seen": 1788258612.078485,
+    "ast_hash": "bc6177803071007b2feb62edb560fbbb",
+    "semantic_hash": "bc6177803071007b2feb62edb560fbbb"
+  },
+  "namastepos_flutter/lib/screens/tables/tables_screen.dart": {
+    "mtime": 1787667887.6685321,
+    "seen": 1788258612.078485,
+    "ast_hash": "4864408d4e655e3e930ccd9af5d3c71e",
+    "semantic_hash": "4864408d4e655e3e930ccd9af5d3c71e"
+  },
+  "namastepos_flutter/lib/services/api_service.dart": {
+    "mtime": 1788428692.6692255,
+    "seen": 1788428696.8112562,
+    "ast_hash": "d7351a4058de35b40823988e30a735b6",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/services/auth_service.dart": {
+    "mtime": 1788435451.4674327,
+    "seen": 1788436929.2740831,
+    "ast_hash": "e379690330f58f8e1efd5003e0d0aac8",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/services/database_service.dart": {
+    "mtime": 1788423691.049751,
+    "seen": 1788423695.4783192,
+    "ast_hash": "949bb192310f0d263027b7b8dccf4a97",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/services/notification_service.dart": {
+    "mtime": 1787729427.2098927,
+    "seen": 1788258612.0784872,
+    "ast_hash": "6e0d29fb25a9b49d89fc3c15a53b3d01",
+    "semantic_hash": "6e0d29fb25a9b49d89fc3c15a53b3d01"
+  },
+  "namastepos_flutter/lib/services/offline_outbox.dart": {
+    "mtime": 1788423691.049991,
+    "seen": 1788423695.478334,
+    "ast_hash": "c99a69ee049cfcbbf809371c1dfa3540",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/services/printer_service.dart": {
+    "mtime": 1787572473.422458,
+    "seen": 1788258612.078488,
+    "ast_hash": "80b753ccaf5228328e77a3f25740b582",
+    "semantic_hash": "80b753ccaf5228328e77a3f25740b582"
+  },
+  "namastepos_flutter/lib/services/repositories.dart": {
+    "mtime": 1788423691.050201,
+    "seen": 1788423695.478347,
+    "ast_hash": "9fa5d3f729317c077da3c7c35721ec9a",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/services/telemetry.dart": {
+    "mtime": 1787572473.4235191,
+    "seen": 1788258612.078489,
+    "ast_hash": "01d943c809f42f61926e9ce227161033",
+    "semantic_hash": "01d943c809f42f61926e9ce227161033"
+  },
+  "namastepos_flutter/lib/services/voice_order_service.dart": {
+    "mtime": 1787572473.4251432,
+    "seen": 1788258612.078489,
+    "ast_hash": "54b47e46b25cc93523d473a174ce33f9",
+    "semantic_hash": "54b47e46b25cc93523d473a174ce33f9"
+  },
+  "namastepos_flutter/lib/services/whatsapp_service.dart": {
+    "mtime": 1787572473.4259646,
+    "seen": 1788258612.07849,
+    "ast_hash": "83fc1dc0a6f1b48a6b96aaa3b6bd98ed",
+    "semantic_hash": "83fc1dc0a6f1b48a6b96aaa3b6bd98ed"
+  },
+  "namastepos_flutter/lib/utils/error_humanizer.dart": {
+    "mtime": 1787572473.4268348,
+    "seen": 1788258612.07849,
+    "ast_hash": "aa3012fef7e0c87cb95cf3b3ac3d7760",
+    "semantic_hash": "aa3012fef7e0c87cb95cf3b3ac3d7760"
+  },
+  "namastepos_flutter/lib/utils/formatters.dart": {
+    "mtime": 1787572473.4273384,
+    "seen": 1788258612.078491,
+    "ast_hash": "c93518c2c5ff826f492987c97686896d",
+    "semantic_hash": "c93518c2c5ff826f492987c97686896d"
+  },
+  "namastepos_flutter/lib/utils/i18n.dart": {
+    "mtime": 1787572473.4277244,
+    "seen": 1788258612.078491,
+    "ast_hash": "c0263225f821ccbf68d10863aff9da02",
+    "semantic_hash": "c0263225f821ccbf68d10863aff9da02"
+  },
+  "namastepos_flutter/lib/utils/image_url.dart": {
+    "mtime": 1787572473.4280503,
+    "seen": 1788258612.078492,
+    "ast_hash": "6d6d9bf49723e73e3966ac2a34a3511a",
+    "semantic_hash": "6d6d9bf49723e73e3966ac2a34a3511a"
+  },
+  "namastepos_flutter/lib/utils/role_permissions.dart": {
+    "mtime": 1788435506.264126,
+    "seen": 1788436929.27409,
+    "ast_hash": "9b84438e4d5bcc5370f06310100c5964",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/utils/validators.dart": {
+    "mtime": 1787572473.428908,
+    "seen": 1788258612.078492,
+    "ast_hash": "5f167ff63a211859259afb663615eb71",
+    "semantic_hash": "5f167ff63a211859259afb663615eb71"
+  },
+  "namastepos_flutter/lib/widgets/addon_locked.dart": {
+    "mtime": 1787572473.4293325,
+    "seen": 1788258612.0784929,
+    "ast_hash": "35427fd8844310c47b8a49e0eb8dcbe1",
+    "semantic_hash": "35427fd8844310c47b8a49e0eb8dcbe1"
+  },
+  "namastepos_flutter/lib/widgets/connectivity_banner.dart": {
+    "mtime": 1788423691.0503478,
+    "seen": 1788423695.478476,
+    "ast_hash": "edc08325e40fb9c1acd1cf583ca2db9a",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/lib/widgets/empty_state.dart": {
+    "mtime": 1787572473.4300518,
+    "seen": 1788258612.0784938,
+    "ast_hash": "6e7bac29625c0de4db881fbafe81957a",
+    "semantic_hash": "6e7bac29625c0de4db881fbafe81957a"
+  },
+  "namastepos_flutter/lib/widgets/feature_tour.dart": {
+    "mtime": 1787631344.1445913,
+    "seen": 1788258612.0784938,
+    "ast_hash": "b46ae86cd67c214ee32ea6c0f9fef30b",
+    "semantic_hash": "b46ae86cd67c214ee32ea6c0f9fef30b"
+  },
+  "namastepos_flutter/lib/widgets/google_logo.dart": {
+    "mtime": 1787631101.33921,
+    "seen": 1788258612.078495,
+    "ast_hash": "9d252331f10334dc3fb09d276100de42",
+    "semantic_hash": "9d252331f10334dc3fb09d276100de42"
+  },
+  "namastepos_flutter/lib/widgets/home_bottom_nav.dart": {
+    "mtime": 1787572473.43043,
+    "seen": 1788258612.078495,
+    "ast_hash": "120cba1c4ba42e27f9b77fa68dcce6a0",
+    "semantic_hash": "120cba1c4ba42e27f9b77fa68dcce6a0"
+  },
+  "namastepos_flutter/lib/widgets/home_drawer_button.dart": {
+    "mtime": 1787572473.4307463,
+    "seen": 1788258612.078496,
+    "ast_hash": "4b047f7f0eba5900c5d4afc5b0c3ac3d",
+    "semantic_hash": "4b047f7f0eba5900c5d4afc5b0c3ac3d"
+  },
+  "namastepos_flutter/lib/widgets/kpi_card.dart": {
+    "mtime": 1787572473.4310534,
+    "seen": 1788258612.078496,
+    "ast_hash": "c9f2dbde5c651682aa52b8ba661e524d",
+    "semantic_hash": "c9f2dbde5c651682aa52b8ba661e524d"
+  },
+  "namastepos_flutter/lib/widgets/membership_offer_dialog.dart": {
+    "mtime": 1787572473.4314094,
+    "seen": 1788258612.078497,
+    "ast_hash": "744b3fa68a92f5d40662f92d91aaaaad",
+    "semantic_hash": "744b3fa68a92f5d40662f92d91aaaaad"
+  },
+  "namastepos_flutter/lib/widgets/membership_plan_dialog.dart": {
+    "mtime": 1787572473.4319913,
+    "seen": 1788258612.078497,
+    "ast_hash": "0abbc212406ffec695dacaa6e52e4cd0",
+    "semantic_hash": "0abbc212406ffec695dacaa6e52e4cd0"
+  },
+  "namastepos_flutter/lib/widgets/plan_gate.dart": {
+    "mtime": 1787572473.4324474,
+    "seen": 1788258612.0784981,
+    "ast_hash": "3bca1eb227e8b84f4145a288ef2bb4f6",
+    "semantic_hash": "3bca1eb227e8b84f4145a288ef2bb4f6"
+  },
+  "namastepos_flutter/lib/widgets/primary_button.dart": {
+    "mtime": 1787572473.4327323,
+    "seen": 1788258612.0784981,
+    "ast_hash": "f604664f548c025f021b46f9e6998816",
+    "semantic_hash": "f604664f548c025f021b46f9e6998816"
+  },
+  "namastepos_flutter/lib/widgets/section_header.dart": {
+    "mtime": 1787572473.4330165,
+    "seen": 1788258612.0784981,
+    "ast_hash": "f0a5e8525cc71a4f97b2790befebb4a0",
+    "semantic_hash": "f0a5e8525cc71a4f97b2790befebb4a0"
+  },
+  "namastepos_flutter/lib/widgets/subscription_banner.dart": {
+    "mtime": 1787901562.4702387,
+    "seen": 1788258612.078499,
+    "ast_hash": "511fb9053cadc6b98802b0b326632870",
+    "semantic_hash": "511fb9053cadc6b98802b0b326632870"
+  },
+  "namastepos_flutter/lib/widgets/trial_banner.dart": {
+    "mtime": 1787572473.4336793,
+    "seen": 1788258612.078499,
+    "ast_hash": "d1e81dda51c98bb43991a81a3458a2f6",
+    "semantic_hash": "d1e81dda51c98bb43991a81a3458a2f6"
+  },
+  "namastepos_flutter/macos/Flutter/GeneratedPluginRegistrant.swift": {
+    "mtime": 1787729442.1646261,
+    "seen": 1788258612.0785,
+    "ast_hash": "d12599770795f24e9db281cad2e52e02",
+    "semantic_hash": "d12599770795f24e9db281cad2e52e02"
+  },
+  "namastepos_flutter/macos/Runner/AppDelegate.swift": {
+    "mtime": 1787572473.439996,
+    "seen": 1788258612.0785,
+    "ast_hash": "2a7411ae3e7c6715525b94b6f8d2e80b",
+    "semantic_hash": "2a7411ae3e7c6715525b94b6f8d2e80b"
+  },
+  "namastepos_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/Contents.json": {
+    "mtime": 1787572473.4414213,
+    "seen": 1788258612.0785012,
+    "ast_hash": "5bd47c3ef1d1a261037c87fb3ddb9cfd",
+    "semantic_hash": "5bd47c3ef1d1a261037c87fb3ddb9cfd"
+  },
+  "namastepos_flutter/macos/Runner/MainFlutterWindow.swift": {
+    "mtime": 1787572473.4573982,
+    "seen": 1788258612.0785012,
+    "ast_hash": "4a747b1f256d62a2bbb79bd976891eb5",
+    "semantic_hash": "4a747b1f256d62a2bbb79bd976891eb5"
+  },
+  "namastepos_flutter/macos/RunnerTests/RunnerTests.swift": {
+    "mtime": 1787572473.4580452,
+    "seen": 1788258612.078502,
+    "ast_hash": "97d3a20fd20a063c192e886d1822b4a8",
+    "semantic_hash": "97d3a20fd20a063c192e886d1822b4a8"
+  },
+  "namastepos_flutter/setup.sh": {
+    "mtime": 1787572473.458628,
+    "seen": 1788258612.078502,
+    "ast_hash": "c5089ed146f8715012077b52aa9e4493",
+    "semantic_hash": "c5089ed146f8715012077b52aa9e4493"
+  },
+  "namastepos_flutter/test/services/telemetry_test.dart": {
+    "mtime": 1787572473.4591594,
+    "seen": 1788258612.078503,
+    "ast_hash": "9a0980ed19c96278fdce82b71f48030d",
+    "semantic_hash": "9a0980ed19c96278fdce82b71f48030d"
+  },
+  "namastepos_flutter/test/utils/error_humanizer_test.dart": {
+    "mtime": 1787572473.4596457,
+    "seen": 1788258612.078503,
+    "ast_hash": "ee7f416e6f5a46a43caad861099efb97",
+    "semantic_hash": "ee7f416e6f5a46a43caad861099efb97"
+  },
+  "namastepos_flutter/test/widget_test.dart": {
+    "mtime": 1787572473.4600732,
+    "seen": 1788258612.0785038,
+    "ast_hash": "9d84f73758b2fe8997f65c016b1a274f",
+    "semantic_hash": "9d84f73758b2fe8997f65c016b1a274f"
+  },
+  "namastepos_flutter/test/widgets/connectivity_banner_test.dart": {
+    "mtime": 1787572473.4607372,
+    "seen": 1788258612.0785038,
+    "ast_hash": "b3de24c51172553fd7e4c785d334f9ed",
+    "semantic_hash": "b3de24c51172553fd7e4c785d334f9ed"
+  },
+  "namastepos_print_agent/package.json": {
+    "mtime": 1787572473.4641964,
+    "seen": 1788258612.078505,
+    "ast_hash": "390eab2fac693d8a77ec1d6cdda16a5e",
+    "semantic_hash": "390eab2fac693d8a77ec1d6cdda16a5e"
+  },
+  "namastepos_print_agent/src/agent.js": {
+    "mtime": 1787572473.4646251,
+    "seen": 1788258612.078505,
+    "ast_hash": "fe14bb2c27b2e711cd2c685a830bed10",
+    "semantic_hash": "fe14bb2c27b2e711cd2c685a830bed10"
+  },
+  "ops/keepalive-worker/worker.js": {
+    "mtime": 1787725942.2436407,
+    "seen": 1788258612.078506,
+    "ast_hash": "0b46c7757135d3cdc4a64bae75d48816",
+    "semantic_hash": "0b46c7757135d3cdc4a64bae75d48816"
+  },
+  "scripts/backup-db.sh": {
+    "mtime": 1788199298.3539598,
+    "seen": 1788258612.078506,
+    "ast_hash": "57b10302184ed8c3fe2b43236821f56b",
+    "semantic_hash": "57b10302184ed8c3fe2b43236821f56b"
+  },
+  "scripts/install-backup-cron.sh": {
+    "mtime": 1787572473.4666831,
+    "seen": 1788258612.078507,
+    "ast_hash": "e8a1c6e67a5abcc9f4db3908e6ec70a0",
+    "semantic_hash": "e8a1c6e67a5abcc9f4db3908e6ec70a0"
+  },
+  "scripts/restore-db.sh": {
+    "mtime": 1787572473.467947,
+    "seen": 1788258612.078507,
+    "ast_hash": "2b2c1f576eb9c49d59b0b501f6cb0f17",
+    "semantic_hash": "2b2c1f576eb9c49d59b0b501f6cb0f17"
+  },
+  "scripts/verify-backup.sh": {
+    "mtime": 1787572473.4687006,
+    "seen": 1788258612.0785081,
+    "ast_hash": "f472167f9971ef51780d58a51a218c3b",
+    "semantic_hash": "f472167f9971ef51780d58a51a218c3b"
+  },
+  "tests/package.json": {
+    "mtime": 1787572473.4783015,
+    "seen": 1788258612.0785081,
+    "ast_hash": "24c07c61ca0952df47f5c71ddfe137cb",
+    "semantic_hash": "24c07c61ca0952df47f5c71ddfe137cb"
+  },
+  "tests/playwright.config.ts": {
+    "mtime": 1787572473.4788365,
+    "seen": 1788258612.078509,
+    "ast_hash": "e25e7b63d7d9abe921121ec283c5c8cf",
+    "semantic_hash": "e25e7b63d7d9abe921121ec283c5c8cf"
+  },
+  "tests/specs/01-login.spec.ts": {
+    "mtime": 1788249597.4481406,
+    "seen": 1788258612.078509,
+    "ast_hash": "793c9a74dbaedb90590eb6f457d1c671",
+    "semantic_hash": "793c9a74dbaedb90590eb6f457d1c671"
+  },
+  "tests/specs/02-menu.spec.ts": {
+    "mtime": 1787572473.4798596,
+    "seen": 1788258612.07851,
+    "ast_hash": "13c1e0d163866d40554adbb7df4c70f3",
+    "semantic_hash": "13c1e0d163866d40554adbb7df4c70f3"
+  },
+  "tests/specs/03-place-order.spec.ts": {
+    "mtime": 1787572473.4802468,
+    "seen": 1788258612.07851,
+    "ast_hash": "ab09b2863242aff4665b0f2a9beabddc",
+    "semantic_hash": "ab09b2863242aff4665b0f2a9beabddc"
+  },
+  "tests/specs/04-reports-pnl.spec.ts": {
+    "mtime": 1787572473.480562,
+    "seen": 1788258612.078511,
+    "ast_hash": "62c422654355cc4c20c2c0172d17a4f6",
+    "semantic_hash": "62c422654355cc4c20c2c0172d17a4f6"
+  },
+  "tests/specs/05-reports-registers.spec.ts": {
+    "mtime": 1787572473.4808543,
+    "seen": 1788258612.078511,
+    "ast_hash": "82f0861abdce8ac7fcc7c40d61f6c5ca",
+    "semantic_hash": "82f0861abdce8ac7fcc7c40d61f6c5ca"
+  },
+  "tests/specs/06-tax-invoices.spec.ts": {
+    "mtime": 1787572473.4811683,
+    "seen": 1788258612.0785122,
+    "ast_hash": "bdd142fc52f3b8fb536e394f40b93f65",
+    "semantic_hash": "bdd142fc52f3b8fb536e394f40b93f65"
+  },
+  "tests/specs/07-qr-codes.spec.ts": {
+    "mtime": 1787572473.4815042,
+    "seen": 1788258612.0785122,
+    "ast_hash": "e17eeab7bf19b820b10a1a9af13cbae9",
+    "semantic_hash": "e17eeab7bf19b820b10a1a9af13cbae9"
+  },
+  "tests/specs/08-staff.spec.ts": {
+    "mtime": 1787572473.4820337,
+    "seen": 1788258612.078513,
+    "ast_hash": "a7141ea1aed68040d0c22001ff98f1a9",
+    "semantic_hash": "a7141ea1aed68040d0c22001ff98f1a9"
+  },
+  "tests/specs/09-billing.spec.ts": {
+    "mtime": 1787572473.482412,
+    "seen": 1788258612.078513,
+    "ast_hash": "b340a009849bb667c0921911efed34cd",
+    "semantic_hash": "b340a009849bb667c0921911efed34cd"
+  },
+  "tests/specs/10-admin-login.spec.ts": {
+    "mtime": 1787572473.4829788,
+    "seen": 1788258612.0785139,
+    "ast_hash": "411bfed2d605569ce5b09fe646ca2a26",
+    "semantic_hash": "411bfed2d605569ce5b09fe646ca2a26"
+  },
+  "tests/specs/11-admin-customers.spec.ts": {
+    "mtime": 1787572473.4833095,
+    "seen": 1788258612.0785139,
+    "ast_hash": "5d6e574b3adaa097b09739491847cb17",
+    "semantic_hash": "5d6e574b3adaa097b09739491847cb17"
+  },
+  "tests/specs/12-admin-reports.spec.ts": {
+    "mtime": 1787572473.483575,
+    "seen": 1788258612.078515,
+    "ast_hash": "c1f60cef4bae43175713114ee8df21f2",
+    "semantic_hash": "c1f60cef4bae43175713114ee8df21f2"
+  },
+  "tests/specs/13-admin-finance.spec.ts": {
+    "mtime": 1787572473.4838324,
+    "seen": 1788258612.078515,
+    "ast_hash": "8bb4b628e44fe0ec557bf88733b0daaf",
+    "semantic_hash": "8bb4b628e44fe0ec557bf88733b0daaf"
+  },
+  "tests/specs/14-admin-audit-modules.spec.ts": {
+    "mtime": 1787572473.4842832,
+    "seen": 1788258612.078516,
+    "ast_hash": "e0970176b30668a8739f4641849c3b71",
+    "semantic_hash": "e0970176b30668a8739f4641849c3b71"
+  },
+  "tests/specs/15-admin-addons.spec.ts": {
+    "mtime": 1787572473.4847174,
+    "seen": 1788258612.078516,
+    "ast_hash": "694f2469908b2a9fb1f77383e09a4f05",
+    "semantic_hash": "694f2469908b2a9fb1f77383e09a4f05"
+  },
+  "tests/specs/16-admin-coupons.spec.ts": {
+    "mtime": 1787572473.4852517,
+    "seen": 1788258612.078517,
+    "ast_hash": "f1ca6bc661e0865fe0884285ee7f5ed7",
+    "semantic_hash": "f1ca6bc661e0865fe0884285ee7f5ed7"
+  },
+  "tests/specs/17-admin-plans.spec.ts": {
+    "mtime": 1787572473.4859211,
+    "seen": 1788258612.078517,
+    "ast_hash": "ddd1a72faa269d25c2b32dedbdc27aac",
+    "semantic_hash": "ddd1a72faa269d25c2b32dedbdc27aac"
+  },
+  "tests/specs/18-admin-metrics.spec.ts": {
+    "mtime": 1787572473.4873526,
+    "seen": 1788258612.078517,
+    "ast_hash": "8042d73bc272a84e88ba95f7da8c1df2",
+    "semantic_hash": "8042d73bc272a84e88ba95f7da8c1df2"
+  },
+  "tests/specs/19-admin-refunds.spec.ts": {
+    "mtime": 1787572473.4886508,
+    "seen": 1788258612.078518,
+    "ast_hash": "45b8cce7935b05d22e2c22a7b442ed6e",
+    "semantic_hash": "45b8cce7935b05d22e2c22a7b442ed6e"
+  },
+  "tests/specs/20-tables.spec.ts": {
+    "mtime": 1787572473.4889896,
+    "seen": 1788258612.078518,
+    "ast_hash": "2dd59f688f7c6618955901fb8870332c",
+    "semantic_hash": "2dd59f688f7c6618955901fb8870332c"
+  },
+  "tests/specs/21-settings.spec.ts": {
+    "mtime": 1788249601.7807007,
+    "seen": 1788258612.078519,
+    "ast_hash": "3798e82dba7cfc0f5aaef0734a06b57a",
+    "semantic_hash": "3798e82dba7cfc0f5aaef0734a06b57a"
+  },
+  "tests/specs/22-customers.spec.ts": {
+    "mtime": 1787572473.4900162,
+    "seen": 1788258612.078519,
+    "ast_hash": "28712b8dd1201ff2a4ff3761a1a9a925",
+    "semantic_hash": "28712b8dd1201ff2a4ff3761a1a9a925"
+  },
+  "tests/specs/23-kds.spec.ts": {
+    "mtime": 1787572473.4904134,
+    "seen": 1788258612.07852,
+    "ast_hash": "da86e42d3de2dad052c80df9db5869ee",
+    "semantic_hash": "da86e42d3de2dad052c80df9db5869ee"
+  },
+  "tests/specs/24-kot.spec.ts": {
+    "mtime": 1787572473.4910877,
+    "seen": 1788258612.07852,
+    "ast_hash": "8a126fcda93e73e7dbf3944784003ddf",
+    "semantic_hash": "8a126fcda93e73e7dbf3944784003ddf"
+  },
+  "tests/specs/25-captain.spec.ts": {
+    "mtime": 1787572473.4915073,
+    "seen": 1788258612.078521,
+    "ast_hash": "d978c02b6933cca8b78e99f931f43ae6",
+    "semantic_hash": "d978c02b6933cca8b78e99f931f43ae6"
+  },
+  "tests/specs/26-reservations.spec.ts": {
+    "mtime": 1787572473.491989,
+    "seen": 1788258612.078521,
+    "ast_hash": "78d82452e8ab34aaa72c8ad0522fc03c",
+    "semantic_hash": "78d82452e8ab34aaa72c8ad0522fc03c"
+  },
+  "tests/specs/27-expenses.spec.ts": {
+    "mtime": 1787572473.4927258,
+    "seen": 1788258612.0785222,
+    "ast_hash": "8082fdc234c75eb65ab3271cf339a9d5",
+    "semantic_hash": "8082fdc234c75eb65ab3271cf339a9d5"
+  },
+  "tests/specs/28-ingredients.spec.ts": {
+    "mtime": 1787572473.4933105,
+    "seen": 1788258612.0785222,
+    "ast_hash": "0f9cb7811133c6348f3f3a15f41aea5f",
+    "semantic_hash": "0f9cb7811133c6348f3f3a15f41aea5f"
+  },
+  "tests/specs/29-aggregators.spec.ts": {
+    "mtime": 1787572473.4938645,
+    "seen": 1788258612.078523,
+    "ast_hash": "9b266d1438aea891f54e389a6361de07",
+    "semantic_hash": "9b266d1438aea891f54e389a6361de07"
+  },
+  "tests/specs/30-admin-gst.spec.ts": {
+    "mtime": 1787572473.494324,
+    "seen": 1788258612.078523,
+    "ast_hash": "4ac4dc591bde0429fd824cd11c7b36a8",
+    "semantic_hash": "4ac4dc591bde0429fd824cd11c7b36a8"
+  },
+  "tests/specs/31-admin-settings.spec.ts": {
+    "mtime": 1787572473.4949632,
+    "seen": 1788258612.0785239,
+    "ast_hash": "07fc4a6e48e1058ecaaea7b6929ee215",
+    "semantic_hash": "07fc4a6e48e1058ecaaea7b6929ee215"
+  },
+  "tests/specs/32-admin-webhooks.spec.ts": {
+    "mtime": 1787572473.4954774,
+    "seen": 1788258612.0785239,
+    "ast_hash": "65e0b5fbbe125753fa16f9f7e9c20cc7",
+    "semantic_hash": "65e0b5fbbe125753fa16f9f7e9c20cc7"
+  },
+  "tests/specs/33-admin-team.spec.ts": {
+    "mtime": 1787572473.495895,
+    "seen": 1788258612.0785248,
+    "ast_hash": "44a3e4f775cce8043fdf9b27af901845",
+    "semantic_hash": "44a3e4f775cce8043fdf9b27af901845"
+  },
+  "tests/specs/34-marketplace.spec.ts": {
+    "mtime": 1787572473.4962156,
+    "seen": 1788258612.0785248,
+    "ast_hash": "044a03986e0f868b569fa394acca7b73",
+    "semantic_hash": "044a03986e0f868b569fa394acca7b73"
+  },
+  "tests/specs/35-accounting.spec.ts": {
+    "mtime": 1787572473.4965773,
+    "seen": 1788258612.078526,
+    "ast_hash": "b54bf04fe9cdd22306c9cf1f1da9d769",
+    "semantic_hash": "b54bf04fe9cdd22306c9cf1f1da9d769"
+  },
+  "tests/specs/_admin_helpers.ts": {
+    "mtime": 1787572473.4968936,
+    "seen": 1788258612.078526,
+    "ast_hash": "47b4bb1a2fe72ebe0dbfd62ec502a126",
+    "semantic_hash": "47b4bb1a2fe72ebe0dbfd62ec502a126"
+  },
+  "tests/specs/_auth.setup.ts": {
+    "mtime": 1787572473.4972832,
+    "seen": 1788258612.078526,
+    "ast_hash": "c3f3f17e747ab9f150a0fb2dc688526e",
+    "semantic_hash": "c3f3f17e747ab9f150a0fb2dc688526e"
+  },
+  "tests/specs/_helpers.ts": {
+    "mtime": 1788249580.37933,
+    "seen": 1788258612.078527,
+    "ast_hash": "bd6a46498f46e99d3e8bb1c252f2f9b7",
+    "semantic_hash": "bd6a46498f46e99d3e8bb1c252f2f9b7"
+  },
+  "namastepos_backend/db/migrations/001_init_schema.sql": {
+    "mtime": 1787572473.1068542,
+    "seen": 1788428696.803715,
+    "ast_hash": "f4140c526897d2847a320b74a153b9d7",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/002_saas_schema.sql": {
+    "mtime": 1787572473.1072776,
+    "seen": 1788428696.8037162,
+    "ast_hash": "129dbac9db55ddb231445ec873902ff4",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/003_admin_platform.sql": {
+    "mtime": 1787572473.1077693,
+    "seen": 1788428696.8037171,
+    "ast_hash": "3c6de32820aec88d8226aa5fc73308b6",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/004_addons.sql": {
+    "mtime": 1787572473.1081617,
+    "seen": 1788428696.80372,
+    "ast_hash": "8be72316cc579ec83b3865fc60bb7647",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/005_loyalty.sql": {
+    "mtime": 1787572473.1085274,
+    "seen": 1788428696.80372,
+    "ast_hash": "1570a027492c3643b49dd6707d68fcff",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/006_kot_tables.sql": {
+    "mtime": 1787572473.108871,
+    "seen": 1788428696.803721,
+    "ast_hash": "1506d06791fa6142368f1a3035c0ad3a",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/007_qr_ordering.sql": {
+    "mtime": 1787572473.1091459,
+    "seen": 1788428696.803722,
+    "ast_hash": "15b8ecadb5b7ad92d83e34f29e8fd7e1",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/008_recipes.sql": {
+    "mtime": 1787572473.1098068,
+    "seen": 1788428696.803723,
+    "ast_hash": "1bc3dc75aa88eb5f63643f0ac25f7869",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/009_qa_hardening.sql": {
+    "mtime": 1787572473.1104681,
+    "seen": 1788428696.803724,
+    "ast_hash": "dcd10793450bf443fc00a95f22ae1a36",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/010_p1_hardening.sql": {
+    "mtime": 1787572473.1110501,
+    "seen": 1788428696.803724,
+    "ast_hash": "013250443f6d2bc1db54a8f12cb609db",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/011_full_hardening.sql": {
+    "mtime": 1787572473.1114912,
+    "seen": 1788428696.803725,
+    "ast_hash": "f699a90791985889b1c79f433d49ba0a",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/012_menu_combos.sql": {
+    "mtime": 1787572473.1117134,
+    "seen": 1788428696.8037262,
+    "ast_hash": "d5ad8c30de2429d13decf92e8dda952f",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/013_variants_modifiers.sql": {
+    "mtime": 1787572473.1121485,
+    "seen": 1788428696.8037262,
+    "ast_hash": "2bc3deb6a01c7ab0faed69d56f5217f3",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/014_bill_polish_tokens.sql": {
+    "mtime": 1787572473.112484,
+    "seen": 1788428696.8037271,
+    "ast_hash": "13fd7dd053450b4cea4fc725b85148e7",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/015_bill_templates.sql": {
+    "mtime": 1787572473.1127985,
+    "seen": 1788428696.8037279,
+    "ast_hash": "38670f37e3eb4142dbec6554135fedd8",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/016_aggregators.sql": {
+    "mtime": 1787572473.1130595,
+    "seen": 1788428696.8037288,
+    "ast_hash": "f41b5d26f6306fe4a6ef85f4f25c336c",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/017_gst_item_slabs.sql": {
+    "mtime": 1787572473.1133158,
+    "seen": 1788428696.80373,
+    "ast_hash": "372f4e57b5b0244c894df34bc54bce4d",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/018_daily_closing_wastage.sql": {
+    "mtime": 1787572473.1135807,
+    "seen": 1788428696.80373,
+    "ast_hash": "984d8191a0585451e4809ddd3525c6b7",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/019_reservations.sql": {
+    "mtime": 1787572473.113882,
+    "seen": 1788428696.803731,
+    "ast_hash": "1cc07f73062a09a1ad0b67bf294e53c2",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/020_bar_liquor_membership.sql": {
+    "mtime": 1787572473.1143477,
+    "seen": 1788428696.803731,
+    "ast_hash": "14453613754ff67c3d7e5c0782af9253",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/021_kds_printer.sql": {
+    "mtime": 1787572473.1153674,
+    "seen": 1788428696.803732,
+    "ast_hash": "871003be153bac90dfe6c29706b2cc40",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/022_online_whatsapp.sql": {
+    "mtime": 1787572473.1157863,
+    "seen": 1788428696.803732,
+    "ast_hash": "e9f0f3e1a691f1d580a7b2e46afe0fd3",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/023_drivers_delivery.sql": {
+    "mtime": 1787572473.116213,
+    "seen": 1788428696.803733,
+    "ast_hash": "96b5fce425df77b1a05aad21f7c7e35c",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/024_einvoice_export.sql": {
+    "mtime": 1787572473.116559,
+    "seen": 1788428696.803734,
+    "ast_hash": "366cbabf7a31e4e3fadba8eac163cfc5",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/025_multi_outlet.sql": {
+    "mtime": 1787572473.1168947,
+    "seen": 1788428696.803734,
+    "ast_hash": "7507b129fda8a3056c94383e68414b76",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/026_retail_core.sql": {
+    "mtime": 1787572473.1172419,
+    "seen": 1788428696.803735,
+    "ast_hash": "50e567d9239eaccf387aff1eac3f4aea",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/027_retail_advanced.sql": {
+    "mtime": 1787572473.1177785,
+    "seen": 1788428696.803736,
+    "ast_hash": "c8cc72d53cf44803d73825cbfcb79057",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/028_offline_i18n.sql": {
+    "mtime": 1787572473.1181505,
+    "seen": 1788428696.803736,
+    "ast_hash": "0b4636999f09392efbe02da70630dd6c",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/029_dead_stock_heatmap.sql": {
+    "mtime": 1787572473.1184673,
+    "seen": 1788428696.8037372,
+    "ast_hash": "48ea55396c56ca0de693ff081e856a97",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/030_final_100.sql": {
+    "mtime": 1787572473.1189845,
+    "seen": 1788428696.803738,
+    "ast_hash": "fab86d5df757e95c383aa29b2f2b8301",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/031_plan_features.sql": {
+    "mtime": 1787572473.1193807,
+    "seen": 1788428696.8037388,
+    "ast_hash": "fa00a130f30cb45b2dbb232132792922",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/032_password_login.sql": {
+    "mtime": 1787572473.1197765,
+    "seen": 1788428696.8037388,
+    "ast_hash": "4bf9459256272adbe8f98e9e5a612af7",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/033_menu_hsn.sql": {
+    "mtime": 1787572473.1201596,
+    "seen": 1788428696.8037398,
+    "ast_hash": "0f1097ac9b4dc87d93ebe0aafd02dcd2",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/034_mobile_first_tier_rescope.sql": {
+    "mtime": 1787572473.1204698,
+    "seen": 1788428696.803741,
+    "ast_hash": "67d01fdb4e6dee103adea98645879fc5",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/035_staff_pin_roles.sql": {
+    "mtime": 1787572473.1209393,
+    "seen": 1788428696.803741,
+    "ast_hash": "88aa3afbad71e18a355a696c2d4ce255",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/036_staff_permissions.sql": {
+    "mtime": 1787572473.121225,
+    "seen": 1788428696.803742,
+    "ast_hash": "ffc5346022ea123a6748b071d06f8045",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/037_tax_invoices.sql": {
+    "mtime": 1787572473.1217587,
+    "seen": 1788428696.803743,
+    "ast_hash": "f73e5d2f904ae0e48e31a50371b815cc",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/038_table_floor_limits.sql": {
+    "mtime": 1787572473.122083,
+    "seen": 1788428696.803744,
+    "ast_hash": "fee84e0d24acbe116327b7c3aef307b1",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/039_plan_tier_varchar.sql": {
+    "mtime": 1787572473.1225111,
+    "seen": 1788428696.803744,
+    "ast_hash": "80bd0b050d3f7dac70b5e8b0abe706ce",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/040_per_plan_features.sql": {
+    "mtime": 1787572473.1228971,
+    "seen": 1788428696.803745,
+    "ast_hash": "3c7abcb0578400d001d9691522453136",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/041_dpdp_compliance.sql": {
+    "mtime": 1787572473.1232948,
+    "seen": 1788428696.803745,
+    "ast_hash": "6ed881bbba7aada645c7ca9d2d87c0a9",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/042_email_dispatch_log.sql": {
+    "mtime": 1787572473.123606,
+    "seen": 1788428696.803746,
+    "ast_hash": "4a121f9e4eb6339e1cdb07ae2d98b989",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/043_backfill_onboarded.sql": {
+    "mtime": 1787572473.1240413,
+    "seen": 1788428696.8037472,
+    "ast_hash": "e34732c5001638b1f0a86affae275bc9",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/044_aggregator_health.sql": {
+    "mtime": 1787572473.124451,
+    "seen": 1788428696.8037481,
+    "ast_hash": "c5bb36b288b1a74020a27e23c0cf5a5e",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/045_anomaly_alerts.sql": {
+    "mtime": 1787572473.124763,
+    "seen": 1788428696.8037481,
+    "ast_hash": "2c9d20eca01e4bb887f5e7f3ffd2c7de",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/046_launch_polish.sql": {
+    "mtime": 1787572473.1252499,
+    "seen": 1788428696.803749,
+    "ast_hash": "c0584374d328b083b0b5b9b64fa17bac",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/047_yearly_plans.sql": {
+    "mtime": 1787572473.1258435,
+    "seen": 1788428696.8037498,
+    "ast_hash": "87e7a7c74d695e4ed03bbab14f53c237",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/048_launch_bundle_2.sql": {
+    "mtime": 1787572473.1264837,
+    "seen": 1788428696.8037498,
+    "ast_hash": "6e8cb3288655fe0ee005e543e0794439",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/049_service_mode.sql": {
+    "mtime": 1787572473.126903,
+    "seen": 1788428696.803751,
+    "ast_hash": "5aca9eaf75e2199edcea0863626a7fb9",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/050_admin_crm.sql": {
+    "mtime": 1787572473.1277125,
+    "seen": 1788428696.803752,
+    "ast_hash": "7d7687181997fa92af1fb43f9deb525a",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/051_refunds_order_link.sql": {
+    "mtime": 1787572473.1285167,
+    "seen": 1788428696.803752,
+    "ast_hash": "74f89b9e0a254df93616de9ab86decba",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/052_attach_orphan_feature_keys.sql": {
+    "mtime": 1787572473.1289997,
+    "seen": 1788428696.803753,
+    "ast_hash": "fc98fdd2f9629b8aad6f3c5a97d0f223",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/053_otp_and_aggregator_link.sql": {
+    "mtime": 1787572473.1294794,
+    "seen": 1788428696.803753,
+    "ast_hash": "6370dd0b39da2939f91b612f0144ac3e",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/054_predeploy_schema_fixes.sql": {
+    "mtime": 1787572473.1299167,
+    "seen": 1788428696.803754,
+    "ast_hash": "d7c9b46b046036aa49a02abafe637b55",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/055_wastage_expense_membership_bundles.sql": {
+    "mtime": 1787572473.1302903,
+    "seen": 1788428696.803755,
+    "ast_hash": "f636a52996dd67dc04eab410abbad556",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/056_refresh_token_user_binding.sql": {
+    "mtime": 1787572473.1307085,
+    "seen": 1788428696.803755,
+    "ast_hash": "cff6573225994c9d850bb84524a03ab5",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/057_pin_lockout_persistent.sql": {
+    "mtime": 1787572473.1310413,
+    "seen": 1788428696.803756,
+    "ast_hash": "830410c4b729d6ec3484b6b71bdd30bc",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/058_coupons_business_expenses.sql": {
+    "mtime": 1787652233.3001497,
+    "seen": 1788428696.803757,
+    "ast_hash": "b9f65051533736caed7560736596c592",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/059_table_groups_guest_count.sql": {
+    "mtime": 1787660906.4982173,
+    "seen": 1788428696.803757,
+    "ast_hash": "833ac8069c929df7bff2d71ba13b078b",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/060_wallet_split_payments.sql": {
+    "mtime": 1787662462.077207,
+    "seen": 1788428696.8037581,
+    "ast_hash": "0c9eda4d4b647b3fb19c12361cf23047",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/061_google_reviews.sql": {
+    "mtime": 1787660419.449051,
+    "seen": 1788428696.8037581,
+    "ast_hash": "86c1d637a1f76d6fb6cf75bc257a1a40",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/062_business_tax_identity.sql": {
+    "mtime": 1787748239.706022,
+    "seen": 1788428696.803759,
+    "ast_hash": "fe938fa236ca27c91a34202ca3caba9f",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/065_dunning.sql": {
+    "mtime": 1787793982.9029503,
+    "seen": 1788428696.803759,
+    "ast_hash": "de07ba8b9463eaf0ca3a0f0c2539f024",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/066_support_tickets.sql": {
+    "mtime": 1787897838.9670885,
+    "seen": 1788428696.80376,
+    "ast_hash": "14fc1cfbd098b7113490507ade03a202",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/068_addon_revenue_share.sql": {
+    "mtime": 1787899180.7530303,
+    "seen": 1788428696.803761,
+    "ast_hash": "4f0fe16917aa45acb126de8f38ab2fa9",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/069_subscription_invoice_seq.sql": {
+    "mtime": 1788071262.7219243,
+    "seen": 1788428696.803761,
+    "ast_hash": "7c59284f4e394d7766494f61cd300292",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/seeds/plans_seed.sql": {
+    "mtime": 1787572473.1314287,
+    "seen": 1788428696.803765,
+    "ast_hash": "aa0cc5513934a6e7fee0baa73f1e620b",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/scripts/rebrand-to-namastepos.sql": {
+    "mtime": 1787572473.1412888,
+    "seen": 1788428696.803833,
+    "ast_hash": "8bcda07088679fb7ef683537ed50974a",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/scripts/seed-compliance.sql": {
+    "mtime": 1787572473.1421416,
+    "seen": 1788428696.803851,
+    "ast_hash": "ac950fa1e4fb1e5e46d7ada2743113e9",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/scripts/seed-shiv-demo.sql": {
+    "mtime": 1787572473.1426902,
+    "seen": 1788428696.803851,
+    "ast_hash": "0761ee55257d5fe67b7716e7e83ef252",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/tenderbreakdown2026.test.js": {
+    "mtime": 1788263719.4233456,
+    "seen": 1788263774.585363,
+    "ast_hash": "7db60e7312e36c5b8375f68df77b074e",
+    "semantic_hash": ""
+  },
+  "scripts/recover-menu-v2.sql": {
+    "mtime": 1787572473.4671726,
+    "seen": 1788428696.8120792,
+    "ast_hash": "d69ea4851f00d05fbf55f866133e4fa1",
+    "semantic_hash": ""
+  },
+  "scripts/recover-menu.sql": {
+    "mtime": 1787572473.46758,
+    "seen": 1788428696.8120792,
+    "ast_hash": "7789de151b7d8e2102e69e478b7edbc9",
+    "semantic_hash": ""
+  },
+  ".github/workflows/ci.yml": {
+    "mtime": 1787593867.463963,
+    "seen": 1788263774.58555,
+    "ast_hash": "10cc2766faf97133c975476823af28ae",
+    "semantic_hash": ""
+  },
+  ".github/workflows/keepalive.yml": {
+    "mtime": 1787588433.4642591,
+    "seen": 1788263774.585551,
+    "ast_hash": "8022cabb6f03ca2df56b62544e07b7a4",
+    "semantic_hash": ""
+  },
+  "HARDCODE_AUDIT_2026-08-24.md": {
+    "mtime": 1787572473.06744,
+    "seen": 1788263774.585551,
+    "ast_hash": "09adf695c78358cda70ec10c87e073f6",
+    "semantic_hash": ""
+  },
+  "HOW_TO_RUN.md": {
+    "mtime": 1787572473.068194,
+    "seen": 1788263774.585552,
+    "ast_hash": "43653f1d045ab4f7eb77ecafbc599d0d",
+    "semantic_hash": ""
+  },
+  "MOBILE_BUG_TRACKER.html": {
+    "mtime": 1788255530.5479772,
+    "seen": 1788263774.585552,
+    "ast_hash": "80c33c9c37195e81818cf0ec57259098",
+    "semantic_hash": ""
+  },
+  "NamastePOS_Listing_Kit.md": {
+    "mtime": 1787752684.743373,
+    "seen": 1788263774.585553,
+    "ast_hash": "34fdc8e9690b7f75b1a0b2f26e912be3",
+    "semantic_hash": ""
+  },
+  "NamastePOS_SuperAdmin_Review_and_Strategy.md": {
+    "mtime": 1787753470.7523723,
+    "seen": 1788263774.585553,
+    "ast_hash": "919ea5cfd93badd5828f4e0447e8f047",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1787572473.0484917,
+    "seen": 1788263774.585554,
+    "ast_hash": "3ab25bb20e75d8ccdcf971764db950b6",
+    "semantic_hash": ""
+  },
+  "docker-compose.yml": {
+    "mtime": 1788199485.9242086,
+    "seen": 1788263774.585554,
+    "ast_hash": "4faf2e5828a03365540fa377008bc8e1",
+    "semantic_hash": ""
+  },
+  "docs/META_WHATSAPP_SETUP.md": {
+    "mtime": 1787902791.961641,
+    "seen": 1788263774.5855548,
+    "ast_hash": "86235c3f0b13b47c194e49ab00ae86ec",
+    "semantic_hash": ""
+  },
+  "docs/NamastePOS_Directory_Submission_Pack.md": {
+    "mtime": 1787918421.284964,
+    "seen": 1788263774.5855548,
+    "ast_hash": "3dd695105bfcb983f07e601152d2acd2",
+    "semantic_hash": ""
+  },
+  "docs/NamastePOS_Growth_Roadmap_2026-08-27.md": {
+    "mtime": 1787792483.6128538,
+    "seen": 1788263774.585556,
+    "ast_hash": "7a12e82de67f1de2e34301ff37a15aa2",
+    "semantic_hash": ""
+  },
+  "docs/NamastePOS_Product_and_Codebase_Review_2026-08-28.md": {
+    "mtime": 1787904352.2249658,
+    "seen": 1788263774.585556,
+    "ast_hash": "93fe7afe642b1e9a76b391ac1c20f81e",
+    "semantic_hash": ""
+  },
+  "docs/NamastePOS_Roadmap_2026-08-28.md": {
+    "mtime": 1787923217.614192,
+    "seen": 1788263774.585557,
+    "ast_hash": "21b1a7df8357d2b230b2c6ee41cb33f1",
+    "semantic_hash": ""
+  },
+  "docs/archive/AUDIT.md": {
+    "mtime": 1787572473.068946,
+    "seen": 1788263774.585557,
+    "ast_hash": "664cf80fe217ec171115a0015bc53058",
+    "semantic_hash": ""
+  },
+  "docs/archive/BACKEND_SECURITY_AUDIT.md": {
+    "mtime": 1787572473.0692353,
+    "seen": 1788263774.585558,
+    "ast_hash": "abef7fa2106574d1be9a9e32167617c3",
+    "semantic_hash": ""
+  },
+  "docs/archive/BACKUPS.md": {
+    "mtime": 1787572473.0706038,
+    "seen": 1788263774.585558,
+    "ast_hash": "b6b22b099c65b05a182af54f885c80ad",
+    "semantic_hash": ""
+  },
+  "docs/archive/BUG_SWEEP_2026-08-20.md": {
+    "mtime": 1787572473.072016,
+    "seen": 1788263774.5855591,
+    "ast_hash": "52fe2b2a73876a479d18c4573e93e641",
+    "semantic_hash": ""
+  },
+  "docs/archive/CAPACITY_PLAN.md": {
+    "mtime": 1787572473.072449,
+    "seen": 1788263774.58556,
+    "ast_hash": "973a5b642a86f1a6d7d594950e29fc85",
+    "semantic_hash": ""
+  },
+  "docs/archive/COMPLIANCE.md": {
+    "mtime": 1787572473.0728,
+    "seen": 1788263774.58556,
+    "ast_hash": "49a6863c1223a90bda2bfe764f8d5984",
+    "semantic_hash": ""
+  },
+  "docs/archive/CTO_VIKRAM_72H.md": {
+    "mtime": 1787572473.0732455,
+    "seen": 1788263774.585561,
+    "ast_hash": "0186c1a25db707e0e3f47c6444b3d71c",
+    "semantic_hash": ""
+  },
+  "docs/archive/DAY1_STATUS.md": {
+    "mtime": 1787572473.0735786,
+    "seen": 1788263774.585561,
+    "ast_hash": "da93e543367247ac865d43c7b597afa0",
+    "semantic_hash": ""
+  },
+  "docs/archive/DEPLOYMENT.md": {
+    "mtime": 1787572473.0739408,
+    "seen": 1788263774.5855622,
+    "ast_hash": "ba28b6cee6c7429fe89f7af86a808199",
+    "semantic_hash": ""
+  },
+  "docs/archive/DEPLOY_READY.md": {
+    "mtime": 1787572473.0743904,
+    "seen": 1788263774.5855622,
+    "ast_hash": "a71bb824b6ee62604088df7be5dda6c7",
+    "semantic_hash": ""
+  },
+  "docs/archive/DEVICE_TEST_FIXES_2026-08-22.md": {
+    "mtime": 1787572473.0747795,
+    "seen": 1788263774.585563,
+    "ast_hash": "d7ddb3deff9713edcdf2f1aef0d22d45",
+    "semantic_hash": ""
+  },
+  "docs/archive/DEVICE_TEST_FIXES_2026-08-23.md": {
+    "mtime": 1787572473.075121,
+    "seen": 1788263774.585563,
+    "ast_hash": "808c79943d1700f01536b31a159e26d7",
+    "semantic_hash": ""
+  },
+  "docs/archive/DEVICE_TEST_FIXES_2026-08-23_ROUND2.md": {
+    "mtime": 1787572473.0754914,
+    "seen": 1788263774.585564,
+    "ast_hash": "4f72fa0e48521e585408334e1488d3b9",
+    "semantic_hash": ""
+  },
+  "docs/archive/DUPLICATE_AUDIT.md": {
+    "mtime": 1787572473.0757878,
+    "seen": 1788263774.585564,
+    "ast_hash": "713ed6871bd84359d70b96e317a2fec8",
+    "semantic_hash": ""
+  },
+  "docs/archive/EXECUTION_BACKLOG.md": {
+    "mtime": 1787572473.0761845,
+    "seen": 1788263774.5855649,
+    "ast_hash": "a08aff63b3ae82c84e29a218e97b264f",
+    "semantic_hash": ""
+  },
+  "docs/archive/FINAL_REVIEW_2026-08-23.md": {
+    "mtime": 1787572473.076841,
+    "seen": 1788263774.5855649,
+    "ast_hash": "0a7c2a82cdaa177b35c1910008b3a96b",
+    "semantic_hash": ""
+  },
+  "docs/archive/FIXES_2026-08-23_SECURITY_AND_GAPS.md": {
+    "mtime": 1787572473.0772448,
+    "seen": 1788263774.585566,
+    "ast_hash": "f281d474b462484061750e862f8ec022",
+    "semantic_hash": ""
+  },
+  "docs/archive/FOODFLOW_CLAUDE_CODE_BUILD.md": {
+    "mtime": 1787572473.0776017,
+    "seen": 1788263774.585566,
+    "ast_hash": "b37b80f03875a44ae2ec2d87d4ce3d8b",
+    "semantic_hash": ""
+  },
+  "docs/archive/FOODFLOW_CLAUDE_CODE_PROMPTS.md": {
+    "mtime": 1787572473.0779712,
+    "seen": 1788263774.585567,
+    "ast_hash": "6aa1afc4ad85c4cd4b82ab92e0401a09",
+    "semantic_hash": ""
+  },
+  "docs/archive/FOODFLOW_EXECUTION_GUIDE.md": {
+    "mtime": 1787572473.078344,
+    "seen": 1788263774.585567,
+    "ast_hash": "01dcbb2188e1a6055fff85b88cf15a76",
+    "semantic_hash": ""
+  },
+  "docs/archive/FOODFLOW_INDEX.md": {
+    "mtime": 1787572473.078708,
+    "seen": 1788263774.585568,
+    "ast_hash": "2e103f8e8807e736896534fb7bd91c5d",
+    "semantic_hash": ""
+  },
+  "docs/archive/FULL_LAUNCH_AUDIT.md": {
+    "mtime": 1787572473.079029,
+    "seen": 1788263774.585569,
+    "ast_hash": "860d264c6ec6bef54560cd611889c924",
+    "semantic_hash": ""
+  },
+  "docs/archive/GAP_VS_PETPOOJA_VYAPAR.md": {
+    "mtime": 1787572473.0793748,
+    "seen": 1788263774.585569,
+    "ast_hash": "7dd2dfdef76981208174a35742b01d33",
+    "semantic_hash": ""
+  },
+  "docs/archive/HANDOVER.md": {
+    "mtime": 1787572473.079681,
+    "seen": 1788263774.58557,
+    "ast_hash": "cb337c60a937c794d811fc1e7fa682e2",
+    "semantic_hash": ""
+  },
+  "docs/archive/LAUNCH_PLAN.md": {
+    "mtime": 1787572473.0801651,
+    "seen": 1788263774.58557,
+    "ast_hash": "8cefeac8674157393ca4b1801baf05a8",
+    "semantic_hash": ""
+  },
+  "docs/archive/NAME_CLEARANCE.md": {
+    "mtime": 1787572473.080495,
+    "seen": 1788263774.585571,
+    "ast_hash": "0b1cf2b315e480f012a91e65110ab12f",
+    "semantic_hash": ""
+  },
+  "docs/archive/PREDEPLOY_FIX_2026-08-22.md": {
+    "mtime": 1787572473.0808713,
+    "seen": 1788263774.585571,
+    "ast_hash": "fae72e7a5a64443eeb40ab896c33ef54",
+    "semantic_hash": ""
+  },
+  "docs/archive/PRODUCTION_READINESS.md": {
+    "mtime": 1787572473.0812368,
+    "seen": 1788263774.585572,
+    "ast_hash": "612d043875392e67c0ce3bdff9945727",
+    "semantic_hash": ""
+  },
+  "docs/archive/QA_FIX_REPORT.md": {
+    "mtime": 1787572473.0816088,
+    "seen": 1788263774.585572,
+    "ast_hash": "b8f56e509c6684d16d318e9f10dc51c4",
+    "semantic_hash": ""
+  },
+  "docs/archive/QA_FIX_REPORT_v2.md": {
+    "mtime": 1787572473.082159,
+    "seen": 1788263774.5855732,
+    "ast_hash": "b809815491afe7a70cdb1a3304606c9b",
+    "semantic_hash": ""
+  },
+  "docs/archive/QA_FIX_REPORT_v3.md": {
+    "mtime": 1787572473.082814,
+    "seen": 1788263774.5855732,
+    "ast_hash": "d551a3e49f543ea43d139eb780ad5fb4",
+    "semantic_hash": ""
+  },
+  "docs/archive/QA_MASTER_REPORT.md": {
+    "mtime": 1787572473.083194,
+    "seen": 1788263774.585574,
+    "ast_hash": "32ad53013a11d78208954892aea0b581",
+    "semantic_hash": ""
+  },
+  "docs/archive/ROADMAP.md": {
+    "mtime": 1787572473.083672,
+    "seen": 1788263774.585574,
+    "ast_hash": "372bbb404731c4be3f3ac7b21954ab0e",
+    "semantic_hash": ""
+  },
+  "docs/archive/ROADMAP_POST_LAUNCH.md": {
+    "mtime": 1787572473.084095,
+    "seen": 1788263774.5855749,
+    "ast_hash": "06239810d19b77368f331fafe4c924c8",
+    "semantic_hash": ""
+  },
+  "docs/archive/SECURITY_AUDIT_2026-08-23.md": {
+    "mtime": 1787572473.0847988,
+    "seen": 1788263774.5855749,
+    "ast_hash": "96a0b1d4538185336be778891238c360",
+    "semantic_hash": ""
+  },
+  "docs/archive/SECURITY_SCAN.md": {
+    "mtime": 1787572473.08534,
+    "seen": 1788263774.5855758,
+    "ast_hash": "d433218ff9e0b324f4f2003b6bfdc478",
+    "semantic_hash": ""
+  },
+  "docs/archive/SMOKE_TEST_PLAN.md": {
+    "mtime": 1787572473.0856936,
+    "seen": 1788263774.5855758,
+    "ast_hash": "8e6148ec3cff055ba21014b3c6dd5331",
+    "semantic_hash": ""
+  },
+  "docs/archive/WHATSAPP_BUSINESS_VETTING.md": {
+    "mtime": 1787572473.0861702,
+    "seen": 1788263774.585577,
+    "ast_hash": "b2eb04cf346515e812f01361926a16c2",
+    "semantic_hash": ""
+  },
+  "load-test/README.md": {
+    "mtime": 1787572473.0880191,
+    "seen": 1788263774.585577,
+    "ast_hash": "906f45cb9151d0927bcf7babe4cbe277",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/.claude/commands/reticle.md": {
+    "mtime": 1788082780.1552289,
+    "seen": 1788263774.585578,
+    "ast_hash": "3f319a28861721aa366afacce520289a",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/AGENTS.md": {
+    "mtime": 1788082780.1549814,
+    "seen": 1788263774.585579,
+    "ast_hash": "2523f3fb78756ca7207d48dcc49eb99a",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/CLAUDE.md": {
+    "mtime": 1788082780.1548722,
+    "seen": 1788263774.585579,
+    "ast_hash": "2523f3fb78756ca7207d48dcc49eb99a",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/RETICLE.md": {
+    "mtime": 1788082780.1550815,
+    "seen": 1788263774.58558,
+    "ast_hash": "0bc7446da7932a920a661554e79608a0",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/index.html": {
+    "mtime": 1787639671.3938694,
+    "seen": 1788263774.58558,
+    "ast_hash": "8bdbc8aefec66fee7ec78e04859add1c",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/.github/workflows/ci.yml": {
+    "mtime": 1787572473.105372,
+    "seen": 1788263774.585581,
+    "ast_hash": "b5ea13804d41cb67a281da1d217cd8ac",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/README.md": {
+    "mtime": 1787572473.1063275,
+    "seen": 1788263774.585581,
+    "ast_hash": "e1c93ba05853515e77c17689bf6d4400",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/docker-compose.yml": {
+    "mtime": 1787572473.133281,
+    "seen": 1788263774.585582,
+    "ast_hash": "5000e113d85aed4ec7629a8d3b5b9b0b",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/.claude/commands/reticle.md": {
+    "mtime": 1788071644.180649,
+    "seen": 1788263774.5855858,
+    "ast_hash": "3f319a28861721aa366afacce520289a",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/AGENTS.md": {
+    "mtime": 1788071644.1802254,
+    "seen": 1788263774.585587,
+    "ast_hash": "2523f3fb78756ca7207d48dcc49eb99a",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/CLAUDE.md": {
+    "mtime": 1788071644.180054,
+    "seen": 1788263774.585587,
+    "ast_hash": "2523f3fb78756ca7207d48dcc49eb99a",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/RETICLE.md": {
+    "mtime": 1788071644.1803858,
+    "seen": 1788263774.585588,
+    "ast_hash": "0bc7446da7932a920a661554e79608a0",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/index.html": {
+    "mtime": 1787639671.3901713,
+    "seen": 1788263774.585588,
+    "ast_hash": "83dba72fcefb9a2f6f6ec60fc0b81a1e",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/testsprite_tests/tmp/code_summary.yaml": {
+    "mtime": 1787572473.2752156,
+    "seen": 1788263774.585589,
+    "ast_hash": "9831a31c315e0028e9898d34406f67e4",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/testsprite_tests/tmp/prd_files/FOODFLOW_INDEX.md": {
+    "mtime": 1787572473.2762287,
+    "seen": 1788263774.585589,
+    "ast_hash": "1dffe0cd3fa801a05325f0244ca90966",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/README.md": {
+    "mtime": 1787572473.2798069,
+    "seen": 1788263774.5855901,
+    "ast_hash": "2a3b018ebc24732a41bf214e9d13e19d",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/SETUP_GOOGLE_AND_RAZORPAY.md": {
+    "mtime": 1787572473.2947018,
+    "seen": 1788263774.5855901,
+    "ast_hash": "b6f32f74a1535bcc7c0b7fc72dd068bb",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/analysis_options.yaml": {
+    "mtime": 1787572473.2964952,
+    "seen": 1788263774.585591,
+    "ast_hash": "3fe7979d848ad58b9fcd05f1d3d5d70f",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/LaunchImage.imageset/README.md": {
+    "mtime": 1787572473.370701,
+    "seen": 1788263774.585591,
+    "ast_hash": "e175e436acacf76c814d83532d0b662c",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/pubspec.yaml": {
+    "mtime": 1788423691.0505788,
+    "seen": 1788423695.480159,
+    "ast_hash": "221dcb6e95494a23afc8d22d54259d90",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/README.md": {
+    "mtime": 1787572473.4611645,
+    "seen": 1788263774.585592,
+    "ast_hash": "5081f9ad82b1cfcb1a8ea42866630fb0",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/bar-pub-pos-software.html": {
+    "mtime": 1787921537.968477,
+    "seen": 1788263774.585593,
+    "ast_hash": "c032246a756a82aa747943157de76a4a",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/best-restaurant-pos-software-india.html": {
+    "mtime": 1787921537.9443572,
+    "seen": 1788263774.585593,
+    "ast_hash": "4db4b19adadf02561463573801f05407",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/billing-machine-vs-pos-app.html": {
+    "mtime": 1787921474.588556,
+    "seen": 1788263774.5855942,
+    "ast_hash": "4a5f33c6ee96aa4442e26445f567d033",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/cafe-billing-software.html": {
+    "mtime": 1787921537.9642122,
+    "seen": 1788263774.5855942,
+    "ast_hash": "f05e44b7ee6dceb2ee98e13b715be5ac",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/cloud-kitchen-pos-software.html": {
+    "mtime": 1787921537.9622245,
+    "seen": 1788263774.585595,
+    "ast_hash": "07730665afc1aeb4d685c82ff10043e0",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/digital-menu-for-restaurants.html": {
+    "mtime": 1787921474.5851793,
+    "seen": 1788263774.585595,
+    "ast_hash": "baa11a2870769488c691e0880a70a27b",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/e-invoicing-for-restaurants-india.html": {
+    "mtime": 1787921474.5896807,
+    "seen": 1788263774.5855958,
+    "ast_hash": "652d5b848fdc16148874dc14981926a4",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/free-restaurant-billing-software.html": {
+    "mtime": 1787921474.591849,
+    "seen": 1788263774.5855958,
+    "ast_hash": "4ece29d5ff791f13525c9a172cdb0839",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/gst-billing-software-for-restaurants.html": {
+    "mtime": 1787921537.9466064,
+    "seen": 1788263774.585597,
+    "ast_hash": "7ae34cb3ba2c70a14393b52246a79a2c",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/how-to-start-a-restaurant-india.html": {
+    "mtime": 1787921474.5874467,
+    "seen": 1788263774.585597,
+    "ast_hash": "fbdc062b2363f8d860e65a0afe4ccfa2",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/index.html": {
+    "mtime": 1787921610.7520595,
+    "seen": 1788263774.585598,
+    "ast_hash": "c2489bdb40dd1630b01c881822a16273",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/inventory-management-restaurant.html": {
+    "mtime": 1787921057.7767549,
+    "seen": 1788263774.585599,
+    "ast_hash": "f2d991e343b29c702a8e68fbb1229bd1",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/kot-kds-kitchen-order-system.html": {
+    "mtime": 1787921537.9513183,
+    "seen": 1788263774.585599,
+    "ast_hash": "6722880426b90e70e18ede7abe542ec6",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/multi-outlet-restaurant-pos.html": {
+    "mtime": 1787921537.966649,
+    "seen": 1788263774.5856,
+    "ast_hash": "af0e8bd51e6ebb71de31626775b5d590",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/offline-restaurant-billing.html": {
+    "mtime": 1787921537.9560025,
+    "seen": 1788263774.5856,
+    "ast_hash": "e972220b14cb161dd6fe39da7a32d888",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/qr-code-ordering-restaurants.html": {
+    "mtime": 1787921537.9579537,
+    "seen": 1788263774.585601,
+    "ast_hash": "f1cfda9aa906ecfe4ce03482f978ec7c",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/qsr-takeaway-pos-software.html": {
+    "mtime": 1787921537.9704137,
+    "seen": 1788263774.585601,
+    "ast_hash": "7a21644d3735127aaead99b388d4fcd2",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/reduce-food-wastage-restaurant.html": {
+    "mtime": 1787921537.9536965,
+    "seen": 1788263774.585602,
+    "ast_hash": "a94548be1fd1a8440d3e9e07ff402e9d",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/restaurant-analytics-reports.html": {
+    "mtime": 1787921474.5827801,
+    "seen": 1788263774.585602,
+    "ast_hash": "4c671d7bce6d5b66b2e378b66933f819",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/restaurant-loyalty-program-software.html": {
+    "mtime": 1787921537.960195,
+    "seen": 1788263774.585603,
+    "ast_hash": "6e1524c5830c8fa097ce3125a26756d7",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/restaurant-staff-management.html": {
+    "mtime": 1787921474.5907037,
+    "seen": 1788263774.585603,
+    "ast_hash": "bda733ce997b14b0c1c279f1e730d798",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/switching-restaurant-pos.html": {
+    "mtime": 1787921537.9489288,
+    "seen": 1788263774.5856042,
+    "ast_hash": "6ab439cf8e7721b5b21ebb8c1e14e671",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/table-management-reservations.html": {
+    "mtime": 1787921474.5840445,
+    "seen": 1788263774.5856042,
+    "ast_hash": "ee231cb2390deb3217815063cc660ba7",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/blog/upi-payments-for-restaurants.html": {
+    "mtime": 1787921474.5862749,
+    "seen": 1788263774.5856042,
+    "ast_hash": "d3680ecdd10f3140462722efa8b8c342",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/index.html": {
+    "mtime": 1787895791.5746996,
+    "seen": 1788263774.5856051,
+    "ast_hash": "0b10d4a70fbbd190a547cca9f3c9728b",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/privacy.html": {
+    "mtime": 1787572473.462541,
+    "seen": 1788263774.5856059,
+    "ast_hash": "47bf41a7da9d763b417ac76a1a1cbdef",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/robots.txt": {
+    "mtime": 1787740378.1032252,
+    "seen": 1788263774.5856059,
+    "ast_hash": "fa4587889d885a3587026454efb3397d",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/terms.html": {
+    "mtime": 1787572473.462889,
+    "seen": 1788263774.5856059,
+    "ast_hash": "e8d5119f7d7a6ebb54f4e96ceadceea3",
+    "semantic_hash": ""
+  },
+  "namastepos_print_agent/README.md": {
+    "mtime": 1787572473.4635212,
+    "seen": 1788263774.5856068,
+    "ast_hash": "bd588c9d163d8ca4c9200f4dd4aca452",
+    "semantic_hash": ""
+  },
+  "planning/PRODUCT_BACKLOG.md": {
+    "mtime": 1787572473.465074,
+    "seen": 1788263774.5856068,
+    "ast_hash": "7ef62a7335b422fccfbad2ee358748ba",
+    "semantic_hash": ""
+  },
+  "planning/SPRINT_PLAN.md": {
+    "mtime": 1787572473.4654472,
+    "seen": 1788263774.585608,
+    "ast_hash": "cf6be469c42851e62449db21350fee86",
+    "semantic_hash": ""
+  },
+  "planning/TEAM_ROSTER.md": {
+    "mtime": 1787572473.4659257,
+    "seen": 1788263774.585608,
+    "ast_hash": "a6491265ab8bc98952d043d048bc94bb",
+    "semantic_hash": ""
+  },
+  "tests/.claude/agents/sales-account-strategist.md": {
+    "mtime": 1787572473.4695683,
+    "seen": 1788263774.585609,
+    "ast_hash": "0c5d66558d9b2d8df5a2fe49e0d99ebb",
+    "semantic_hash": ""
+  },
+  "tests/.claude/agents/sales-coach.md": {
+    "mtime": 1787572473.470288,
+    "seen": 1788263774.585609,
+    "ast_hash": "1a8406ab11981d8967c3bf6521e9f022",
+    "semantic_hash": ""
+  },
+  "tests/.claude/agents/sales-deal-strategist.md": {
+    "mtime": 1787572473.4712322,
+    "seen": 1788263774.58561,
+    "ast_hash": "ade564b0775d4f4ab07d1b8f853af17c",
+    "semantic_hash": ""
+  },
+  "tests/.claude/agents/sales-discovery-coach.md": {
+    "mtime": 1787572473.4719446,
+    "seen": 1788263774.58561,
+    "ast_hash": "d945238375b4280da047f94eb98af9db",
+    "semantic_hash": ""
+  },
+  "tests/.claude/agents/sales-engineer.md": {
+    "mtime": 1787572473.4727705,
+    "seen": 1788263774.585611,
+    "ast_hash": "e5653d96394a185452a1a5c1603b0e75",
+    "semantic_hash": ""
+  },
+  "tests/.claude/agents/sales-offer-lead-gen-strategist.md": {
+    "mtime": 1787572473.4735367,
+    "seen": 1788263774.585611,
+    "ast_hash": "d5088e6aaa09d91bd03eb72b945fe129",
+    "semantic_hash": ""
+  },
+  "tests/.claude/agents/sales-outbound-strategist.md": {
+    "mtime": 1787572473.474255,
+    "seen": 1788263774.585612,
+    "ast_hash": "5b05b2011dd62fd51c852cc3a7273e9d",
+    "semantic_hash": ""
+  },
+  "tests/.claude/agents/sales-pipeline-analyst.md": {
+    "mtime": 1787572473.474766,
+    "seen": 1788263774.585612,
+    "ast_hash": "ca686473f15755315ec81c1ee46054e9",
+    "semantic_hash": ""
+  },
+  "tests/.claude/agents/sales-proposal-strategist.md": {
+    "mtime": 1787572473.4752991,
+    "seen": 1788263774.585613,
+    "ast_hash": "4a5dd379de75a1825e53bf463c51c8ae",
+    "semantic_hash": ""
+  },
+  "tests/README.md": {
+    "mtime": 1787572473.4764712,
+    "seen": 1788263774.585613,
+    "ast_hash": "c266584d32a74dc830461f169ec0645c",
+    "semantic_hash": ""
+  },
+  "tests/TESTSPRITE_SETUP.md": {
+    "mtime": 1787572473.4770415,
+    "seen": 1788263774.585614,
+    "ast_hash": "817bae16e72443e22d8987bdb0375da0",
+    "semantic_hash": ""
+  },
+  "NamastePOS_Partner_OnePager.pdf": {
+    "mtime": 1787732530.0398614,
+    "seen": 1788263774.585614,
+    "ast_hash": "83b7baa11ba67bd04df2a256b0da96b8",
+    "semantic_hash": ""
+  },
+  "branding/namastepos-logo-master.png": {
+    "mtime": 1787632284.2006817,
+    "seen": 1788263774.5856152,
+    "ast_hash": "32eeffeeb8ca33698cb42a871d6564be",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/public/apple-touch-icon.png": {
+    "mtime": 1787639656.014352,
+    "seen": 1788263774.5856152,
+    "ast_hash": "1e5fa0a5d4500c850afc1de0a2270c55",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/public/favicon.png": {
+    "mtime": 1787639655.9865768,
+    "seen": 1788263774.5856159,
+    "ast_hash": "f7d9a23143083942ef31b25b14984b2c",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/public/favicon.svg": {
+    "mtime": 1787572473.0910208,
+    "seen": 1788263774.5856159,
+    "ast_hash": "1d9338b14d158de520123e8b55fd55e4",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/public/apple-touch-icon.png": {
+    "mtime": 1787639655.9678702,
+    "seen": 1788263774.5856168,
+    "ast_hash": "1e5fa0a5d4500c850afc1de0a2270c55",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/public/favicon.png": {
+    "mtime": 1787639655.9377058,
+    "seen": 1788263774.5856168,
+    "ast_hash": "f7d9a23143083942ef31b25b14984b2c",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/public/favicon.svg": {
+    "mtime": 1787572473.2220159,
+    "seen": 1788263774.585618,
+    "ast_hash": "1d9338b14d158de520123e8b55fd55e4",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/android/app/src/main/res/mipmap-hdpi/ic_launcher.png": {
+    "mtime": 1787765300.628197,
+    "seen": 1788263774.585618,
+    "ast_hash": "decc7f11638a38fa4d1fee0a629e6f4f",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/android/app/src/main/res/mipmap-mdpi/ic_launcher.png": {
+    "mtime": 1787765300.62799,
+    "seen": 1788263774.585619,
+    "ast_hash": "089659015ae8cca389a7c228281e5134",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png": {
+    "mtime": 1787765300.6281812,
+    "seen": 1788263774.585619,
+    "ast_hash": "c79fdde774b2e74198c1eddbad6c5205",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png": {
+    "mtime": 1787765300.630177,
+    "seen": 1788263774.58562,
+    "ast_hash": "14a421f0096b82c28e5f12939011b3f3",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png": {
+    "mtime": 1787765300.6282232,
+    "seen": 1788263774.58562,
+    "ast_hash": "81cbc33c8581786f3595e00548dbc7d0",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/assets/icon/app_icon.png": {
+    "mtime": 1787765282.8098402,
+    "seen": 1788263774.5856209,
+    "ast_hash": "32eeffeeb8ca33698cb42a871d6564be",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-1024x1024@1x.png": {
+    "mtime": 1787765301.8392034,
+    "seen": 1788263774.5856209,
+    "ast_hash": "b2d25daa3470325458a75829850f6899",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@1x.png": {
+    "mtime": 1787765301.8314233,
+    "seen": 1788263774.585622,
+    "ast_hash": "23261fd53c340d779d9d55b5d7f077c8",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@2x.png": {
+    "mtime": 1787765301.8314478,
+    "seen": 1788263774.585622,
+    "ast_hash": "aa3a54c247bb396e32aa803114ecff85",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-20x20@3x.png": {
+    "mtime": 1787765301.8314512,
+    "seen": 1788263774.585623,
+    "ast_hash": "af311ffefdbbe7ea9265de2553ff52a1",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@1x.png": {
+    "mtime": 1787765301.8314736,
+    "seen": 1788263774.585623,
+    "ast_hash": "ca228cbc2aea32578f5d02403d3ad32c",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@2x.png": {
+    "mtime": 1787765301.8314793,
+    "seen": 1788263774.585624,
+    "ast_hash": "ae9677ee046b962beda684f61b316636",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-29x29@3x.png": {
+    "mtime": 1787765301.8314924,
+    "seen": 1788263774.585624,
+    "ast_hash": "16f7323cc8ac96dcb3138bd7e7373730",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@1x.png": {
+    "mtime": 1787765301.831861,
+    "seen": 1788263774.5856252,
+    "ast_hash": "aa3a54c247bb396e32aa803114ecff85",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@2x.png": {
+    "mtime": 1787765301.83275,
+    "seen": 1788263774.5856252,
+    "ast_hash": "5b1d354677b38569f4cde6f67486ac09",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-40x40@3x.png": {
+    "mtime": 1787765301.8327446,
+    "seen": 1788263774.5856261,
+    "ast_hash": "e26c1e9c3df2fafbdc3a3d01419b07e0",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-50x50@1x.png": {
+    "mtime": 1787765301.833181,
+    "seen": 1788263774.5856261,
+    "ast_hash": "5805a58755d7255335d9931eb786d234",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-50x50@2x.png": {
+    "mtime": 1787765301.8332574,
+    "seen": 1788263774.5856268,
+    "ast_hash": "aeee11c49125c40e4f0e2fc62e47a54d",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-57x57@1x.png": {
+    "mtime": 1787765301.833201,
+    "seen": 1788263774.5856268,
+    "ast_hash": "3681e362d63263716dbbf2941c0f5f82",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-57x57@2x.png": {
+    "mtime": 1787765301.83322,
+    "seen": 1788263774.5856278,
+    "ast_hash": "2747817c9433bd97b84be5e2836cfc98",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@2x.png": {
+    "mtime": 1787765301.8328216,
+    "seen": 1788263774.5856278,
+    "ast_hash": "e26c1e9c3df2fafbdc3a3d01419b07e0",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-60x60@3x.png": {
+    "mtime": 1787765301.8328168,
+    "seen": 1788263774.585629,
+    "ast_hash": "8ac2507141431daabf75f8a81a6b9fd9",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-72x72@1x.png": {
+    "mtime": 1787765301.8332107,
+    "seen": 1788263774.585629,
+    "ast_hash": "93648c3cfe1af70c09d52604d45097fd",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-72x72@2x.png": {
+    "mtime": 1787765301.83323,
+    "seen": 1788263774.58563,
+    "ast_hash": "5fdffd0b9a585a773210cad036ca18aa",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@1x.png": {
+    "mtime": 1787765301.832801,
+    "seen": 1788263774.58563,
+    "ast_hash": "7c4170554b1cd306bc301840a6618393",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-76x76@2x.png": {
+    "mtime": 1787765301.832818,
+    "seen": 1788263774.585631,
+    "ast_hash": "2bfecfcf707d98f2100a18dff18e9488",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/AppIcon.appiconset/Icon-App-83.5x83.5@2x.png": {
+    "mtime": 1787765301.8327003,
+    "seen": 1788263774.585631,
+    "ast_hash": "e4d52fed1ebb67301be52cca724440cc",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage.png": {
+    "mtime": 1787572473.3687596,
+    "seen": 1788263774.585632,
+    "ast_hash": "978c1bee49d7ad5fc1a4d81099b13e18",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@2x.png": {
+    "mtime": 1787572473.3698509,
+    "seen": 1788263774.585632,
+    "ast_hash": "978c1bee49d7ad5fc1a4d81099b13e18",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/ios/Runner/Assets.xcassets/LaunchImage.imageset/LaunchImage@3x.png": {
+    "mtime": 1787572473.3702524,
+    "seen": 1788263774.585633,
+    "ast_hash": "978c1bee49d7ad5fc1a4d81099b13e18",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_1024.png": {
+    "mtime": 1787572473.446312,
+    "seen": 1788263774.585633,
+    "ast_hash": "c9becc9105f8cabce934d20c7bfb6aac",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_128.png": {
+    "mtime": 1787572473.4471552,
+    "seen": 1788263774.585634,
+    "ast_hash": "3ded30823804caaa5ccc944067c54a36",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_16.png": {
+    "mtime": 1787572473.4482872,
+    "seen": 1788263774.585634,
+    "ast_hash": "8bf511604bc6ed0a6aeb380c5113fdcf",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_256.png": {
+    "mtime": 1787572473.4488509,
+    "seen": 1788263774.5856352,
+    "ast_hash": "dfe2c93d1536ae02f085cc63faa3430e",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_32.png": {
+    "mtime": 1787572473.4493556,
+    "seen": 1788263774.5856352,
+    "ast_hash": "8e0ae58e362a6636bdfccbc04da2c58c",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_512.png": {
+    "mtime": 1787572473.451555,
+    "seen": 1788263774.5856361,
+    "ast_hash": "0ad44039155424738917502c69667699",
+    "semantic_hash": ""
+  },
+  "namastepos_flutter/macos/Runner/Assets.xcassets/AppIcon.appiconset/app_icon_64.png": {
+    "mtime": 1787572473.4530563,
+    "seen": 1788263774.5856361,
+    "ast_hash": "04e7b6ef05346c70b663ca1d97de3ad5",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/apple-touch-icon.png": {
+    "mtime": 1787639656.058231,
+    "seen": 1788263774.585637,
+    "ast_hash": "1e5fa0a5d4500c850afc1de0a2270c55",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/favicon.png": {
+    "mtime": 1787639656.0287492,
+    "seen": 1788263774.585637,
+    "ast_hash": "f7d9a23143083942ef31b25b14984b2c",
+    "semantic_hash": ""
+  },
+  "namastepos_landing/og-image.png": {
+    "mtime": 1787639656.193509,
+    "seen": 1788263774.5856378,
+    "ast_hash": "d2c36aea68b715d65370a85cbdd9121b",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/razorpay_webhook2026.test.js": {
+    "mtime": 1788423691.0420008,
+    "seen": 1788423695.4756858,
+    "ast_hash": "4b456e2c623a96052cc096f0093abaeb",
+    "semantic_hash": ""
+  },
+  "HANDOVER.md": {
+    "mtime": 1788272070.9911013,
+    "seen": 1788418077.024547,
+    "ast_hash": "446af94fd388fe372192d6fc56844ae5",
+    "semantic_hash": ""
+  },
+  "SPRINT_BOARD_2026-09-01.html": {
+    "mtime": 1788423528.1627297,
+    "seen": 1788423695.479406,
+    "ast_hash": "c0ce85befcd31f38de539a4f7d61573a",
+    "semantic_hash": ""
+  },
+  "SYSTEM_REVIEW_2026-09-01.html": {
+    "mtime": 1788281547.6717806,
+    "seen": 1788418077.02455,
+    "ast_hash": "ddc3167c6463ed482b82940dd1f57f4c",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/revenueIntegrityService.js": {
+    "mtime": 1788423691.0410786,
+    "seen": 1788423695.475189,
+    "ast_hash": "5f36614c6248290868d608e4a7ca5091",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/membershipIdem2026.test.js": {
+    "mtime": 1788423691.041692,
+    "seen": 1788423695.475619,
+    "ast_hash": "5b29aaeca1e79be1a83fb75435971c07",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/orderTaxEnforce2026.test.js": {
+    "mtime": 1788423691.041796,
+    "seen": 1788423695.475671,
+    "ast_hash": "d59603d104d08f5f8c2bfe7c6c3b8a8c",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/public_ratelimits2026.test.js": {
+    "mtime": 1788423691.0418859,
+    "seen": 1788423695.4756851,
+    "ast_hash": "c506f2504da1e5c8022b7ec10bd059a4",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/refund_gateway2026.test.js": {
+    "mtime": 1788423691.0420997,
+    "seen": 1788423695.4757,
+    "ast_hash": "de56aa30a47b97982a040f5dc15195c5",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/revenue_integrity2026.test.js": {
+    "mtime": 1788423691.0422032,
+    "seen": 1788423695.4757,
+    "ast_hash": "78acfac3f4e084f33ec1eb8e73719851",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/hooks/useDebounce.ts": {
+    "mtime": 1788423691.032124,
+    "seen": 1788423695.473289,
+    "ast_hash": "439ee7a828bee211cb657d0d3174ead1",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/070_membership_client_key.sql": {
+    "mtime": 1788423691.0333185,
+    "seen": 1788428696.803762,
+    "ast_hash": "0f8222f5e25eba72ddc6cc530fb7a9f1",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/071_revenue_integrity_indexes.sql": {
+    "mtime": 1788423691.033405,
+    "seen": 1788428696.803763,
+    "ast_hash": "6b0ae90a138a2d93f87901e5c566308b",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/sprint3_correctness2026.test.js": {
+    "mtime": 1788428692.6667378,
+    "seen": 1788428696.806963,
+    "ast_hash": "7af6b0e563ddd5cc88375a7db053f179",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/sprint3_pagination2026.test.js": {
+    "mtime": 1788423691.0424848,
+    "seen": 1788423695.4757152,
+    "ast_hash": "ad601269d25b49991a875f33b5dcbeac",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/hooks/useDebounce.ts": {
+    "mtime": 1788423691.0435386,
+    "seen": 1788423695.476397,
+    "ast_hash": "439ee7a828bee211cb657d0d3174ead1",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/072_impersonation_codes.sql": {
+    "mtime": 1788423691.0334904,
+    "seen": 1788428696.8037639,
+    "ast_hash": "b66e485660650b8030e8751398d3246d",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/delivery.routes.js": {
+    "mtime": 1788423691.036953,
+    "seen": 1788423695.474112,
+    "ast_hash": "ff51e0745cedffd9dba0a208ee07af07",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/growth.routes.js": {
+    "mtime": 1788428692.6623425,
+    "seen": 1788428696.804437,
+    "ast_hash": "5178b0bc4c6ec0f396ede59099447fd6",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/operations.routes.js": {
+    "mtime": 1788435214.7632854,
+    "seen": 1788436929.2738502,
+    "ast_hash": "90207419f8bfbf6fda0214e6e3875fb1",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/payments.routes.js": {
+    "mtime": 1788423691.0379562,
+    "seen": 1788423695.474227,
+    "ast_hash": "63bbd3132cfa38555b8624be1747974b",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/reportsCompliance.routes.js": {
+    "mtime": 1788435270.703537,
+    "seen": 1788436929.273854,
+    "ast_hash": "c484e4270a69de316ad230a90491b7d1",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/routes/retail.routes.js": {
+    "mtime": 1788423691.0383234,
+    "seen": 1788423695.474253,
+    "ast_hash": "26e8170e9d5fbb156529487e595a18e6",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/sprint4_support_pagination2026.test.js": {
+    "mtime": 1788423691.0427828,
+    "seen": 1788423695.4757152,
+    "ast_hash": "f69c7b3f3536607869705cf02efac054",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/sprint4_updatedsince2026.test.js": {
+    "mtime": 1788423691.0429895,
+    "seen": 1788423695.475716,
+    "ast_hash": "dd4862ddcdfc54b2b248188a8b6bcaf5",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/MIGRATIONS.md": {
+    "mtime": 1788423691.0338986,
+    "seen": 1788423695.480014,
+    "ast_hash": "b564f0147a33025534d5fbb67b07dcc7",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/docs/adr/ADR-001-money-paise-unification.md": {
+    "mtime": 1788423691.0342233,
+    "seen": 1788423695.480025,
+    "ast_hash": "82ee1ea580103af6ea95e4463295e596",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/073_expense_client_key.sql": {
+    "mtime": 1788423691.03367,
+    "seen": 1788428696.8037639,
+    "ast_hash": "33a19326b0a7fa7d0c7ba8ec2787f79e",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/customPlanService.js": {
+    "mtime": 1788430160.648319,
+    "seen": 1788431777.0676851,
+    "ast_hash": "63c90ceaf17f5aa9426ba9f622ec9749",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/migrationImportService.js": {
+    "mtime": 1788428692.664884,
+    "seen": 1788428696.805699,
+    "ast_hash": "326b0d50d929aad818946fc89b127ad7",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/migration_imports2026.test.js": {
+    "mtime": 1788428692.6662076,
+    "seen": 1788428696.8067799,
+    "ast_hash": "5ac1d667931844efe98020566aa5c692",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/plans_addons_2026.test.js": {
+    "mtime": 1788428692.6663976,
+    "seen": 1788428696.8068538,
+    "ast_hash": "6f3dafd563c4001cfd36390a7ae5c4d4",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/lib/csv.ts": {
+    "mtime": 1788428692.6678176,
+    "seen": 1788428696.8080692,
+    "ast_hash": "ec56e58dc77ea239c8dc6c541e1f18d3",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/MigrationPage.tsx": {
+    "mtime": 1788428692.6685293,
+    "seen": 1788428696.808674,
+    "ast_hash": "aa53f7c36e86579453a74bda3d2a2d30",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/pages/BillingOpsPage.tsx": {
+    "mtime": 1788431096.4098742,
+    "seen": 1788431777.064218,
+    "ast_hash": "b2a488da9d9ef9148cea9d63ea4d5690",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/pages/OverviewPage.tsx": {
+    "mtime": 1788431042.1152658,
+    "seen": 1788431777.064424,
+    "ast_hash": "9913f365867031b92086dc6312688c2f",
+    "semantic_hash": ""
+  },
+  "namastepos_admin/src/pages/UsagePage.tsx": {
+    "mtime": 1788431136.9153225,
+    "seen": 1788431777.0645351,
+    "ast_hash": "5c6f51781c2e8c1970a41382732dbc54",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/074_custom_plans_addon_grants.sql": {
+    "mtime": 1788428692.6602209,
+    "seen": 1788431777.0659788,
+    "ast_hash": "2bf6b6f5311ccc193d7b9d4e4be123cd",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/075_migration_imports.sql": {
+    "mtime": 1788428692.6603703,
+    "seen": 1788431777.06598,
+    "ast_hash": "088bbf0ee0b0bdde5a78534f9603d28f",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/platformOpsService.js": {
+    "mtime": 1788430698.6655624,
+    "seen": 1788431777.068371,
+    "ast_hash": "3d5daae0ef452a130a6eed7d0f5258ff",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/admin_saas_ops2026.test.js": {
+    "mtime": 1788431494.50923,
+    "seen": 1788431777.06918,
+    "ast_hash": "68a2765e3dee97b0881a1115b2486581",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/076_custom_plan_base.sql": {
+    "mtime": 1788430098.1567435,
+    "seen": 1788433836.746589,
+    "ast_hash": "918daf8887e71d5909b4bc7f6c4f8a80",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/077_admin_account_ownership.sql": {
+    "mtime": 1788430532.6806562,
+    "seen": 1788433836.74659,
+    "ast_hash": "2a2c0fe341ffcf901dd142a58328d726",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/addon_tier_outlets2026.test.js": {
+    "mtime": 1788433790.349656,
+    "seen": 1788433836.749723,
+    "ast_hash": "c0db8e7f5ae1072d54b851471bdfc020",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/components/OutletSwitcher.tsx": {
+    "mtime": 1788433340.6068366,
+    "seen": 1788433836.751031,
+    "ast_hash": "8fc38835729e4be69850c63e482de3cf",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/hooks/useOutletSwitch.ts": {
+    "mtime": 1788433296.4353688,
+    "seen": 1788433836.751263,
+    "ast_hash": "ca3355bc436023f6208a7f8e99691262",
+    "semantic_hash": ""
+  },
+  "namastepos_dashboard/src/pages/OutletsPage.tsx": {
+    "mtime": 1788436751.020914,
+    "seen": 1788436929.274007,
+    "ast_hash": "b205f01888d546e5e66fd4fc584a7eb6",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/078_addon_tier_kind_and_outlets.sql": {
+    "mtime": 1788432805.8473322,
+    "seen": 1788436929.2738152,
+    "ast_hash": "8383c8b0bc8dc53a4da8ad2ad86e8a28",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/middleware/noPlatformStaff.js": {
+    "mtime": 1788436224.6058764,
+    "seen": 1788436929.273837,
+    "ast_hash": "18d7afb6c01450337c52752ef80255e6",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/staffPerms2026.test.js": {
+    "mtime": 1788436873.443282,
+    "seen": 1788436929.273943,
+    "ast_hash": "3346eee52affd1565ce58c14891dbcf5",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/tenantPrivacy2026.test.js": {
+    "mtime": 1788436832.3849478,
+    "seen": 1788436929.273945,
+    "ast_hash": "04757eeb9fb1373415eb4bcb74ce9873",
+    "semantic_hash": ""
+  }
+}

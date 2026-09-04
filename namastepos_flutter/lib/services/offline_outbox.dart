@@ -4,8 +4,35 @@
 // creates go into the local SQLite outbox keyed by client_id. A background
 // poller drains the outbox when network returns.
 //
-// Backend-side idempotency is provided by orderService.create's client_id
-// uniqueness, so retrying a queued order never duplicates.
+// NP-401 (2026-09-04) — IDEMPOTENCY FOR *EVERY* QUEUED MUTATION.
+//
+// Backend-side idempotency used to exist for exactly one path here: order
+// create (orders.client_id is unique). Every other queued write could
+// double-apply whenever the server COMMITTED and only the response was lost —
+// a Render cold-start timeout, the app being killed mid-flight, the wifi
+// dropping between request and reply. The outbox, doing its job, retried, and
+// the side effect happened twice.
+//
+// The server now has one generic dedup gate (middleware/idempotent.js +
+// migration 085) keyed on (business_id, Idempotency-Key, endpoint). This file's
+// half of the contract is the part that actually makes it work:
+//
+//   * The key is minted ONCE per logical mutation and REUSED on every retry.
+//     A key regenerated per attempt would dedupe nothing. The outbox already
+//     has exactly such a value — `client_id`, the row's primary key, created at
+//     enqueue and never rewritten — so that is the key.
+//   * The live (online) attempt in sendOrQueue carries the SAME key it will be
+//     queued under, so "committed but timed out, then queued, then replayed"
+//     is deduped end to end. This is why the key is minted at the TOP of
+//     sendOrQueue rather than inside enqueue.
+//   * It travels as the `Idempotency-Key` HEADER, never in the body. NP-103
+//     is the scar: injecting `clientId` into every queued BODY made the status
+//     PUT's Joi schema (allowUnknown:false) reject it with a 400, and every
+//     offline ready/collected/cancelled was silently lost. A header changes no
+//     request schema, so it is safe on all of them.
+//   * A 409 IDEMPOTENT_IN_FLIGHT means the first attempt is still running
+//     server-side. That is transient, NOT a rejection — it must back off and
+//     retry, never dead-letter.
 
 import 'dart:async';
 import 'dart:convert';
@@ -98,17 +125,44 @@ class OfflineOutbox {
   static bool _isOrderCreate(String method, String endpoint) =>
       method == 'POST' && endpoint.endsWith('/orders');
 
+  /// NP-401: the server-side dedup gate reads this header
+  /// (middleware/idempotent.js). Sent on EVERY queued mutation, live attempt
+  /// and replay alike, so a committed-but-unacknowledged write is recognised
+  /// instead of re-applied. Deliberately a header and not a body field — see
+  /// the NP-103 note in the file header.
+  static const String idempotencyHeader = 'Idempotency-Key';
+
+  /// The request options every outbox send uses. `key` is the row's stable
+  /// client_id, never a per-attempt value.
+  static Options _idemOptions(String key) =>
+      Options(headers: {idempotencyHeader: key});
+
+  /// NP-401: true for the server's "your first attempt is still running"
+  /// answer. It is a 409, but unlike every other 4xx it is TRANSIENT — the
+  /// write may yet succeed, so the row must keep its retry budget instead of
+  /// being dead-lettered as a rejection.
+  static bool _isIdempotentInFlight(Object err) {
+    if (err is! DioException) return false;
+    if (err.response?.statusCode != 409) return false;
+    final data = err.response?.data;
+    return data is Map && data['error'] == 'IDEMPOTENT_IN_FLIGHT';
+  }
+
   Future<String> enqueue({
     required String endpoint,
     required String method,
     required Map<String, dynamic> body,
+    // NP-401: pass the key the LIVE attempt already used so the queued retry
+    // is the same logical request to the server. Omitted (older callers) → a
+    // fresh uuid, exactly as before.
+    String? clientKey,
   }) async {
     // NP-103: `clientId` belongs in the body ONLY for order creates (backend
     // idempotency key). Injecting it into status PUTs made their Joi schema
     // (unknown keys rejected) 400 them straight to dead-letter — every
     // offline ready/collected/cancelled was silently lost. For non-creates
     // the UUID is used purely as the local row key.
-    final clientId = body['clientId'] as String? ?? _uuid.v4();
+    final clientId = clientKey ?? body['clientId'] as String? ?? _uuid.v4();
     if (_isOrderCreate(method, endpoint)) {
       body['clientId'] = clientId;
     }
@@ -123,21 +177,31 @@ class OfflineOutbox {
   }
 
   /// Attempt to send the body now; if offline, queue it.
+  ///
+  /// NP-401: `clientKey` is minted HERE, before the live attempt, and handed to
+  /// enqueue() unchanged if that attempt fails. That ordering is the whole
+  /// point — the dangerous case is "the live POST committed server-side and
+  /// then timed out"; only a key shared by the live attempt and the queued
+  /// replay lets the server recognise the second one as the same request.
+  /// Callers may pass their own stable key (order create passes the order id).
   Future<Response?> sendOrQueue({
     required String endpoint,
     required String method,
     required Map<String, dynamic> body,
+    String? clientKey,
   }) async {
+    final idemKey = clientKey ?? body['clientId'] as String? ?? _uuid.v4();
     final conn = await Connectivity().checkConnectivity();
     final offline = conn.every((c) => c == ConnectivityResult.none);
     if (offline) {
-      await enqueue(endpoint: endpoint, method: method, body: body);
+      await enqueue(
+          endpoint: endpoint, method: method, body: body, clientKey: idemKey);
       return null;
     }
     try {
       final r = method == 'POST'
-          ? await _api!.post(endpoint, data: body)
-          : await _api!.put(endpoint, data: body);
+          ? await _api!.post(endpoint, data: body, options: _idemOptions(idemKey))
+          : await _api!.put(endpoint, data: body, options: _idemOptions(idemKey));
       return r;
     } catch (err) {
       // Loud diagnostic — previously a bare `catch (_) {}` swallowed every
@@ -153,12 +217,21 @@ class OfflineOutbox {
         // 25 min then silently purging it misled the cashier into
         // thinking it was placed. Rethrow so the UI shows the error.
         // (401 = expired session and 429 = throttled ARE retryable.)
+        //
+        // NP-401: one more retryable 4xx — a 409 IDEMPOTENT_IN_FLIGHT means the
+        // server is STILL PROCESSING our first attempt (this exact request, same
+        // key). Rethrowing would tell the cashier the write failed while it is
+        // very likely about to succeed. Queue it and let the drain settle it —
+        // the reply will then be the replayed original response. A plain 409
+        // (e.g. "Table already has an open session") is still a real rejection.
         final sc = err.response?.statusCode ?? 0;
-        if (sc >= 400 && sc < 500 && sc != 401 && sc != 408 && sc != 429) {
+        if (sc >= 400 && sc < 500 && sc != 401 && sc != 408 && sc != 429
+            && !_isIdempotentInFlight(err)) {
           rethrow;
         }
       }
-      await enqueue(endpoint: endpoint, method: method, body: body);
+      await enqueue(
+          endpoint: endpoint, method: method, body: body, clientKey: idemKey);
       return null;
     }
   }
@@ -248,9 +321,14 @@ class OfflineOutbox {
         if (!_isOrderCreate(row['method'] as String, row['endpoint'] as String)) {
           body.remove('clientId');
         }
+        // NP-401: the row's client_id IS the idempotency key — minted once at
+        // enqueue, stored as the primary key, so every replay of this row
+        // carries the identical value. This is what makes a retry of a write
+        // the server already committed a replay instead of a duplicate.
+        final opts = _idemOptions(row['client_id'] as String);
         final r = (row['method'] == 'POST')
-            ? await _api!.post(row['endpoint'] as String, data: body)
-            : await _api!.put(row['endpoint'] as String, data: body);
+            ? await _api!.post(row['endpoint'] as String, data: body, options: opts)
+            : await _api!.put(row['endpoint'] as String, data: body, options: opts);
         if (r.statusCode != null && r.statusCode! < 300) {
           await _db!.delete('outbox', where: 'client_id = ?', whereArgs: [row['client_id']]);
           // FB-09 (2026-09-01): mark the corresponding local order synced so it
@@ -286,6 +364,24 @@ class OfflineOutbox {
               where: 'client_id = ?', whereArgs: [row['client_id']],
             );
             break;
+          }
+          // NP-401: a 409 IDEMPOTENT_IN_FLIGHT is the server telling us THIS
+          // request (same key) is still being processed — typically our own
+          // previous attempt that has not finished yet. Dead-lettering it would
+          // discard a write that is about to land, and would surface a
+          // "failed to sync" for an order/settle that actually succeeded. Treat
+          // it like 408/429: normal +1 backoff, retry in 30s, by which time the
+          // server replays the original response and the row drains cleanly.
+          if (_isIdempotentInFlight(err)) {
+            await _db!.update('outbox',
+              {
+                'attempts': (row['attempts'] as int) + 1,
+                'last_attempt_at': DateTime.now().millisecondsSinceEpoch,
+                'last_error': 'first attempt still in flight (409) — retrying',
+              },
+              where: 'client_id = ?', whereArgs: [row['client_id']],
+            );
+            continue;
           }
           // 2026-08-31 review fix: a permanent 4xx rejection (validation, a
           // stale points-redeem, a deleted business 404) will NEVER succeed on

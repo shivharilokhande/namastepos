@@ -11,38 +11,137 @@
 //      token. Client POSTs challenge_id + code → we verify → issue token.
 //
 // Crypto:
-//   - Secret stored AES-256-GCM encrypted with JWT_SECRET as KEK (good
-//     enough for SaaS; a dedicated KMS would be the prod-hardening step).
+//   - Secret stored AES-256-GCM encrypted with a dedicated KEK derived from
+//     TOTP_ENC_KEY (a real KMS would be the next hardening step).
 //   - TOTP RFC 6238 with 30-s step, ±1 window.
 
 const crypto = require('crypto');
 const bcrypt = require('../utils/bcrypt');
 const { query } = require('../config/db');
 const env = require('../config/env');
+const logger = require('../config/logger');
 const { BadRequest, Unauthorized, NotFound } = require('../utils/errors');
 
 const STEP_S = 30;
 const DIGITS = 6;
 
 // ── Crypto helpers ────────────────────────────────────────────────────────
+//
+// SECURITY REVIEW 2026-09-04 (item 3) — the KEK used to be
+// sha256(JWT_SECRET). That coupled two unrelated key lifecycles:
+//   • Rotating JWT_SECRET (routine, occasionally urgent — a leaked secret, a
+//     staff departure) silently and PERMANENTLY bricked every admin's 2FA:
+//     totp_secret_enc could no longer be decrypted, so `verifyChallenge`
+//     threw on every admin login and there was no self-service recovery.
+//     With org-wide 2FA enforcement on, that is a full lockout of the admin
+//     console.
+//   • One leaked value compromised both session signing and the 2FA seeds.
+//
+// Fix: a dedicated `TOTP_ENC_KEY`, with a VERSION-PREFIXED ciphertext so old
+// and new rows coexist.
+//
+//   stored format          key used                       written by
+//   ─────────────────────  ─────────────────────────────  ───────────────
+//   "<base64>"  (legacy)   sha256(JWT_SECRET)             pre-2026-09-04
+//   "v2:<base64>"          sha256(TOTP_ENC_KEY)           now
+//
+// Why a version prefix rather than "try both keys": a prefix says exactly
+// which key a row needs, so a genuine wrong-key/corruption failure surfaces as
+// a failure instead of being silently swallowed by the fallback attempt — and
+// it gives ops a one-line query to confirm the migration is complete
+// (`SELECT count(*) FROM admin_users WHERE totp_secret_enc NOT LIKE 'v2:%'`).
+// Legacy rows are re-encrypted lazily on the next successful use of the code
+// (confirmEnrolment / verifyChallenge / disable), so a working admin migrates
+// themselves at their next sign-in; nothing has to be backfilled by hand.
+//
+// If TOTP_ENC_KEY is unset both derivations collapse to the JWT_SECRET one, so
+// behaviour is byte-for-byte today's — we only warn.
+const V2_PREFIX = 'v2:';
+
+let _warned = false;
+function _totpKeySource() {
+  if (env.TOTP_ENC_KEY) return env.TOTP_ENC_KEY;
+  if (!_warned) {
+    _warned = true;
+    logger.warn(
+      '[2fa] TOTP_ENC_KEY is not set — falling back to deriving the admin 2FA '
+      + 'encryption key from JWT_SECRET. Rotating JWT_SECRET will PERMANENTLY '
+      + 'break every admin\'s 2FA. Set TOTP_ENC_KEY (openssl rand -base64 32) '
+      + 'and existing secrets will re-encrypt themselves on next use.',
+    );
+  }
+  return env.JWT_SECRET;
+}
+
+/** Current KEK — TOTP_ENC_KEY when configured, else the legacy one. */
 function _kek() {
+  return crypto.createHash('sha256').update(_totpKeySource()).digest();
+}
+/** The pre-2026-09-04 KEK, kept only to read rows written before the split. */
+function _legacyKek() {
   return crypto.createHash('sha256').update(env.JWT_SECRET).digest();
 }
-function _encrypt(plain) {
+
+function _encryptWith(key, plain) {
   const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', _kek(), iv);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const ct = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
   return Buffer.concat([iv, tag, ct]).toString('base64');
 }
-function _decrypt(enc) {
-  const buf = Buffer.from(enc, 'base64');
-  const iv = buf.slice(0, 12);
-  const tag = buf.slice(12, 28);
-  const ct = buf.slice(28);
-  const decipher = crypto.createDecipheriv('aes-256-gcm', _kek(), iv);
+function _decryptWith(key, b64) {
+  const buf = Buffer.from(b64, 'base64');
+  const iv = buf.subarray(0, 12);
+  const tag = buf.subarray(12, 28);
+  const ct = buf.subarray(28);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
   decipher.setAuthTag(tag);
   return Buffer.concat([decipher.update(ct), decipher.final()]).toString('utf8');
+}
+
+/** Always writes the current (v2) format. */
+function _encrypt(plain) {
+  return V2_PREFIX + _encryptWith(_kek(), plain);
+}
+
+/**
+ * Decrypt either format.
+ * Returns { plain, legacy } — `legacy: true` means the row is still on the
+ * JWT_SECRET-derived key and should be re-encrypted (see _maybeReEncrypt).
+ */
+function _decryptAny(enc) {
+  if (typeof enc === 'string' && enc.startsWith(V2_PREFIX)) {
+    return { plain: _decryptWith(_kek(), enc.slice(V2_PREFIX.length)), legacy: false };
+  }
+  return { plain: _decryptWith(_legacyKek(), enc), legacy: true };
+}
+
+/**
+ * Encrypt in the PRE-split format (JWT_SECRET-derived key, no prefix).
+ * Exported for tests only — it is how we seed a row that looks like it was
+ * written before 2026-09-04 so the legacy read path stays covered.
+ */
+function _encryptLegacy(plain) {
+  return _encryptWith(_legacyKek(), plain);
+}
+
+/**
+ * Lazy key migration. Called only AFTER the submitted code verified, i.e. we
+ * know the plaintext is the admin's live secret. Best-effort: a failed
+ * re-encrypt must never fail the admin's login — they simply migrate next
+ * time. Skipped entirely when TOTP_ENC_KEY is unset (nothing to migrate to).
+ */
+async function _maybeReEncrypt(adminId, plainB32, wasLegacy) {
+  if (!wasLegacy || !env.TOTP_ENC_KEY || !adminId) return;
+  try {
+    await query(
+      'UPDATE admin_users SET totp_secret_enc = $1 WHERE id = $2',
+      [_encrypt(plainB32), adminId],
+    );
+    logger.info(`[2fa] re-encrypted admin ${adminId} TOTP secret under TOTP_ENC_KEY`);
+  } catch (e) {
+    logger.warn(`[2fa] re-encrypt failed for admin ${adminId}: ${e.message}`);
+  }
 }
 
 function _base32Encode(buf) {
@@ -141,13 +240,15 @@ async function confirmEnrolment(adminId, code) {
   if (r.rowCount === 0 || !r.rows[0].totp_secret_enc) {
     throw new BadRequest('No enrolment in progress — request enrolment first');
   }
-  const secret = _base32Decode(_decrypt(r.rows[0].totp_secret_enc));
+  const { plain: b32, legacy } = _decryptAny(r.rows[0].totp_secret_enc);
+  const secret = _base32Decode(b32);
   if (!_verifyTotp(secret, code)) throw new Unauthorized('Invalid TOTP code');
 
   await query(
     'UPDATE admin_users SET totp_enrolled_at = NOW() WHERE id = $1',
     [adminId],
   );
+  await _maybeReEncrypt(adminId, b32, legacy);
   return { enrolled: true };
 }
 
@@ -167,13 +268,22 @@ async function startChallenge(adminId) {
 }
 
 // Attempt cap (2026-08-25): brute-forcing a 6-digit TOTP against a 15-min
-// challenge is otherwise unbounded. Track failures per challenge_id in-process
-// (the admin_2fa_pending table has no attempts column and migrations are out of
-// scope for this change) and burn the challenge after MAX_ATTEMPTS. A single
-// backend process handles admin auth, so an in-memory counter is sufficient;
-// the DB TTL remains the backstop across restarts.
+// challenge is otherwise unbounded, so the challenge is burned after
+// MAX_ATTEMPTS failures.
+//
+// 2026-09-04 (security review, item 1): this counter used to live in a
+// process-local Map, on the stated assumption that "a single backend process
+// handles admin auth". That assumption is exactly what the review was about:
+//   • on >1 instance the cap became per-process, so N instances gave an
+//     attacker N × 5 guesses — and Render can scale the service without
+//     anybody touching this file;
+//   • an instance restart mid-challenge reset the counter to zero;
+//   • abandoned logins leaked an entry each, forever.
+// The counter now lives on `admin_2fa_pending.attempts` (migration 086) and is
+// claimed with a single guarded UPDATE — the same TOCTOU-free pattern
+// otpService.verifyOtp uses — so the cap is global, survives restarts, and
+// disappears with the row.
 const MAX_ATTEMPTS = 5;
-const _attempts = new Map(); // challengeId -> failure count
 
 /**
  * Check a submitted code against an admin's live 2FA credentials.
@@ -181,8 +291,14 @@ const _attempts = new Map(); // challengeId -> failure count
  * Returns true on success. Shared by verifyChallenge() and disable().
  */
 async function _checkCode(row, code) {
-  const secret = _base32Decode(_decrypt(row.totp_secret_enc));
-  if (_verifyTotp(secret, code)) return true;
+  const { plain: b32, legacy } = _decryptAny(row.totp_secret_enc);
+  const secret = _base32Decode(b32);
+  if (_verifyTotp(secret, code)) {
+    // Verified against the live secret → safe to migrate it to the dedicated
+    // key. Best-effort; never blocks the login.
+    await _maybeReEncrypt(row.admin_id, b32, legacy);
+    return true;
+  }
 
   if (Array.isArray(row.recovery_codes)) {
     for (let i = 0; i < row.recovery_codes.length; i += 1) {
@@ -202,32 +318,46 @@ async function _checkCode(row, code) {
 }
 
 async function verifyChallenge(challengeId, code) {
+  // CLAIM an attempt atomically before doing any comparison. The guarded
+  // UPDATE only succeeds while the challenge is unexpired and under the cap,
+  // so each in-flight guess consumes exactly one slot no matter how many
+  // instances or concurrent requests are involved. (Same shape as
+  // otpService.verifyOtp — see migration 086 for why this moved off a Map.)
+  const claim = await query(
+    `UPDATE admin_2fa_pending
+        SET attempts = attempts + 1
+      WHERE challenge_id = $1 AND expires_at > NOW() AND attempts < $2
+      RETURNING admin_id, attempts`,
+    [challengeId, MAX_ATTEMPTS],
+  );
+  if (claim.rowCount === 0) {
+    // Unknown id, expired, or the cap is already spent. Burn whatever is left
+    // so a spent challenge can't be probed further, and give one answer for
+    // all three — the caller has to restart sign-in either way.
+    await query('DELETE FROM admin_2fa_pending WHERE challenge_id = $1', [challengeId]);
+    throw new Unauthorized('Challenge expired or invalid — restart sign-in');
+  }
+
   const ch = await query(
-    `SELECT p.admin_id, a.totp_secret_enc, a.recovery_codes
-       FROM admin_2fa_pending p
-       JOIN admin_users a ON a.id = p.admin_id
-      WHERE p.challenge_id = $1 AND p.expires_at > NOW()`,
-    [challengeId],
+    `SELECT a.id AS admin_id, a.totp_secret_enc, a.recovery_codes
+       FROM admin_users a WHERE a.id = $1`,
+    [claim.rows[0].admin_id],
   );
   if (ch.rowCount === 0) throw new Unauthorized('Challenge expired or invalid');
   const row = ch.rows[0];
 
   const ok = await _checkCode(row, code);
   if (!ok) {
-    // Attempt-cap: after MAX_ATTEMPTS failures, burn the challenge so the
-    // client must re-authenticate with the password to get a fresh one.
-    const n = (_attempts.get(challengeId) || 0) + 1;
-    if (n >= MAX_ATTEMPTS) {
-      _attempts.delete(challengeId);
+    if (claim.rows[0].attempts >= MAX_ATTEMPTS) {
+      // That was the last slot — burn the challenge so the client must
+      // re-authenticate with the password to get a fresh one.
       await query('DELETE FROM admin_2fa_pending WHERE challenge_id = $1', [challengeId]);
       throw new Unauthorized('Too many attempts — restart sign-in');
     }
-    _attempts.set(challengeId, n);
     throw new Unauthorized('Invalid TOTP code');
   }
 
-  // Burn the challenge (and its attempt counter)
-  _attempts.delete(challengeId);
+  // Burn the challenge.
   await query('DELETE FROM admin_2fa_pending WHERE challenge_id = $1', [challengeId]);
   return { adminId: row.admin_id };
 }
@@ -263,4 +393,12 @@ module.exports = {
   startChallenge,
   verifyChallenge,
   disable,
+  // Exported for the key-split tests (security review 2026-09-04, item 3).
+  _encrypt,
+  _encryptLegacy,
+  _decryptAny,
+  _base32Encode,
+  _base32Decode,
+  _totp,
+  V2_PREFIX,
 };

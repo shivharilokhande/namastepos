@@ -298,8 +298,12 @@ function ItemCard({
   item, allItems, onEdit, onDelete,
 }: { item: any; allItems: any[]; onEdit: () => void; onDelete: () => void }) {
   const qc = useQueryClient();
-  const isLow = item.stock <= item.reorderLevel && item.stock > 0;
-  const isOut = item.stock <= 0 && !item.isCombo;
+  // NP-205 — only a TRACKED item can be low or out (migration 084). Every
+  // untracked dish sits at stock 0 forever, so this card used to stamp a red
+  // "Out" badge across a menu that was entirely available.
+  const tracked = item.trackStock === true;
+  const isLow = tracked && item.stock <= item.reorderLevel && item.stock > 0;
+  const isOut = tracked && item.stock <= 0 && !item.isCombo;
   const margin = item.costPrice != null && item.price > 0
     ? Math.round(((item.price - item.costPrice) / item.price) * 100)
     : null;
@@ -448,6 +452,11 @@ function EditDialog({
     price:        item.price ?? 0,
     costPrice:    item.costPrice ?? 0,
     stock:        item.stock ?? 0,
+    // NP-205 (migration 084). New items default to OFF — most Indian
+    // restaurants don't count dishes, and the old implicit default ("any
+    // number you typed is tracked") is what made `stock = 0` ambiguous in the
+    // first place. An owner who types an opening stock turns it on.
+    trackStock:   item.trackStock ?? false,
     reorderLevel: item.reorderLevel ?? 10,
     unit:         item.unit || 'piece',
     isVeg:        item.isVeg ?? true,
@@ -489,6 +498,11 @@ function EditDialog({
         .filter((v: any) => v.isActive !== false)
         .map((v: any) => ({
           id: v.id, label: v.label, price: v.price, sku: v.sku || '',
+          // NP-205: each variant owns its stock (migration 084). `trackStock`
+          // is what makes a count mean something — without it, 0 is
+          // indistinguishable from "not counted".
+          stock: v.stock ?? '',
+          trackStock: v.trackStock === true,
         })));
     }
   }, [existingVariants]);
@@ -530,7 +544,20 @@ function EditDialog({
       // (plan changed after the dialog opened) — the item save itself must
       // still succeed in that case.
       if (canVariants) {
-        const cleanVariants = variants.filter((v) => v.label && v.price >= 0);
+        // NP-205: normalise the per-variant stock fields. The inputs hold
+        // strings (so the box can be empty mid-edit); the API wants a number
+        // or null, and `trackStock` must be sent explicitly — the server only
+        // falls back to inferring it from a non-zero stock when the key is
+        // absent, and an owner untracking a variant that still shows a count
+        // has to be able to say so.
+        const cleanVariants = variants
+          .filter((v) => v.label && v.price >= 0)
+          .map((v) => ({
+            ...v,
+            stock: v.stock === '' || v.stock === null || v.stock === undefined
+              ? null : Number(v.stock),
+            trackStock: !!v.trackStock,
+          }));
         if (cleanVariants.length > 0 || existingVariants.length > 0) {
           try { await ffApi.setVariants(itemId, cleanVariants); }
           catch (err: any) {
@@ -757,34 +784,67 @@ function EditDialog({
                   e.g. Half / Full, Small / Medium / Large
                 </span>
               </div>
-              {variants.map((v, idx) => (
-                <div key={idx} className="flex items-center gap-2 mb-1">
-                  <Input value={v.label} onChange={(e) => {
-                      const next = [...variants];
-                      next[idx] = { ...next[idx], label: e.target.value };
-                      setVariants(next);
-                    }} placeholder="Label" className="flex-1 h-8" />
-                  <Input type="number" value={v.price}
-                    onChange={(e) => {
-                      const next = [...variants];
-                      next[idx] = { ...next[idx], price: +e.target.value };
-                      setVariants(next);
-                    }} placeholder="Price" className="w-28 h-8" />
-                  <Input value={v.sku || ''} onChange={(e) => {
-                      const next = [...variants];
-                      next[idx] = { ...next[idx], sku: e.target.value };
-                      setVariants(next);
-                    }} placeholder="SKU" className="w-24 h-8" />
-                  <button onClick={() => setVariants(variants.filter((_, i) => i !== idx))}
-                    className="p-1 hover:bg-accent rounded">
-                    <X className="h-3.5 w-3.5 text-destructive" />
-                  </button>
-                </div>
-              ))}
+              {variants.map((v, idx) => {
+                const patch = (p: any) => {
+                  const next = [...variants];
+                  next[idx] = { ...next[idx], ...p };
+                  setVariants(next);
+                };
+                return (
+                  <div key={idx} className="flex items-center gap-2 mb-1">
+                    <Input value={v.label} onChange={(e) => patch({ label: e.target.value })}
+                      placeholder="Label" className="flex-1 h-8" />
+                    <Input type="number" value={v.price}
+                      onChange={(e) => patch({ price: +e.target.value })}
+                      placeholder="Price" className="w-24 h-8" />
+                    <Input value={v.sku || ''} onChange={(e) => patch({ sku: e.target.value })}
+                      placeholder="SKU" className="w-20 h-8" />
+                    {/* NP-205 — this variant's OWN stock (migration 084).
+                        Kept as a string so the box can be emptied mid-edit;
+                        normalised on save. Disabled until tracking is on,
+                        because an untracked number is ignored by the POS and
+                        a live-looking input that changes nothing is worse
+                        than no input at all. */}
+                    <Input type="number" value={v.stock ?? ''}
+                      disabled={!v.trackStock}
+                      onChange={(e) => patch({ stock: e.target.value })}
+                      placeholder="Stock" className="w-20 h-8"
+                      title={v.trackStock
+                        ? "Units left of this size. 0 = sold out at the POS."
+                        : 'Turn on "Track" to count this size'} />
+                    <label className="flex items-center gap-1 text-[11px] text-muted-foreground cursor-pointer select-none shrink-0"
+                      title="Count this size. Off = unlimited: sales never reduce it and it can never show as sold out.">
+                      <input type="checkbox" checked={!!v.trackStock}
+                        onChange={(e) => patch({
+                          trackStock: e.target.checked,
+                          // Turning tracking ON with no number yet starts at
+                          // 0 — which reads as SOLD OUT, so seed it from the
+                          // parent's stock when there is one. Never silently
+                          // 86 a dish the owner was only trying to count.
+                          stock: e.target.checked && (v.stock === '' || v.stock == null)
+                            ? (f.stock ?? 0) : v.stock,
+                        })} />
+                      Track
+                    </label>
+                    <button onClick={() => setVariants(variants.filter((_, i) => i !== idx))}
+                      className="p-1 hover:bg-accent rounded">
+                      <X className="h-3.5 w-3.5 text-destructive" />
+                    </button>
+                  </div>
+                );
+              })}
               <Button size="sm" variant="outline" className="w-full mt-1"
-                onClick={() => setVariants([...variants, { label: '', price: f.price || 0, sku: '' }])}>
+                onClick={() => setVariants([...variants,
+                  { label: '', price: f.price || 0, sku: '', stock: '', trackStock: false }])}>
                 <Plus className="mr-1 h-3 w-3" /> Add variant
               </Button>
+              {variants.some((v) => v.trackStock) && (
+                <p className="text-[11px] text-muted-foreground mt-2">
+                  Tracked sizes have their own stock: selling a Large only
+                  reduces Large. A tracked size at 0 shows as sold out and
+                  can&rsquo;t be billed. Adjust counts any time from Inventory.
+                </p>
+              )}
             </div>
           )}
 
@@ -849,7 +909,20 @@ function EditDialog({
               </div>
               <div>
                 <Label>Stock</Label>
-                <Input type="number" step="0.01" value={f.stock} onChange={(e) => set('stock', +e.target.value)} />
+                <Input type="number" step="0.01" value={f.stock}
+                  disabled={!f.trackStock}
+                  onChange={(e) => set('stock', +e.target.value)} />
+                {/* NP-205 (migration 084) — explicit tracking. Until now
+                    stock 0 meant EITHER "sold out" or "not tracked" and every
+                    screen guessed: the QR menu told diners "only 0 left" for
+                    dishes the kitchen had plenty of, while the nightly alert
+                    named them as out. Off = unlimited. */}
+                <label className="flex items-center gap-1.5 mt-1 text-[11px] text-muted-foreground cursor-pointer select-none"
+                  title="Off = unlimited: sales never reduce this and it can never show as sold out.">
+                  <input type="checkbox" checked={!!f.trackStock}
+                    onChange={(e) => set('trackStock', e.target.checked)} />
+                  Track stock
+                </label>
               </div>
               <div>
                 <Label>Reorder at</Label>

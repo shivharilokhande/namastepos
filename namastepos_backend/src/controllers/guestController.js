@@ -95,22 +95,96 @@ const orderBody = Joi.object({
 // If the phone has an active membership benefit, send an OTP to it and ask
 // the guest to verify. If not, respond otpRequired:false (fast path — no
 // friction for normal guests).
+// ── Account enumeration (security review 2026-09-04, item 4) ──────────────
+//
+// THE BUG: benefitCheck answered the question "does this phone number have an
+// account with this restaurant?" to anybody holding a QR token (which is
+// printed on every table and shared publicly on the table tent). A member got
+// `{ otpRequired: true, requestId }`; a stranger got `{ otpRequired: false }`.
+// Different body, and different timing (the member branch did a bcrypt hash,
+// an INSERT and an outbound SMS/WhatsApp call; the non-member branch returned
+// straight away). Walk the 10-digit space at 5 req/min and you have dumped the
+// restaurant's customer list — names not needed, the phone number IS the PII,
+// and "is a regular at this bar" is exactly the sort of inference DPDP treats
+// as sensitive.
+//
+// THE FIX: the response is now IDENTICAL for both cases — same 200, same body
+// shape, same field names — and the membership answer moves BEHIND the OTP, so
+// it is only ever disclosed to someone who has proved they hold the phone.
+//
+//   • member     → a real OTP is minted and sent; requestId is that request.
+//   • non-member → NO OTP is sent (we must not SMS-bomb arbitrary numbers, and
+//                  we must not spend ₹0.13 per probe); requestId is an opaque
+//                  decoy that no code will ever satisfy.
+//
+// Deliberately NOT done: "always send an OTP". That would turn this endpoint
+// into an SMS cannon aimed at any number an attacker likes, and would charge us
+// for the privilege — trading an enumeration oracle for a cost-abuse vector.
+//
+// Deliberately NOT done: inserting a decoy row in `otp_requests`. The
+// per-phone send cap counts rows for the phone across ALL purposes, so decoys
+// would let an attacker burn a victim's sign-in OTP budget — an enumeration
+// fix that hands over a lockout primitive.
+//
+// The decoy is a random v4-shaped id, so it is indistinguishable from a real
+// requestId, and benefitVerify answers every failure with one uniform error
+// (see below) — a decoy id, a wrong code and an expired code are the same
+// response.
+const DECOY_REQUEST_ID = () => crypto.randomUUID();
+
+// Timing floor. The member branch does bcrypt(10) + INSERT + an outbound
+// provider call; the decoy branch does none of that. Without a floor the
+// response TIME still answers the question the body no longer does. We hold
+// every reply to at least this long, which swamps the DB/bcrypt difference and
+// most of the provider variance. Not a constant-time guarantee — a provider
+// call that overshoots the floor is still observable — but it removes the
+// trivially-measurable signal. Kept small enough not to feel broken on a
+// phone at a table.
+const BENEFIT_CHECK_MIN_MS = 700;
+
+async function _holdFloor(startedAt, minMs = BENEFIT_CHECK_MIN_MS) {
+  const left = minMs - (Date.now() - startedAt);
+  if (left > 0) await new Promise((r) => setTimeout(r, left));
+}
+
 const benefitCheck = [
   validate({ body: Joi.object({ phone: Joi.string().max(20).required() }) }),
   asyncHandler(async (req, res) => {
+    const startedAt = Date.now();
     const { businessId } = await qr.verifyToken(req.params.token);
-    const has = await _hasMembershipBenefit(businessId, req.body.phone);
-    if (!has) return res.json({ otpRequired: false });
-    const { requestId } = await otpService.requestOtp({
-      phone: req.body.phone, purpose: 'guest_benefit', meta: { businessId },
-    });
-    res.json({ otpRequired: true, requestId });
+
+    let requestId = null;
+    try {
+      if (await _hasMembershipBenefit(businessId, req.body.phone)) {
+        const sent = await otpService.requestOtp({
+          phone: req.body.phone, purpose: 'guest_benefit', meta: { businessId },
+        });
+        requestId = sent.requestId;
+      }
+    } catch (_) {
+      // A malformed phone, the 3/hour per-phone cap, or a provider outage must
+      // not become a distinguishable answer either — fall through to the decoy
+      // and let the uniform verify error carry the failure.
+      requestId = null;
+    }
+
+    await _holdFloor(startedAt);
+    res.json({ otpRequired: true, requestId: requestId || DECOY_REQUEST_ID() });
   }),
 ];
 
 // POST /v1/guest/benefit/verify/:token  { requestId, code, phone }
 // Verifies the OTP and returns a short-lived benefitToken to attach to the
 // order so its membership benefit is honored.
+// One error for EVERY failure on this endpoint (security review 2026-09-04,
+// item 4). Previously the reasons were distinguishable — a decoy/unknown
+// requestId 404'd ("OTP request not found"), a wrong code 400'd with the
+// remaining-attempt count, a cross-business OTP 400'd with its own message —
+// which re-opened by the back door the oracle benefitCheck had just closed.
+const UNIFORM_VERIFY_ERROR = () => new BadRequest(
+  'That code isn\'t valid. Check the code, or ask the staff to apply your membership.',
+);
+
 const benefitVerify = [
   validate({ body: Joi.object({
     requestId: Joi.string().required(),
@@ -119,9 +193,16 @@ const benefitVerify = [
   }) }),
   asyncHandler(async (req, res) => {
     const { businessId } = await qr.verifyToken(req.params.token);
-    const result = await otpService.verifyOtp({
-      requestId: req.body.requestId, code: req.body.code,
-    });
+    let result;
+    try {
+      result = await otpService.verifyOtp({
+        requestId: req.body.requestId, code: req.body.code,
+      });
+    } catch (_) {
+      // Unknown/decoy id, expired, already used, wrong code, attempts
+      // exhausted — all one answer.
+      throw UNIFORM_VERIFY_ERROR();
+    }
     // SECURITY (2026-08-30 review): bind the benefit token to the phone the OTP
     // was actually SENT to (result.phone), never the client-supplied phone —
     // otherwise an attacker who completes any OTP on their own number could
@@ -129,7 +210,7 @@ const benefitVerify = [
     // this OTP was minted by benefitCheck for THIS business (purpose + meta),
     // so an OTP from another flow (e.g. aggregator link) can't be reused here.
     if (result.purpose !== 'guest_benefit' || result.meta?.businessId !== businessId) {
-      throw new BadRequest('This code is not valid for membership verification');
+      throw UNIFORM_VERIFY_ERROR();
     }
     res.json({ benefitToken: _mintBenefitToken(businessId, result.phone) });
   }),
@@ -145,7 +226,7 @@ const placeOrder = [
     const { query } = require('../config/db');
     const ids = req.body.items.map((i) => i.menuItemId);
     const checkR = await query(
-      `SELECT id, name, price, is_active, stock FROM menu_items
+      `SELECT id, name, price, is_active, stock, track_stock FROM menu_items
         WHERE business_id = $1 AND id = ANY($2::uuid[])`,
       [businessId, ids],
     );
@@ -164,13 +245,23 @@ const placeOrder = [
           message: `Price for ${m.name} has changed. Please refresh and try again.`,
         });
       }
-      // Push 15j — only enforce stock when the owner is actually tracking
-      // it. Negative stock means orders went through without inventory
-      // tracking and isn't a "real" out-of-stock signal. NULL stock means
-      // the item isn't tracked. So we only reject when stock is a strictly
-      // positive number AND the order would exceed it.
-      if (m.stock !== null && parseFloat(m.stock) >= 0
-          && parseFloat(m.stock) < Number(it.qty)) {
+      // Push 15j — only enforce stock when the owner is actually tracking it.
+      //
+      // NP-205 (2026-09-04): `track_stock` (migration 084) is now that
+      // answer, and it replaces the guess this used to make. The old test
+      // (`stock >= 0 && stock < qty`) treated stock = 0 as "sold out", so a
+      // diner scanning the QR was told "Masala Dosa only has 0 in stock" for
+      // every item on a menu where nobody had ever entered a count — while
+      // the cashier at the same counter could ring the identical item up
+      // fine, because orderService read the SAME zero as "not tracked". Same
+      // column, opposite meanings, two screens.
+      //
+      // This is a pre-flight courtesy check only: it returns a clean message
+      // before the order is built. orderService.create() re-checks under a
+      // row lock inside the transaction, which is what actually prevents the
+      // oversell on the last unit. Variants aren't checked here — the guest
+      // payload cannot express one; the locked check in create() covers them.
+      if (m.track_stock === true && parseFloat(m.stock ?? 0) < Number(it.qty)) {
         return res.status(400).json({
           error: 'OUT_OF_STOCK',
           message: `${m.name} only has ${m.stock} in stock right now.`,

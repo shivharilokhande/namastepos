@@ -154,10 +154,35 @@ business or you get `403`.
 └──────────┘                                       └──────────────┘
 ```
 
-- JWTs are signed HS256 with `JWT_SECRET`.
+- JWTs are signed HS256 with `JWT_SECRET`. Every `jwt.verify` in the codebase
+  pins `algorithms: ['HS256']` — `src/utils/jwt.js` (tenant + admin sessions)
+  and `src/services/qrService.js` (table QR tokens).
 - Refresh tokens are 48-byte random strings; only their SHA-256 hash is
   stored, so a database leak doesn't yield usable tokens.
 - Refresh rotates on every use; the old token is revoked.
+- **Tenant clients (mobile app, tenant dashboard) authenticate with
+  `Authorization: Bearer`. The platform admin console authenticates with the
+  httpOnly `ff_admin` cookie ONLY** — `requireSuperAdmin` does not accept a
+  Bearer header (2026-09-04). There is deliberately no localStorage fallback:
+  the admin JWT must never be reachable from JavaScript.
+
+### Security-relevant env vars
+
+| Var | Required? | Generate with | If unset |
+|---|---|---|---|
+| `JWT_SECRET` | yes (prod boot fails) | `openssl rand -base64 48` | boot fails |
+| `TOTP_ENC_KEY` | strongly recommended | `openssl rand -base64 32` | admin 2FA KEK falls back to being derived from `JWT_SECRET`, so rotating `JWT_SECRET` permanently breaks every admin's 2FA. Boot warns, never fails. |
+| `REDIS_URL` | required for >1 instance | (Upstash / Render Key Value URL) | staff-permission, admin-role and plan-feature caches invalidate on the local instance only; other instances wait out a 30–60s TTL |
+
+`TOTP_ENC_KEY` is backward compatible. Ciphertexts written under the old
+JWT-derived key have no prefix and are still readable; new ones are stored as
+`v2:<base64>` and are re-encrypted lazily the next time each admin
+successfully uses a 2FA code. Migration progress:
+
+```sql
+SELECT count(*) FROM admin_users
+ WHERE totp_secret_enc IS NOT NULL AND totp_secret_enc NOT LIKE 'v2:%';
+```
 
 ## 🗄 Database schema
 

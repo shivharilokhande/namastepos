@@ -36,15 +36,16 @@ export function LoginPage() {
       if (r.requires2fa && r.challengeId) {
         setChallengeId(r.challengeId);
         setStep('2fa');
-      } else if (r.mustEnrol2fa && r.token) {
-        // Establish the enrol-only session (cookie, Bearer fallback) so the
-        // enrol calls authenticate, then kick off setup immediately.
-        await establishSession(r.token);
+      } else if (r.mustEnrol2fa) {
+        // The response already set the enrol-only session cookie; confirm it
+        // round-trips, then kick off setup immediately. (2026-09-04: no token
+        // is returned any more — the cookie IS the session.)
+        await establishSession();
         const data = await adminApi.enrol2faStart();
         setEnrol(data);
         setStep('enrol');
-      } else if (r.token) {
-        await establishSession(r.token);
+      } else if (r.authenticated) {
+        await establishSession();
         navigate('/');
       } else {
         toast.error('Unexpected login response');
@@ -61,8 +62,8 @@ export function LoginPage() {
     if (!challengeId) return;
     setLoading(true);
     try {
-      const { token } = await adminApi.verify2fa(challengeId, code.trim());
-      await establishSession(token);
+      await adminApi.verify2fa(challengeId, code.trim()); // sets the session cookie
+      await establishSession();
       navigate('/');
     } catch (err) {
       toast.error(apiError(err));
@@ -76,7 +77,8 @@ export function LoginPage() {
     setLoading(true);
     try {
       const r = await adminApi.enrol2faConfirm(enrolCode.trim());
-      if (r.token) await establishSession(r.token); // swap enrol-only → full session
+      // The confirm response swapped the enrol-only cookie for a full session.
+      if (r.authenticated) await establishSession();
       toast.success('2FA enabled');
       navigate('/');
     } catch (err) {

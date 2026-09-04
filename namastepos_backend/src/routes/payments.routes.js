@@ -11,6 +11,7 @@ const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const { requireRole, requireNotImpersonating } = require('../middleware/auth');
+const idempotent = require('../middleware/idempotent');
 
 const membership = require('../services/membershipService');
 const giftCard = require('../services/giftCardService');
@@ -42,6 +43,11 @@ router.post(
     'refund_order',
     (req) => ({ type: 'order', id: req.params.orderId }),
   ),
+  // NP-401 (2026-09-04): real money leaves the till here. refundOrder caps the
+  // total against the bill and prior refunds, so a replayed ₹100 refund on a
+  // ₹500 bill is NOT rejected — it just pays out a SECOND ₹100. Deduped on the
+  // client's Idempotency-Key.
+  idempotent('POST /orders/:orderId/refund'),
   asyncHandler(async (req, res) => res.json(await refundSvc.refundOrder({
     businessId: req.params.businessId,
     orderId: req.params.orderId,
@@ -105,6 +111,10 @@ router.post(
     amountInr: Joi.number().positive().precision(2).required(),
     note: Joi.string().max(500).allow('', null),
   }) }),
+  // NP-401 (2026-09-04): a top-up CREDITS the wallet by a relative amount and
+  // writes a wallet_ledger row. A replay hands the diner free money the
+  // restaurant never collected, and the ledger no longer reconciles with cash.
+  idempotent('POST /customers/:customerId/wallet/topup'),
   asyncHandler(async (req, res) => res.json(await giftCard.topUpWallet(
     req.params.businessId,
     req.params.customerId,
@@ -138,6 +148,10 @@ router.post(
     amountInr: Joi.number().positive().required(),
     reason: Joi.string().max(500).allow('', null),
   }) }),
+  // NP-401 (2026-09-04): append-only audit INSERT with no natural key. A
+  // replay double-logs the manager's override, which inflates the discount
+  // audit the owner reviews for till fraud.
+  idempotent('POST /discount-approvals'),
   asyncHandler(async (req, res) => {
     await discountApproval.verifyManagerPin(req.params.businessId, req.body.managerUserId, req.body.managerPin);
     const approval = await discountApproval.logApproval(req.params.businessId, {
@@ -195,6 +209,9 @@ router.post(
     serverUserId: Joi.string().uuid().allow(null),
     amountInr: Joi.number().positive().required(),
   }) }),
+  // NP-401 (2026-09-04): an INSERT with no natural key — a replay books the
+  // same tip twice and the server's payout report overpays them.
+  idempotent('POST /tips'),
   asyncHandler(async (req, res) => res.status(201).json({ tip: await membership.recordTip(req.params.businessId, req.body) })),
 );
 router.get('/tips/report', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) => res.json({ report: await membership.tipReport(req.params.businessId, req.query) })));

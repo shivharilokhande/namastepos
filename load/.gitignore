@@ -1,0 +1,6 @@
+# Live bearer tokens for load runs — never commit these.
+tenants.json
+
+# k6 output
+summary.json
+*.csv

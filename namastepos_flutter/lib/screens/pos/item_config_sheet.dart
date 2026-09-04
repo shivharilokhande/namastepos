@@ -58,13 +58,26 @@ class _ItemConfigSheetState extends State<ItemConfigSheet> {
         ApiService.instance.listAllModifierGroups(biz.id),
         ApiService.instance.getItemModifierGroupIds(biz.id, widget.item.id),
       ]);
-      _variants = results[0];
+      // Deletes are SOFT on the backend (is_active = false, to keep
+      // historical order_items.variant_id intact) and listVariants returns
+      // those rows too — so a size the owner removed months ago was still
+      // being offered at the counter. Filter them here, as the dashboard
+      // editor already does.
+      _variants = results[0]
+          .where((v) => (v as Map)['isActive'] != false)
+          .toList();
       final List<dynamic> allGroups = results[1];
       final attachedIds = (results[2] as List<String>).toSet();
       _groups = allGroups.where((g) => attachedIds.contains((g as Map)['id'])).toList();
 
-      // Sensible defaults
-      if (_variants.isNotEmpty) _variant = _variants.first as Map<String, dynamic>;
+      // Sensible defaults — never pre-select a sold-out size (NP-205), or the
+      // cashier taps Add and the server 400s the whole bill.
+      if (_variants.isNotEmpty) {
+        _variant = (_variants.firstWhere(
+          (v) => !_variantSoldOut(v as Map),
+          orElse: () => _variants.first,
+        )) as Map<String, dynamic>;
+      }
       for (final g in _groups) {
         final gm = g as Map;
         final opts = (gm['modifiers'] as List?) ?? const [];
@@ -83,7 +96,19 @@ class _ItemConfigSheetState extends State<ItemConfigSheet> {
     if (mounted) setState(() => _loading = false);
   }
 
+  /// NP-205 (migration 084) — a TRACKED variant with nothing left is sold
+  /// out; `orderService.create()` rejects it with 400 OUT_OF_STOCK under a
+  /// row lock. An UNTRACKED variant is unlimited whatever sits in `stock`,
+  /// which is the whole point of the flag: before it, 0 meant either
+  /// "sold out" or "never counted" and the app had to guess.
+  static bool _variantSoldOut(Map v) {
+    if (v['trackStock'] != true) return false;
+    return ((v['stock'] as num?)?.toDouble() ?? 0) <= 0;
+  }
+
   bool get _isValid {
+    // Never let the sheet add a size that cannot be billed.
+    if (_variant != null && _variantSoldOut(_variant!)) return false;
     for (final g in _groups) {
       final gm = g as Map;
       final min = (gm['minSelect'] as num?)?.toInt() ?? 0;
@@ -288,12 +313,34 @@ class _ItemConfigSheetState extends State<ItemConfigSheet> {
     final price = (v['price'] as num?)?.toDouble()
         ?? (v['price_inr'] as num?)?.toDouble()
         ?? widget.item.price;
+    // NP-205: sold-out sizes stay VISIBLE but unselectable — the cashier
+    // needs to be able to tell the customer "no Large left", which a hidden
+    // row cannot do.
+    final out = _variantSoldOut(v);
+    final tracked = v['trackStock'] == true;
+    final left = (v['stock'] as num?)?.toDouble() ?? 0;
     return RadioListTile<String>(
       value: v['id'] as String,
       groupValue: _variant?['id'] as String?,
-      onChanged: (_) => setState(() => _variant = v),
-      title: Text(v['label'] as String? ?? '?'),
-      subtitle: Text(AppFmt.money(price)),
+      onChanged: out ? null : (_) => setState(() => _variant = v),
+      title: Text(
+        v['label'] as String? ?? '?',
+        style: TextStyle(
+          decoration: out ? TextDecoration.lineThrough : null,
+          color: out ? AppColors.textHint : null,
+        ),
+      ),
+      subtitle: Text(
+        out
+            ? '${AppFmt.money(price)} · SOLD OUT'
+            : tracked
+                ? '${AppFmt.money(price)} · ${AppFmt.quantity(left)} left'
+                : AppFmt.money(price),
+        style: TextStyle(
+          color: out ? AppColors.error : AppColors.textSecondary,
+          fontWeight: out ? FontWeight.w700 : null,
+        ),
+      ),
       activeColor: AppColors.primary,
       selected: selected,
       dense: true,

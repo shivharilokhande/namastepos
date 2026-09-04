@@ -1,0 +1,778 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NamastePOS Hardening Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Source+Sans+3:ital,wght@0,400;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#F5F6F3; --surface:#FFFFFF; --ink:#20261F; --muted:#5C6659; --line:#DBE0D5;
+  --accent:#1D6B3F; --accent-soft:#E3EFE6;
+  --p0:#A81D1D; --p0bg:#F9E9E7; --p1:#B4470E; --p1bg:#FAEDE3; --p2:#8A6206; --p2bg:#F7F0DC;
+  --bug:#A81D1D; --sec:#6B21A8; --secbg:#F1E8F9; --task:#1E5A8A; --taskbg:#E5EEF6; --story:#1D6B3F;
+  --code-bg:#EDF0E9;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#171A15; --surface:#20241D; --ink:#E8EBE2; --muted:#9AA491; --line:#333A2E;
+    --accent:#6FBF8E; --accent-soft:#243428;
+    --p0:#F2938B; --p0bg:#3A2320; --p1:#F0A36C; --p1bg:#382718; --p2:#E2C25E; --p2bg:#352E17;
+    --bug:#F2938B; --sec:#CBA8EF; --secbg:#322640; --task:#8FBEE4; --taskbg:#22303C; --story:#6FBF8E;
+    --code-bg:#2A2F26;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#171A15; --surface:#20241D; --ink:#E8EBE2; --muted:#9AA491; --line:#333A2E;
+  --accent:#6FBF8E; --accent-soft:#243428;
+  --p0:#F2938B; --p0bg:#3A2320; --p1:#F0A36C; --p1bg:#382718; --p2:#E2C25E; --p2bg:#352E17;
+  --bug:#F2938B; --sec:#CBA8EF; --secbg:#322640; --task:#8FBEE4; --taskbg:#22303C; --story:#6FBF8E;
+  --code-bg:#2A2F26;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15.5px/1.5 "Source Sans 3",system-ui,sans-serif;margin:0;padding:0 18px 90px}
+.wrap{max-width:1060px;margin:0 auto}
+header{padding:40px 0 4px}
+.eyebrow{font:600 12px/1 "IBM Plex Mono",monospace;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h1{font:800 clamp(26px,5vw,40px)/1.1 Archivo,sans-serif;margin:10px 0 6px;text-wrap:balance}
+.sub{color:var(--muted);max-width:78ch}
+h2{font:700 21px/1.2 Archivo,sans-serif;margin:42px 0 4px}
+h2 .meta{font:500 13px/1 "IBM Plex Mono",monospace;color:var(--muted);letter-spacing:.04em;margin-left:8px}
+h3{font:600 16px/1.3 Archivo,sans-serif;margin:20px 0 8px}
+.goal{color:var(--muted);margin:2px 0 14px;max-width:80ch}
+code{font:12.5px/1.5 "IBM Plex Mono",monospace;background:var(--code-bg);padding:1px 5px;border-radius:4px;word-break:break-all}
+.lane{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:18px 0}
+.lanecard{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+.lanecard .k{font:700 13px/1 Archivo,sans-serif;text-transform:uppercase;letter-spacing:.08em;color:var(--accent)}
+.lanecard ul{margin:10px 0 0;padding-left:18px}
+.lanecard li{margin:4px 0;font-size:14px}
+.tblwrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--surface);margin:14px 0}
+table{border-collapse:collapse;width:100%;min-width:700px;font-size:14px}
+th{font:600 11.5px/1.3 "IBM Plex Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);text-align:left;padding:9px 13px;border-bottom:1px solid var(--line)}
+td{padding:9px 13px;border-bottom:1px solid var(--line);vertical-align:top;font-variant-numeric:tabular-nums}
+tr:last-child td{border-bottom:none}
+.pill{display:inline-block;font:600 11px/1 "IBM Plex Mono",monospace;letter-spacing:.05em;padding:4px 8px;border-radius:99px;white-space:nowrap}
+.pr0{color:var(--p0);background:var(--p0bg)} .pr1{color:var(--p1);background:var(--p1bg)} .pr2{color:var(--p2);background:var(--p2bg)}
+.tbug{color:var(--bug);background:var(--p0bg)} .tsec{color:var(--sec);background:var(--secbg)} .ttask{color:var(--task);background:var(--taskbg)} .tstory{color:var(--story);background:var(--accent-soft)}
+.tickets{display:grid;grid-template-columns:1fr;gap:12px;margin:16px 0}
+@media(min-width:880px){.tickets{grid-template-columns:1fr 1fr}}
+.ticket{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.ticket[data-pr="P0"]{border-left:4px solid var(--p0)}
+.ticket[data-pr="P1"]{border-left:4px solid var(--p1)}
+.ticket[data-pr="P2"]{border-left:4px solid var(--p2)}
+.thead{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.key{font:600 13px/1 "IBM Plex Mono",monospace;color:var(--muted)}
+.pts{margin-left:auto;font:600 12px/1 "IBM Plex Mono",monospace;color:var(--muted);white-space:nowrap}
+.ticket h4{font:600 15.5px/1.35 Archivo,sans-serif;margin:0;text-wrap:balance}
+.story{margin:0;font-size:14px;color:var(--muted);font-style:italic}
+.ac{margin:0;padding-left:18px;font-size:13.5px}
+.ac li{margin:3px 0}
+.tech{font:400 12.5px/1.55 "IBM Plex Mono",monospace;color:var(--muted);border-top:1px dashed var(--line);padding-top:8px}
+.decide{display:flex;align-items:center;gap:8px;margin-top:2px}
+.decide select{font:600 12.5px "IBM Plex Mono",monospace;padding:4px 8px;border-radius:6px;border:1px solid var(--line);background:var(--bg);color:var(--ink)}
+.decide select.approved{border-color:var(--accent);color:var(--accent)}
+.decide select.hold{border-color:var(--p1);color:var(--p1)}
+.summarybar{position:sticky;top:0;z-index:5;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 16px;margin:18px 0;display:flex;gap:18px;align-items:center;flex-wrap:wrap;font:600 13px/1.3 "IBM Plex Mono",monospace}
+.summarybar .n{font-family:Archivo,sans-serif;font-size:18px}
+.summarybar button{margin-left:auto;font:600 12.5px "IBM Plex Mono",monospace;padding:6px 12px;border-radius:8px;border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);cursor:pointer}
+.note{border:1px dashed var(--line);border-radius:10px;padding:12px 16px;color:var(--muted);font-size:14px;margin:14px 0}
+footer{margin-top:52px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Roadmap + sprint plan · 2026-09-01 · from system review @ b68dbcd</div>
+  <h1>NamastePOS Hardening Board</h1>
+  <p class="sub">46 tickets across 4 one-week sprints, covering every finding from the system review plus the revenue-integrity cron. Nothing starts until you approve. Mark each ticket Approve / Hold below — your choices are saved in this browser; hit "Copy decisions" when done and paste them to me.</p>
+</header>
+
+<div class="lanecard" style="border-left:5px solid var(--accent);margin:18px 0">
+  <div class="k">STATUS · 2026-09-03 — ALL 46 TICKETS SHIPPED ✅</div>
+  <ul>
+    <li>Sprint 1 ✅ <code>8331e67</code> (274 tests) · Sprint 2 ✅ <code>9ced722</code> (296) · Sprint 3 ✅ <code>e5147ae</code> (315) · Sprint 4 ✅ <code>fba9d68</code> (330/330)</li>
+    <li>Each sprint: independent reviewer re-audit (SHIP) + jest on real DB + flutter analyze + tsc. Branches <code>hardening/sprint-1..4</code> pushed (stacked). <strong>main untouched — nothing deployed.</strong></li>
+    <li><strong>Pending (founder):</strong> merge sprint-4 → main (contains 1–4; migrations 070–073 auto-run) · Render envs: <code>VITE_SENTRY_DSN</code>×2, <code>VITE_DASHBOARD_URL</code> (admin), <code>REVENUE_INTEGRITY_CRON=true</code> + <code>PLATFORM_ALERT_EMAIL</code>; keep <code>ORDER_TAX_ENFORCE</code> unset (log) ~1 week · build+install app v1.0.13+14 & device pass · prod-verify P0s.</li>
+  </ul>
+</div>
+
+<div class="summarybar" id="bar">
+  <span>APPROVED <span class="n" id="nA">0</span></span>
+  <span>HOLD <span class="n" id="nH">0</span></span>
+  <span>PENDING <span class="n" id="nP">46</span></span>
+  <button id="copyBtn">Copy decisions</button>
+</div>
+
+<h2>Roadmap — Now / Next / Later</h2>
+<div class="lane">
+  <div class="lanecard"><div class="k">Now · Sep 2–15</div>
+    <ul><li><strong>Sprint 1 — Promise Integrity:</strong> the 7 High findings + observability. Revenue, tenant isolation, offline truth, GST exports.</li>
+    <li><strong>Sprint 2 — Money Truth &amp; Trust:</strong> refund worker, server-side tax/discount, auth fallback, mobile logout hygiene, revenue-integrity cron.</li></ul>
+  </div>
+  <div class="lanecard"><div class="k">Next · Sep 16–29</div>
+    <ul><li><strong>Sprint 3 — Correctness Cleanup:</strong> money math edges, error-vs-empty states, pagination, impersonation handoff.</li>
+    <li><strong>Sprint 4 — Mobile Polish &amp; Scale Prep:</strong> outbox resilience, poll efficiency, perf hygiene, paise-migration ADR.</li></ul>
+  </div>
+  <div class="lanecard"><div class="k">Later · Oct+</div>
+    <ul><li>WhatsApp-first onboarding experiment (gated on Meta number = Connected)</li>
+    <li>Paise migration execution (per NP-144 ADR)</li>
+    <li>Starter plan hard-lock; mobile-parity backlog</li>
+    <li>Directory backlinks + GBP verify (founder, ongoing)</li>
+    <li><em>Explicitly not now:</em> new POS features, admin tags/segments, lead pipeline</li></ul>
+  </div>
+</div>
+
+<h2>Capacity &amp; cadence</h2>
+<div class="tblwrap"><table>
+  <tr><th>Sprint</th><th>Dates</th><th>Goal (one sentence)</th><th>Load</th><th>Capacity note</th></tr>
+  <tr><td><strong>1 · Promise Integrity</strong></td><td>Sep 2–8</td><td>Every High finding closed and verified on prod; we can see errors again.</td><td>21 pts</td><td rowspan="4">Team = founder (review/deploy/secrets) + Claude agents (code). ~22 pts/week planned at ≈75%, buffer for prod support. Mobile tickets ship together as one release (v1.0.13).</td></tr>
+  <tr><td><strong>2 · Money Truth &amp; Trust</strong></td><td>Sep 9–15</td><td>No money flow can silently lie: refunds move, tax is server-computed, drift alerts daily.</td><td>24 pts + 3 stretch</td></tr>
+  <tr><td><strong>3 · Correctness Cleanup</strong></td><td>Sep 16–22</td><td>Money math is exact to the paise and every failure is visible to the user.</td><td>20 pts</td></tr>
+  <tr><td><strong>4 · Mobile Polish &amp; Scale Prep</strong></td><td>Sep 23–29</td><td>The app is calm on battery and data, and scale risks have owners and plans.</td><td>19 pts + 3 stretch</td></tr>
+</table></div>
+<div class="note"><strong>Definition of Done (all tickets):</strong> code reviewed · backend jest suite green (267+) · new/updated test covering the fix where testable · verified against live prod (or device build for mobile) per house rule — never mock-tests alone · no DB drops, no hardcoded secrets · founder sign-off on P0s.<br><strong>Dependencies:</strong> NP-103/104 (mobile) need an app release — batched as v1.0.13 at end of Sprint 1. NP-121 cron depends on NP-101/109 landing first. NP-126 needs a small backend endpoint before admin UI. Meta WhatsApp items stay off-board until the number is Connected (founder action).</div>
+
+<h2>Sprint 1 — Promise Integrity ✅ <span class="meta">SHIPPED 8331e67 · 10 tickets · 274 tests</span></h2>
+<p class="goal"><strong>Goal:</strong> Every High finding closed and verified on prod; we can see errors again.</p>
+<div class="tickets">
+
+<article class="ticket" data-pr="P0" data-key="NP-101">
+<div class="thead"><span class="key">NP-101</span><span class="pill tbug">BUG</span><span class="pill pr0">P0 · REVENUE</span><span class="key">backend</span><span class="pts">3 pts</span></div>
+<h4>Yearly subscribers are charged but never get their plan tier</h4>
+<p class="story">As a restaurant owner who paid for a yearly plan, I want my features unlocked the moment payment succeeds, so that I get what I paid for without contacting support.</p>
+<ul class="ac">
+<li>Webhook plan lookup matches <code>razorpay_plan_id OR razorpay_plan_id_yearly</code>.</li>
+<li>Yearly charge on a trial/free tenant flips <code>plan_id</code> to the paid tier in the same transaction as status → active.</li>
+<li>Backfill check: query prod for active subs whose paid amount matches a yearly price but plan is stale; fix any found and note them.</li>
+<li>Jest: webhook test with a yearly plan id asserts the tier flip.</li>
+</ul>
+<div class="tech">src/services/razorpayService.js:446 — widen the WHERE clause; add yearly-id test fixture.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P0" data-key="NP-102">
+<div class="thead"><span class="key">NP-102</span><span class="pill tsec">SECURITY</span><span class="pill pr0">P0 · IDOR</span><span class="key">backend</span><span class="pts">2 pts</span></div>
+<h4>staffPicker leaks any tenant's staff roster (FB-17 completion)</h4>
+<p class="story">As a restaurant owner, I want my staff list visible only to people in my restaurant, so that outsiders can't enumerate my staff and brute-force their PINs.</p>
+<ul class="ac">
+<li><code>staffPicker</code> rejects with 403 when <code>req.body.businessId !== req.user.businessId</code>.</li>
+<li>Jest: tenant-A token requesting tenant-B roster gets 403; own roster still works.</li>
+<li>Verified on prod with two real tenants.</li>
+</ul>
+<div class="tech">src/controllers/authController.js:585 · route auth.routes.js:51 — add tenant-ownership guard.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P0" data-key="NP-103">
+<div class="thead"><span class="key">NP-103</span><span class="pill tbug">BUG</span><span class="pill pr0">P0 · DATA LOSS</span><span class="key">flutter</span><span class="pts">3 pts</span></div>
+<h4>Offline status updates (incl. cancels) are silently lost forever</h4>
+<p class="story">As a captain working through a network outage, I want the cancels and status changes I make offline to reach the server when I'm back online, so that the dashboard and reports match what actually happened at the table.</p>
+<ul class="ac">
+<li>Outbox injects <code>clientId</code> only into order-create POST bodies, never status/other PUTs.</li>
+<li>Queued status PUT drains successfully after reconnect (device test: airplane mode → cancel → reconnect → server shows cancelled).</li>
+<li>Existing dead-lettered status updates: outbox migration retries them once with the clientId stripped.</li>
+<li>Dead-letter sheet shows a count badge so silent loss can't recur unnoticed.</li>
+</ul>
+<div class="tech">lib/services/offline_outbox.dart:67 — scope clientId injection by method+path; add drain migration. Ships in v1.0.13.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P0" data-key="NP-104">
+<div class="thead"><span class="key">NP-104</span><span class="pill tsec">SECURITY</span><span class="pill pr0">P0 · TENANT</span><span class="key">flutter</span><span class="pts">3 pts</span></div>
+<h4>Logout leaves the previous restaurant's data on the device</h4>
+<p class="story">As a staff member sharing a phone across restaurants, I want a full local wipe when an account signs out, so that the next restaurant never sees another tenant's orders, customers, or queued transactions.</p>
+<ul class="ac">
+<li><code>logoutFull</code> wipes <code>namastepos.db</code> and <code>namastepos_outbox.db</code> (call the existing unused <code>DatabaseService.clearAll()</code> + outbox clear).</li>
+<li>Pending outbox items are surfaced before wipe ("2 unsent orders will be discarded — sync now?") so money isn't dropped silently.</li>
+<li>Device test: login A → create offline data → logoutFull → login B → no A data in any screen or offline fallback.</li>
+</ul>
+<div class="tech">lib/services/auth_service.dart:314–352 + database_service.dart:239. Ships in v1.0.13.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P0" data-key="NP-105">
+<div class="thead"><span class="key">NP-105</span><span class="pill tsec">SECURITY</span><span class="pill pr0">P0 · TOKEN</span><span class="key">dashboard</span><span class="pts">1 pt</span></div>
+<h4>Remove window.__ffGetToken from production builds</h4>
+<p class="story">As the platform operator, I want the tenant access token unreachable from third-party scripts (Crisp, Razorpay checkout), so that the in-memory token migration actually protects anything.</p>
+<ul class="ac">
+<li>The global is defined only when <code>import.meta.env.DEV</code> is true.</li>
+<li>Prod bundle grep confirms <code>__ffGetToken</code> is absent.</li>
+<li>Anything that used it (e2e/Reticle flows) has a dev-only or cookie path.</li>
+</ul>
+<div class="tech">namastepos_dashboard/src/api/client.ts:61 — DEV-gate; verify with a production build.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P0" data-key="NP-106">
+<div class="thead"><span class="key">NP-106</span><span class="pill tbug">BUG</span><span class="pill pr0">P0 · GST</span><span class="key">dashboard</span><span class="pts">2 pts</span></div>
+<h4>GSTR-1 / GSTR-3B export 401s on every click</h4>
+<p class="story">As a restaurant owner at filing time, I want to download my GSTR CSVs from Reports, so that I can hand them to my CA without screenshots or support tickets.</p>
+<ul class="ac">
+<li>Exports go through the axios client as blob downloads (<code>_triggerBlobDownload</code> pattern) with auth attached.</li>
+<li>Non-200 responses show a toast with the API error — never a saved error file.</li>
+<li>Verified on prod: real tenant downloads a valid, correctly-named CSV for last month.</li>
+</ul>
+<div class="tech">src/pages/ReportsPage.tsx:216–224 — replace window.open with the blob pattern used 5 lines above.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P0" data-key="NP-107">
+<div class="thead"><span class="key">NP-107</span><span class="pill tbug">BUG</span><span class="pill pr0">P0 · GST</span><span class="key">admin</span><span class="pts">2 pts</span></div>
+<h4>Admin GSTR-1 download broken in cookie mode, saves error JSON as .csv</h4>
+<p class="story">As the platform admin, I want the GST page's CSV download to work in cookie-auth mode, so that platform-level GST reporting doesn't depend on a deprecated auth path.</p>
+<ul class="ac">
+<li>Download uses the axios instance (<code>responseType:'blob'</code>) so the admin cookie + CSRF header are sent.</li>
+<li><code>res.ok</code>/status checked — errors surface as a toast, never as a downloaded file.</li>
+<li>Verified on prod admin in cookie mode.</li>
+</ul>
+<div class="tech">namastepos_admin/src/pages/GstPage.tsx:30–40 — drop raw fetch + getAdminToken.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P0" data-key="NP-108">
+<div class="thead"><span class="key">NP-108</span><span class="pill tbug">BUG</span><span class="pill pr0">P0 · OBSERVABILITY</span><span class="key">dashboard + admin</span><span class="pts">2 pts</span></div>
+<h4>Sentry has never initialized in production (ESM require bug)</h4>
+<p class="story">As the founder, I want production errors from both web apps reported to Sentry, so that broken money flows are discovered by telemetry instead of by customers.</p>
+<ul class="ac">
+<li><code>require()</code> replaced with a static or dynamic <code>import</code> in both apps' <code>sentry.ts</code>.</li>
+<li>PII scrubber verified active; a thrown test error appears in Sentry from prod within minutes.</li>
+<li><code>vendor-sentry</code> manualChunk actually contains the SDK.</li>
+</ul>
+<div class="tech">src/lib/sentry.ts:24 in both apps — same one-line root cause.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P0" data-key="NP-109">
+<div class="thead"><span class="key">NP-109</span><span class="pill tbug">BUG</span><span class="pill pr0">P0 · BILLING</span><span class="key">backend</span><span class="pts">2 pts</span></div>
+<h4>Razorpay webhook dedup keys on a field Razorpay doesn't send</h4>
+<p class="story">As the platform operator, I want webhook replay protection to actually engage, so that a Razorpay retry can never double-process a billing event.</p>
+<ul class="ac">
+<li>Dedup key is <code>x-razorpay-event-id</code> header; fallback only when header is absent, and logged.</li>
+<li>Jest: same event-id delivered twice → second is a no-op.</li>
+<li>Prod log confirms real deliveries carry the header and dedup hits on retries.</li>
+</ul>
+<div class="tech">src/services/razorpayService.js:269 — pass the header down from the route.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P0" data-key="NP-110">
+<div class="thead"><span class="key">NP-110</span><span class="pill tbug">BUG</span><span class="pill pr0">P0 · RACE</span><span class="key">backend</span><span class="pts">1 pt</span></div>
+<h4>Webhook dedup gate is non-atomic under concurrent delivery</h4>
+<p class="story">As the platform operator, I want two simultaneous deliveries of the same webhook to result in exactly one processing, so that concurrency can't bypass idempotency.</p>
+<ul class="ac">
+<li>Insert-gate uses <code>ON CONFLICT DO NOTHING RETURNING</code>; zero rows returned → skip side effects.</li>
+<li>Jest: two concurrent calls with the same event id → one processes.</li>
+</ul>
+<div class="tech">src/services/razorpayService.js:279–290 — check rowCount, drop the pre-SELECT.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+</div>
+
+<h2>Sprint 2 — Money Truth &amp; Trust ✅ <span class="meta">SHIPPED 9ced722 · 11 tickets · 296 tests</span></h2>
+<p class="goal"><strong>Goal:</strong> No money flow can silently lie: refunds move, tax is server-computed, drift alerts daily.</p>
+<div class="tickets">
+
+<article class="ticket" data-pr="P1" data-key="NP-111">
+<div class="thead"><span class="key">NP-111</span><span class="pill tstory">STORY</span><span class="pill pr1">P1 · REFUNDS</span><span class="key">backend</span><span class="pts">5 pts</span></div>
+<h4>Gateway refunds actually move money (close the TODO)</h4>
+<p class="story">As a restaurant owner refunding an online/card order, I want the Razorpay refund executed when I confirm it, so that "refund initiated" is true and my customer gets their money.</p>
+<ul class="ac">
+<li>Tenant refund of a gateway-paid order calls the Razorpay refund API (reuse the existing <code>initiate()</code> gateway path) inside the flow.</li>
+<li>Refund status transitions pending → processed/failed from the gateway response + webhook; failures surface to the owner with a retry action.</li>
+<li>If auto-refund isn't possible (e.g. settlement age), the UI says "manual refund required" — never a silent pending.</li>
+<li>Existing stuck <code>pending</code> refunds on prod are reconciled (script + report to founder).</li>
+</ul>
+<div class="tech">src/services/refundService.js:326–331 — wire rzCall; add webhook status handling + reconcile script.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P1" data-key="NP-112">
+<div class="thead"><span class="key">NP-112</span><span class="pill tsec">SECURITY</span><span class="pill pr1">P1 · GST</span><span class="key">backend</span><span class="pts">5 pts</span></div>
+<h4>Stop trusting client-sent tax and unlimited discount on order create</h4>
+<p class="story">As a restaurant owner, I want GST computed by the server and big discounts to require my approval, so that a cashier can't zero out tax or give away a bill.</p>
+<ul class="ac">
+<li>Order create recomputes tax server-side from menu-item <code>gst_pct</code>; client value is ignored (kept only for drift logging during rollout).</li>
+<li>Discounts above the configured threshold route through the existing discount-approval workflow inside <code>create()</code> — no parallel ledger.</li>
+<li>Rollout-safe: one release logs mismatches without rejecting, then enforcement flips on.</li>
+<li>Jest: forged tax=0 request produces correct server tax; over-threshold discount without approval → 403.</li>
+</ul>
+<div class="tech">src/services/orderService.js:181,404 + orderController.js:36 — compute in-transaction; wire /discount-approvals.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P1" data-key="NP-113">
+<div class="thead"><span class="key">NP-113</span><span class="pill tsec">SECURITY</span><span class="pill pr1">P1 · AUTH</span><span class="key">admin</span><span class="pts">2 pts</span></div>
+<h4>Admin Bearer-fallback fires on any blip and persists the JWT</h4>
+<p class="story">As the platform admin, I want cookie mode to survive a cold start or network blip, so that one flaky probe doesn't quietly downgrade my session to a localStorage token.</p>
+<ul class="ac">
+<li><code>establishSession</code> retries the <code>/admin/auth/me</code> probe once with backoff; falls back only on a definitive 401.</li>
+<li>Fallback logs a console warning + Sentry event tagged with auth mode.</li>
+<li>Cookie mode verified working through a Render cold start.</li>
+</ul>
+<div class="tech">namastepos_admin/src/api/client.ts:47–63.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P1" data-key="NP-114">
+<div class="thead"><span class="key">NP-114</span><span class="pill tbug">BUG</span><span class="pill pr1">P1 · ENTITLEMENT</span><span class="key">flutter</span><span class="pts">1 pt</span></div>
+<h4>Previous account's paid plan stays live in memory after logout</h4>
+<p class="story">As the platform operator, I want plan entitlements to reset on logout, so that a free-tier login on a shared device never inherits the previous account's paid features.</p>
+<ul class="ac">
+<li><code>logout()</code> and <code>signOutFromLock()</code> reset <code>_plan</code> to <code>PlanInfo.starterDefault()</code>.</li>
+<li>Device test: paid login → logout → free login → gated features locked.</li>
+</ul>
+<div class="tech">lib/providers/auth_provider.dart:410–415 (complements FB-08's storage fix).</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P1" data-key="NP-115">
+<div class="thead"><span class="key">NP-115</span><span class="pill tbug">BUG</span><span class="pill pr1">P1 · TENANT</span><span class="key">flutter</span><span class="pts">3 pts</span></div>
+<h4>Provider state survives logout/restaurant switch (resetForLogout fan-out)</h4>
+<p class="story">As a staff member switching restaurants, I want every screen to start clean, so that a background timer can never flash the previous restaurant's orders, menu, or tables.</p>
+<ul class="ac">
+<li>AuthProvider triggers <code>resetForLogout()</code> on Orders/Menu/Tables (and any provider holding <code>_businessId</code> or caches).</li>
+<li>Timers/polls cancel on logout; <code>refresh()</code> no-ops when businessId is null or mismatched with the session.</li>
+<li>Device test: switch tenants with Orders screen open → no stale data, no 403 fallback to old cache.</li>
+</ul>
+<div class="tech">lib/providers/orders_provider.dart:17–84 + menu/tables providers — one fan-out, pairs with NP-104.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P1" data-key="NP-116">
+<div class="thead"><span class="key">NP-116</span><span class="pill tbug">BUG</span><span class="pill pr1">P1 · DOUBLE-CHARGE</span><span class="key">flutter + backend</span><span class="pts">2 pts</span></div>
+<h4>Membership sale can double-debit on timeout + re-tap</h4>
+<p class="story">As a counter operator selling a membership, I want the buy button protected against double submission, so that a slow network can never sell two memberships or debit the wallet twice.</p>
+<ul class="ac">
+<li>Buy flow guarded by a <code>_busy</code> flag (button disabled while in flight).</li>
+<li><code>subscribeMembership</code> sends an idempotency key; backend upserts on it within a window.</li>
+<li>Jest + device test: rapid double-tap and timeout-retry produce exactly one membership + one debit.</li>
+</ul>
+<div class="tech">lib/screens/customers/customer_detail_screen.dart:202 + api_service.dart:1381 + membership endpoint.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P1" data-key="NP-117">
+<div class="thead"><span class="key">NP-117</span><span class="pill tbug">BUG</span><span class="pill pr1">P1 · ORDERS</span><span class="key">dashboard</span><span class="pts">2 pts</span></div>
+<h4>Multi-KOT "mark ready/collected" can double-fire and half-flip bills</h4>
+<p class="story">As a cashier updating a multi-KOT bill, I want the status change to apply atomically or tell me exactly what failed, so that a bill is never stuck half-ready with no way to see why.</p>
+<ul class="ac">
+<li>Action wrapped in <code>useMutation</code>; button disabled while <code>isPending</code>.</li>
+<li><code>Promise.allSettled</code> — on partial failure, a toast names the failed KOTs and offers retry of just those.</li>
+<li>List refetches after settlement of all legs.</li>
+</ul>
+<div class="tech">src/pages/OrdersPage.tsx:201–211.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P1" data-key="NP-118">
+<div class="thead"><span class="key">NP-118</span><span class="pill tbug">BUG</span><span class="pill pr1">P1 · SETTLE</span><span class="key">dashboard</span><span class="pts">2 pts</span></div>
+<h4>Settle dialog renders nothing when the session fetch fails</h4>
+<p class="story">As a cashier settling a table, I want the settle dialog to tell me when the session can't load (e.g. already settled from the app), so that I'm never stuck tapping a table that does nothing.</p>
+<ul class="ac">
+<li>Dialog shell renders with explicit loading and error states; error shows <code>apiError</code> message + "Refresh tables" action.</li>
+<li>"Session already settled" case detected and worded for the cashier.</li>
+<li>Manual test: settle from mobile between poll ticks, then tap the table on web.</li>
+</ul>
+<div class="tech">src/pages/TablesPage.tsx:797 — replace the bare null return.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P1" data-key="NP-119">
+<div class="thead"><span class="key">NP-119</span><span class="pill tsec">SECURITY</span><span class="pill pr1">P1 · ABUSE</span><span class="key">backend</span><span class="pts">1 pt</span></div>
+<h4>Rate-limit the public DPDP write endpoints</h4>
+<p class="story">As the platform operator, I want the CSRF-exempt public compliance endpoints (grievance/consent) rate-limited per IP, so that they can't be scripted for spam or DB flooding.</p>
+<ul class="ac">
+<li>Strict per-IP limiter (~5/min) on the three public POSTs; 429 with retry-after.</li>
+<li>Jest covers the limiter; legit single submissions unaffected.</li>
+</ul>
+<div class="tech">src/routes/compliance.routes.js — the comment already promises this defence; make it true.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P1" data-key="NP-120">
+<div class="thead"><span class="key">NP-120</span><span class="pill tsec">SECURITY</span><span class="pill pr1">P1 · SMS COST</span><span class="key">backend</span><span class="pts">1 pt</span></div>
+<h4>Per-IP budget on unauthenticated member-OTP sends</h4>
+<p class="story">As the platform operator, I want a per-IP cap on guest benefit-check OTP sends, so that one IP can't pump SMS costs or harass members across many phone numbers.</p>
+<ul class="ac">
+<li>Dedicated limiter (~5/min/IP) on <code>/guest/benefit/check</code>; per-phone 3/hr cap stays.</li>
+<li>Jest: 6th request in a minute from one IP → 429.</li>
+</ul>
+<div class="tech">src/routes/guest.routes.js:20 + guestController benefitCheck.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P1" data-key="NP-121">
+<div class="thead"><span class="key">NP-121</span><span class="pill tstory">STORY</span><span class="pill pr1">P1 · STRETCH</span><span class="key">backend</span><span class="pts">3 pts</span></div>
+<h4>Revenue-integrity cron: know by breakfast when money drifts</h4>
+<p class="story">As the founder, I want a daily automated reconciliation email, so that a silent billing/refund/sync failure is caught in hours, not months.</p>
+<ul class="ac">
+<li>Daily cron checks: active subscriptions vs plan rows (catches NP-101-class bugs), refund-pending age &gt; 48h, webhook dead-letter/dedup anomalies, mobile outbox dead-letter counts (via a lightweight report endpoint).</li>
+<li>One email to founder only when something drifts; silent when clean.</li>
+<li>Runs on the existing cronWorker; env-gated.</li>
+</ul>
+<div class="tech">src/services/cronWorker.js — new job + Brevo mail. Depends on NP-101/109 landing first.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+</div>
+
+<h2>Sprint 3 — Correctness Cleanup ✅ <span class="meta">SHIPPED e5147ae · 12 tickets · 315 tests</span></h2>
+<p class="goal"><strong>Goal:</strong> Money math is exact to the paise and every failure is visible to the user.</p>
+<div class="tickets">
+
+<article class="ticket" data-pr="P2" data-key="NP-122">
+<div class="thead"><span class="key">NP-122</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · MONEY</span><span class="key">backend</span><span class="pts">3 pts</span></div>
+<h4>Settle discount larger than the head order silently evaporates</h4>
+<p class="story">As a restaurant owner, I want a settle-time discount applied exactly across all KOTs in the session, so that the customer's bill and my discount reports both reflect the real reduction.</p>
+<ul class="ac">
+<li>Discount spreads across the session's orders (or caps at head-order total with the remainder applied to the next KOTs).</li>
+<li>Recorded <code>discount</code> equals the amount actually subtracted — never more.</li>
+<li>Jest: discount &gt; head-order total across a 3-KOT session settles to the correct payable.</li>
+</ul>
+<div class="tech">src/services/tableService.js:453–461 — replace GREATEST(0,…) head-only subtraction.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-123">
+<div class="thead"><span class="key">NP-123</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · GST</span><span class="key">backend</span><span class="pts">2 pts</span></div>
+<h4>Tax invoice ignores the business's round-off mode</h4>
+<p class="story">As a restaurant owner with round-off disabled, I want my tax invoice total to equal the amount I actually collected, so that my books and my statutory documents never disagree by paise.</p>
+<ul class="ac">
+<li>Invoice total reuses the order's persisted <code>round_off_paise</code> instead of force-rounding to the rupee.</li>
+<li>Jest: invoice total matches collected amount under round-off none/down/nearest.</li>
+</ul>
+<div class="tech">src/services/taxInvoiceService.js:195–197.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-124">
+<div class="thead"><span class="key">NP-124</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · WALLET</span><span class="key">backend</span><span class="pts">1 pt</span></div>
+<h4>Gift-card redeem fails on lowercase codes that lookup accepted</h4>
+<p class="story">As a cashier, I want a gift card that validated at lookup to also redeem, so that the customer isn't declined at the last step over letter case.</p>
+<ul class="ac">
+<li><code>redeem</code>/<code>redeemTx</code> normalize with the same <code>trim().toUpperCase()</code> as lookup.</li>
+<li>Jest: lowercase entry redeems.</li>
+</ul>
+<div class="tech">src/services/giftCardService.js:317–321.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-125">
+<div class="thead"><span class="key">NP-125</span><span class="pill tsec">SECURITY</span><span class="pill pr2">P2 · AUTHZ</span><span class="key">backend</span><span class="pts">1 pt</span></div>
+<h4>requireOwner trusts a stale JWT role for up to an hour</h4>
+<p class="story">As a business owner who removes a partner, I want their owner powers gone immediately, so that a demoted user can't keep using group transfer/pricing until their token expires.</p>
+<ul class="ac">
+<li>Multi-outlet routes use <code>requireRole(['business_owner'])</code> (live DB re-check) instead of raw JWT role.</li>
+<li>Jest: demoted owner's still-valid token → 403 on multiOutlet routes.</li>
+</ul>
+<div class="tech">src/routes/multiOutlet.routes.js:41–46.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-126">
+<div class="thead"><span class="key">NP-126</span><span class="pill tsec">SECURITY</span><span class="pill pr2">P2 · IMPERSONATION</span><span class="key">admin + backend</span><span class="pts">3 pts</span></div>
+<h4>Impersonation hands a raw JWT via URL fragment and clipboard</h4>
+<p class="story">As the platform admin, I want impersonation to use a short-lived one-time handoff code, so that a live tenant token never sits in browser history or the OS clipboard.</p>
+<ul class="ac">
+<li>Backend issues a one-time code (≤60s TTL); dashboard exchanges it for the session on load.</li>
+<li>No token in URL, fragment, or clipboard in any path; clipboard fallback removed.</li>
+<li>Requires <code>VITE_DASHBOARD_URL</code> set on admin (open founder env item).</li>
+</ul>
+<div class="tech">namastepos_admin/src/pages/CustomerDetailPage.tsx:79–83 + new /v1 handoff endpoint.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-127">
+<div class="thead"><span class="key">NP-127</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · UX</span><span class="key">dashboard</span><span class="pts">2 pts</span></div>
+<h4>Money pages render API failures as innocent empty states</h4>
+<p class="story">As a restaurant owner, I want Billing and Customers to tell me when data failed to load, so that "No invoices yet" always means zero invoices, never a hidden error.</p>
+<ul class="ac">
+<li>Billing invoices/subscription and Customers list render an <code>isError</code> banner with <code>apiError(error)</code> + retry.</li>
+<li>Pattern documented (error ≠ empty on money pages) and applied to the audited pages.</li>
+</ul>
+<div class="tech">src/pages/BillingPage.tsx:243,676 + CustomersPage.tsx:42–60.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-128">
+<div class="thead"><span class="key">NP-128</span><span class="pill ttask">TASK</span><span class="pill pr2">P2 · SCALE</span><span class="key">backend + dashboard</span><span class="pts">3 pts</span></div>
+<h4>Paginate expenses end-to-end (currently unbounded)</h4>
+<p class="story">As a restaurant owner with a year of expenses, I want the Expenses page to load fast, so that the page doesn't degrade as history grows.</p>
+<ul class="ac">
+<li><code>expenseService.list</code> takes limit/offset (default 50) + total count; index checked for the WHERE/ORDER pattern.</li>
+<li>ExpensesPage uses the same pager UI as Orders.</li>
+<li>Admin drilldown payload trimmed or paginated similarly.</li>
+</ul>
+<div class="tech">src/services/expenseService.js:30–43 + src/pages/ExpensesPage.tsx:48.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-129">
+<div class="thead"><span class="key">NP-129</span><span class="pill ttask">TASK</span><span class="pill pr2">P2 · PERF</span><span class="key">dashboard + admin</span><span class="pts">1 pt</span></div>
+<h4>Debounce customer search (one request per keystroke today)</h4>
+<p class="story">As a cashier searching customers, I want search to fire once I pause typing, so that the server isn't hit six times for "ramesh".</p>
+<ul class="ac">
+<li>~300ms debounced value feeds the queryKey in both apps' Customers pages.</li>
+<li>Results still feel instant; no request per keystroke in the network tab.</li>
+</ul>
+<div class="tech">dashboard CustomersPage.tsx:42 + admin CustomersPage.tsx:36 — shared useDebounce hook.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-130">
+<div class="thead"><span class="key">NP-130</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · MONEY UI</span><span class="key">dashboard</span><span class="pts">1 pt</span></div>
+<h4>Refund confirmation rounds ₹99.50 to "₹100"</h4>
+<p class="story">As a cashier confirming a refund, I want the confirmation and toast to show the exact paise amount being sent, so that what I approve is what the customer receives.</p>
+<ul class="ac">
+<li>All refund amount displays use 2-decimal formatting.</li>
+<li>Manual check on a .50 refund: label, toast, and API amount agree.</li>
+</ul>
+<div class="tech">src/pages/OrdersPage.tsx:873, :737 — pass decimals to formatINR (pairs with NP-131).</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-131">
+<div class="thead"><span class="key">NP-131</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · MONEY UI</span><span class="key">dashboard</span><span class="pts">1 pt</span></div>
+<h4>formatINR decimals mode drops ".00" — receipts inconsistent</h4>
+<p class="story">As a restaurant owner, I want every amount on a document titled TAX INVOICE formatted uniformly to two decimals, so that receipts look professional and consistent.</p>
+<ul class="ac">
+<li><code>formatINR(…, {decimals:true})</code> sets <code>minimumFractionDigits: 2</code>.</li>
+<li>Local <code>inr2</code>/<code>printInr</code> copies in InvoicesPage/TablesPage deleted in favor of the util.</li>
+<li>Receipt print spot-checked.</li>
+</ul>
+<div class="tech">src/lib/utils.ts:24–32 + receiptPrint.ts:100.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-132">
+<div class="thead"><span class="key">NP-132</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · UX</span><span class="key">dashboard</span><span class="pts">1 pt</span></div>
+<h4>Channel-tab counts computed from the current 50-row page</h4>
+<p class="story">As a restaurant owner, I want the All/Online/Offline counts to reflect the true day's totals, so that the chips don't claim 0 online orders while online orders exist on page 2.</p>
+<ul class="ac">
+<li><code>listOrdersPaged</code> returns per-channel counts computed server-side; chips use them (or the numbers are dropped).</li>
+</ul>
+<div class="tech">src/pages/OrdersPage.tsx:214–222 + small backend addition.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-133">
+<div class="thead"><span class="key">NP-133</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · UX</span><span class="key">dashboard</span><span class="pts">1 pt</span></div>
+<h4>Invoice PDF opens after an await — popup blockers eat it</h4>
+<p class="story">As a restaurant owner downloading a subscription invoice, I want the PDF to open or download reliably, so that the button never appears to do nothing.</p>
+<ul class="ac">
+<li>Uses the <code>_triggerBlobDownload</code> anchor pattern (or opens the window synchronously and sets location after).</li>
+<li>Verified with popup blocking enabled.</li>
+</ul>
+<div class="tech">src/pages/BillingPage.tsx:729–739 — the repo documents this rule at OrdersPage.tsx:128.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+</div>
+
+<h2>Sprint 4 — Mobile Polish &amp; Scale Prep ✅ <span class="meta">SHIPPED fba9d68 · 13 tickets · 330 tests</span></h2>
+<p class="goal"><strong>Goal:</strong> The app is calm on battery and data, and scale risks have owners and plans.</p>
+<div class="tickets">
+
+<article class="ticket" data-pr="P2" data-key="NP-134">
+<div class="thead"><span class="key">NP-134</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · OFFLINE</span><span class="key">flutter</span><span class="pts">2 pts</span></div>
+<h4>Outbox burns retry budget while signed out — valid orders dead-letter in ~25 min</h4>
+<p class="story">As a captain whose session expired overnight, I want queued orders to wait for my next login instead of consuming retries on 401s, so that legitimate offline work is never discarded.</p>
+<ul class="ac">
+<li>Drain skips (without attempt increment) when no refresh token exists or on 401.</li>
+<li>Successful re-login triggers an immediate drain.</li>
+<li>Device test: queue offline → logout → wait &gt; retry window → login → order syncs.</li>
+</ul>
+<div class="tech">lib/services/offline_outbox.dart:215–236.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-135">
+<div class="thead"><span class="key">NP-135</span><span class="pill ttask">TASK</span><span class="pill pr2">P2 · PERF</span><span class="key">flutter + backend</span><span class="pts">3 pts</span></div>
+<h4>Orders tab rewrites a 500-order cache every 5 seconds</h4>
+<p class="story">As a captain on a busy service, I want the Orders screen to sync only what changed, so that the app doesn't hammer battery, SQLite, and the server all shift long.</p>
+<ul class="ac">
+<li>Poll fetches a delta (<code>updated_since</code> param on the list endpoint) or full refresh only on change detection.</li>
+<li>Cache updates row-wise; full delete+reinsert removed from the poll path.</li>
+<li>Rebuilds scoped (no full-screen double notify per tick).</li>
+</ul>
+<div class="tech">lib/screens/orders/orders_screen.dart:43 + orders_provider.dart:35 + repositories.dart:402; small backend param.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-136">
+<div class="thead"><span class="key">NP-136</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · POS</span><span class="key">flutter</span><span class="pts">1 pt</span></div>
+<h4>_maybeOfferMembership can freeze the Confirm button forever</h4>
+<p class="story">As a cashier confirming an order, I want the Confirm button to recover from any failure in the membership-offer step, so that the P0 frozen-button class stays dead.</p>
+<ul class="ac">
+<li>The call moves inside the existing try/finally so <code>_saving</code> always resets.</li>
+<li>Membership-offer failure never blocks order confirmation.</li>
+</ul>
+<div class="tech">lib/screens/pos/confirm_order_screen.dart:237–240.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-137">
+<div class="thead"><span class="key">NP-137</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · EXPENSES</span><span class="key">flutter</span><span class="pts">2 pts</span></div>
+<h4>ExpenseRepo swallows all errors — ghost and duplicate expenses</h4>
+<p class="story">As an owner logging expenses from my phone, I want failed saves surfaced and successful ones deduplicated, so that my P&amp;L never double-counts or keeps rejected entries.</p>
+<ul class="ac">
+<li>4xx responses surface to the user and do NOT insert locally.</li>
+<li>Timeout-after-commit resolved by reconciling local rows against a successful <code>list()</code> (match on client key).</li>
+<li>Local-only rows visibly badged "not synced".</li>
+</ul>
+<div class="tech">lib/services/repositories.dart:437–452.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-138">
+<div class="thead"><span class="key">NP-138</span><span class="pill tsec">SECURITY</span><span class="pill pr2">P2 · LOGGING</span><span class="key">flutter</span><span class="pts">1 pt</span></div>
+<h4>Release builds print full error response bodies from the outbox</h4>
+<p class="story">As the platform operator, I want release builds to log no response bodies, so that customer names/phones echoed in validation errors never land in device logs.</p>
+<ul class="ac">
+<li>Outbox <code>print()</code> calls → <code>debugPrint</code> (stripped in release) or redacted telemetry.</li>
+<li>Repo-wide grep confirms no remaining raw <code>print(</code> in lib/.</li>
+</ul>
+<div class="tech">lib/services/offline_outbox.dart:102,213.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-139">
+<div class="thead"><span class="key">NP-139</span><span class="pill ttask">TASK</span><span class="pill pr2">P2 · PERF</span><span class="key">flutter</span><span class="pts">1 pt</span></div>
+<h4>MPIN PBKDF2 blocks the UI isolate — visible lock-screen freeze</h4>
+<p class="story">As an owner unlocking with MPIN on a budget Android phone, I want the unlock to feel instant, so that the lock screen never appears hung.</p>
+<ul class="ac">
+<li><code>verifyMpin</code>/<code>setMpin</code> hashing wrapped in <code>compute()</code>.</li>
+<li>Spinner shown during verify; no dropped frames on a low-end device profile.</li>
+</ul>
+<div class="tech">lib/services/auth_service.dart:385–397 (120k iterations).</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-140">
+<div class="thead"><span class="key">NP-140</span><span class="pill ttask">TASK</span><span class="pill pr2">P2 · PERF</span><span class="key">flutter</span><span class="pts">1 pt</span></div>
+<h4>POS grid decodes full-resolution images with no cache</h4>
+<p class="story">As a captain scrolling the menu grid during rush, I want item images cached and sized to their tiles, so that scrolling stays smooth and data use stays low.</p>
+<ul class="ac">
+<li><code>Image.network</code> → <code>CachedNetworkImage</code> with <code>memCacheWidth</code> in POS grid + menu editor.</li>
+<li>Placeholder/error widgets set.</li>
+</ul>
+<div class="tech">lib/screens/pos/new_order_screen.dart:366 + menu_editor_screen.dart:98,540 — dep already in pubspec.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-141">
+<div class="thead"><span class="key">NP-141</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · REPORTS</span><span class="key">flutter</span><span class="pts">2 pts</span></div>
+<h4>Home KPIs undercount on busy days (folded from a 500-capped list)</h4>
+<p class="story">As an owner checking today's revenue on my phone, I want the KPI cards sourced from the daily report, so that a 600-order day never shows less revenue than reality.</p>
+<ul class="ac">
+<li><code>todayRevenue</code>/<code>todayOrderCount</code> come from <code>/reports/daily</code>, matching the web dashboard exactly.</li>
+<li>Device check: KPI equals web Payments card for the same day.</li>
+</ul>
+<div class="tech">lib/providers/orders_provider.dart:443–451.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-142">
+<div class="thead"><span class="key">NP-142</span><span class="pill ttask">TASK</span><span class="pill pr2">P2 · SCALE</span><span class="key">backend</span><span class="pts">2 pts</span></div>
+<h4>Analytics cron runs serially across all businesses</h4>
+<p class="story">As the platform operator, I want analytics refresh batched with jitter, so that the cron tick doesn't stretch or spike the DB as tenant count grows.</p>
+<ul class="ac">
+<li>Refresh processes in small concurrent batches with jitter; per-tenant failure isolated + logged.</li>
+<li>Tick duration logged so growth is visible.</li>
+</ul>
+<div class="tech">src/services/cronWorker.js:317.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-143">
+<div class="thead"><span class="key">NP-143</span><span class="pill ttask">TASK</span><span class="pill pr2">P2 · SCALE</span><span class="key">backend + admin</span><span class="pts">1 pt</span></div>
+<h4>Admin ticket list is an unbounded scan with per-row subquery</h4>
+<p class="story">As the platform admin, I want the support-ticket list paginated, so that the Support tab stays fast as ticket volume grows.</p>
+<ul class="ac">
+<li><code>listTickets</code> takes limit/offset (default 50); message-count via join/lateral, not correlated subquery per row.</li>
+<li>Admin UI pages through results.</li>
+</ul>
+<div class="tech">src/services/supportService.js:62–79.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-144">
+<div class="thead"><span class="key">NP-144</span><span class="pill ttask">TASK</span><span class="pill pr2">P2 · ADR</span><span class="key">backend</span><span class="pts">3 pts</span></div>
+<h4>ADR + migration plan: unify money on integer paise</h4>
+<p class="story">As the maintainer, I want a written decision and staged plan for moving orders off NUMERIC INR to integer paise, so that every new feature stops guessing which convention each column uses.</p>
+<ul class="ac">
+<li>ADR documents current split (orders INR floats vs wallet/refund paise), chosen target, and staged, additive migration path (no drops).</li>
+<li>Inventory of every money column + its convention; danger list of float touchpoints.</li>
+<li>Execution scheduled as a Later item — this ticket is the plan, not the migration.</li>
+</ul>
+<div class="tech">Systemic (orderService.js:22 et al.) — planning deliverable in docs/adr/.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-145">
+<div class="thead"><span class="key">NP-145</span><span class="pill ttask">TASK</span><span class="pill pr2">P2 · STRETCH</span><span class="key">backend</span><span class="pts">3 pts</span></div>
+<h4>Split the grab-bag modules and retire dead code</h4>
+<p class="story">As the maintainer, I want <code>sprintsAll.routes.js</code> (1005 lines) and <code>orderService.js</code> (1591) split by domain and dead paths removed, so that reviews and fixes stop paying a navigation tax.</p>
+<ul class="ac">
+<li>Routes split by domain; 410 stubs and the duplicate <code>rzCall</code> removed; no behavior change (tests green).</li>
+<li>Migration-folder gaps (063/064/067) documented in a MIGRATIONS.md note.</li>
+</ul>
+<div class="tech">Pure refactor — mechanical moves only, no logic edits.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+
+<article class="ticket" data-pr="P2" data-key="NP-146">
+<div class="thead"><span class="key">NP-146</span><span class="pill tbug">BUG</span><span class="pill pr2">P2 · SUPPORT</span><span class="key">dashboard</span><span class="pts">1 pt</span></div>
+<h4>Crisp chat identity reads a key nothing writes (and never clears)</h4>
+<p class="story">As the founder answering support chats, I want each chat identified with the signed-in owner's email, so that I know who I'm talking to — and never a previous user on a shared PC.</p>
+<ul class="ac">
+<li>Crisp identity set from live auth state (<code>meQ</code>), not localStorage; cleared on logout.</li>
+<li>Dead <code>ff_user_email</code> read removed.</li>
+</ul>
+<div class="tech">src/components/CrispChat.tsx:37.</div>
+<div class="decide"><label class="key">Decision</label><select data-d><option>Pending</option><option>Approve</option><option>Hold</option></select></div>
+</article>
+</div>
+
+<div class="note"><strong>Execution model (per /smart-it-by-shiv):</strong> on your go, each sprint runs as an agent pipeline — engineer agents implement per component (backend / dashboard / admin / flutter), a reviewer agent re-audits each diff against this board's acceptance criteria, the jest suite gates every backend merge, and mobile tickets batch into release v1.0.13 (Sprint 1–2 items) and v1.0.14 (Sprint 4). Every P0 gets live-prod verification before it's called done, per house rule. Nothing deploys without your explicit go per sprint.</div>
+
+<footer>NamastePOS · roadmap &amp; sprint board · 2026-09-01 · 46 tickets / 84 pts + 6 stretch · sourced from SYSTEM_REVIEW_2026-09-01.html @ b68dbcd</footer>
+</div>
+
+<script>
+(function(){
+  var sels = Array.prototype.slice.call(document.querySelectorAll('select[data-d]'));
+  var KEY = 'np_board_decisions_v1';
+  var store = {};
+  try { store = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch(e) { store = {}; }
+  function keyOf(sel){ return sel.closest('.ticket').getAttribute('data-key'); }
+  function paint(sel){
+    sel.classList.remove('approved','hold');
+    if (sel.value === 'Approve') sel.classList.add('approved');
+    if (sel.value === 'Hold') sel.classList.add('hold');
+  }
+  function counts(){
+    var a=0,h=0,p=0;
+    sels.forEach(function(s){ if(s.value==='Approve')a++; else if(s.value==='Hold')h++; else p++; });
+    document.getElementById('nA').textContent=a;
+    document.getElementById('nH').textContent=h;
+    document.getElementById('nP').textContent=p;
+  }
+  sels.forEach(function(sel){
+    var k = keyOf(sel);
+    if (store[k]) sel.value = store[k];
+    paint(sel);
+    sel.addEventListener('change', function(){
+      store[k] = sel.value;
+      try { localStorage.setItem(KEY, JSON.stringify(store)); } catch(e){}
+      paint(sel); counts();
+    });
+  });
+  counts();
+  document.getElementById('copyBtn').addEventListener('click', function(){
+    var lines = sels.map(function(s){ return keyOf(s) + ': ' + s.value; });
+    var txt = 'NamastePOS board decisions (' + new Date().toISOString().slice(0,10) + ')\n' + lines.join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function(){
+        var b=document.getElementById('copyBtn'); b.textContent='Copied — paste to Claude'; setTimeout(function(){b.textContent='Copy decisions';},2500);
+      });
+    } else { window.prompt('Copy decisions:', txt); }
+  });
+})();
+</script>

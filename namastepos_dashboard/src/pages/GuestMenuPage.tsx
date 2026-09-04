@@ -307,8 +307,15 @@ function CartSheet({ cart, brand, setCart, requirePhone, requireName, token, onC
         if (r.otpRequired && r.requestId) {
           setOtpRequestId(r.requestId);
           setOtpRequired(true);
-          toast.info('This number has a membership. Enter the OTP we sent to use it.');
-          return; // wait for OTP
+          // Security 2026-09-04: the server no longer tells us whether this
+          // number HAS a membership — that answer was an account-enumeration
+          // oracle (anyone with the table's QR could test phone numbers
+          // against the restaurant's customer list). It now comes only after
+          // the OTP proves the guest owns the number, so the copy here must
+          // not claim to know either. A guest with no membership simply gets
+          // no code and taps "Skip".
+          toast.info('If this number has a membership with us, we\'ve sent a code. No membership? Just tap Skip.');
+          return; // wait for OTP (or Skip)
         }
       } catch { /* non-fatal — fall through and place without a benefit */ }
       finally { setChecking(false); }
@@ -398,7 +405,11 @@ function CartSheet({ cart, brand, setCart, requirePhone, requireName, token, onC
 
           {otpRequired && (
             <div className="mt-2 p-3 rounded-md border bg-muted/40">
-              <label className="text-sm font-medium">Enter OTP to use your membership</label>
+              <label className="text-sm font-medium">Using a membership?</label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Enter the code we sent to {phone}. No membership here? Skip below —
+                your order goes through either way.
+              </p>
               <input value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/[^0-9]/g, ''))}
                 maxLength={6} placeholder="6-digit code" inputMode="numeric"
                 className="w-full h-10 px-3 rounded-md border bg-background mt-1" />

@@ -3,6 +3,7 @@
 const express = require('express');
 const c = require('../controllers/opsController');
 const { requireAuth, requireBusinessOwnership, requireRole } = require('../middleware/auth');
+const idempotent = require('../middleware/idempotent');
 const sub = require('../services/subscriptionService');
 
 const router = express.Router({ mergeParams: true });
@@ -45,16 +46,35 @@ router.put('/tables/:tableId', requireRole(['business_owner', 'staff_manager']),
 router.delete('/tables/:tableId', requireRole(['business_owner']), c.deleteTable);
 
 // ── Sessions (seat / close) ──────────────────────────────────────────
-router.post('/tables/:tableId/sessions', ...c.openSession);
+// NP-401 (2026-09-04): openSession locks the table row and refuses a second
+// open session (Conflict), so a replay creates no duplicate — but the retry of
+// a committed-then-lost seat gets that 409, which the offline outbox treats as
+// a permanent rejection and dead-letters, leaving the waiter staring at a
+// table the server thinks is already occupied. Replay the original instead.
+router.post(
+  '/tables/:tableId/sessions',
+  idempotent('POST /ops/tables/:tableId/sessions'),
+  ...c.openSession,
+);
 router.get('/sessions/:sessionId', c.sessionDetail);
 // 2026-08-25 (security review finding #5): settle moves money (discounts,
 // wallet debits, shortfall debt on a customer) — it must not be open to
 // every authenticated staff role. Gated to owner + manager, matching the
 // other money-touching routes (floors/tables CRUD here, expenses/settle
 // flows in sprintsAll.routes; order refunds are owner-only).
+// NP-401 (2026-09-04): the settle itself is already safe against a true
+// double-apply — the discount cascade, the loyalty redeem and the wallet debits
+// all run in ONE transaction that ends with
+// `UPDATE table_sessions … WHERE status = 'open'`, so a second attempt rolls
+// the whole thing back and raises NotFound. But that 404 is exactly what the
+// offline outbox dead-letters: a settle that DID go through comes back as
+// "failed to sync", the table stays occupied on the device and a cashier who
+// re-settles by hand takes the payment twice in the real world. Replaying the
+// original response is the fix.
 router.post(
   '/sessions/:sessionId/close',
   requireRole(['business_owner', 'staff_manager']),
+  idempotent('POST /ops/sessions/:sessionId/close'),
   ...c.closeSession,
 );
 // Push 22 — release a table whose customer left without ordering.

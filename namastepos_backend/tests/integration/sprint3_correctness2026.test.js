@@ -257,7 +257,8 @@ describe('NP-126 impersonation handoff code', () => {
   async function mintCode() {
     const r = await request(app)
       .post(`/v1/admin/customers/${biz.id}/impersonation-code`)
-      .set('Authorization', `Bearer ${adminToken}`)
+      // 2026-09-04: admin auth is the httpOnly ff_admin cookie, not Bearer.
+      .set('Cookie', `ff_admin=${adminToken}`)
       .send({});
     expect(r.status).toBe(201);
     expect(typeof r.body.code).toBe('string');
@@ -307,7 +308,8 @@ describe('NP-126 impersonation handoff code', () => {
   it('the legacy /impersonate endpoint still works (back-compat)', async () => {
     const r = await request(app)
       .post(`/v1/admin/customers/${biz.id}/impersonate`)
-      .set('Authorization', `Bearer ${adminToken}`)
+      // 2026-09-04: admin auth is the httpOnly ff_admin cookie, not Bearer.
+      .set('Cookie', `ff_admin=${adminToken}`)
       .send({});
     expect(r.status).toBe(200);
     expect(r.body.accessToken).toBeTruthy();

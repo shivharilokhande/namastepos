@@ -132,6 +132,17 @@ export const ffApi = {
     const b = getBusinessCache();
     return api.get(`/businesses/${b.id}/menu`).then((r) => r.data.items);
   },
+  // NP-205 — same list, but each item carries `variants: [...]` (label, price,
+  // stock, trackStock). A SEPARATE binding rather than a parameter on
+  // listMenu, because listMenu is passed to react-query bare
+  // (`queryFn: ffApi.listMenu`) and would receive the QueryFunctionContext as
+  // its first argument. Needed by the POS picker (which read `item.variants`
+  // from a payload that never contained it) and by the inventory screen.
+  listMenuWithVariants: () => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/menu`, { params: { withVariants: true } })
+      .then((r) => r.data.items);
+  },
   createMenuItem: (body: any) => {
     const b = getBusinessCache();
     return api.post(`/businesses/${b.id}/menu`, body).then((r) => r.data.item);

@@ -9,6 +9,15 @@ const { query, withTransaction } = require('../config/db');
 const logger = require('../config/logger');
 const { NotFound } = require('../utils/errors');
 
+// Security review 2026-09-04 (item 1) — see staffService._invalidateMembership.
+// Non-throwing on purpose: a missed invalidation degrades to the 30s TTL, it
+// must never roll back an outlet delete or a staff copy.
+function _invalidateMembership(businessId, userId) {
+  try {
+    require('../middleware/auth').invalidateMembership(businessId, userId);
+  } catch (_) { /* non-fatal */ }
+}
+
 async function listGroups() {
   const r = await query(
     `SELECT g.*, COUNT(b.id)::int AS outlet_count
@@ -214,6 +223,11 @@ async function copyStaffToOutlet(parentBusinessId, outletId, client = null) {
      RETURNING user_id`,
     [outletId, parentBusinessId],
   );
+  // Usually a brand-new outlet id (nothing can be cached for it yet), but this
+  // is also reachable for an existing outlet — and a cached "not a member"
+  // negative entry for one of these people would lock them out of the branch
+  // they were just granted. Cheap to be correct here.
+  for (const row of r.rows) _invalidateMembership(outletId, row.user_id);
   return r.rowCount;
 }
 
@@ -384,6 +398,10 @@ async function deleteOutletWithOtp({ userId, callerBusinessId, targetBusinessId,
     'UPDATE business_users SET is_active = FALSE WHERE business_id = $1',
     [targetBusinessId],
   );
+  // Every membership in this outlet just died — drop them all, not one by one.
+  // Without this, staff of a deleted outlet kept authorising against it for up
+  // to 30s per instance.
+  _invalidateMembership(targetBusinessId, '*');
   await query(
     `UPDATE subscriptions SET status = 'cancelled', cancel_at_period_end = TRUE
       WHERE business_id = $1`,

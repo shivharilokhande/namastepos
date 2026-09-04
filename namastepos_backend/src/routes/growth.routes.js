@@ -11,6 +11,7 @@ const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const { requireRole } = require('../middleware/auth');
+const idempotent = require('../middleware/idempotent');
 
 const membership = require('../services/membershipService');
 const site = require('../services/siteService');
@@ -119,6 +120,12 @@ router.post(
     })).min(1).max(3)
       .allow(null),
   }) }),
+  // NP-401 (2026-09-04): NP-116's membership_subscriptions.client_key already
+  // stops the double SALE, so this is belt-and-braces — it makes the RETRY
+  // return the byte-identical original response (same 201, same row) instead of
+  // a second "created" for a sale that already happened, and it also covers a
+  // client that sends `Idempotency-Key` without a body `clientKey`.
+  idempotent('POST /memberships/subscribe'),
   asyncHandler(async (req, res) => res.status(201).json({ subscription: await membership.subscribe(req.params.businessId, req.body) })),
 );
 // 2026-08-25 (founder): cancel a sold membership → refund the unused share.
@@ -135,6 +142,9 @@ router.post(
     mode: Joi.string().valid('wallet', 'cash', 'upi').required(),
     cancellationPct: Joi.number().min(0).max(100).allow(null),
   }) }),
+  // NP-401 (2026-09-04): money OUT — a wallet credit or a recorded payout. A
+  // replay refunds the unused share a second time.
+  idempotent('POST /customer-memberships/:id/cancel'),
   asyncHandler(async (req, res) => res.json(
     await membership.cancelSubscription(req.params.businessId, req.params.id, {
       mode: req.body.mode,
