@@ -157,6 +157,16 @@ async function _runOnce() {
     // credentials each event is marked `skipped` and the drain is a no-op.
     await _track('aggregator-outbound', () => fulfilment.drainOutbound()).catch((e) =>
       logger.warn(`[aggregator-outbound] tick error: ${e.message}`));
+    // 2026-09-03 verification fix: an order can end up `delivered` with its POS
+    // status never mirrored to `collected` (pool blip, or a human cancelling
+    // between the two steps) — i.e. delivered food whose REVENUE was never
+    // recognised. Retry those every tick; the sweep is index-bounded and the
+    // set is normally empty.
+    await _track('pos-mirror-repair', () => fulfilment.repairPosMirrors()).catch((e) =>
+      logger.warn(`[pos-mirror-repair] tick error: ${e.message}`));
+    // Flush callbacks parked as `skipped` if partner outbound has since been
+    // switched on (they would otherwise never be sent).
+    await _track('outbound-requeue', () => fulfilment.requeueSkippedOutbound()).catch(() => {});
     // FF-326 / FF-336 owner digests — every 60 ticks (~1 h) so both
     // the "am I at 9am now?" checks in ownerDigestService fire hourly.
     if (++_digestTicksSinceLast >= 60) {

@@ -157,14 +157,34 @@ async function transition(businessId, orderId, opts = {}) {
     const from = o.fulfilment_state || 'placed';
 
     // Idempotent: re-sending the current state is a no-op, not an error. Both
-    // a double-tap in the app and an aggregator retry land here.
-    if (from === target) return _serialize(o, { unchanged: true });
+    // a double-tap in the app and an aggregator retry land here. EXCEPTION:
+    // rider_assigned carries new rider details on every assignment, so a
+    // re-assignment must be applied rather than swallowed.
+    if (from === target && target !== 'rider_assigned') {
+      return _serialize(o, { unchanged: true });
+    }
 
+    // Re-assigning a rider is NOT a no-op: the new partner brings a new name,
+    // phone and pickup OTP, and staff must be able to record them or the
+    // handover check will reject a legitimate rider. Handled above the
+    // same-state early return via `from === target` allowance below.
     const allowed = TRANSITIONS[from] || [];
-    if (!allowed.includes(target)) {
-      throw new Conflict(
-        `Cannot move order #${o.order_no} from ${from} to ${target}. `
-        + `Allowed: ${allowed.join(', ') || '(terminal)'}.`
+    const sameStateUpdate = from === target && target === 'rider_assigned';
+    if (!allowed.includes(target) && !sameStateUpdate) {
+      // `force` exists for ONE caller: an aggregator webhook. Their fleet is
+      // the source of truth for pickup/delivery, and real providers routinely
+      // send only new-order + delivered — so refusing the jump would leave the
+      // order stuck and its revenue unrecognised. We still refuse to move OUT
+      // of a terminal state, so a cancelled order can never become delivered.
+      const TERMINAL = ['cancelled', 'rejected'];
+      if (!opts.force || TERMINAL.includes(from)) {
+        throw new Conflict(
+          `Cannot move order #${o.order_no} from ${from} to ${target}. `
+          + `Allowed: ${allowed.join(', ') || '(terminal)'}.`
+        );
+      }
+      logger.info(
+        `[fulfilment] forced ${from} → ${target} for order ${orderId} (aggregator authority)`
       );
     }
 
@@ -244,14 +264,68 @@ async function transition(businessId, orderId, opts = {}) {
     // orderService.updateStatus so loyalty/revenue side effects run exactly
     // as they do for a counter order — never duplicated here.
     if (out.posStatusApplied) {
-      try {
-        await require('./orderService').updateStatus(businessId, orderId, out.posStatusApplied);
-      } catch (e) {
-        logger.warn(`[fulfilment] POS status mirror to ${out.posStatusApplied} failed for ${orderId}: ${e.message}`);
-      }
+      const ok = await _mirrorPosStatus(businessId, orderId, out.posStatusApplied);
+      out.posStatusMirrored = ok;
     }
     return out;
   });
+}
+
+/**
+ * Apply the POS-status mirror. Returns true on success.
+ *
+ * This carries MONEY: `delivered` → `collected` is what recognises revenue and
+ * awards loyalty. The mirror runs after the fulfilment transaction commits (so
+ * orderService owns its own side effects exactly once), which means it can
+ * fail on its own — a pool blip, or a human cancelling in the POS between the
+ * two steps. A silent warn would leave the order delivered with the money
+ * never booked, so a failure is recorded on the order and swept by
+ * `repairPosMirrors` (cron) and reported by the revenue-integrity email.
+ */
+async function _mirrorPosStatus(businessId, orderId, posStatus) {
+  try {
+    await require('./orderService').updateStatus(businessId, orderId, posStatus);
+    await query(
+      `UPDATE orders SET pos_mirror_error = NULL WHERE business_id = $1 AND id = $2`,
+      [businessId, orderId]
+    ).catch(() => {});
+    return true;
+  } catch (e) {
+    logger.warn(
+      `[fulfilment] POS mirror → ${posStatus} FAILED for ${orderId}: ${e.message} (queued for repair)`
+    );
+    await query(
+      `UPDATE orders SET pos_mirror_error = $1 WHERE business_id = $2 AND id = $3`,
+      [String(e.message).slice(0, 300), businessId, orderId]
+    ).catch(() => {});
+    return false;
+  }
+}
+
+/**
+ * Sweep orders whose fulfilment says delivered but whose POS status never
+ * caught up, and retry the mirror. Cheap: the set is normally empty, and it is
+ * bounded by the partial index added in migration 080.
+ */
+async function repairPosMirrors({ limit = 50 } = {}) {
+  const stuck = await query(
+    `SELECT id, business_id FROM orders
+      WHERE fulfilment_state = 'delivered'
+        AND status NOT IN ('collected', 'cancelled')
+      ORDER BY delivered_at ASC NULLS LAST
+      LIMIT $1`,
+    [limit]
+  );
+  let repaired = 0; let stillStuck = 0;
+  for (const row of stuck.rows) {
+    // eslint-disable-next-line no-await-in-loop
+    const ok = await _mirrorPosStatus(row.business_id, row.id, 'collected');
+    if (ok) repaired += 1; else stillStuck += 1;
+  }
+  if (repaired || stillStuck) {
+    logger.info(`[fulfilment] POS mirror repair: repaired=${repaired} stillStuck=${stillStuck}`);
+  }
+  return { repaired, stillStuck, considered: stuck.rowCount };
 }
 
 function _serialize(row, extra = {}) {
@@ -335,6 +409,24 @@ async function drainOutbound({ limit = 50 } = {}) {
   return { sent, skipped, failed, considered: due.rowCount };
 }
 
+/** Re-queue `skipped` callbacks once partner outbound is finally enabled. */
+async function requeueSkippedOutbound({ olderThanMinutes = 0 } = {}) {
+  if (require('../config/env').AGGREGATOR_OUTBOUND_ENABLED !== 'true') {
+    return { requeued: 0, reason: 'outbound still disabled' };
+  }
+  const r = await query(
+    `UPDATE aggregator_outbound_events
+        SET status = 'queued', next_attempt_at = NOW(), attempts = 0, last_error = NULL
+      WHERE status = 'skipped'
+        AND created_at < NOW() - ($1 || ' minutes')::interval
+      RETURNING id`,
+    [String(olderThanMinutes)]
+  );
+  if (r.rowCount > 0) logger.info(`[fulfilment] re-queued ${r.rowCount} skipped callback(s)`);
+  return { requeued: r.rowCount };
+}
+
 module.exports = {
   STATES, TRANSITIONS, board, transition, drainOutbound,
+  repairPosMirrors, requeueSkippedOutbound,
 };

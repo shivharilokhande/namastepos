@@ -105,11 +105,56 @@ async function checkDeadWebhookEvents() {
   return r.rows;
 }
 
+
+/**
+ * Check 4 — delivered food whose REVENUE was never recognised.
+ * `fulfilment_state='delivered'` mirrors into POS `collected`, which is what
+ * books the money and awards loyalty. If that mirror failed (pool blip, or a
+ * human cancelling mid-flight) the order sits delivered-but-unbilled. The
+ * cron retries these every tick; anything still stuck after an hour is a
+ * human's problem and belongs in this email.
+ */
+async function checkUnbilledDeliveries() {
+  const r = await query(
+    `SELECT o.id, o.business_id, b.name AS business_name, o.order_no,
+            o.total, o.status, o.delivered_at, o.pos_mirror_error
+       FROM orders o
+       JOIN businesses b ON b.id = o.business_id
+      WHERE o.fulfilment_state = 'delivered'
+        AND o.status NOT IN ('collected', 'cancelled')
+        AND o.delivered_at < NOW() - INTERVAL '1 hour'
+      ORDER BY o.delivered_at ASC
+      LIMIT $1`,
+    [LIST_LIMIT]
+  );
+  return r.rows;
+}
+
+/**
+ * Check 5 — aggregator status callbacks that never reached the provider.
+ * Dead-lettered (6 failed attempts) events mean we told the diner's app
+ * nothing; aggregators grade us on exactly these SLAs.
+ */
+async function checkDeadOutboundCallbacks() {
+  const r = await query(
+    `SELECT e.id, e.business_id, b.name AS business_name, e.provider, e.event,
+            e.attempts, e.last_error, e.created_at
+       FROM aggregator_outbound_events e
+       JOIN businesses b ON b.id = e.business_id
+      WHERE e.status = 'failed'
+        AND e.created_at > NOW() - INTERVAL '7 days'
+      ORDER BY e.created_at DESC
+      LIMIT $1`,
+    [LIST_LIMIT]
+  );
+  return r.rows;
+}
+
 function _inr(paise) {
   return `₹${(Number(paise || 0) / 100).toFixed(2)}`;
 }
 
-function _renderEmail({ drift, stuckRefunds, deadEvents }) {
+function _renderEmail({ drift, stuckRefunds, deadEvents, unbilled, deadOutbound }) {
   const section = (title, rows, renderRow) => (rows.length === 0 ? '' : `
     <h3 style="margin:16px 0 4px">${title} (${rows.length}${rows.length === LIST_LIMIT ? '+' : ''})</h3>
     <ul style="margin:4px 0">${rows.map((row) => `<li>${renderRow(row)}</li>`).join('')}</ul>`);
@@ -125,6 +170,12 @@ function _renderEmail({ drift, stuckRefunds, deadEvents }) {
       + `created ${new Date(rf.created_at).toISOString()}`)}
     ${section('Webhook events dead in-flight > 1h (claimed, never finished)', deadEvents, (ev) =>
     `<code>${ev.external_id}</code> (${ev.event_type}) — received ${new Date(ev.created_at).toISOString()}`)}
+    ${section('DELIVERED but never billed (revenue not recognised)', unbilled, (o) =>
+    `${o.business_name}: order #${o.order_no} ${_inr((Number(o.total) || 0) * 100)} still `
+      + `<b>${o.status}</b>, delivered ${new Date(o.delivered_at).toISOString()}`
+      + `${o.pos_mirror_error ? ` — ${o.pos_mirror_error}` : ''}`)}
+    ${section('Aggregator callbacks dead-lettered (SLA risk)', deadOutbound, (e) =>
+    `${e.business_name}: ${e.provider} <b>${e.event}</b> failed ${e.attempts}× — ${e.last_error || 'unknown'}`)}
     <p>Lists are capped at ${LIST_LIMIT} rows each. Check the admin console for the full picture.</p>`;
 
   const text = [
@@ -132,6 +183,8 @@ function _renderEmail({ drift, stuckRefunds, deadEvents }) {
     ...drift.map((d) => `[drift] business ${d.business_id}: on ${d.current_tier}, last paid ${_inr(d.last_paid_paise)} (= ${d.matched_tier} pricing), rzp ${d.razorpay_subscription_id}`),
     ...stuckRefunds.map((rf) => `[refund>48h] ${rf.id} ${_inr(rf.amount_paise)} business ${rf.business_id} created ${rf.created_at}`),
     ...deadEvents.map((ev) => `[webhook>1h] ${ev.external_id} (${ev.event_type}) received ${ev.created_at}`),
+    ...unbilled.map((o) => `[unbilled-delivery] ${o.business_name} order #${o.order_no} still ${o.status} since ${o.delivered_at}`),
+    ...deadOutbound.map((e) => `[callback-dead] ${e.business_name} ${e.provider}/${e.event} after ${e.attempts} attempts`),
   ].join('\n');
 
   return { html, text };
@@ -151,24 +204,28 @@ async function runDaily() {
     );
   }
 
-  const [drift, stuckRefunds, deadEvents] = [
+  const [drift, stuckRefunds, deadEvents, unbilled, deadOutbound] = [
     await checkPlanPriceDrift(),
     await checkStuckRefunds(),
     await checkDeadWebhookEvents(),
+    await checkUnbilledDeliveries(),
+    await checkDeadOutboundCallbacks(),
   ];
 
-  const total = drift.length + stuckRefunds.length + deadEvents.length;
+  const total = drift.length + stuckRefunds.length + deadEvents.length
+    + unbilled.length + deadOutbound.length;
   if (total === 0) {
     logger.info('[revenue-integrity] nightly sweep clean — no email sent');
-    return { clean: true, drift: 0, stuckRefunds: 0, deadEvents: 0 };
+    return { clean: true, drift: 0, stuckRefunds: 0, deadEvents: 0, unbilled: 0, deadOutbound: 0 };
   }
 
-  const { html, text } = _renderEmail({ drift, stuckRefunds, deadEvents });
+  const { html, text } = _renderEmail({ drift, stuckRefunds, deadEvents, unbilled, deadOutbound });
   await email.sendMail({
     template: 'revenue_integrity_alert',
     recipient: env.PLATFORM_ALERT_EMAIL,
     subject: `[NamastePOS] Revenue integrity: ${total} issue${total === 1 ? '' : 's'} `
-      + `(${drift.length} drift / ${stuckRefunds.length} stuck refunds / ${deadEvents.length} dead webhooks)`,
+      + `(${drift.length} drift / ${stuckRefunds.length} stuck refunds / ${deadEvents.length} dead webhooks`
+      + ` / ${unbilled.length} unbilled deliveries / ${deadOutbound.length} dead callbacks)`,
     html, text,
   });
   logger.warn(
@@ -189,4 +246,6 @@ module.exports = {
   checkPlanPriceDrift,
   checkStuckRefunds,
   checkDeadWebhookEvents,
+  checkUnbilledDeliveries,
+  checkDeadOutboundCallbacks,
 };

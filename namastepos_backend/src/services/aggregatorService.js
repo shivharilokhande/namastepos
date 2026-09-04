@@ -375,7 +375,7 @@ async function handleWebhookEvent(businessId, provider, payload, { headers = {} 
       `INSERT INTO aggregator_inbound_events
          (business_id, provider, event_type, external_id, payload)
        VALUES ($1, $2, $3, $4, $5::jsonb)
-       ON CONFLICT (provider, external_id, event_type)
+       ON CONFLICT (business_id, provider, external_id, event_type)
          WHERE external_id IS NOT NULL
          DO NOTHING
        RETURNING id`,
@@ -383,9 +383,24 @@ async function handleWebhookEvent(businessId, provider, payload, { headers = {} 
        JSON.stringify(payload || {})]
     );
     if (ins.rowCount === 0 && externalId) {
-      return { duplicate: true, event, externalId };
+      // A row already exists — but "seen" is NOT "done". If the first attempt
+      // failed mid-handling, treating the provider's retry as a duplicate
+      // would burn the only redelivery we get (the same bug class we fixed for
+      // the Razorpay dedup gate). Only a row marked `handled` is a true
+      // duplicate; otherwise reclaim it and process again.
+      const prior = await query(
+        `SELECT id, handled FROM aggregator_inbound_events
+          WHERE business_id = $1 AND provider = $2 AND external_id = $3 AND event_type = $4
+          LIMIT 1`,
+        [businessId, provider, String(externalId), event || 'unknown']
+      );
+      if (prior.rows[0]?.handled) {
+        return { duplicate: true, event, externalId };
+      }
+      logId = prior.rows[0]?.id || null;
+    } else {
+      logId = ins.rows[0]?.id || null;
     }
-    logId = ins.rows[0]?.id || null;
   } catch (e) {
     logger.warn(`[aggregator-in] event log failed (${provider}/${event}): ${e.message}`);
   }
@@ -429,28 +444,22 @@ async function handleWebhookEvent(businessId, provider, payload, { headers = {} 
     if (!orderId) return done({ ignored: 'order not found for pickup event' });
     // The aggregator telling us it was picked up is authoritative — no OTP
     // check here (the OTP gate protects the COUNTER handover, not their event).
-    await query(
-      `UPDATE orders SET fulfilment_state = 'picked_up', picked_up_at = COALESCE(picked_up_at, NOW())
-        WHERE business_id = $1 AND id = $2
-          AND fulfilment_state NOT IN ('delivered','cancelled','rejected')`,
-      [businessId, orderId]
-    );
+    // `force` because providers routinely skip rungs we model; the service
+    // still refuses to move out of a terminal state.
+    await fulfilment.transition(businessId, orderId, { state: 'picked_up', force: true })
+      .catch((e) => logger.warn(`[aggregator-in] pickup transition: ${e.message}`));
     return done({ orderId, applied: 'picked_up' });
   }
 
   if (DELIVERED_EVENTS.includes(event)) {
     if (!orderId) return done({ ignored: 'order not found for delivered event' });
-    await fulfilment.transition(businessId, orderId, { state: 'delivered' })
-      .catch(async (e) => {
-        // Out-of-order delivery event (we never saw pickup): accept it anyway,
-        // the aggregator is the source of truth for its own fleet.
-        logger.warn(`[aggregator-in] delivered via direct set (${e.message})`);
-        await query(
-          `UPDATE orders SET fulfilment_state = 'delivered', delivered_at = COALESCE(delivered_at, NOW())
-            WHERE business_id = $1 AND id = $2`,
-          [businessId, orderId]
-        );
-      });
+    // MUST go through the service, never a raw UPDATE: the transition is what
+    // mirrors `delivered` into POS `collected`, which is what recognises the
+    // revenue and awards loyalty. The earlier raw-UPDATE fallback here left
+    // orders delivered-but-unbilled with no way to recover. `force` covers the
+    // common provider pattern of sending only new-order + delivered.
+    await fulfilment.transition(businessId, orderId, { state: 'delivered', force: true })
+      .catch((e) => logger.warn(`[aggregator-in] delivered transition: ${e.message}`));
     return done({ orderId, applied: 'delivered' });
   }
 

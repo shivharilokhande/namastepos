@@ -285,3 +285,107 @@ describe('inbound webhook event routing', () => {
     expect(after.rows[0].c).toBe(before.rows[0].c);
   });
 });
+
+// ── Post-deploy verification fixes (2026-09-03) ─────────────────────────
+// The first verification pass on this feature found three money/reliability
+// holes in it. These pin the fixes.
+describe('verification fixes', () => {
+  it('an aggregator delivered event books the revenue even when it skips rungs', async () => {
+    // Real providers routinely send only new-order + delivered. The old code
+    // fell back to a raw UPDATE that bypassed the POS mirror, leaving the
+    // order delivered with the money never recognised and no way to recover.
+    const id = await makeDeliveryOrder(9050);
+    const fulfilmentSvc = require('../../src/services/fulfilmentService');
+    const r = await fulfilmentSvc.transition(biz.id, id, { state: 'delivered', force: true });
+    expect(r.state).toBe('delivered');
+    const row = await query(`SELECT status, collected_at FROM orders WHERE id = $1`, [id]);
+    expect(row.rows[0].status).toBe('collected');   // revenue booked
+    expect(row.rows[0].collected_at).toBeTruthy();
+  });
+
+  it('force still refuses to resurrect a cancelled order', async () => {
+    const id = await makeDeliveryOrder(9051);
+    await query(`UPDATE orders SET fulfilment_state = 'cancelled' WHERE id = $1`, [id]);
+    const fulfilmentSvc = require('../../src/services/fulfilmentService');
+    await expect(fulfilmentSvc.transition(biz.id, id, { state: 'delivered', force: true }))
+      .rejects.toThrow(/Cannot move/i);
+  });
+
+  it('repairs an order left delivered-but-unbilled', async () => {
+    const id = await makeDeliveryOrder(9052);
+    // Simulate the mirror having failed: fulfilment says delivered, POS doesn't.
+    await query(
+      `UPDATE orders SET fulfilment_state = 'delivered', delivered_at = NOW(),
+              pos_mirror_error = 'simulated pool blip'
+        WHERE id = $1`,
+      [id]
+    );
+    const fulfilmentSvc = require('../../src/services/fulfilmentService');
+    const out = await fulfilmentSvc.repairPosMirrors({ limit: 20 });
+    expect(out.repaired).toBeGreaterThan(0);
+    const row = await query(`SELECT status, pos_mirror_error FROM orders WHERE id = $1`, [id]);
+    expect(row.rows[0].status).toBe('collected');
+    expect(row.rows[0].pos_mirror_error).toBeNull();
+  });
+
+  it('the integrity sweep reports unbilled deliveries and dead callbacks', async () => {
+    const id = await makeDeliveryOrder(9053);
+    await query(
+      `UPDATE orders SET fulfilment_state = 'delivered',
+              delivered_at = NOW() - INTERVAL '2 hours', status = 'pending'
+        WHERE id = $1`,
+      [id]
+    );
+    await query(
+      `INSERT INTO aggregator_outbound_events
+         (business_id, order_id, provider, event, status, attempts, last_error)
+       VALUES ($1, $2, 'zomato', 'delivered', 'failed', 6, 'provider HTTP 500')`,
+      [biz.id, id]
+    );
+    const integrity = require('../../src/services/revenueIntegrityService');
+    const unbilled = await integrity.checkUnbilledDeliveries();
+    expect(unbilled.some((o) => o.id === id)).toBe(true);
+    const dead = await integrity.checkDeadOutboundCallbacks();
+    expect(dead.some((e) => e.order_id === id || e.business_id === biz.id)).toBe(true);
+  });
+
+  it('re-assigning a rider updates the details instead of silently no-opping', async () => {
+    const id = await makeDeliveryOrder(9054);
+    await move(id, { state: 'accepted', prepMinutes: 10 });
+    await move(id, { state: 'food_ready' });
+    await move(id, { state: 'rider_assigned', rider: { name: 'First', otp: '1111' } });
+    const again = await move(id, { state: 'rider_assigned', rider: { name: 'Second', otp: '2222' } });
+    expect(again.status).toBe(200);
+    expect(again.body.order.unchanged).toBeUndefined();
+    expect(again.body.order.rider.name).toBe('Second');
+    // The NEW rider's OTP is the one that works.
+    expect((await move(id, { state: 'picked_up', otp: '1111' })).status).toBe(400);
+    expect((await move(id, { state: 'picked_up', otp: '2222' })).status).toBe(200);
+  });
+
+  it('retries an inbound event whose first attempt never completed', async () => {
+    // The old gate returned { duplicate: true } on ANY existing row, so a
+    // delivery that died mid-handling burned the only redelivery the provider
+    // gives us. Now only a row marked `handled` is a true duplicate.
+    const agg = require('../../src/services/aggregatorService');
+    const id = await makeDeliveryOrder(9055);
+    const ext = (await query(`SELECT aggregator_order_id FROM orders WHERE id = $1`, [id]))
+      .rows[0].aggregator_order_id;
+    const payload = { event: 'order.cancelled', order_id: ext, event_id: `evt-9055-${Date.now()}` };
+
+    const first = await agg.handleWebhookEvent(biz.id, 'zomato', payload, {});
+    expect(first.applied).toBe('cancelled');
+
+    // A completed event IS a duplicate on retry — no double side effects.
+    const dup = await agg.handleWebhookEvent(biz.id, 'zomato', payload, {});
+    expect(dup.duplicate).toBe(true);
+
+    // Simulate the first attempt having died before finishing.
+    await query(
+      `UPDATE aggregator_inbound_events SET handled = FALSE WHERE external_id = $1`,
+      [String(payload.event_id)]
+    );
+    const retry = await agg.handleWebhookEvent(biz.id, 'zomato', payload, {});
+    expect(retry.duplicate).toBeUndefined(); // reprocessed, not dropped
+  });
+});
