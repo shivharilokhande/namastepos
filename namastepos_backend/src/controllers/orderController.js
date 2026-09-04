@@ -151,11 +151,14 @@ module.exports = {
       const orders = await order.list(req.params.businessId, req.query);
       // NP-132: channelCounts = {all, online, offline} over the WHOLE
       // status/date-filtered set, so channel chips don't count just page 1.
+      // 2026-09-03: the service skips the count for delta pollers (they don't
+      // render chips) — omit the key entirely rather than sending null, so the
+      // 10s poll payload stays minimal.
       res.json({
         orders,
         count: orders.length,
         total: orders.total ?? orders.length,
-        channelCounts: orders.channelCounts,
+        ...(orders.channelCounts ? { channelCounts: orders.channelCounts } : {}),
       });
     }),
   ],

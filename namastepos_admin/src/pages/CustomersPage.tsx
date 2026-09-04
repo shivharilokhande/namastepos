@@ -38,7 +38,7 @@ export function CustomersPage() {
   // request per keystroke. Only the ~300ms-debounced value hits the server.
   const debouncedSearch = useDebounce(search, 300);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['customers', debouncedSearch, plan, page],
     queryFn: () => adminApi.listCustomers({
       search: debouncedSearch || undefined, plan: plan || undefined,
@@ -168,7 +168,16 @@ export function CustomersPage() {
               {isLoading && (
                 <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>
               )}
-              {!isLoading && data?.customers.length === 0 && (
+              {isError && (
+                // Without this the table just goes blank on a failed fetch.
+                <TableRow>
+                  <TableCell colSpan={9} className="text-center py-10">
+                    <div className="text-sm text-destructive">Couldn't load customers — {apiError(error)}</div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isLoading && !isError && data?.customers.length === 0 && (
                 <TableRow><TableCell colSpan={9} className="text-center py-10 text-muted-foreground">No customers yet.</TableCell></TableRow>
               )}
               {data?.customers.map((c) => (

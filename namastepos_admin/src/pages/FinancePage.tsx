@@ -6,6 +6,7 @@ import { TrendingUp, ArrowDownRight, DollarSign, Activity, Download } from 'luci
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { adminApi } from '@/api/admin';
+import { apiError } from '@/api/client';
 import { formatINR } from '@/lib/utils';
 
 // Push 20c — minimal CSV builder. Wraps fields in quotes if they contain
@@ -29,7 +30,9 @@ export function FinancePage() {
   const { data: ltv }      = useQuery({ queryKey: ['ltv'],         queryFn: adminApi.ltv });
   const { data: churn }    = useQuery({ queryKey: ['churn'],       queryFn: adminApi.churn });
   // Push 19e — outstanding subscription invoices + aging buckets
-  const { data: outstanding } = useQuery({
+  const {
+    data: outstanding, isError: outErr, error: outErrObj, refetch: refetchOut,
+  } = useQuery({
     queryKey: ['outstanding'],
     queryFn: adminApi.outstanding,
     refetchInterval: 60_000,
@@ -158,11 +161,18 @@ export function FinancePage() {
             Outstanding invoices ·{' '}
             {outstanding ? formatINR(outstanding.totalOutstandingInr) : '…'}{' '}
             <span className="text-sm font-normal text-muted-foreground">
-              ({outstanding?.invoiceCount || 0} unpaid)
+              ({outErr ? '—' : `${outstanding?.invoiceCount || 0} unpaid`})
             </span>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
+          {outErr && (
+            // ₹0 in every aging bucket is a claim about what we're owed.
+            <div>
+              <div className="text-sm text-destructive">Couldn't load outstanding invoices — {apiError(outErrObj)}</div>
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchOut()}>Retry</Button>
+            </div>
+          )}
           <div className="grid grid-cols-4 gap-3">
             {['0-30', '31-60', '61-90', '90+'].map((b) => {
               const amt = outstanding?.aging?.[b] || 0;
@@ -177,7 +187,7 @@ export function FinancePage() {
                   <div className="text-xs uppercase tracking-wider text-muted-foreground">
                     {b} days
                   </div>
-                  <div className="text-lg font-bold tabular-nums">{formatINR(amt)}</div>
+                  <div className="text-lg font-bold tabular-nums">{outErr ? '—' : formatINR(amt)}</div>
                 </div>
               );
             })}
@@ -215,7 +225,7 @@ export function FinancePage() {
               </table>
             </div>
           )}
-          {outstanding && outstanding.invoiceCount === 0 && (
+          {!outErr && outstanding && outstanding.invoiceCount === 0 && (
             <div className="py-6 text-center text-muted-foreground text-sm">
               Nothing outstanding — every invoice is paid or void.
             </div>

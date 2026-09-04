@@ -1151,7 +1151,17 @@ async function list(businessId, { date, status, source, channel, groupBy, update
   // date_trunc to ms: the JSON watermark the client echoes back only carries
   // millisecond precision, while Postgres stores microseconds — comparing raw
   // would re-match every row against its own truncated timestamp forever.
-  if (updatedSince) { where.push(`date_trunc('milliseconds', updated_at) > $${idx++}`); values.push(updatedSince); }
+  if (updatedSince) {
+    // The truncation is needed because the JSON watermark the client echoes
+    // back only carries millisecond precision (see NP-135). Wrapping the
+    // COLUMN in date_trunc made the predicate non-indexable, so add a plain
+    // `updated_at > $n - 1ms` alongside it: the plain half can use an index,
+    // and the truncated half still guarantees exactness.
+    values.push(updatedSince);
+    const p = idx++;
+    where.push(`updated_at > ($${p}::timestamptz - INTERVAL '1 millisecond')`);
+    where.push(`date_trunc('milliseconds', updated_at) > $${p}`);
+  }
   // Filter by exact source (dineIn / takeaway / zomato / swiggy / other),
   // or by channel = 'online' (zomato + swiggy) / 'offline' (dineIn + takeaway).
   if (source) { where.push(`source = $${idx++}`); values.push(source); }
@@ -1177,16 +1187,27 @@ async function list(businessId, { date, status, source, channel, groupBy, update
   let cIdx = 2;
   if (status) { countWhere.push(`status = $${cIdx++}`); countValues.push(status); }
   if (date) { countWhere.push(`created_at::date = $${cIdx++}::date`); countValues.push(date); }
-  const cr = await query(
-    `SELECT CASE WHEN source IN ('zomato','swiggy','other') THEN 'online' ELSE 'offline' END AS ch,
-            COUNT(*)::int AS n
-       FROM orders WHERE ${countWhere.join(' AND ')} GROUP BY 1`,
-    countValues,
-  );
-  const channelCounts = { all: 0, online: 0, offline: 0 };
-  for (const row of cr.rows) {
-    channelCounts[row.ch] = row.n;
-    channelCounts.all += row.n;
+  // 2026-09-03 SCALING FIX: with no `date` filter this was an unbounded
+  // COUNT + GROUP BY over the tenant's ENTIRE order history — on EVERY call,
+  // including the mobile app's 10s delta poll (which sends only
+  // `updatedSince`). Two guards:
+  //   • delta callers don't render the chips at all → skip the count entirely.
+  //   • an undated call is bounded to the last 90 days, which is what the
+  //     chips are for; the index on (business_id, created_at DESC) covers it.
+  let channelCounts = null;
+  if (!updatedSince) {
+    if (!date) countWhere.push(`created_at >= NOW() - INTERVAL '90 days'`);
+    const cr = await query(
+      `SELECT CASE WHEN source IN ('zomato','swiggy','other') THEN 'online' ELSE 'offline' END AS ch,
+              COUNT(*)::int AS n
+         FROM orders WHERE ${countWhere.join(' AND ')} GROUP BY 1`,
+      countValues,
+    );
+    channelCounts = { all: 0, online: 0, offline: 0 };
+    for (const row of cr.rows) {
+      channelCounts[row.ch] = row.n;
+      channelCounts.all += row.n;
+    }
   }
 
   const r = await query(

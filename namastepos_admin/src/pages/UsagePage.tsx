@@ -187,7 +187,7 @@ export function MetricCell({ m }: { m?: UsageMetric }) {
 
 // ── Per-customer usage card (rendered on the customer drilldown) ───────
 export function CustomerUsageCard({ businessId }: { businessId: string }) {
-  const { data, isLoading } = useQuery<UsageRow>({
+  const { data, isLoading, isError, error, refetch } = useQuery<UsageRow>({
     queryKey: ['customer-usage', businessId],
     queryFn: () => adminApi.customerUsage(businessId),
     enabled: !!businessId,
@@ -198,7 +198,8 @@ export function CustomerUsageCard({ businessId }: { businessId: string }) {
       <CardHeader>
         <CardTitle className="text-base">Usage vs plan limits</CardTitle>
         <CardDescription>
-          {isLoading ? 'Loading…'
+          {isError ? '—'
+            : isLoading ? 'Loading…'
             : `${data?.planName || data?.planTier || 'No plan'} · `
               + `${data?.overLimitCount || 0} over, ${data?.nearLimitCount || 0} near the cap`}
         </CardDescription>
@@ -221,7 +222,13 @@ export function CustomerUsageCard({ businessId }: { businessId: string }) {
             </div>
           );
         })}
-        {!isLoading && (data?.metrics || []).length === 0 && (
+        {isError && (
+          <div>
+            <div className="text-sm text-destructive">Couldn't load this tenant's usage — {apiError(error)}</div>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+          </div>
+        )}
+        {!isLoading && !isError && (data?.metrics || []).length === 0 && (
           <div className="text-sm text-muted-foreground">No usage data for this tenant.</div>
         )}
       </CardContent>

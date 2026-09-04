@@ -333,7 +333,9 @@ function CrmTab({ businessId, business }: { businessId: string; business: any })
 
       {/* Middle: Tasks */}
       <Card className="lg:col-span-1">
-        <CardHeader><CardTitle>Follow-ups ({(tasksQ.data || []).filter((t: any) => !t.doneAt).length} open)</CardTitle></CardHeader>
+        <CardHeader><CardTitle>
+          Follow-ups ({tasksQ.isError ? '—' : `${(tasksQ.data || []).filter((t: any) => !t.doneAt).length} open`})
+        </CardTitle></CardHeader>
         <CardContent className="space-y-3">
           <div className="space-y-2">
             <Input placeholder="Task title" value={task.title}
@@ -405,7 +407,13 @@ function CrmTab({ businessId, business }: { businessId: string; business: any })
                 {a.body && <div className="text-xs text-muted-foreground mt-0.5">{a.body}</div>}
               </li>
             ))}
-            {activitiesQ.data?.length === 0 && (
+            {activitiesQ.isError && (
+              <li className="py-6 text-center">
+                <div className="text-sm text-destructive">Couldn't load the activity feed — {apiError(activitiesQ.error)}</div>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => activitiesQ.refetch()}>Retry</Button>
+              </li>
+            )}
+            {!activitiesQ.isError && activitiesQ.data?.length === 0 && (
               <li className="py-6 text-center text-sm text-muted-foreground">
                 No activity yet.
               </li>
@@ -523,7 +531,7 @@ function OverviewTab({ business, subscription, payments }: any) {
 
 function AddonsTab({ businessId }: { businessId: string }) {
   const qc = useQueryClient();
-  const { data: addons = [] } = useQuery({
+  const { data: addons = [], isError: addonsErr, error: addonsErrObj, refetch: refetchAddons } = useQuery({
     queryKey: ['customer-addons', businessId],
     queryFn: () => adminApi.customerAddons(businessId),
   });
@@ -586,7 +594,13 @@ function AddonsTab({ businessId }: { businessId: string }) {
 
       <Card>
         <CardContent className="p-0">
-          {addons.length === 0 ? (
+          {addonsErr ? (
+            // Billing-relevant: "no add-ons attached" must not mask a read failure.
+            <div className="py-10 text-center">
+              <div className="text-sm text-destructive">Couldn't load this customer's add-ons — {apiError(addonsErrObj)}</div>
+              <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchAddons()}>Retry</Button>
+            </div>
+          ) : addons.length === 0 ? (
             <div className="py-10 text-center text-muted-foreground">
               No add-ons attached. Use the picker above to add one.
             </div>
@@ -974,7 +988,7 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
 
 function FeatureOverridesCard({ businessId, featureKeys }: { businessId: string; featureKeys: FeatureKey[] }) {
   const qc = useQueryClient();
-  const { data: overrides = [], isLoading } = useQuery({
+  const { data: overrides = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['feature-overrides', businessId],
     queryFn: () => adminApi.getFeatureOverrides(businessId),
   });
@@ -1010,6 +1024,12 @@ function FeatureOverridesCard({ businessId, featureKeys }: { businessId: string;
       <CardContent className="space-y-4">
         {isLoading ? (
           <div className="text-sm text-muted-foreground">Loading…</div>
+        ) : isError ? (
+          // "No overrides" on a failed fetch would hide a live entitlement grant.
+          <div>
+            <div className="text-sm text-destructive">Couldn't load feature overrides — {apiError(error)}</div>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+          </div>
         ) : overrides.length === 0 ? (
           <div className="text-sm text-muted-foreground">No overrides on this customer.</div>
         ) : (
@@ -1789,7 +1809,7 @@ function ChangePlanDialog({ open, onClose, businessId, current }: any) {
 
 // Tenant audit trail — owner/staff money mutations (refunds, plan changes …).
 function AuditTab({ businessId }: { businessId: string }) {
-  const { data: events = [], isLoading } = useQuery({
+  const { data: events = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['tenant-audit', businessId],
     queryFn: () => adminApi.tenantAudit(businessId),
   });
@@ -1802,6 +1822,11 @@ function AuditTab({ businessId }: { businessId: string }) {
       <CardContent className="p-0">
         {isLoading ? (
           <div className="p-6 text-muted-foreground text-sm">Loading…</div>
+        ) : isError ? (
+          <div className="p-6">
+            <div className="text-sm text-destructive">Couldn't load the audit trail — {apiError(error)}</div>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+          </div>
         ) : events.length === 0 ? (
           <div className="p-6 text-muted-foreground text-sm">No audited actions yet.</div>
         ) : (

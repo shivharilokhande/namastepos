@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { adminApi } from '@/api/admin';
+import { apiError } from '@/api/client';
 import { formatINR } from '@/lib/utils';
 
 export function ReportsPage() {
@@ -28,7 +29,7 @@ export function ReportsPage() {
   const { data: funnel } = useQuery({
     queryKey: ['funnel', days], queryFn: () => adminApi.funnel(days),
   });
-  const { data: items = [] } = useQuery({
+  const { data: items = [], isError: itemsErr, error: itemsErrObj, refetch: refetchItems } = useQuery({
     queryKey: ['top-items', days, limit], queryFn: () => adminApi.topItems(days, limit),
   });
   const { data: cities = [] } = useQuery({
@@ -365,7 +366,15 @@ export function ReportsPage() {
                 <TableHead className="text-right">Sold by</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {items.length === 0 && <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No data</TableCell></TableRow>}
+                {itemsErr && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center py-6">
+                      <div className="text-sm text-destructive">Couldn't load top items — {apiError(itemsErrObj)}</div>
+                      <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchItems()}>Retry</Button>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!itemsErr && items.length === 0 && <TableRow><TableCell colSpan={4} className="text-center py-6 text-muted-foreground">No data</TableCell></TableRow>}
                 {items.map((it: any) => (
                   <TableRow key={it.name}>
                     <TableCell className="font-medium">{it.name}</TableCell>

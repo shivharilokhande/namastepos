@@ -19,7 +19,25 @@ const sub = require('./subscriptionService');
 const features = require('./featureService');
 const logger = require('../config/logger');
 
+/**
+ * Tier code for a business's private plan.
+ *
+ * Was the first 8 hex chars of the UUID — 32 bits, so ~1% chance of a
+ * collision by 10k tenants, and the upsert is `ON CONFLICT (tier) DO UPDATE`,
+ * which on a collision would silently hand one tenant another's bespoke
+ * pricing and feature set. Use the full UUID (hyphens stripped) instead: the
+ * `tier` column is VARCHAR(40) since migration 039 and 'custom-' + 32 chars =
+ * 39, so it fits exactly and can never collide.
+ */
 function customTierFor(businessId) {
+  return `custom-${String(businessId).replace(/-/g, '')}`;
+}
+
+/**
+ * The legacy 8-char form, kept ONLY so plans created before 2026-09-03 are
+ * still found. New plans always use the full-UUID form above.
+ */
+function legacyCustomTierFor(businessId) {
   return `custom-${String(businessId).replace(/-/g, '').slice(0, 8)}`;
 }
 
@@ -94,7 +112,12 @@ async function upsertForBusiness(businessId, body) {
   );
   if (biz.rowCount === 0) throw new NotFound('Customer not found');
 
-  const tier = customTierFor(businessId);
+  // Keep an EXISTING plan's tier code (a pre-2026-09-03 row uses the short
+  // form). The upsert conflicts on `tier`, so minting the new full-UUID code
+  // for a business that already has a short-coded plan would create a SECOND
+  // plan row for the same tenant and _planRowFor could then pick either.
+  const existing = await _planRowFor(businessId);
+  const tier = existing?.tier || customTierFor(businessId);
 
   // ── Base plan (e.g. "growth") + extras ────────────────────────────────
   // basePlanTier must be a PUBLIC plan; extras are the keys the customer
@@ -217,4 +240,7 @@ async function removeForBusiness(businessId, { force = false } = {}) {
   return { deleted: true, tier: row.tier, movedTo };
 }
 
-module.exports = { customTierFor, getForBusiness, upsertForBusiness, removeForBusiness };
+module.exports = {
+  customTierFor, legacyCustomTierFor,
+  getForBusiness, upsertForBusiness, removeForBusiness,
+};

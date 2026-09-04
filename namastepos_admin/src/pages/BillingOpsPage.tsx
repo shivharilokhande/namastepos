@@ -36,7 +36,7 @@ export function BillingOpsPage() {
   const [waiveFor, setWaiveFor] = useState<DunningRow | null>(null);
   const [markPaidFor, setMarkPaidFor] = useState<DunningRow | null>(null);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['dunning', includeRecovered],
     queryFn: () => adminApi.dunningQueue({ includeRecovered }),
   });
@@ -70,11 +70,13 @@ export function BillingOpsPage() {
         </p>
       </div>
 
+      {/* On a failed fetch these read as a genuine "0 past due / ₹0 at risk".
+          Show an em-dash instead and let the error row below carry the reason. */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <CardContent className="p-5">
             <div className="text-2xl font-bold tracking-tight">
-              {isLoading ? '—' : summary?.count ?? 0}
+              {isLoading || isError ? '—' : summary?.count ?? 0}
             </div>
             <div className="text-sm text-muted-foreground">In the queue</div>
           </CardContent>
@@ -82,7 +84,7 @@ export function BillingOpsPage() {
         <Card>
           <CardContent className="p-5">
             <div className="text-2xl font-bold tracking-tight text-destructive">
-              {isLoading ? '—' : formatINR(summary?.amountAtRiskInr || 0)}
+              {isLoading || isError ? '—' : formatINR(summary?.amountAtRiskInr || 0)}
             </div>
             <div className="text-sm text-muted-foreground">MRR at risk</div>
           </CardContent>
@@ -90,7 +92,7 @@ export function BillingOpsPage() {
         <Card>
           <CardContent className="p-5">
             <div className="text-2xl font-bold tracking-tight text-amber-600">
-              {isLoading ? '—' : summary?.atRiskOfChurn ?? 0}
+              {isLoading || isError ? '—' : summary?.atRiskOfChurn ?? 0}
             </div>
             <div className="text-sm text-muted-foreground">3+ failed attempts</div>
           </CardContent>
@@ -128,7 +130,21 @@ export function BillingOpsPage() {
               {isLoading && (
                 <TableRow><TableCell colSpan={7} className="text-muted-foreground">Loading…</TableCell></TableRow>
               )}
-              {!isLoading && rows.length === 0 && (
+              {isError && (
+                // "Nothing past due" on a failed fetch is a false all-clear on
+                // money we're owed — say the load failed and offer a retry.
+                <TableRow>
+                  <TableCell colSpan={7} className="py-8 text-center">
+                    <div className="text-sm text-destructive">
+                      Couldn't load the recovery queue — {apiError(error)}
+                    </div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>
+                      Retry
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isLoading && !isError && rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                     Nothing past due. Every mandate is collecting.
@@ -213,7 +229,7 @@ export function BillingOpsPage() {
 
 // ── Per-tenant dunning timeline ───────────────────────────────────────
 export function DunningTimeline({ businessId }: { businessId: string }) {
-  const { data: events = [], isLoading } = useQuery({
+  const { data: events = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['dunning-timeline', businessId],
     queryFn: () => adminApi.dunningTimeline(businessId),
     enabled: !!businessId,
@@ -224,6 +240,15 @@ export function DunningTimeline({ businessId }: { businessId: string }) {
     : e === 'halted' ? 'destructive' : 'warning');
 
   if (isLoading) return <div className="text-sm text-muted-foreground">Loading…</div>;
+  if (isError) {
+    // "never failed a charge" would be a lie if we simply couldn't read it.
+    return (
+      <div>
+        <div className="text-sm text-destructive">Couldn't load the dunning history — {apiError(error)}</div>
+        <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+      </div>
+    );
+  }
   if (events.length === 0) {
     return <div className="text-sm text-muted-foreground">No dunning events — this tenant has never failed a charge.</div>;
   }

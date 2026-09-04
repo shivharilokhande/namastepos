@@ -2,11 +2,13 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 import { adminApi } from '@/api/admin';
+import { apiError } from '@/api/client';
 import { formatDateTime } from '@/lib/utils';
 
 export function WebhooksPage() {
-  const { data: events = [] } = useQuery({
+  const { data: events = [], isError, error, refetch } = useQuery({
     queryKey: ['webhook-events'], queryFn: adminApi.webhookEvents,
     refetchInterval: 15_000,
   });
@@ -29,7 +31,17 @@ export function WebhooksPage() {
               <TableHead>Status</TableHead><TableHead>Error</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {events.length === 0 && (
+              {isError && (
+                // "No webhook events yet" on a failed fetch reads as a healthy
+                // integration. Say the load failed instead.
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-10">
+                    <div className="text-sm text-destructive">Couldn't load webhook events — {apiError(error)}</div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isError && events.length === 0 && (
                 <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No webhook events yet.</TableCell></TableRow>
               )}
               {events.map((e: any) => (

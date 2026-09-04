@@ -75,14 +75,16 @@ function overdue(due: string | null, closed: string | null) {
 function DsrTab() {
   const [status, setStatus] = useState('');
   const [open, setOpen] = useState<Dsr | null>(null);
-  const { data: rows = [] } = useQuery<Dsr[]>({
+  // DPDP queues run on statutory clocks — an empty queue must never be an
+  // artefact of a failed fetch.
+  const { data: rows = [], isError, error, refetch } = useQuery<Dsr[]>({
     queryKey: ['compliance-dsr', status],
     queryFn: () => adminApi.complianceDsr({ status: status || undefined }),
   });
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{rows.length} requests</p>
+        <p className="text-sm text-muted-foreground">{isError ? '—' : `${rows.length} requests`}</p>
         <select className="h-9 rounded-md border bg-background px-3 text-sm"
           value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
@@ -91,7 +93,13 @@ function DsrTab() {
           ))}
         </select>
       </div>
-      {rows.length === 0 && (
+      {isError && (
+        <Card><CardContent className="py-10 text-center">
+          <div className="text-sm text-destructive">Couldn't load data-subject requests — {apiError(error)}</div>
+          <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+        </CardContent></Card>
+      )}
+      {!isError && rows.length === 0 && (
         <Card><CardContent className="py-10 text-center text-muted-foreground">No data-subject requests.</CardContent></Card>
       )}
       <div className="grid gap-3">
@@ -181,14 +189,14 @@ const GRV_STATUS: Record<string, any> = {
 function GrievanceTab() {
   const [status, setStatus] = useState('');
   const [open, setOpen] = useState<Grievance | null>(null);
-  const { data: rows = [] } = useQuery<Grievance[]>({
+  const { data: rows = [], isError, error, refetch } = useQuery<Grievance[]>({
     queryKey: ['compliance-grv', status],
     queryFn: () => adminApi.complianceGrievances({ status: status || undefined }),
   });
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{rows.length} grievances</p>
+        <p className="text-sm text-muted-foreground">{isError ? '—' : `${rows.length} grievances`}</p>
         <select className="h-9 rounded-md border bg-background px-3 text-sm"
           value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
@@ -197,7 +205,13 @@ function GrievanceTab() {
           ))}
         </select>
       </div>
-      {rows.length === 0 && (
+      {isError && (
+        <Card><CardContent className="py-10 text-center">
+          <div className="text-sm text-destructive">Couldn't load grievances — {apiError(error)}</div>
+          <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+        </CardContent></Card>
+      )}
+      {!isError && rows.length === 0 && (
         <Card><CardContent className="py-10 text-center text-muted-foreground">No grievances.</CardContent></Card>
       )}
       <div className="grid gap-3">
@@ -289,14 +303,14 @@ function BreachTab() {
   const [status, setStatus] = useState('');
   const [open, setOpen] = useState<Breach | null>(null);
   const [creating, setCreating] = useState(false);
-  const { data: rows = [] } = useQuery<Breach[]>({
+  const { data: rows = [], isError, error, refetch } = useQuery<Breach[]>({
     queryKey: ['compliance-breach', status],
     queryFn: () => adminApi.complianceBreaches({ status: status || undefined }),
   });
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">{rows.length} incidents</p>
+        <p className="text-sm text-muted-foreground">{isError ? '—' : `${rows.length} incidents`}</p>
         <div className="flex gap-2">
           <select className="h-9 rounded-md border bg-background px-3 text-sm"
             value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -308,7 +322,13 @@ function BreachTab() {
           <Button onClick={() => setCreating(true)}>Log breach</Button>
         </div>
       </div>
-      {rows.length === 0 && (
+      {isError && (
+        <Card><CardContent className="py-10 text-center">
+          <div className="text-sm text-destructive">Couldn't load the breach register — {apiError(error)}</div>
+          <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+        </CardContent></Card>
+      )}
+      {!isError && rows.length === 0 && (
         <Card><CardContent className="py-10 text-center text-muted-foreground">No breach incidents logged.</CardContent></Card>
       )}
       <div className="grid gap-3">

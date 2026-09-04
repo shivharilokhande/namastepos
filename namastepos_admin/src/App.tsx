@@ -28,6 +28,7 @@ import { AuditPage } from './pages/AuditPage';
 import { WebhooksPage } from './pages/WebhooksPage';
 import { AdminTeamPage } from './pages/AdminTeamPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { HealthPage } from './pages/HealthPage';
 import { CrmPage } from './pages/CrmPage';   // FF-402
 import { CompliancePage } from './pages/CompliancePage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -60,6 +61,9 @@ export default function App() {
         <Route path="compliance"    element={<CompliancePage />} />
         <Route path="audit"         element={<AuditPage />} />
         <Route path="webhooks"      element={<WebhooksPage />} />
+        {/* GET /admin/health/platform only needs reports.read — it used to be
+            reachable only inside settings.write-gated Platform settings. */}
+        <Route path="health"        element={<HealthPage />} />
         <Route path="crm"           element={<CrmPage />} />
         <Route path="support"       element={<SupportPage />} />
         <Route path="broadcast"     element={<BroadcastPage />} />

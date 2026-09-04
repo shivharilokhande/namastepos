@@ -14,7 +14,7 @@ import { apiError } from '@/api/client';
 import { formatINR, formatDateTime } from '@/lib/utils';
 
 export function RefundsPage() {
-  const { data: refunds = [] } = useQuery({ queryKey: ['refunds'], queryFn: () => adminApi.listRefunds() });
+  const { data: refunds = [], isError, error, refetch } = useQuery({ queryKey: ['refunds'], queryFn: () => adminApi.listRefunds() });
   const [initiating, setInitiating] = useState(false);
 
   return (
@@ -26,7 +26,7 @@ export function RefundsPage() {
             {/* Finding-2 fix (2026-08-25): the old copy pointed to an
                 Invoices tab that had no such control. Refunds are now
                 initiated right here against a subscription payment. */}
-            {refunds.length} refunds
+            {isError ? '—' : `${refunds.length} refunds`}
           </p>
         </div>
         <Button onClick={() => setInitiating(true)}>
@@ -44,7 +44,15 @@ export function RefundsPage() {
               <TableHead className="text-right">Amount</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {refunds.length === 0 && (
+              {isError && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-10">
+                    <div className="text-sm text-destructive">Couldn't load refunds — {apiError(error)}</div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isError && refunds.length === 0 && (
                 <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No refunds yet.</TableCell></TableRow>
               )}
               {refunds.map((r) => (

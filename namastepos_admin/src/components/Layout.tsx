@@ -3,7 +3,7 @@ import {
   LayoutDashboard, Users, CreditCard, BarChart3, LogOut, Utensils,
   Tag, Receipt, FileText, Shield, Settings, ScrollText, UsersRound,
   TrendingUp, Package, LifeBuoy, Send, Gift, ShieldCheck,
-  AlertTriangle, Gauge, PieChart,
+  AlertTriangle, Gauge, PieChart, Activity,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
@@ -71,6 +71,10 @@ const SECTIONS: Section[] = [
     { to: '/gst',       icon: FileText,        label: 'GST & Tax', needs: 'gst.read' },
   ]},
   { label: 'Operations', items: [
+    // GET /admin/health/platform is reports.read — it was only reachable via
+    // settings.write-gated Platform settings, so the roles allowed to read it
+    // could never see it.
+    { to: '/health',    icon: Activity,        label: 'Platform health', needs: 'reports.read' },
     { to: '/compliance', icon: ShieldCheck,    label: 'Compliance', needs: 'compliance.read' },
     { to: '/audit',     icon: ScrollText,      label: 'Audit log', needs: 'audit.read' },
     // GET /admin/webhooks/events is audit.read, not settings.write.

@@ -302,14 +302,46 @@ async function revokeIneligibleAddons(businessId) {
     // eslint-disable-next-line no-await-in-loop
     const gate = await checkPlanEligibility(businessId, row);
     if (gate.ok) continue;
+    // 2026-09-03: a downgrade used to cancel a PAID addon instantly, taking
+    // away days the tenant had already paid for, silently. Two changes:
+    //   • the activation runs to the end of the period it was paid for
+    //     (cancel_at_period_end), so nobody loses paid time; entitlement
+    //     still ends then because hasAddon checks current_period_end;
+    //   • the tenant is told, with the date.
     // eslint-disable-next-line no-await-in-loop
-    await query(
+    const upd = await query(
       `UPDATE business_addons
-          SET status = 'cancelled', cancelled_at = NOW(), current_period_end = NOW()
-        WHERE id = $1`,
+          SET cancel_at_period_end = TRUE,
+              cancelled_at = NOW(),
+              -- Free/comp activations carry a 100-year period; those end now,
+              -- there is nothing paid to honour.
+              current_period_end = CASE
+                WHEN current_period_end > NOW() + INTERVAL '2 years' THEN NOW()
+                WHEN current_period_end < NOW() THEN NOW()
+                ELSE current_period_end END,
+              status = CASE
+                WHEN current_period_end > NOW()
+                 AND current_period_end < NOW() + INTERVAL '2 years' THEN status
+                ELSE 'cancelled' END
+        WHERE id = $1
+        RETURNING current_period_end, status`,
       [row.id]
     );
+    const endsAt = upd.rows[0]?.current_period_end;
+    const keptPaidDays = upd.rows[0]?.status !== 'cancelled';
     revoked.push(row.slug);
+    // Tell the owner what changed and when it takes effect.
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      await require('./pushService').sendToBusinessOwners(businessId, {
+        title: `${row.name} is ending`,
+        body: keptPaidDays
+          ? `Your new plan doesn't include ${row.name}. It stays active until `
+            + `${new Date(endsAt).toLocaleDateString('en-IN')} — the period you already paid for.`
+          : `Your new plan doesn't include ${row.name}, so it has been switched off.`,
+        data: { kind: 'addon_revoked', slug: row.slug },
+      });
+    } catch (_) { /* notification is best-effort */ }
   }
   if (revoked.length > 0) {
     try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }

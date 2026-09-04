@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { adminApi } from '@/api/admin';
+import { apiError } from '@/api/client';
 import { formatINR, formatDateTime } from '@/lib/utils';
 
 // N4 (2026-08-27): consolidated subscription / invoice ledger. One operable
@@ -52,7 +53,7 @@ const MODE_VARIANT: Record<string, any> = {
 export function SubscriptionsPage() {
   const [status, setStatus] = useState('');
   const [billingMode, setBillingMode] = useState('');
-  const { data, isLoading } = useQuery<LedgerResp>({
+  const { data, isLoading, isError, error, refetch } = useQuery<LedgerResp>({
     queryKey: ['subscriptions', status, billingMode],
     queryFn: () => adminApi.subscriptions({
       status: status || undefined, billingMode: billingMode || undefined,
@@ -82,7 +83,7 @@ export function SubscriptionsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Subscriptions</h1>
           <p className="text-muted-foreground">
-            {s ? `${s.total} subscriptions · ${formatINR(s.mrrInr)} MRR` : 'Loading…'}
+            {isError ? '—' : s ? `${s.total} subscriptions · ${formatINR(s.mrrInr)} MRR` : 'Loading…'}
           </p>
         </div>
         <Button variant="ghost" onClick={exportCsv} disabled={rows.length === 0}>Export CSV</Button>
@@ -130,7 +131,15 @@ export function SubscriptionsPage() {
               {isLoading && (
                 <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">Loading…</TableCell></TableRow>
               )}
-              {!isLoading && rows.length === 0 && (
+              {isError && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center py-10">
+                    <div className="text-sm text-destructive">Couldn't load the subscription ledger — {apiError(error)}</div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isLoading && !isError && rows.length === 0 && (
                 <TableRow><TableCell colSpan={7} className="text-center py-10 text-muted-foreground">No subscriptions match.</TableCell></TableRow>
               )}
               {rows.map((r) => (

@@ -83,7 +83,14 @@ export function CrmPage() {
                 value={ownerFilter} onChange={(e) => setOwnerFilter(e.target.value)} />
             </div>
             {tasksQ.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-            {tasksQ.data?.length === 0 && (
+            {tasksQ.isError && (
+              // "No open follow-ups. Nice." must never stand in for a failed fetch.
+              <div className="py-6 text-center">
+                <div className="text-sm text-destructive">Couldn't load follow-ups — {apiError(tasksQ.error)}</div>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => tasksQ.refetch()}>Retry</Button>
+              </div>
+            )}
+            {!tasksQ.isError && tasksQ.data?.length === 0 && (
               <p className="text-sm text-muted-foreground py-6 text-center">
                 No open follow-ups. Nice.
               </p>
@@ -139,7 +146,13 @@ export function CrmPage() {
           </CardHeader>
           <CardContent>
             {renewalsQ.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-            {renewalsQ.data?.length === 0 && (
+            {renewalsQ.isError && (
+              <div className="py-6 text-center">
+                <div className="text-sm text-destructive">Couldn't load renewals — {apiError(renewalsQ.error)}</div>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => renewalsQ.refetch()}>Retry</Button>
+              </div>
+            )}
+            {!renewalsQ.isError && renewalsQ.data?.length === 0 && (
               <p className="text-sm text-muted-foreground py-6 text-center">
                 Nothing renewing in the next {renewalDays} days.
               </p>

@@ -4,14 +4,16 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
 import { adminApi } from '@/api/admin';
+import { apiError } from '@/api/client';
 import { formatDateTime } from '@/lib/utils';
 
 const MODULES = ['', 'customers', 'plans', 'coupons', 'refunds', 'settings', 'admin-team', 'addons', 'menu'];
 
 export function AuditPage() {
   const [module, setModule] = useState('');
-  const { data: events = [] } = useQuery({
+  const { data: events = [], isError, error, refetch } = useQuery({
     queryKey: ['audit', module],
     queryFn: () => adminApi.auditLog({ module: module || undefined, limit: 200 }),
     refetchInterval: 10_000,
@@ -43,7 +45,17 @@ export function AuditPage() {
               <TableHead>Target</TableHead><TableHead>Business</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {events.length === 0 && (
+              {isError && (
+                // An empty audit log is a claim ("nobody did anything"). Never
+                // make it on a failed fetch.
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-10">
+                    <div className="text-sm text-destructive">Couldn't load the audit log — {apiError(error)}</div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isError && events.length === 0 && (
                 <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No events.</TableCell></TableRow>
               )}
               {events.map((e) => (

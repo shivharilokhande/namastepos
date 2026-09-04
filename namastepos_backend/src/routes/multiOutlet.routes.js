@@ -17,6 +17,26 @@ const { query } = require('../config/db');
 const router = express.Router();
 router.use(requireAuth);
 
+// ── TENANT-DATA PRIVACY (2026-09-03) ────────────────────────────────────
+// This router is mounted at /v1/outlet-groups, OUTSIDE /v1/businesses/:id,
+// so it never passes through requireBusinessOwnership — where the
+// deny-platform-staff-by-default rule lives. Worse, the role gates below
+// short-circuit `next()` for `isSuperAdmin`, so a plain admin token reached
+// the WRITE handlers and could create an orphan outlet group in a tenant's
+// account, entirely outside the audited /admin surface.
+//
+// Platform staff get READ-ONLY here (support genuinely needs to see a
+// customer's outlet structure); every mutation must go through /admin or an
+// impersonation session, which is tenant-scoped and audited.
+router.use((req, _res, next) => {
+  if (!req.user?.isSuperAdmin) return next();
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  return next(new Forbidden(
+    'Platform staff cannot modify a tenant\'s outlets. Use the admin console '
+    + 'or an impersonation session.'
+  ));
+});
+
 // 2026-09-03 (plans/addons audit #3a): this router is mounted at
 // /v1/outlet-groups — OUTSIDE /v1/businesses/:businessId — so the global
 // featureGate middleware never saw it and any Starter tenant could create

@@ -13,17 +13,19 @@ import { apiError } from '@/api/client';
 
 export function GstPage() {
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7));
-  const { data: summary } = useQuery({
+  // Every panel here is filing data. A failed fetch must never render as
+  // "₹0 / no invoices for this month" — that is a filing-grade lie.
+  const { data: summary, isError: summaryErr, error: summaryErrObj, refetch: refetchSummary } = useQuery({
     queryKey: ['gst-summary', month], queryFn: () => adminApi.gstSummary(month),
   });
-  const { data: gstr3b } = useQuery({
+  const { data: gstr3b, isError: gstr3bErr, error: gstr3bErrObj, refetch: refetchGstr3b } = useQuery({
     queryKey: ['gstr3b', month], queryFn: () => adminApi.gstr3b(month),
   });
   // Push 19d — HSN summary (GSTR-1 Table 12) + B2B/B2C split
-  const { data: hsn } = useQuery({
+  const { data: hsn, isError: hsnErr, error: hsnErrObj, refetch: refetchHsn } = useQuery({
     queryKey: ['gst-hsn', month], queryFn: () => adminApi.gstHsn(month),
   });
-  const { data: split } = useQuery({
+  const { data: split, isError: splitErr, error: splitErrObj, refetch: refetchSplit } = useQuery({
     queryKey: ['gst-b2b-b2c', month], queryFn: () => adminApi.gstB2bB2c(month),
   });
 
@@ -68,14 +70,20 @@ export function GstPage() {
             <CardDescription>Total tax payable for the month</CardDescription>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="Platform GSTIN" value={gstr3b?.platformGstin || <em className="text-destructive">Set in Settings → Platform settings</em>} />
-            <Row label="Invoices" value={String(gstr3b?.totalInvoices || 0)} />
-            <Row label="Total taxable value" value={formatINR(gstr3b?.totalTaxableValueInr || 0, { decimals: true })} bold />
-            <Row label="IGST" value={formatINR(gstr3b?.totalIgstInr || 0, { decimals: true })} />
-            <Row label="CGST" value={formatINR(gstr3b?.totalCgstInr || 0, { decimals: true })} />
-            <Row label="SGST" value={formatINR(gstr3b?.totalSgstInr || 0, { decimals: true })} />
+            {gstr3bErr && (
+              <div className="pb-1">
+                <div className="text-sm text-destructive">Couldn't load the GSTR-3B summary — {apiError(gstr3bErrObj)}</div>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchGstr3b()}>Retry</Button>
+              </div>
+            )}
+            <Row label="Platform GSTIN" value={gstr3bErr ? '—' : gstr3b?.platformGstin || <em className="text-destructive">Set in Settings → Platform settings</em>} />
+            <Row label="Invoices" value={gstr3bErr ? '—' : String(gstr3b?.totalInvoices || 0)} />
+            <Row label="Total taxable value" value={gstr3bErr ? '—' : formatINR(gstr3b?.totalTaxableValueInr || 0, { decimals: true })} bold />
+            <Row label="IGST" value={gstr3bErr ? '—' : formatINR(gstr3b?.totalIgstInr || 0, { decimals: true })} />
+            <Row label="CGST" value={gstr3bErr ? '—' : formatINR(gstr3b?.totalCgstInr || 0, { decimals: true })} />
+            <Row label="SGST" value={gstr3bErr ? '—' : formatINR(gstr3b?.totalSgstInr || 0, { decimals: true })} />
             <div className="border-t pt-2 mt-2">
-              <Row label="Grand total" value={formatINR(gstr3b?.grandTotalInr || 0, { decimals: true })} bold />
+              <Row label="Grand total" value={gstr3bErr ? '—' : formatINR(gstr3b?.grandTotalInr || 0, { decimals: true })} bold />
             </div>
           </CardContent>
         </Card>
@@ -108,10 +116,16 @@ export function GstPage() {
             <CardDescription>Customers with a GSTIN. Eligible for ITC by buyer.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <Row label="Invoices" value={String(split?.b2b?.invoices || 0)} />
-            <Row label="Taxable value" value={formatINR(split?.b2b?.taxable || 0, { decimals: true })} />
-            <Row label="Tax" value={formatINR(split?.b2b?.tax || 0, { decimals: true })} />
-            <Row label="Total" value={formatINR(split?.b2b?.total || 0, { decimals: true })} bold />
+            {splitErr && (
+              <div className="pb-1">
+                <div className="text-sm text-destructive">Couldn't load the B2B/B2C split — {apiError(splitErrObj)}</div>
+                <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchSplit()}>Retry</Button>
+              </div>
+            )}
+            <Row label="Invoices" value={splitErr ? '—' : String(split?.b2b?.invoices || 0)} />
+            <Row label="Taxable value" value={splitErr ? '—' : formatINR(split?.b2b?.taxable || 0, { decimals: true })} />
+            <Row label="Tax" value={splitErr ? '—' : formatINR(split?.b2b?.tax || 0, { decimals: true })} />
+            <Row label="Total" value={splitErr ? '—' : formatINR(split?.b2b?.total || 0, { decimals: true })} bold />
           </CardContent>
         </Card>
         <Card>
@@ -120,10 +134,10 @@ export function GstPage() {
             <CardDescription>Walk-in customers without a GSTIN.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-1 text-sm">
-            <Row label="Invoices" value={String(split?.b2c?.invoices || 0)} />
-            <Row label="Taxable value" value={formatINR(split?.b2c?.taxable || 0, { decimals: true })} />
-            <Row label="Tax" value={formatINR(split?.b2c?.tax || 0, { decimals: true })} />
-            <Row label="Total" value={formatINR(split?.b2c?.total || 0, { decimals: true })} bold />
+            <Row label="Invoices" value={splitErr ? '—' : String(split?.b2c?.invoices || 0)} />
+            <Row label="Taxable value" value={splitErr ? '—' : formatINR(split?.b2c?.taxable || 0, { decimals: true })} />
+            <Row label="Tax" value={splitErr ? '—' : formatINR(split?.b2c?.tax || 0, { decimals: true })} />
+            <Row label="Total" value={splitErr ? '—' : formatINR(split?.b2c?.total || 0, { decimals: true })} bold />
           </CardContent>
         </Card>
       </div>
@@ -149,7 +163,15 @@ export function GstPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {(!hsn?.hsn || hsn.hsn.length === 0) && (
+              {hsnErr && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-8">
+                    <div className="text-sm text-destructive">Couldn't load the HSN summary — {apiError(hsnErrObj)}</div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchHsn()}>Retry</Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!hsnErr && (!hsn?.hsn || hsn.hsn.length === 0) && (
                 <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">No data for {month}.</TableCell></TableRow>
               )}
               {hsn?.hsn?.map((h: any) => (
@@ -182,7 +204,15 @@ export function GstPage() {
               <TableHead className="text-right">Total</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {(summary?.rows || []).length === 0 && (
+              {summaryErr && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-10">
+                    <div className="text-sm text-destructive">Couldn't load the GSTR-1 line items — {apiError(summaryErrObj)}</div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchSummary()}>Retry</Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!summaryErr && (summary?.rows || []).length === 0 && (
                 <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">No paid invoices for {month}.</TableCell></TableRow>
               )}
               {summary?.rows.map((r: any, i: number) => (

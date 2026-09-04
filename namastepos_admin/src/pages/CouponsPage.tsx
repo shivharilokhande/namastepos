@@ -15,7 +15,7 @@ import { formatDate, formatINR } from '@/lib/utils';
 
 export function CouponsPage() {
   const qc = useQueryClient();
-  const { data: coupons = [] } = useQuery({ queryKey: ['coupons'], queryFn: () => adminApi.listCoupons() });
+  const { data: coupons = [], isError, error, refetch } = useQuery({ queryKey: ['coupons'], queryFn: () => adminApi.listCoupons() });
   const [creating, setCreating] = useState(false);
 
   const disable = useMutation({
@@ -38,7 +38,7 @@ export function CouponsPage() {
               only. Per-restaurant food coupons are managed in each tenant's
               own dashboard and no longer appear here. */}
           <p className="text-muted-foreground">
-            {coupons.length} platform subscription coupons
+            {isError ? '—' : `${coupons.length} platform subscription coupons`}
           </p>
         </div>
         <Button onClick={() => setCreating(true)}><Plus className="mr-2 h-4 w-4" /> New coupon</Button>
@@ -54,7 +54,15 @@ export function CouponsPage() {
               <TableHead>Status</TableHead><TableHead></TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {coupons.length === 0 && (
+              {isError && (
+                <TableRow>
+                  <TableCell colSpan={8} className="text-center py-10">
+                    <div className="text-sm text-destructive">Couldn't load coupons — {apiError(error)}</div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isError && coupons.length === 0 && (
                 <TableRow><TableCell colSpan={8} className="text-center py-10 text-muted-foreground">No coupons yet — create your first promo.</TableCell></TableRow>
               )}
               {coupons.map((c) => (

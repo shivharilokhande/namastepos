@@ -20,11 +20,12 @@ const STATUS_VARIANT: Record<string, any> = { pending: 'warning', signed_up: 'se
 export function ReferralsPage() {
   const qc = useQueryClient();
   const [status, setStatus] = useState('');
-  const { data: referrals = [] } = useQuery<Referral[]>({
+  const { data: referrals = [], isError: refErr, error: refErrObj, refetch: refetchRef } = useQuery<Referral[]>({
     queryKey: ['referrals', status],
     queryFn: () => adminApi.referrals({ status: status || undefined }),
   });
-  const { data: payouts } = useQuery({ queryKey: ['addon-payouts'], queryFn: () => adminApi.addonPayouts() });
+  const { data: payouts, isError: payErr, error: payErrObj, refetch: refetchPay } =
+    useQuery({ queryKey: ['addon-payouts'], queryFn: () => adminApi.addonPayouts() });
 
   const reward = useMutation({
     mutationFn: (id: string) => adminApi.referralReward(id),
@@ -36,7 +37,9 @@ export function ReferralsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Referrals & partners</h1>
-        <p className="text-muted-foreground">{referrals.length} referrals · restaurant-to-restaurant growth</p>
+        <p className="text-muted-foreground">
+          {refErr ? '—' : `${referrals.length} referrals`} · restaurant-to-restaurant growth
+        </p>
       </div>
 
       <div className="flex gap-2">
@@ -58,7 +61,15 @@ export function ReferralsPage() {
               <TableHead>Signed up</TableHead><TableHead className="text-right">Action</TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {referrals.length === 0 && (
+              {refErr && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-10">
+                    <div className="text-sm text-destructive">Couldn't load referrals — {apiError(refErrObj)}</div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchRef()}>Retry</Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!refErr && referrals.length === 0 && (
                 <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No referrals yet.</TableCell></TableRow>
               )}
               {referrals.map((r) => (
@@ -93,7 +104,15 @@ export function ReferralsPage() {
                 <TableHead className="text-right">Gross</TableHead><TableHead className="text-right">Payout</TableHead>
               </TableRow></TableHeader>
               <TableBody>
-                {(!payouts || payouts.rows.length === 0) && (
+                {payErr && (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center py-8">
+                      <div className="text-sm text-destructive">Couldn't load partner payouts — {apiError(payErrObj)}</div>
+                      <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchPay()}>Retry</Button>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {!payErr && (!payouts || payouts.rows.length === 0) && (
                   <TableRow><TableCell colSpan={6} className="text-center py-8 text-muted-foreground">No partner add-ons configured.</TableCell></TableRow>
                 )}
                 {payouts?.rows?.map((p: any) => (

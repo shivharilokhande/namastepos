@@ -294,7 +294,10 @@ describe('changePlan rejects unavailable plans with 400 PLAN_NOT_AVAILABLE', () 
 
 // ── 6. Custom per-customer plans ─────────────────────────────────────────
 describe('custom plans: admin upsert/assign, tenant-scoped visibility, delete', () => {
-  const expectedTier = () => `custom-${String(bizB.id).replace(/-/g, '').slice(0, 8)}`;
+  // Tier code comes from the service (full UUID since 2026-09-03 — the old
+  // 8-char form risked a cross-tenant plan collision), so assert against it
+  // rather than re-deriving the format here.
+  const expectedTier = () => require('../../src/services/customPlanService').customTierFor(bizB.id);
 
   it('PUT creates + assigns the custom plan', async () => {
     const r = await request(app)
