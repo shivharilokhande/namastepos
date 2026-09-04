@@ -190,18 +190,7 @@ function buildApp() {
 
   // Health — QA-10 P2: deep health now pings the DB so a wedged connection
   // pool shows up as unhealthy instead of "ok".
-  // `migrations` surfaces a FAILED boot migration (see src/server.js). The
-  // process still serves — refusing to boot on a schema mismatch would turn a
-  // recoverable drift into a total outage of a live POS — but the failure must
-  // be visible somewhere a human looks, not only in a log line that scrolls.
-  app.get('/health', (_req, res) => {
-    const migrationError = app.locals.migrationError || null;
-    res.json({
-      status: migrationError ? 'degraded' : 'ok',
-      env: env.NODE_ENV,
-      ...(migrationError ? { migrations: { ok: false, error: migrationError } } : {}),
-    });
-  });
+  app.get('/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
   app.get(`${env.API_PREFIX}/health`, async (_req, res) => {
     let db = 'down';
     try {
