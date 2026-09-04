@@ -4,8 +4,7 @@ const crypto = require('crypto');
 const { v4: uuid } = require('uuid');
 const bcrypt = require('../utils/bcrypt');
 const { query } = require('../config/db');
-const { NotFound, Conflict, BadRequest, Forbidden } = require('../utils/errors');
-const featuresSvc = require('./featureService');
+const { NotFound, Conflict, BadRequest } = require('../utils/errors');
 
 const STAFF_ROLES = [
   'staff_manager',

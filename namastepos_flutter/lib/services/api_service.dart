@@ -522,6 +522,40 @@ class ApiService {
     return ((r as Map)['ticket'] as Map).cast<String, dynamic>();
   }
 
+  // ── Delivery fulfilment lifecycle (2026-09-04) ──────────────────────────
+  /// Live delivery orders only — the backend excludes delivered / rejected /
+  /// cancelled. Each row carries `nextStates`, which is the ONLY source of
+  /// truth for which buttons the board may show.
+  Future<List<Map<String, dynamic>>> fulfilmentBoard(String businessId) async {
+    final r = await _wrap(() => _dio.get('/businesses/$businessId/fulfilment/board'));
+    final list = ((r as Map)['orders'] as List?) ?? const [];
+    return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
+  }
+
+  /// Move one order along the fulfilment ladder.
+  /// [prepMinutes] is required when [state] is `accepted` (1-240),
+  /// [reason] when `rejected`, and [otp] when moving to `picked_up` on an
+  /// order the backend flagged `otpRequired` — that code is read out by the
+  /// delivery partner and typed by staff; we never hold the expected value.
+  Future<Map<String, dynamic>> fulfilmentTransition(
+    String businessId,
+    String orderId, {
+    required String state,
+    int? prepMinutes,
+    String? reason,
+    Map<String, dynamic>? rider,
+    String? otp,
+  }) async {
+    final body = <String, dynamic>{'state': state};
+    if (prepMinutes != null) body['prepMinutes'] = prepMinutes;
+    if (reason != null && reason.isNotEmpty) body['reason'] = reason;
+    if (rider != null && rider.isNotEmpty) body['rider'] = rider;
+    if (otp != null && otp.isNotEmpty) body['otp'] = otp;
+    final r = await _wrap(() => _dio.post(
+        '/businesses/$businessId/fulfilment/$orderId/transition', data: body));
+    return ((r as Map)['order'] as Map).cast<String, dynamic>();
+  }
+
   // ── Referral (FF-333 tenant side) ───────────────────────────────────────
   Future<Map<String, dynamic>> referral(String businessId) async {
     final r = await _wrap(() => _dio.get('/businesses/$businessId/referral'));

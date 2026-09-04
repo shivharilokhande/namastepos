@@ -193,6 +193,13 @@ const env = {
 
   // Aggregator partner API hosts — env-driven so staging can point at
   // sandbox endpoints instead of live partner APIs.
+  // 2026-09-03 — outbound status callbacks are OFF unless explicitly enabled.
+  // Zomato/Swiggy partner APIs require a signed agreement (Zomato: 50+
+  // restaurants or 10k orders/month); without one these calls cannot succeed,
+  // so firing them by default would just fill the log with 401/404s and hide
+  // the fact that nothing reached the aggregator. Set to 'true' only once real
+  // partner credentials + endpoint contracts are in place.
+  AGGREGATOR_OUTBOUND_ENABLED: process.env.AGGREGATOR_OUTBOUND_ENABLED || 'false',
   ZOMATO_API_BASE: process.env.ZOMATO_API_BASE || 'https://partner-api.zomato.com/v1',
   SWIGGY_API_BASE: process.env.SWIGGY_API_BASE || 'https://partner-api.swiggy.com/v2',
 

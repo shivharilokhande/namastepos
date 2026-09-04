@@ -29,6 +29,9 @@ router.use(async (req, res, next) => {
   // tenant needs it (a single-outlet tenant simply gets one row), so it is
   // exempt from the paid gate — only creating additional outlets is gated.
   if (req.path === '/my-outlets') return next();
+  // Removing a branch must stay possible AFTER a downgrade — otherwise a
+  // tenant who drops off Pro is stuck paying for outlets they can't delete.
+  if (/^\/outlets\/[^/]+\/delete(\/request-otp)?$/.test(req.path)) return next();
   const businessId = req.user?.businessId;
   if (!businessId) return next(); // no tenant context — role checks below reject
   try {
@@ -80,6 +83,32 @@ const requireGroupMembership = asyncHandler(async (req, _res, next) => {
 // re-verifies the caller's role against the live business_users row
 // (30s-cached) exactly like every other owner-gated route.
 const requireOwner = requireRole(['business_owner']);
+
+/**
+ * Owner of the CALLER's own business (req.user.businessId), ignoring any
+ * :businessId in the path.
+ *
+ * `requireOwner` resolves `req.params.businessId || req.user.businessId`, so on
+ * routes whose path names a DIFFERENT business (outlet delete names the target
+ * branch) it checked membership in that branch instead of the caller's — an HQ
+ * owner who isn't a member row of the branch would 403 before the real
+ * HQ-ownership check ran. Group/HQ authority is verified separately by
+ * multiOutletService.assertCanDeleteOutlet.
+ */
+const requireOwnerOfOwnBusiness = asyncHandler(async (req, _res, next) => {
+  if (req.user?.isSuperAdmin) return next();
+  const bid = req.user?.businessId;
+  if (!bid) throw new Forbidden('No business context');
+  const r = await query(
+    `SELECT 1 FROM business_users
+      WHERE user_id = $1 AND business_id = $2
+        AND role = 'business_owner' AND is_active = TRUE
+      LIMIT 1`,
+    [req.user.id, bid]
+  );
+  if (r.rowCount === 0) throw new Forbidden('Only the business owner can do this');
+  return next();
+});
 
 // SECURITY FIX (2026-08-23, review C1): verify a caller actually OWNS a
 // business id they're operating on. Used wherever the request body names
@@ -144,7 +173,7 @@ router.post('/outlets/provision', requireOwner,
 
 // ── Delete an outlet (primary/HQ owner only, email-OTP verified) ─────────
 // Step 1: mail a 6-digit code to the owner's address.
-router.post('/outlets/:businessId/delete/request-otp', requireOwner,
+router.post('/outlets/:businessId/delete/request-otp', requireOwnerOfOwnBusiness,
   asyncHandler(async (req, res) => {
     res.json(await multiOutlet.requestOutletDeleteOtp({
       userId: req.user.id,
@@ -156,7 +185,7 @@ router.post('/outlets/:businessId/delete/request-otp', requireOwner,
 
 // Step 2: confirm with the code. Soft-deletes the outlet (history retained for
 // GST/audit); it vanishes from the switcher, rollups and every listing.
-router.post('/outlets/:businessId/delete', requireOwner,
+router.post('/outlets/:businessId/delete', requireOwnerOfOwnBusiness,
   validate({ body: Joi.object({
     requestId: Joi.string().uuid().required(),
     code: Joi.string().min(4).max(10).required(),

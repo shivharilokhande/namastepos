@@ -8,7 +8,7 @@
 
 const https = require('https');
 const env = require('../config/env');
-const { query, withTransaction } = require('../config/db');
+const { query } = require('../config/db');
 const logger = require('../config/logger');
 const { NotFound, BadRequest, Conflict, Forbidden } = require('../utils/errors');
 

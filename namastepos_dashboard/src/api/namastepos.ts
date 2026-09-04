@@ -59,6 +59,53 @@ export interface OutletRollup {
   totals: { orders: number; grossInr: number; foodCostInr: number };
 }
 
+// ── Delivery fulfilment lifecycle (2026-09-04) ───────────────────────────
+// One row per LIVE delivery order (delivered / rejected / cancelled are
+// excluded server-side). `nextStates` is authoritative — the UI must render
+// its action buttons from it and never from a hardcoded ladder, because the
+// backend owns the transition graph (and aggregator-sourced orders can skip
+// rungs the own-fleet flow uses).
+export type FulfilmentState =
+  | 'placed' | 'accepted' | 'preparing' | 'food_ready'
+  | 'rider_assigned' | 'picked_up' | 'delivered'
+  | 'rejected' | 'cancelled';
+
+export interface FulfilmentOrder {
+  id: string;
+  orderNo: string | number;
+  source: string | null;
+  channel: string | null;
+  posStatus: string | null;
+  state: FulfilmentState;
+  prepMinutes: number | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  total: number | string;
+  rider: { name: string; phone: string } | null;
+  // When true the delivery partner reads out a handover code the staff must
+  // TYPE — we never receive or render the expected value.
+  otpRequired: boolean;
+  otpVerified: boolean;
+  aggregatorOrderId: string | null;
+  createdAt: string;
+  acceptedAt: string | null;
+  foodReadyAt: string | null;
+  pickedUpAt: string | null;
+  nextStates: FulfilmentState[];
+  rejectReason?: string | null;
+}
+
+export interface FulfilmentTransitionBody {
+  state: FulfilmentState;
+  // Required (1-240) when state === 'accepted'.
+  prepMinutes?: number;
+  // Required when state === 'rejected'.
+  reason?: string;
+  rider?: { name?: string; phone?: string; otp?: string };
+  // Required when moving to 'picked_up' on an order with otpRequired.
+  otp?: string;
+}
+
 export const ffApi = {
   // Auth
   googleLogin: (idToken: string) =>
@@ -252,6 +299,9 @@ export const ffApi = {
   createDriver: (body: any) => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/drivers`, body).then((r) => r.data.driver); },
   assignDriver: (orderId: string, body: any) => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/orders/${orderId}/assign-driver`, body).then((r) => r.data.assignment); },
   liveDeliveries: () => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/delivery-assignments/live`).then((r) => r.data.assignments); },
+  // Delivery fulfilment board (2026-09-04)
+  fulfilmentBoard: (): Promise<FulfilmentOrder[]> => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/fulfilment/board`).then((r) => r.data.orders as FulfilmentOrder[]); },
+  fulfilmentTransition: (orderId: string, body: FulfilmentTransitionBody): Promise<FulfilmentOrder> => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/fulfilment/${orderId}/transition`, body).then((r) => r.data.order as FulfilmentOrder); },
   // Site + WhatsApp
   getSite: () => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/site`).then((r) => r.data.site); },
   updateSite: (body: any) => { const b = getBusinessCache(); return api.put(`/businesses/${b.id}/site`, body).then((r) => r.data.site); },

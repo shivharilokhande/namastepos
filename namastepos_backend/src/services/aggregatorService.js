@@ -317,12 +317,175 @@ async function setExternalSku(businessId, menuItemId, provider, sku) {
   );
 }
 
+// ── Inbound event routing (2026-09-03) ──────────────────────────────────
+// Aggregators send one webhook URL many event types. Treating every POST as a
+// new order (the old behaviour) meant a cancel or rider update was parsed as
+// an order and either bounced as `duplicate` or threw a 5xx back at them —
+// which, on a real integration, trips their health monitors.
+//
+// Event names differ per provider and are not public for either platform yet,
+// so we normalise defensively: read the usual field names, and fall back to
+// "this looks like a new order" only when items are present.
+const NEW_ORDER_EVENTS = ['order.placed', 'order_created', 'new_order', 'order.new', 'placed'];
+const CANCEL_EVENTS = ['order.cancelled', 'order_cancelled', 'cancelled', 'order.canceled'];
+const RIDER_EVENTS = ['rider.assigned', 'rider_assigned', 'de_assigned', 'delivery_partner_assigned'];
+const PICKED_EVENTS = ['order.picked_up', 'picked_up', 'order_dispatched', 'out_for_delivery'];
+const DELIVERED_EVENTS = ['order.delivered', 'delivered', 'order_completed'];
+
+function _eventTypeOf(payload, headers = {}) {
+  return String(
+    payload?.event
+    || payload?.event_type
+    || payload?.eventType
+    || payload?.type
+    || payload?.status_update
+    || headers['x-event-type']
+    || headers['x-webhook-event']
+    || ''
+  ).toLowerCase().trim();
+}
+
+function _externalIdOf(payload) {
+  return payload?.event_id || payload?.eventId || payload?.id
+    || payload?.order?.id || payload?.order_id || null;
+}
+
+/** Locate the order a lifecycle event refers to, tenant-scoped. */
+async function _findOrder(businessId, payload) {
+  const ext = payload?.order_id || payload?.order?.id || payload?.orderId
+    || payload?.external_order_id || null;
+  if (!ext) return null;
+  const r = await query(
+    `SELECT id FROM orders
+      WHERE business_id = $1 AND aggregator_order_id = $2 LIMIT 1`,
+    [businessId, String(ext)]
+  );
+  return r.rowCount > 0 ? r.rows[0].id : null;
+}
+
+async function handleWebhookEvent(businessId, provider, payload, { headers = {} } = {}) {
+  const event = _eventTypeOf(payload, headers);
+  const externalId = _externalIdOf(payload);
+
+  // Log every inbound event for replay/debug (and duplicate suppression when
+  // the provider gives us a stable event id).
+  let logId = null;
+  try {
+    const ins = await query(
+      `INSERT INTO aggregator_inbound_events
+         (business_id, provider, event_type, external_id, payload)
+       VALUES ($1, $2, $3, $4, $5::jsonb)
+       ON CONFLICT (provider, external_id, event_type)
+         WHERE external_id IS NOT NULL
+         DO NOTHING
+       RETURNING id`,
+      [businessId, provider, event || 'unknown', externalId ? String(externalId) : null,
+       JSON.stringify(payload || {})]
+    );
+    if (ins.rowCount === 0 && externalId) {
+      return { duplicate: true, event, externalId };
+    }
+    logId = ins.rows[0]?.id || null;
+  } catch (e) {
+    logger.warn(`[aggregator-in] event log failed (${provider}/${event}): ${e.message}`);
+  }
+
+  const done = async (result) => {
+    if (logId) {
+      await query(`UPDATE aggregator_inbound_events SET handled = TRUE WHERE id = $1`, [logId])
+        .catch(() => {});
+    }
+    return { event, ...result };
+  };
+
+  const fulfilment = require('./fulfilmentService');
+  const orderId = await _findOrder(businessId, payload);
+
+  if (CANCEL_EVENTS.includes(event)) {
+    if (!orderId) return done({ ignored: 'order not found for cancel' });
+    await fulfilment.transition(businessId, orderId, {
+      state: 'cancelled',
+      reason: payload?.reason || payload?.cancellation_reason || 'Cancelled on the aggregator',
+    }).catch((e) => logger.warn(`[aggregator-in] cancel transition: ${e.message}`));
+    return done({ orderId, applied: 'cancelled' });
+  }
+
+  if (RIDER_EVENTS.includes(event)) {
+    if (!orderId) return done({ ignored: 'order not found for rider event' });
+    const rider = payload?.rider || payload?.delivery_partner || payload?.de || {};
+    await fulfilment.transition(businessId, orderId, {
+      state: 'rider_assigned',
+      rider: {
+        name: rider.name || rider.rider_name || null,
+        phone: rider.phone || rider.mobile || null,
+        // The pickup OTP the partner will read out at the counter.
+        otp: payload?.otp || payload?.pickup_otp || rider.otp || null,
+      },
+    }).catch((e) => logger.warn(`[aggregator-in] rider transition: ${e.message}`));
+    return done({ orderId, applied: 'rider_assigned' });
+  }
+
+  if (PICKED_EVENTS.includes(event)) {
+    if (!orderId) return done({ ignored: 'order not found for pickup event' });
+    // The aggregator telling us it was picked up is authoritative — no OTP
+    // check here (the OTP gate protects the COUNTER handover, not their event).
+    await query(
+      `UPDATE orders SET fulfilment_state = 'picked_up', picked_up_at = COALESCE(picked_up_at, NOW())
+        WHERE business_id = $1 AND id = $2
+          AND fulfilment_state NOT IN ('delivered','cancelled','rejected')`,
+      [businessId, orderId]
+    );
+    return done({ orderId, applied: 'picked_up' });
+  }
+
+  if (DELIVERED_EVENTS.includes(event)) {
+    if (!orderId) return done({ ignored: 'order not found for delivered event' });
+    await fulfilment.transition(businessId, orderId, { state: 'delivered' })
+      .catch(async (e) => {
+        // Out-of-order delivery event (we never saw pickup): accept it anyway,
+        // the aggregator is the source of truth for its own fleet.
+        logger.warn(`[aggregator-in] delivered via direct set (${e.message})`);
+        await query(
+          `UPDATE orders SET fulfilment_state = 'delivered', delivered_at = COALESCE(delivered_at, NOW())
+            WHERE business_id = $1 AND id = $2`,
+          [businessId, orderId]
+        );
+      });
+    return done({ orderId, applied: 'delivered' });
+  }
+
+  // New order — either an explicit new-order event, or (no event field at all)
+  // a payload that carries items, which is how the current stub providers post.
+  const looksLikeOrder = Array.isArray(payload?.items)
+    || Array.isArray(payload?.order?.items)
+    || Array.isArray(payload?.order_items);
+  if (NEW_ORDER_EVENTS.includes(event) || (!event && looksLikeOrder)) {
+    const result = await processIncomingOrder(businessId, provider, payload);
+    // Put it on the delivery board as `placed` so staff can accept/reject it.
+    if (result?.orderId || result?.id) {
+      const oid = result.orderId || result.id;
+      await query(
+        `UPDATE orders SET fulfilment_state = COALESCE(fulfilment_state, 'placed')
+          WHERE business_id = $1 AND id = $2`,
+        [businessId, oid]
+      ).catch(() => {});
+    }
+    return done(result);
+  }
+
+  // Unknown event: accept it (2xx keeps their health monitor green) but say
+  // plainly that we did nothing, and keep the payload for triage.
+  logger.info(`[aggregator-in] unhandled ${provider} event '${event || '(none)'}'`);
+  return done({ ignored: `unhandled event '${event || '(none)'}'` });
+}
+
 module.exports = {
   getCredentials,
   listCredentials,
   upsertCredentials,
   verifySignature,
   processIncomingOrder,
+  handleWebhookEvent,
   listMappingIssues,
   setExternalSku,
   recordWebhookOutcome, // FF-245

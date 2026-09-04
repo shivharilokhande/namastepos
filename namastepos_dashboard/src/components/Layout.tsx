@@ -49,6 +49,13 @@ const navGroups: { name: string; items: NavItem[] }[] = [
     name: 'Sales',
     items: [
       { to: '/orders',    icon: ShoppingCart,    label: 'Orders',           feature: 'orders' },
+      // Delivery board (2026-09-04): the accept→hand-over lifecycle for live
+      // delivery orders. Deliberately UNGATED (feature: null) — it is not the
+      // `aggregators` integration and not the `driver_mode` rider fleet; a
+      // Starter cafe taking its own phone/WhatsApp delivery orders needs this
+      // to promise a prep time and mark the handover, so gating it would just
+      // send the daily-use screen to /billing.
+      { to: '/delivery',  icon: Bike,            label: 'Delivery board',   feature: null },
       { to: '/tables',    icon: LayoutGrid,      label: 'Tables',           feature: 'tables_single_floor' },
       { to: '/kot',       icon: ChefHat,         label: 'Kitchen (KOT)',    feature: 'kds' },
       { to: '/kds',       icon: ChefHat,         label: 'KDS',              feature: 'kds' },

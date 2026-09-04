@@ -41,6 +41,7 @@ const DailyClosingPage = lazy(() => import('./pages/DailyClosingPage').then(m =>
 const ReservationsPage = lazy(() => import('./pages/ReservationsPage').then(m => ({ default: m.ReservationsPage })));
 const WastagePage = lazy(() => import('./pages/WastagePage').then(m => ({ default: m.WastagePage })));
 const DriversPage = lazy(() => import('./pages/DriversPage').then(m => ({ default: m.DriversPage })));
+const DeliveryBoardPage = lazy(() => import('./pages/DeliveryBoardPage').then(m => ({ default: m.DeliveryBoardPage })));
 const OnlineSitePage = lazy(() => import('./pages/OnlineSitePage').then(m => ({ default: m.OnlineSitePage })));
 const AccountingPage = lazy(() => import('./pages/AccountingPage').then(m => ({ default: m.AccountingPage })));
 const RetailPage = lazy(() => import('./pages/RetailPage').then(m => ({ default: m.RetailPage })));
@@ -154,6 +155,7 @@ export default function App() {
         <Route path="reservations" element={<ReservationsPage />} />
         <Route path="wastage" element={<WastagePage />} />
         <Route path="drivers" element={<DriversPage />} />
+        <Route path="delivery" element={<DeliveryBoardPage />} />
         <Route path="online-site" element={<OnlineSitePage />} />
         <Route path="accounting" element={<AccountingPage />} />
         <Route path="retail" element={<RetailPage />} />

@@ -64,7 +64,14 @@ router.post('/:provider', asyncHandler(async (req, res) => {
   // because processIncomingOrder's outcome was never recorded.
   const businessId = cred.rows[0].business_id;
   try {
-    const result = await aggregator.processIncomingOrder(businessId, provider, req.body);
+    // 2026-09-03 — EVENT-TYPE ROUTING. Previously every POST was treated as a
+    // brand-new order, so an aggregator's cancel / rider-assigned /
+    // out-for-delivery / delivered callback was parsed as an order and either
+    // reported `duplicate` or threw. Route on the event type first; only a
+    // genuine new-order event goes to processIncomingOrder.
+    const result = await aggregator.handleWebhookEvent(businessId, provider, req.body, {
+      headers: req.headers,
+    });
     await aggregator.recordWebhookOutcome(businessId, provider, { ok: true });
     res.json(result);
   } catch (e) {

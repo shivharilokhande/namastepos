@@ -29,6 +29,7 @@ const bankReconcile = require('./bankReconcileService');
 const anomaly = require('./anomalyAlertService');
 const nps = require('./npsService');
 const lateDelivery = require('./lateDeliveryService');
+const fulfilment = require('./fulfilmentService');
 const ownerDigest = require('./ownerDigestService');
 const referral = require('./referralService');
 const refundReconcile = require('./refundReconcileService');
@@ -150,6 +151,12 @@ async function _runOnce() {
       await _track('late-delivery', () => lateDelivery.scan()).catch((e) =>
         logger.warn(`[late-delivery] tick error: ${e.message}`));
     }
+    // 2026-09-03 — drain queued aggregator status callbacks EVERY tick.
+    // Accept/food-ready callbacks are SLA-graded by the aggregators, so this
+    // is the one queue that must not wait minutes. With no partner
+    // credentials each event is marked `skipped` and the drain is a no-op.
+    await _track('aggregator-outbound', () => fulfilment.drainOutbound()).catch((e) =>
+      logger.warn(`[aggregator-outbound] tick error: ${e.message}`));
     // FF-326 / FF-336 owner digests — every 60 ticks (~1 h) so both
     // the "am I at 9am now?" checks in ownerDigestService fire hourly.
     if (++_digestTicksSinceLast >= 60) {

@@ -16,6 +16,7 @@ import '../../providers/tables_provider.dart';
 import '../../services/api_service.dart';
 import '../captain/captain_screen.dart';
 import '../customers/customers_screen.dart';
+import '../delivery/delivery_board_screen.dart';
 import '../driver/driver_screen.dart';
 import '../kitchen/kds_screen.dart';
 import '../menu/menu_editor_screen.dart';
@@ -472,8 +473,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               ),
 
-              if (role == 'business_owner' || _can('captain') || _can('driver') || _can('kds'))
+              // `|| _can('orders')` (2026-09-04): the Delivery board below is
+              // open to any staffer who handles orders, so the section header
+              // must appear for them too — a cashier/captain has `orders` but
+              // none of captain/driver/kds.
+              if (role == 'business_owner' || _can('captain') || _can('driver')
+                  || _can('kds') || _can('orders'))
                 _drawerSection('Operations'),
+              // Delivery board — the accept → hand-over lifecycle for live
+              // delivery orders. Deliberately NOT PlanGate'd: this is neither
+              // the `aggregators` integration nor the `driver_mode` rider
+              // fleet, and a cafe taking its own phone/WhatsApp delivery
+              // orders needs it to promise a prep time and log the handover.
+              // Visible to the owner AND to any staffer with order handling.
+              if (_can('orders'))
+                ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.moped_outlined),
+                  title: const Text('Delivery board'),
+                  onTap: () {
+                    _closeDrawer();
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const DeliveryBoardScreen(),
+                    ));
+                  },
+                ),
               // Owner-only: manage floors + tables from mobile. Backend
               // has full CRUD on /ops/floors and /ops/tables — this
               // entry point wires it up so the owner doesn't need the

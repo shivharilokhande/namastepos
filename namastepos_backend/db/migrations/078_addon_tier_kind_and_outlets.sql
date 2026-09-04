@@ -30,11 +30,15 @@ UPDATE addons a
 UPDATE addons SET required_tier_kind = 'pro'
  WHERE slug = 'multi-outlet' AND required_tier_kind IS NULL;
 
-ALTER TABLE addons
-  ADD CONSTRAINT chk_addons_required_tier_kind
-  CHECK (required_tier_kind IS NULL
-         OR required_tier_kind IN ('starter', 'pro', 'enterprise'))
-  NOT VALID;
+-- Postgres has no ADD CONSTRAINT IF NOT EXISTS, so guard it: a manual replay
+-- of this file must not fail on an already-present constraint.
+DO $$ BEGIN
+  ALTER TABLE addons
+    ADD CONSTRAINT chk_addons_required_tier_kind
+    CHECK (required_tier_kind IS NULL
+           OR required_tier_kind IN ('starter', 'pro', 'enterprise'))
+    NOT VALID;
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- 2. OUTLETS AS FIRST-CLASS TENANTS. Each outlet already IS its own
 --    `businesses` row joined by `businesses.outlet_group_id` (migration 025),

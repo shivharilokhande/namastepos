@@ -18,6 +18,42 @@ const driver = require('../services/driverService');
 
 const router = express.Router({ mergeParams: true });
 
+// ── Delivery fulfilment board (2026-09-03) ─────────────────────────────
+// The live accept → preparing → ready → handover → delivered flow, shared by
+// the dashboard board and the mobile app. Anyone who works the floor needs it
+// (captain, cashier, kitchen), so it is role-gated to exclude nobody except
+// where money is involved — the transition itself carries no financial risk
+// beyond the delivered→collected mirror, which orderService owns.
+const fulfilment = require('../services/fulfilmentService');
+
+router.get('/fulfilment/board', asyncHandler(async (req, res) => {
+  res.json({ orders: await fulfilment.board(req.params.businessId) });
+}));
+
+router.post('/fulfilment/:orderId/transition',
+  validate({ body: Joi.object({
+    state: Joi.string().valid(...fulfilment.STATES).required(),
+    // Required when accepting: the kitchen's promise, shown to the diner.
+    prepMinutes: Joi.number().integer().min(1).max(240),
+    // Required when rejecting.
+    reason: Joi.string().max(500),
+    rider: Joi.object({
+      name: Joi.string().max(120).allow('', null),
+      phone: Joi.string().max(20).allow('', null),
+      otp: Joi.string().max(8).allow('', null),
+    }),
+    // The code staff typed off the delivery partner's screen.
+    otp: Joi.string().max(8),
+  })}),
+  asyncHandler(async (req, res) => {
+    res.json({
+      order: await fulfilment.transition(
+        req.params.businessId, req.params.orderId, req.body
+      ),
+    });
+  })
+);
+
 // ── FF-331 delivery zones ──────────────────────────────────────────────
 router.get('/delivery-zones',
   asyncHandler(async (req, res) =>
