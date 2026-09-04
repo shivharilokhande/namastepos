@@ -14,7 +14,8 @@ describe('Variants + modifiers line pricing', () => {
 
   test('variant + single positive modifier', () => {
     const t = lineTotalWithModifiers({
-      variantPrice: 240, qty: 1,
+      variantPrice: 240,
+      qty: 1,
       modifierLines: [{ name: 'Extra cheese', priceDeltaInr: 30, qty: 1 }],
     });
     expect(t).toBe(270);
@@ -22,7 +23,8 @@ describe('Variants + modifiers line pricing', () => {
 
   test('variant + negative modifier (substitution discount)', () => {
     const t = lineTotalWithModifiers({
-      variantPrice: 240, qty: 1,
+      variantPrice: 240,
+      qty: 1,
       modifierLines: [{ name: 'No paneer (less)', priceDeltaInr: -40, qty: 1 }],
     });
     expect(t).toBe(200);
@@ -30,10 +32,11 @@ describe('Variants + modifiers line pricing', () => {
 
   test('multi-select modifiers with quantities', () => {
     const t = lineTotalWithModifiers({
-      variantPrice: 100, qty: 2,
+      variantPrice: 100,
+      qty: 2,
       modifierLines: [
         { name: 'Extra cheese', priceDeltaInr: 30, qty: 2 },
-        { name: 'No onion',     priceDeltaInr: 0,  qty: 1 },
+        { name: 'No onion', priceDeltaInr: 0, qty: 1 },
       ],
     });
     // (100 + (30*2) + (0*1)) * 2 = (100 + 60) * 2 = 320

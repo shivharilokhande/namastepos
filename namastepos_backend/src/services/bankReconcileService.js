@@ -12,9 +12,9 @@ async function importStatement(businessId, bankName, accountNo, rows) {
           description, debit_paise, credit_paise)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [businessId, bankName, accountNo, r.date, r.reference || null,
-       r.description || null,
-       Math.round((r.debit || 0) * 100),
-       Math.round((r.credit || 0) * 100)]
+        r.description || null,
+        Math.round((r.debit || 0) * 100),
+        Math.round((r.credit || 0) * 100)],
     );
     imported += 1;
   }
@@ -27,7 +27,7 @@ async function autoMatch(businessId) {
     const unmatched = await client.query(
       `SELECT * FROM bank_statements
         WHERE business_id = $1 AND is_reconciled = FALSE AND credit_paise > 0`,
-      [businessId]
+      [businessId],
     );
     let matched = 0;
     for (const stmt of unmatched.rows) {
@@ -39,7 +39,7 @@ async function autoMatch(businessId) {
             AND status = 'collected'
             AND ABS(EXTRACT(EPOCH FROM (created_at - $3::date))) < 86400 * 2
           ORDER BY created_at DESC LIMIT 1`,
-        [businessId, stmt.credit_paise, stmt.statement_date]
+        [businessId, stmt.credit_paise, stmt.statement_date],
       );
       if (r.rowCount > 0) {
         await client.query(
@@ -48,7 +48,7 @@ async function autoMatch(businessId) {
                   matched_to_id = $1,
                   is_reconciled = TRUE
             WHERE id = $2`,
-          [r.rows[0].id, stmt.id]
+          [r.rows[0].id, stmt.id],
         );
         matched += 1;
       }
@@ -62,7 +62,7 @@ async function listUnmatched(businessId) {
     `SELECT * FROM bank_statements
       WHERE business_id = $1 AND is_reconciled = FALSE
       ORDER BY statement_date DESC LIMIT 200`,
-    [businessId]
+    [businessId],
   );
   return r.rows;
 }

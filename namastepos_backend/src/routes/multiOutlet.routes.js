@@ -33,7 +33,7 @@ router.use((req, _res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
   return next(new Forbidden(
     'Platform staff cannot modify a tenant\'s outlets. Use the admin console '
-    + 'or an impersonation session.'
+    + 'or an impersonation session.',
   ));
 });
 
@@ -85,7 +85,7 @@ const requireGroupMembership = asyncHandler(async (req, _res, next) => {
   const r = await query(
     `SELECT 1 FROM businesses
        WHERE id = $1 AND outlet_group_id = $2 LIMIT 1`,
-    [userBizId, req.params.groupId]
+    [userBizId, req.params.groupId],
   );
   if (r.rowCount === 0) {
     throw new Forbidden('Your business is not a member of this outlet group');
@@ -124,7 +124,7 @@ const requireOwnerOfOwnBusiness = asyncHandler(async (req, _res, next) => {
       WHERE user_id = $1 AND business_id = $2
         AND role = 'business_owner' AND is_active = TRUE
       LIMIT 1`,
-    [req.user.id, bid]
+    [req.user.id, bid],
   );
   if (r.rowCount === 0) throw new Forbidden('Only the business owner can do this');
   return next();
@@ -148,8 +148,7 @@ async function assertOwnsBusiness(userId, businessId) {
 }
 
 // Owner can only see groups they own. Super-admin has a separate route.
-router.get ('/', requireOwner, asyncHandler(async (req, res) =>
-  res.json({ groups: await multiOutlet.listGroupsForOwner(req.user.businessId) })));
+router.get('/', requireOwner, asyncHandler(async (req, res) => res.json({ groups: await multiOutlet.listGroupsForOwner(req.user.businessId) })));
 
 // ── 2026-09-03 — outlets the SIGNED-IN USER can switch into ─────────────
 // Deliberately NOT behind the multi_outlet plan gate (see the router-level
@@ -166,7 +165,9 @@ router.get('/my-outlets', asyncHandler(async (req, res) => {
  * Provision a NEW outlet (own businesses row → own menu/staff/orders/
  * settings; nothing shared but the group rollup). Owner-only + multi_outlet.
  */
-router.post('/outlets/provision', requireOwner,
+router.post(
+  '/outlets/provision',
+  requireOwner,
   validate({ body: Joi.object({
     name: Joi.string().min(1).max(120).required(),
     label: Joi.string().max(80).allow('', null),
@@ -174,7 +175,7 @@ router.post('/outlets/provision', requireOwner,
     groupId: Joi.string().uuid().allow(null),
     // Seed the HQ's staff (same roles + permissions) into the new branch.
     copyStaff: Joi.boolean().default(true),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     const out = await multiOutlet.provisionOutlet({
       ownerUserId: req.user.id,
@@ -188,28 +189,32 @@ router.post('/outlets/provision', requireOwner,
     // The new outlet inherits the HQ's plan + feature overrides.
     try { await multiOutlet.syncPlanToOutlets(req.user.businessId); } catch (_) { /* non-fatal */ }
     res.status(201).json(out);
-  })
+  }),
 );
 
 // ── Delete an outlet (primary/HQ owner only, email-OTP verified) ─────────
 // Step 1: mail a 6-digit code to the owner's address.
-router.post('/outlets/:businessId/delete/request-otp', requireOwnerOfOwnBusiness,
+router.post(
+  '/outlets/:businessId/delete/request-otp',
+  requireOwnerOfOwnBusiness,
   asyncHandler(async (req, res) => {
     res.json(await multiOutlet.requestOutletDeleteOtp({
       userId: req.user.id,
       callerBusinessId: req.user.businessId,
       targetBusinessId: req.params.businessId,
     }));
-  })
+  }),
 );
 
 // Step 2: confirm with the code. Soft-deletes the outlet (history retained for
 // GST/audit); it vanishes from the switcher, rollups and every listing.
-router.post('/outlets/:businessId/delete', requireOwnerOfOwnBusiness,
+router.post(
+  '/outlets/:businessId/delete',
+  requireOwnerOfOwnBusiness,
   validate({ body: Joi.object({
     requestId: Joi.string().uuid().required(),
     code: Joi.string().min(4).max(10).required(),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     res.json(await multiOutlet.deleteOutletWithOtp({
       userId: req.user.id,
@@ -218,24 +223,27 @@ router.post('/outlets/:businessId/delete', requireOwnerOfOwnBusiness,
       requestId: req.body.requestId,
       code: req.body.code,
     }));
-  })
+  }),
 );
 
-router.post('/', requireOwner,
+router.post(
+  '/',
+  requireOwner,
   validate({ body: Joi.object({
     name: Joi.string().required(),
     parentBusinessId: Joi.string().uuid().allow(null),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.status(201).json({ group: await multiOutlet.createGroup(req.body.name, req.body.parentBusinessId || req.user.businessId) })
-  )
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json({ group: await multiOutlet.createGroup(req.body.name, req.body.parentBusinessId || req.user.businessId) })),
 );
 
-router.post('/:groupId/outlets', requireOwner, requireGroupMembership,
+router.post(
+  '/:groupId/outlets',
+  requireOwner,
+  requireGroupMembership,
   validate({ body: Joi.object({
     businessId: Joi.string().uuid().required(),
     label: Joi.string().allow('', null),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     // C1 fix: the outlet being attached must be owned by the caller —
     // attaching someone else's business would expose their revenue via
@@ -243,45 +251,54 @@ router.post('/:groupId/outlets', requireOwner, requireGroupMembership,
     await assertOwnsBusiness(req.user.id, req.body.businessId);
     await multiOutlet.addOutlet(req.params.groupId, req.body.businessId, req.body.label);
     res.json({ success: true });
-  })
+  }),
 );
 
 // Security review 2026-08-26: consolidated cross-outlet revenue (rollup) and
 // stock transfers are owner-level actions — previously any group-member staff
 // (incl. cashiers) could read group-wide revenue or move stock. Require owner.
-router.get ('/:groupId/rollup', requireOwner, requireGroupMembership,
+router.get(
+  '/:groupId/rollup',
+  requireOwner,
+  requireGroupMembership,
   validate({ query: Joi.object({
     startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional(),
-    endDate:   Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    endDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).optional(),
   }).unknown(true) }),
-  asyncHandler(async (req, res) =>
-    res.json({ rollup: await multiOutlet.groupRollup(req.params.groupId, req.query) }))
+  asyncHandler(async (req, res) => res.json({ rollup: await multiOutlet.groupRollup(req.params.groupId, req.query) })),
 );
 
-router.post('/:groupId/transfers', requireOwner, requireGroupMembership,
-  asyncHandler(async (req, res) =>
-    res.status(201).json({ transfer: await multiOutlet.transferStock(req.params.groupId, req.body, req.user?.id) })
-  )
+router.post(
+  '/:groupId/transfers',
+  requireOwner,
+  requireGroupMembership,
+  asyncHandler(async (req, res) => res.status(201).json({ transfer: await multiOutlet.transferStock(req.params.groupId, req.body, req.user?.id) })),
 );
 
-router.post('/:groupId/transfers/:id/receive', requireOwner, requireGroupMembership,
+router.post(
+  '/:groupId/transfers/:id/receive',
+  requireOwner,
+  requireGroupMembership,
   asyncHandler(async (req, res) =>
     // C1 fix: pass the groupId so the transfer must belong to THIS group.
-    res.json({ transfer: await multiOutlet.receiveTransfer(req.params.id, req.user?.id, req.params.groupId) })
-  )
+    res.json({ transfer: await multiOutlet.receiveTransfer(req.params.id, req.user?.id, req.params.groupId) })),
 );
 
-router.get ('/:groupId/franchise-prices', requireGroupMembership,
-  asyncHandler(async (req, res) =>
-    res.json({ prices: await multiOutlet.listFranchisePrices(req.params.groupId) }))
+router.get(
+  '/:groupId/franchise-prices',
+  requireGroupMembership,
+  asyncHandler(async (req, res) => res.json({ prices: await multiOutlet.listFranchisePrices(req.params.groupId) })),
 );
 
-router.put ('/:groupId/franchise-prices/:sku', requireOwner, requireGroupMembership,
-  validate({ body: Joi.object({ price: Joi.number().required() })}),
+router.put(
+  '/:groupId/franchise-prices/:sku',
+  requireOwner,
+  requireGroupMembership,
+  validate({ body: Joi.object({ price: Joi.number().required() }) }),
   asyncHandler(async (req, res) => {
     await multiOutlet.setFranchisePrice(req.params.groupId, req.params.sku, req.body.price);
     res.json({ success: true });
-  })
+  }),
 );
 
 module.exports = router;

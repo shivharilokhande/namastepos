@@ -30,11 +30,11 @@ afterAll(async () => { await closePool(); });
 /** Floor + table + open session + N orders (totals in INR), oldest→newest. */
 async function makeSessionWithOrders(biz, totalsInr, { orderNoStart = 1 } = {}) {
   const f = await query(
-    `INSERT INTO floors (business_id, name) VALUES ($1, $2) RETURNING id`,
+    'INSERT INTO floors (business_id, name) VALUES ($1, $2) RETURNING id',
     [biz.id, `F-${orderNoStart}-${Math.random().toString(36).slice(2, 7)}`],
   );
   const t = await query(
-    `INSERT INTO tables (business_id, floor_id, label) VALUES ($1, $2, $3) RETURNING id`,
+    'INSERT INTO tables (business_id, floor_id, label) VALUES ($1, $2, $3) RETURNING id',
     [biz.id, f.rows[0].id, `T${orderNoStart}`],
   );
   const s = await query(
@@ -44,7 +44,7 @@ async function makeSessionWithOrders(biz, totalsInr, { orderNoStart = 1 } = {}) 
   );
   const sessionId = s.rows[0].id;
   await query(
-    `UPDATE tables SET status = 'occupied', current_session_id = $1 WHERE id = $2`,
+    'UPDATE tables SET status = \'occupied\', current_session_id = $1 WHERE id = $2',
     [sessionId, t.rows[0].id],
   );
   const orderIds = [];

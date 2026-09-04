@@ -21,9 +21,12 @@ function rzCall(method, path, body) {
     const data = body ? JSON.stringify(body) : null;
     const auth = Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64');
     const req = https.request({
-      hostname: 'api.razorpay.com', path, method,
+      hostname: 'api.razorpay.com',
+      path,
+      method,
       headers: {
-        'Authorization': `Basic ${auth}`, 'Content-Type': 'application/json',
+        Authorization: `Basic ${auth}`,
+        'Content-Type': 'application/json',
         ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
       },
     }, (res) => {
@@ -46,9 +49,13 @@ function rzCall(method, path, body) {
 // ── Serializers ─────────────────────────────────────────────────────────
 function serializeAddon(a) {
   return {
-    id: a.id, slug: a.slug, name: a.name,
-    tagline: a.tagline, description: a.description,
-    icon: a.icon, category: a.category,
+    id: a.id,
+    slug: a.slug,
+    name: a.name,
+    tagline: a.tagline,
+    description: a.description,
+    icon: a.icon,
+    category: a.category,
     priceInr: a.price_inr_paise / 100,
     priceInrPaise: a.price_inr_paise,
     billingPeriod: a.billing_period,
@@ -91,13 +98,13 @@ async function listCatalog({ onlyActive = true } = {}) {
 }
 
 async function getBySlug(slug) {
-  const r = await query(`SELECT * FROM addons WHERE slug = $1 LIMIT 1`, [slug]);
+  const r = await query('SELECT * FROM addons WHERE slug = $1 LIMIT 1', [slug]);
   if (r.rowCount === 0) throw new NotFound(`Addon ${slug} not found`);
   return r.rows[0];
 }
 
 async function getById(id) {
-  const r = await query(`SELECT * FROM addons WHERE id = $1 LIMIT 1`, [id]);
+  const r = await query('SELECT * FROM addons WHERE id = $1 LIMIT 1', [id]);
   if (r.rowCount === 0) throw new NotFound('Addon not found');
   return r.rows[0];
 }
@@ -115,14 +122,14 @@ async function createAddon(body) {
           partner_name, revenue_share_pct, grants_features)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
       [body.slug, body.name, body.tagline || null, body.description || null,
-       body.icon || 'box', body.category || 'operations',
-       body.price_inr_paise, body.billing_period || 'monthly',
-       body.required_plan_tier || null, body.trial_days || 0,
-       JSON.stringify(body.features || {}),
-       body.is_active !== false,
-       body.display_order || 100,
-       body.partner_name || null, body.revenue_share_pct || 0,
-       body.grants_features || []]
+        body.icon || 'box', body.category || 'operations',
+        body.price_inr_paise, body.billing_period || 'monthly',
+        body.required_plan_tier || null, body.trial_days || 0,
+        JSON.stringify(body.features || {}),
+        body.is_active !== false,
+        body.display_order || 100,
+        body.partner_name || null, body.revenue_share_pct || 0,
+        body.grants_features || []],
     );
     return serializeAddon(r.rows[0]);
   } catch (err) {
@@ -133,10 +140,10 @@ async function createAddon(body) {
 
 async function updateAddon(slug, patch) {
   const fields = ['name', 'tagline', 'description', 'icon', 'category',
-                  'price_inr_paise', 'billing_period', 'required_plan_tier',
-                  'trial_days', 'features', 'is_active', 'display_order',
-                  'razorpay_plan_id', 'partner_name', 'revenue_share_pct',
-                  'grants_features'];
+    'price_inr_paise', 'billing_period', 'required_plan_tier',
+    'trial_days', 'features', 'is_active', 'display_order',
+    'razorpay_plan_id', 'partner_name', 'revenue_share_pct',
+    'grants_features'];
   const sets = []; const values = []; let idx = 1;
   for (const f of fields) {
     if (patch[f] !== undefined) {
@@ -148,7 +155,7 @@ async function updateAddon(slug, patch) {
   values.push(slug);
   const r = await query(
     `UPDATE addons SET ${sets.join(', ')} WHERE slug = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Addon not found');
   // grants_features / is_active changes alter what every subscriber's merged
@@ -161,7 +168,7 @@ async function updateAddon(slug, patch) {
 
 /** Sync each addon to Razorpay as its own Plan (one-time setup). */
 async function syncRazorpayPlans() {
-  const r = await query(`SELECT * FROM addons WHERE is_active = TRUE AND price_inr_paise > 0`);
+  const r = await query('SELECT * FROM addons WHERE is_active = TRUE AND price_inr_paise > 0');
   const synced = [];
   for (const a of r.rows) {
     if (a.razorpay_plan_id) { synced.push({ slug: a.slug, ok: true, existing: true }); continue; }
@@ -176,7 +183,7 @@ async function syncRazorpayPlans() {
           description: a.tagline || a.name,
         },
       });
-      await query(`UPDATE addons SET razorpay_plan_id = $1 WHERE id = $2`, [created.id, a.id]);
+      await query('UPDATE addons SET razorpay_plan_id = $1 WHERE id = $2', [created.id, a.id]);
       synced.push({ slug: a.slug, ok: true, razorpayPlanId: created.id });
     } catch (err) {
       synced.push({ slug: a.slug, ok: false, error: err.message });
@@ -195,13 +202,17 @@ async function listActiveForBusiness(businessId) {
       WHERE ba.business_id = $1
         AND ba.status IN ('trialing','active','past_due')
       ORDER BY a.display_order ASC`,
-    [businessId]
+    [businessId],
   );
   return r.rows.map((row) => ({
     ...serializeActivation(row),
     addon: {
-      id: row.addon_id, slug: row.slug, name: row.name,
-      icon: row.icon, category: row.category, tagline: row.tagline,
+      id: row.addon_id,
+      slug: row.slug,
+      name: row.name,
+      icon: row.icon,
+      category: row.category,
+      tagline: row.tagline,
       priceInr: row.price_inr_paise / 100,
       features: row.features || {},
     },
@@ -214,7 +225,7 @@ async function listAllForBusiness(businessId) {
        JOIN addons a ON a.id = ba.addon_id
       WHERE ba.business_id = $1
       ORDER BY ba.created_at DESC`,
-    [businessId]
+    [businessId],
   );
   return r.rows.map((row) => ({ ...serializeActivation(row) }));
 }
@@ -227,7 +238,7 @@ async function hasAddon(businessId, slug) {
         AND a.slug = $2
         AND ba.status IN ('trialing','active','past_due')
         AND ba.current_period_end > NOW()`,
-    [businessId, slug]
+    [businessId, slug],
   );
   return r.rowCount > 0;
 }
@@ -272,7 +283,7 @@ async function checkPlanEligibility(businessId, addon) {
                  AND (s.trial_ends_at IS NULL OR s.trial_ends_at > NOW())))
       ORDER BY s.updated_at DESC NULLS LAST
       LIMIT 1`,
-    [businessId]
+    [businessId],
   );
   const currentKind = cur.rows[0]?.tier_kind || 'starter';
   return {
@@ -295,7 +306,7 @@ async function revokeIneligibleAddons(businessId) {
        FROM business_addons ba
        JOIN addons a ON a.id = ba.addon_id
       WHERE ba.business_id = $1 AND ba.status IN ('active', 'trialing')`,
-    [businessId]
+    [businessId],
   );
   const revoked = [];
   for (const row of active.rows) {
@@ -325,7 +336,7 @@ async function revokeIneligibleAddons(businessId) {
                 ELSE 'cancelled' END
         WHERE id = $1
         RETURNING current_period_end, status`,
-      [row.id]
+      [row.id],
     );
     const endsAt = upd.rows[0]?.current_period_end;
     const keptPaidDays = upd.rows[0]?.status !== 'cancelled';
@@ -361,7 +372,7 @@ async function subscribe(businessId, slug) {
   if (!gate.ok) {
     throw new Forbidden(
       `This addon requires a ${gate.requiredKind} plan or higher `
-      + `(this customer is on ${gate.currentPlanName || gate.currentKind}).`
+      + `(this customer is on ${gate.currentPlanName || gate.currentKind}).`,
     );
   }
 
@@ -369,7 +380,7 @@ async function subscribe(businessId, slug) {
   const existing = await query(
     `SELECT * FROM business_addons
       WHERE business_id = $1 AND addon_id = $2`,
-    [businessId, addon.id]
+    [businessId, addon.id],
   );
   const alreadyActive = existing.rowCount > 0
       && ['trialing', 'active', 'past_due'].includes(existing.rows[0].status);
@@ -404,7 +415,7 @@ async function subscribe(businessId, slug) {
        ON CONFLICT (business_id, addon_id) DO UPDATE
          SET status = 'active', cancelled_at = NULL, cancel_at_period_end = FALSE
        RETURNING *`,
-      [businessId, addon.id]
+      [businessId, addon.id],
     );
     try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
     return { activated: true, activation: serializeActivation(ins.rows[0], addon) };
@@ -443,8 +454,11 @@ async function subscribe(businessId, slug) {
  * returned signature (via razorpayService.verifyCheckoutSignature), then
  * activate the addon and record the payment.
  */
-async function confirmPayment(businessId, slug,
-                              { razorpayPaymentId, razorpayOrderId, razorpaySignature }) {
+async function confirmPayment(
+  businessId,
+  slug,
+  { razorpayPaymentId, razorpayOrderId, razorpaySignature },
+) {
   const addon = await getBySlug(slug);
   const rz = require('./razorpayService'); // lazy: same cycle-avoidance as in subscribe()
 
@@ -492,7 +506,7 @@ async function confirmPayment(businessId, slug,
              GREATEST(business_addons.current_period_end, NOW()) + $3::interval,
            notified_expiry_at = NULL
      RETURNING *`,
-    [businessId, addon.id, periodInterval]
+    [businessId, addon.id, periodInterval],
   );
 
   // Record the payment — same insert pattern as razorpayService's
@@ -505,7 +519,7 @@ async function confirmPayment(businessId, slug,
      VALUES ($1, $2, 'INR', NULL, $3, 'captured', $4)
      ON CONFLICT (razorpay_payment_id) DO NOTHING`,
     [businessId, addon.price_inr_paise, razorpayPaymentId,
-     { razorpayOrderId, addonSlug: addon.slug, source: 'addon-confirm-payment' }]
+      { razorpayOrderId, addonSlug: addon.slug, source: 'addon-confirm-payment' }],
   );
 
   try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
@@ -539,7 +553,7 @@ async function forceActivate(businessId, slug) {
        SET status = 'active', cancelled_at = NULL, cancel_at_period_end = FALSE,
            current_period_end = NOW() + INTERVAL '100 years'
      RETURNING *`,
-    [businessId, addon.id]
+    [businessId, addon.id],
   );
   try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
   return { activated: true, activation: serializeActivation(ins.rows[0], addon) };
@@ -561,7 +575,7 @@ async function cancel(businessId, slug) {
             current_period_end = NOW()
       WHERE business_id = $1 AND addon_id = $2
       RETURNING *`,
-    [businessId, addon.id]
+    [businessId, addon.id],
   );
   if (r.rowCount === 0) throw new NotFound('Addon not subscribed');
   // Bust the 60s feature cache so the gated feature locks right away instead
@@ -589,7 +603,7 @@ async function detach(businessId, slug) {
             current_period_end = NOW()
       WHERE business_id = $1 AND addon_id = $2
       RETURNING *`,
-    [businessId, addon.id]
+    [businessId, addon.id],
   );
   if (r.rowCount === 0) throw new NotFound('Addon not subscribed');
   // 2026-09-03 (plans/addons audit #5): mirror cancel() — bust the 60s
@@ -610,7 +624,7 @@ async function resume(businessId, slug) {
             current_period_end = NOW() + INTERVAL '100 years'
       WHERE business_id = $1 AND addon_id = $2
       RETURNING *`,
-    [businessId, addon.id]
+    [businessId, addon.id],
   );
   if (r.rowCount === 0) throw new NotFound('Addon not subscribed');
   try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
@@ -622,7 +636,7 @@ async function updateSettings(businessId, slug, settings) {
   const r = await query(
     `UPDATE business_addons SET settings = $1
       WHERE business_id = $2 AND addon_id = $3 RETURNING *`,
-    [JSON.stringify(settings), businessId, addon.id]
+    [JSON.stringify(settings), businessId, addon.id],
   );
   if (r.rowCount === 0) throw new NotFound('Addon not active');
   return serializeActivation(r.rows[0], addon);
@@ -659,7 +673,7 @@ async function handleRazorpayEvent(event, payload) {
   await query(
     `UPDATE business_addons SET ${sets.join(', ')}
       WHERE razorpay_subscription_id = $${idx}`,
-    values
+    values,
   );
   return true;
 }
@@ -683,7 +697,7 @@ async function notifyExpiringActivations() {
         AND ba.notified_expiry_at IS NULL
         AND ba.current_period_end BETWEEN NOW() - INTERVAL '1 day'
                                       AND NOW() + INTERVAL '3 days'
-      LIMIT 200`
+      LIMIT 200`,
   );
   let notified = 0;
   for (const row of due.rows) {
@@ -701,8 +715,8 @@ async function notifyExpiringActivations() {
     } catch (_) { /* push is best-effort; still stamp so we don't loop */ }
     // Stamp AFTER the send attempt — once per activation per window.
     await query(
-      `UPDATE business_addons SET notified_expiry_at = NOW() WHERE id = $1`,
-      [row.id]
+      'UPDATE business_addons SET notified_expiry_at = NOW() WHERE id = $1',
+      [row.id],
     );
     notified += 1;
   }
@@ -710,11 +724,27 @@ async function notifyExpiringActivations() {
 }
 
 module.exports = {
-  listCatalog, getBySlug, getById,
-  createAddon, updateAddon, syncRazorpayPlans,
-  listActiveForBusiness, listAllForBusiness, hasAddon,
-  subscribe, forceActivate, confirmPayment, cancel, detach, resume, updateSettings,
-  handleRazorpayEvent, notifyExpiringActivations,
-  checkPlanEligibility, revokeIneligibleAddons, requiredKindOf,
-  serializeAddon, serializeActivation,
+  listCatalog,
+  getBySlug,
+  getById,
+  createAddon,
+  updateAddon,
+  syncRazorpayPlans,
+  listActiveForBusiness,
+  listAllForBusiness,
+  hasAddon,
+  subscribe,
+  forceActivate,
+  confirmPayment,
+  cancel,
+  detach,
+  resume,
+  updateSettings,
+  handleRazorpayEvent,
+  notifyExpiringActivations,
+  checkPlanEligibility,
+  revokeIneligibleAddons,
+  requiredKindOf,
+  serializeAddon,
+  serializeActivation,
 };

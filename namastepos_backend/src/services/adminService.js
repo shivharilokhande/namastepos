@@ -33,9 +33,9 @@ const { NotFound, Unauthorized } = require('../utils/errors');
 //
 // Columns on `businesses` that must never leave the admin API:
 const TENANT_MONEY_SECRET_COLUMNS = [
-  'bank_account',          // payout account number — full number enables fraud
-  'bank_ifsc',             // only useful together with the account number
-  'einvoice_user_id',      // NIC e-invoice portal login
+  'bank_account', // payout account number — full number enables fraud
+  'bank_ifsc', // only useful together with the account number
+  'einvoice_user_id', // NIC e-invoice portal login
   'einvoice_password_enc', // encrypted, but still a credential — never ship it
 ];
 
@@ -133,14 +133,19 @@ async function listCustomers({ search, plan, status, limit = 50, offset = 0 } = 
       WHERE ${where.join(' AND ')} AND b.deleted_at IS NULL
    ORDER BY b.created_at DESC
       LIMIT $${idx++} OFFSET $${idx}`,
-    values
+    values,
   );
   const total = r.rows[0]?._total ?? 0;
 
   return {
     customers: r.rows.map((row) => ({
-      id: row.id, name: row.name, email: row.email, phone: row.phone,
-      city: row.city, category: row.category, createdAt: row.created_at,
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      phone: row.phone,
+      city: row.city,
+      category: row.category,
+      createdAt: row.created_at,
       plan: row.plan_tier
         ? { tier: row.plan_tier, name: row.plan_name, priceInr: row.price_inr_paise / 100 }
         : null,
@@ -160,7 +165,8 @@ async function listCustomers({ search, plan, status, limit = 50, offset = 0 } = 
       outlet: outletBlock(row, row.id),
     })),
     total,
-    limit, offset,
+    limit,
+    offset,
   };
 }
 
@@ -175,7 +181,7 @@ async function getCustomer(businessId) {
   LEFT JOIN plans p ON p.id = s.plan_id
             ${OUTLET_JOIN}
       WHERE b.id = $1 LIMIT 1`,
-    [businessId]
+    [businessId],
   );
   if (r.rowCount === 0) throw new NotFound('Customer not found');
   // PRIVACY (see policy at top of file): `SELECT b.*` used to hand every admin
@@ -199,25 +205,28 @@ async function outletSiblings(businessId) {
        JOIN businesses ob ON ob.outlet_group_id = og.id
       WHERE b.id = $1 AND ob.id <> b.id AND ob.deleted_at IS NULL
       ORDER BY is_parent DESC NULLS LAST, ob.name ASC`,
-    [businessId]
+    [businessId],
   );
   return r.rows.map((x) => ({
-    id: x.id, name: x.name, label: x.outlet_label || null,
-    city: x.city || null, isParent: Boolean(x.is_parent),
+    id: x.id,
+    name: x.name,
+    label: x.outlet_label || null,
+    city: x.city || null,
+    isParent: Boolean(x.is_parent),
   }));
 }
 
 async function suspend(businessId) {
   await query(
-    `UPDATE subscriptions SET status = 'paused' WHERE business_id = $1`,
-    [businessId]
+    'UPDATE subscriptions SET status = \'paused\' WHERE business_id = $1',
+    [businessId],
   );
 }
 
 async function restore(businessId) {
   await query(
-    `UPDATE subscriptions SET status = 'active' WHERE business_id = $1`,
-    [businessId]
+    'UPDATE subscriptions SET status = \'active\' WHERE business_id = $1',
+    [businessId],
   );
 }
 
@@ -226,7 +235,7 @@ async function restore(businessId) {
 async function metrics() {
   // QA-9 perf #4: parallel queries (Promise.all) — 6 sequential RTTs → 1 RTT.
   const [r1, r2, r3, mrr, signups, gmv] = await Promise.all([
-    query(`SELECT COUNT(*)::int AS c FROM businesses WHERE deleted_at IS NULL`),
+    query('SELECT COUNT(*)::int AS c FROM businesses WHERE deleted_at IS NULL'),
     query(`SELECT s.status, COUNT(*)::int AS c
              FROM subscriptions s GROUP BY s.status`),
     // Bug fix (2026-08-20): the earlier query counted EVERY subscription
@@ -274,7 +283,7 @@ async function metrics() {
 
 async function impersonate(businessId) {
   // Issue a short-lived JWT that grants read-only access to the business.
-  const r = await query(`SELECT * FROM businesses WHERE id = $1`, [businessId]);
+  const r = await query('SELECT * FROM businesses WHERE id = $1', [businessId]);
   if (r.rowCount === 0) throw new NotFound('Customer not found');
   const accessToken = issueAccessToken({
     sub: 'impersonator',
@@ -307,14 +316,14 @@ function _hashImpersonationCode(code) {
 
 /** Admin-side: mint a one-time code for `businessId`. Returns the raw code ONCE. */
 async function createImpersonationCode(businessId, adminUserId) {
-  const r = await query(`SELECT id FROM businesses WHERE id = $1`, [businessId]);
+  const r = await query('SELECT id FROM businesses WHERE id = $1', [businessId]);
   if (r.rowCount === 0) throw new NotFound('Customer not found');
   const code = crypto.randomBytes(32).toString('base64url'); // 32 bytes entropy
   const ins = await query(
     `INSERT INTO impersonation_codes (code_hash, business_id, admin_user_id, expires_at)
      VALUES ($1, $2, $3, NOW() + INTERVAL '60 seconds')
      RETURNING expires_at`,
-    [_hashImpersonationCode(code), businessId, adminUserId]
+    [_hashImpersonationCode(code), businessId, adminUserId],
   );
   return { code, expiresAt: ins.rows[0].expires_at };
 }
@@ -334,7 +343,7 @@ async function exchangeImpersonationCode(code) {
         SET used_at = NOW()
       WHERE code_hash = $1 AND used_at IS NULL AND expires_at > NOW()
       RETURNING business_id`,
-    [_hashImpersonationCode(code)]
+    [_hashImpersonationCode(code)],
   );
   if (claim.rowCount === 0) {
     throw new Unauthorized('Invalid or expired impersonation code');
@@ -344,11 +353,20 @@ async function exchangeImpersonationCode(code) {
 }
 
 module.exports = {
-  listCustomers, getCustomer, suspend, restore,
-  metrics, impersonate,
-  createImpersonationCode, exchangeImpersonationCode,
+  listCustomers,
+  getCustomer,
+  suspend,
+  restore,
+  metrics,
+  impersonate,
+  createImpersonationCode,
+  exchangeImpersonationCode,
   // Shared by customerAdminService.drilldown so the outlet block and the
   // money-detail redaction are described in exactly one place.
-  outletBlock, outletSiblings, redactBusinessRow,
-  OUTLET_SELECT, OUTLET_JOIN, TENANT_MONEY_SECRET_COLUMNS,
+  outletBlock,
+  outletSiblings,
+  redactBusinessRow,
+  OUTLET_SELECT,
+  OUTLET_JOIN,
+  TENANT_MONEY_SECRET_COLUMNS,
 };

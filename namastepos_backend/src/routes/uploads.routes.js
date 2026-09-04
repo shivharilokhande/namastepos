@@ -44,9 +44,9 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // always lands with a known-good extension.
 const MIME_EXT = {
   'image/jpeg': '.jpg',
-  'image/png':  '.png',
+  'image/png': '.png',
   'image/webp': '.webp',
-  'image/gif':  '.gif',
+  'image/gif': '.gif',
 };
 
 // Storage backend (2026-08-25): Cloudflare R2 when configured (production —
@@ -65,7 +65,7 @@ const diskStorage = multer.diskStorage({
     const dir = path.join(UPLOAD_ROOT, bid);
     // Defence in depth: confirm the resolved path is still inside UPLOAD_ROOT.
     const rootResolved = path.resolve(UPLOAD_ROOT);
-    const dirResolved  = path.resolve(dir);
+    const dirResolved = path.resolve(dir);
     if (!dirResolved.startsWith(rootResolved + path.sep)) {
       return cb(new Error('Path traversal blocked'));
     }
@@ -80,7 +80,7 @@ const diskStorage = multer.diskStorage({
 
 const upload = multer({
   storage: storageSvc.isR2Enabled() ? multer.memoryStorage() : diskStorage,
-  limits: { fileSize: 5 * 1024 * 1024 },   // 5 MB cap
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB cap
   fileFilter: (_req, file, cb) => {
     if (ALLOWED_MIME.has(file.mimetype)) return cb(null, true);
     cb(new Error('Only JPEG / PNG / WebP / GIF images are allowed'));
@@ -122,7 +122,7 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
     const key = `${bid}/${uuidv4()}${ext}`;
     const url = await storageSvc.putObject(key, req.file.buffer, req.file.mimetype);
     return res.status(201).json({
-      url,                            // absolute public URL (R2 custom domain)
+      url, // absolute public URL (R2 custom domain)
       filename: key.split('/').pop(),
       size: req.file.size,
       mime: req.file.mimetype,
@@ -148,7 +148,7 @@ router.post('/', upload.single('file'), asyncHandler(async (req, res) => {
   // Dev fallback — local disk, relative URL served by the static mount.
   const url = `/uploads/${bid}/${req.file.filename}`;
   res.status(201).json({
-    url,                              // relative; client prefixes with API origin
+    url, // relative; client prefixes with API origin
     filename: req.file.filename,
     size: req.file.size,
     mime: req.file.mimetype,

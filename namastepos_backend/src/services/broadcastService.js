@@ -19,16 +19,16 @@ async function resolveRecipients(segment = 'all') {
                  WHERE b.deleted_at IS NULL AND b.email IS NOT NULL AND b.email <> ''`;
   let sql = base; const vals = [];
   if (segment === 'active' || segment === 'trialing' || segment === 'past_due') {
-    sql += ` AND s.status = $1`; vals.push(segment);
+    sql += ' AND s.status = $1'; vals.push(segment);
   } else if (segment === 'trial_ending') {
     sql += ` AND s.status = 'trialing' AND s.trial_ends_at IS NOT NULL
              AND s.trial_ends_at BETWEEN NOW() AND NOW() + INTERVAL '7 days'`;
   } else if (segment && segment.startsWith('plan:')) {
-    sql += ` AND p.tier = $1`; vals.push(segment.slice(5));
+    sql += ' AND p.tier = $1'; vals.push(segment.slice(5));
   } else if (segment !== 'all') {
     throw new BadRequest(`Unknown segment: ${segment}`);
   }
-  sql += ` ORDER BY b.created_at DESC`;
+  sql += ' ORDER BY b.created_at DESC';
   const r = await query(sql, vals);
   // Dedupe by email (a person can own multiple businesses).
   const seen = new Set(); const out = [];
@@ -56,8 +56,12 @@ async function send({ segment, subject, body, actorEmail }) {
   for (const r of rows) {
     try {
       await email.sendMail({
-        template: 'broadcast', recipient: r.email,
-        subject, html, text: body, businessId: r.id,
+        template: 'broadcast',
+        recipient: r.email,
+        subject,
+        html,
+        text: body,
+        businessId: r.id,
       });
       sent += 1;
     } catch (err) {

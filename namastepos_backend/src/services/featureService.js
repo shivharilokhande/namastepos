@@ -18,8 +18,8 @@ const { query, withTransaction } = require('../config/db');
 const env = require('../config/env');
 const logger = require('../config/logger');
 
-const TTL_MS = 60_000;                       // 1-minute soft cache
-const cache = new Map();                     // bid → { expires, tierKind, features:Set }
+const TTL_MS = 60_000; // 1-minute soft cache
+const cache = new Map(); // bid → { expires, tierKind, features:Set }
 
 // ── Cross-instance cache invalidation (Review 2026-08-28) ────────────────
 // The in-process Map is fast but per-node: a super-admin plan/feature change
@@ -79,7 +79,7 @@ async function resolveTierKind(businessId) {
         )
       ORDER BY s.updated_at DESC NULLS LAST
       LIMIT 1`,
-    [businessId]
+    [businessId],
   );
   if (r.rowCount === 0) return { tier: 'free', tier_kind: 'starter' };
   return { tier: r.rows[0].tier, tier_kind: r.rows[0].tier_kind };
@@ -93,14 +93,14 @@ async function resolveTierKind(businessId) {
 async function featuresFor(planTier, fallbackTierKind) {
   // Per-plan rows take precedence.
   let r = await query(
-    `SELECT feature_key FROM plan_features WHERE tier_kind = $1`,
-    [planTier]
+    'SELECT feature_key FROM plan_features WHERE tier_kind = $1',
+    [planTier],
   );
   if (r.rowCount === 0 && fallbackTierKind && fallbackTierKind !== planTier) {
     // Fall back to tier_kind defaults
     r = await query(
-      `SELECT feature_key FROM plan_features WHERE tier_kind = $1`,
-      [fallbackTierKind]
+      'SELECT feature_key FROM plan_features WHERE tier_kind = $1',
+      [fallbackTierKind],
     );
   }
   return new Set(r.rows.map((row) => row.feature_key));
@@ -121,7 +121,7 @@ async function _load(businessId) {
         WHERE ba.business_id = $1
           AND ba.status IN ('active', 'trialing')
           AND a.is_active = TRUE`,
-      [businessId]
+      [businessId],
     );
     for (const row of addons.rows) {
       if (row.slug) features.add(row.slug); // back-compat: slug doubles as a key
@@ -142,7 +142,7 @@ async function _load(businessId) {
     const overrides = await query(
       `SELECT feature_key, enabled FROM business_feature_overrides
         WHERE business_id = $1`,
-      [businessId]
+      [businessId],
     );
     for (const row of overrides.rows) {
       if (!row.feature_key) continue;
@@ -173,8 +173,8 @@ async function hasFeature(businessId, featureKey) {
 async function planSummary(businessId) {
   const entry = await _load(businessId);
   return {
-    tier: entry.tier,            // Push 18b — plan code (free/basic/...)
-    tierKind: entry.tierKind,    // legacy: tier category (starter/pro/...)
+    tier: entry.tier, // Push 18b — plan code (free/basic/...)
+    tierKind: entry.tierKind, // legacy: tier category (starter/pro/...)
     features: [...entry.features],
   };
 }
@@ -258,7 +258,7 @@ const WELL_KNOWN_FEATURE_KEYS = [
 ];
 
 async function listFeatureCatalog() {
-  const r = await query(`SELECT DISTINCT feature_key FROM plan_features`);
+  const r = await query('SELECT DISTINCT feature_key FROM plan_features');
   const fromDb = r.rows.map((row) => row.feature_key);
   // Deduplicate union, sorted for stable UI.
   const all = Array.from(new Set([...WELL_KNOWN_FEATURE_KEYS, ...fromDb])).sort();
@@ -272,13 +272,13 @@ async function listTierFeatures(planTier, fallbackTierKind) {
   let r = await query(
     `SELECT feature_key FROM plan_features
       WHERE tier_kind = $1 ORDER BY feature_key`,
-    [planTier]
+    [planTier],
   );
   if (r.rowCount === 0 && fallbackTierKind && fallbackTierKind !== planTier) {
     r = await query(
       `SELECT feature_key FROM plan_features
         WHERE tier_kind = $1 ORDER BY feature_key`,
-      [fallbackTierKind]
+      [fallbackTierKind],
     );
   }
   return r.rows.map((row) => row.feature_key);
@@ -289,20 +289,20 @@ async function listTierFeatures(planTier, fallbackTierKind) {
 // on the next /auth/me poll without a process restart.
 async function setTierFeatures(tierKind, featureKeys) {
   const keys = Array.from(new Set(
-    (featureKeys || []).filter((k) => typeof k === 'string' && k.length > 0)
+    (featureKeys || []).filter((k) => typeof k === 'string' && k.length > 0),
   ));
   // Bug fix: previously used `query('BEGIN')` against the pool — each call
   // grabs a different connection, so the BEGIN/COMMIT/ROLLBACK never wrapped
   // the DELETE+INSERT. A failure between them could wipe the tier's features
   // entirely. `withTransaction` pins a single client for the whole block.
   await withTransaction(async (client) => {
-    await client.query(`DELETE FROM plan_features WHERE tier_kind = $1`, [tierKind]);
+    await client.query('DELETE FROM plan_features WHERE tier_kind = $1', [tierKind]);
     if (keys.length > 0) {
       const placeholders = keys.map((_, i) => `($1, $${i + 2})`).join(', ');
       await client.query(
         `INSERT INTO plan_features (tier_kind, feature_key) VALUES ${placeholders}
          ON CONFLICT DO NOTHING`,
-        [tierKind, ...keys]
+        [tierKind, ...keys],
       );
     }
   });

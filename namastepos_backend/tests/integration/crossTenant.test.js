@@ -60,7 +60,7 @@ describe('Cross-tenant IDOR protection', () => {
       // Accept 403 (forbidden) or 402 (feature-locked before ownership check
       // is reached — both mean "not delivered"). Anything else = leak.
       expect([402, 403]).toContain(res.status);
-    }
+    },
   );
 
   test('Owner A cannot POST an order into Business B', async () => {

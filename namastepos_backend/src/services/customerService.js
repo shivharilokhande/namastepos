@@ -48,8 +48,8 @@ async function list(businessId, { search, tier, sort = 'recent', limit = 100, of
   if (tier) { where.push(`tier = $${idx++}`); values.push(tier); }
 
   const orderBy = sort === 'top_spender' ? 'total_spent DESC'
-                : sort === 'top_loyalty' ? 'lifetime_points DESC'
-                : 'last_order_at DESC NULLS LAST';
+    : sort === 'top_loyalty' ? 'lifetime_points DESC'
+      : 'last_order_at DESC NULLS LAST';
 
   // P1 perf (Vivek #2 / Aditya): single roundtrip — window-function COUNT
   // over the same predicate avoids the two-query race that caused
@@ -61,7 +61,7 @@ async function list(businessId, { search, tier, sort = 'recent', limit = 100, of
       WHERE ${where.join(' AND ')}
       ORDER BY ${orderBy}
       LIMIT $${idx++} OFFSET $${idx}`,
-    values
+    values,
   );
   const total = r.rows[0]?._total ?? 0;
   return { customers: r.rows.map(serialize), total };
@@ -69,8 +69,8 @@ async function list(businessId, { search, tier, sort = 'recent', limit = 100, of
 
 async function byId(businessId, id) {
   const r = await query(
-    `SELECT * FROM customers WHERE business_id = $1 AND id = $2 LIMIT 1`,
-    [businessId, id]
+    'SELECT * FROM customers WHERE business_id = $1 AND id = $2 LIMIT 1',
+    [businessId, id],
   );
   if (r.rowCount === 0) throw new NotFound('Customer not found');
   return serialize(r.rows[0]);
@@ -80,8 +80,8 @@ async function byPhone(businessId, phone) {
   const normalized = normalizePhone(phone);
   if (!normalized) throw new BadRequest('Invalid phone');
   const r = await query(
-    `SELECT * FROM customers WHERE business_id = $1 AND phone = $2 LIMIT 1`,
-    [businessId, normalized]
+    'SELECT * FROM customers WHERE business_id = $1 AND phone = $2 LIMIT 1',
+    [businessId, normalized],
   );
   return r.rowCount === 0 ? null : serialize(r.rows[0]);
 }
@@ -103,9 +103,9 @@ async function upsert(businessId, body) {
       `INSERT INTO customers (business_id, phone, name, email, birthday, gender, tags, notes, marketing_optin)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [businessId, phone, body.name || null, body.email || null,
-       body.birthday || null, body.gender || null,
-       body.tags || null, body.notes || null,
-       body.marketingOptin !== false]
+        body.birthday || null, body.gender || null,
+        body.tags || null, body.notes || null,
+        body.marketingOptin !== false],
     );
     return serialize(r.rows[0]);
   } catch (err) {
@@ -116,8 +116,13 @@ async function upsert(businessId, body) {
 
 async function update(businessId, id, patch) {
   const allowed = {
-    name: 'name', email: 'email', birthday: 'birthday', gender: 'gender',
-    tags: 'tags', notes: 'notes', marketing_optin: 'marketing_optin',
+    name: 'name',
+    email: 'email',
+    birthday: 'birthday',
+    gender: 'gender',
+    tags: 'tags',
+    notes: 'notes',
+    marketing_optin: 'marketing_optin',
     marketingOptin: 'marketing_optin',
   };
   const sets = []; const values = []; let idx = 1;
@@ -129,7 +134,7 @@ async function update(businessId, id, patch) {
   const r = await query(
     `UPDATE customers SET ${sets.join(', ')}
       WHERE business_id = $${idx++} AND id = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Customer not found');
   return serialize(r.rows[0]);
@@ -143,7 +148,7 @@ async function softDelete(businessId, id) {
         SET name = NULL, email = NULL, birthday = NULL,
             tags = NULL, notes = '(removed)', marketing_optin = FALSE
       WHERE business_id = $1 AND id = $2`,
-    [businessId, id]
+    [businessId, id],
   );
   return { id };
 }
@@ -153,7 +158,7 @@ async function softDelete(businessId, id) {
  * Find-or-create a customer for the given phone and update visit stats.
  * Called inside the order-create transaction.
  */
-async function linkToOrder(client, { businessId, phone, name, orderId, orderTotal }) {
+async function linkToOrder(client, { businessId, phone, name, orderTotal }) {
   const normalized = normalizePhone(phone);
   if (!normalized) return null;
 
@@ -164,7 +169,7 @@ async function linkToOrder(client, { businessId, phone, name, orderId, orderTota
      ON CONFLICT (business_id, phone) DO UPDATE
        SET name = COALESCE(customers.name, EXCLUDED.name)
      RETURNING *`,
-    [businessId, normalized, name || null]
+    [businessId, normalized, name || null],
   );
   const customer = upsert.rows[0];
 
@@ -177,7 +182,7 @@ async function linkToOrder(client, { businessId, phone, name, orderId, orderTota
             last_order_at  = NOW(),
             first_order_at = COALESCE(first_order_at, NOW())
       WHERE id = $2`,
-    [orderTotal, customer.id]
+    [orderTotal, customer.id],
   );
 
   return customer;
@@ -190,12 +195,20 @@ async function recentOrders(businessId, customerId, { limit = 20 } = {}) {
        FROM orders
       WHERE business_id = $1 AND customer_id = $2
       ORDER BY created_at DESC LIMIT $3`,
-    [businessId, customerId, limit]
+    [businessId, customerId, limit],
   );
   return r.rows;
 }
 
 module.exports = {
-  list, byId, byPhone, upsert, update, softDelete,
-  linkToOrder, recentOrders, serialize, normalizePhone,
+  list,
+  byId,
+  byPhone,
+  upsert,
+  update,
+  softDelete,
+  linkToOrder,
+  recentOrders,
+  serialize,
+  normalizePhone,
 };

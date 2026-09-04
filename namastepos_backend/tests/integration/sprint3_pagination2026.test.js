@@ -10,7 +10,8 @@ const request = require('supertest');
 const buildApp = require('../../src/app');
 const { resetDb, makeBusiness, tokenFor, closePool } = require('../setup');
 
-let app, business, token, itemId;
+let app; let business; let token; let
+  itemId;
 
 beforeAll(async () => {
   await resetDb();

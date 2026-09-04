@@ -5,7 +5,7 @@
 // stock — capturing the per-line food cost at the moment of sale.
 
 const { query, withTransaction } = require('../config/db');
-const { NotFound, BadRequest } = require('../utils/errors');
+const { BadRequest } = require('../utils/errors');
 
 function serializeLine(r) {
   return {
@@ -32,7 +32,7 @@ async function listForItem(businessId, menuItemId) {
        JOIN ingredients i ON i.id = rc.ingredient_id
       WHERE rc.business_id = $1 AND rc.menu_item_id = $2
       ORDER BY i.name`,
-    [businessId, menuItemId]
+    [businessId, menuItemId],
   );
   return r.rows.map(serializeLine);
 }
@@ -41,8 +41,8 @@ async function setRecipe(businessId, menuItemId, lines) {
   // Replaces the recipe atomically — lines = [{ ingredientId, qty, note }, ...]
   return withTransaction(async (client) => {
     await client.query(
-      `DELETE FROM recipes WHERE business_id = $1 AND menu_item_id = $2`,
-      [businessId, menuItemId]
+      'DELETE FROM recipes WHERE business_id = $1 AND menu_item_id = $2',
+      [businessId, menuItemId],
     );
     for (const l of lines || []) {
       if (!l.ingredientId || !l.qty || l.qty <= 0) {
@@ -53,7 +53,7 @@ async function setRecipe(businessId, menuItemId, lines) {
          VALUES ($1, $2, $3, $4, $5)
          ON CONFLICT (menu_item_id, ingredient_id) DO UPDATE
            SET qty = EXCLUDED.qty, note = EXCLUDED.note`,
-        [businessId, menuItemId, l.ingredientId, l.qty, l.note || null]
+        [businessId, menuItemId, l.ingredientId, l.qty, l.note || null],
       );
     }
     return listForItem(businessId, menuItemId);
@@ -71,7 +71,7 @@ async function previewCost(businessId, menuItemId, qty = 1) {
     `SELECT rc.qty, i.cost_per_unit_paise
        FROM recipes rc JOIN ingredients i ON i.id = rc.ingredient_id
       WHERE rc.business_id = $1 AND rc.menu_item_id = $2`,
-    [businessId, menuItemId]
+    [businessId, menuItemId],
   );
   let cost = 0;
   for (const l of lines.rows) {
@@ -107,7 +107,7 @@ async function deductForOrder(client, { businessId, orderId, orderItems }) {
        FROM recipes rc JOIN ingredients i ON i.id = rc.ingredient_id
       WHERE rc.business_id = $1 AND rc.menu_item_id = ANY($2::uuid[])
       ORDER BY rc.ingredient_id FOR UPDATE OF i`,
-    [businessId, menuIds]
+    [businessId, menuIds],
   );
 
   // Aggregate qty_change per ingredient + per-item food cost
@@ -134,8 +134,8 @@ async function deductForOrder(client, { businessId, orderId, orderItems }) {
       perItem.set(it.orderItemId, totalForItem);
       orderFoodCostPaise += totalForItem;
       await client.query(
-        `UPDATE order_items SET food_cost_paise = $1 WHERE id = $2`,
-        [totalForItem, it.orderItemId]
+        'UPDATE order_items SET food_cost_paise = $1 WHERE id = $2',
+        [totalForItem, it.orderItemId],
       );
     }
   }
@@ -149,7 +149,7 @@ async function deductForOrder(client, { businessId, orderId, orderItems }) {
           SET stock = i.stock - d.used_qty
          FROM (SELECT UNNEST($1::uuid[]) AS id, UNNEST($2::numeric[]) AS used_qty) d
         WHERE i.id = d.id`,
-      [ids, deltas]
+      [ids, deltas],
     );
   }
 
@@ -172,14 +172,14 @@ async function deductForOrder(client, { businessId, orderId, orderItems }) {
         txnRows.map((t) => t.cost_per_unit_paise || 0),
         txnRows.map((t) => t.menu_item_id),
         txnRows.map((t) => t.recipe_id),
-      ]
+      ],
     );
   }
 
   if (orderFoodCostPaise > 0) {
     await client.query(
-      `UPDATE orders SET food_cost_paise = $1 WHERE id = $2`,
-      [orderFoodCostPaise, orderId]
+      'UPDATE orders SET food_cost_paise = $1 WHERE id = $2',
+      [orderFoodCostPaise, orderId],
     );
   }
 
@@ -205,12 +205,12 @@ async function restoreForOrder(client, { businessId, orderId, orderItems }) {
        FROM recipes rc JOIN ingredients i ON i.id = rc.ingredient_id
       WHERE rc.business_id = $1 AND rc.menu_item_id = ANY($2::uuid[])
       ORDER BY rc.ingredient_id FOR UPDATE OF i`,
-    [businessId, menuIds]
+    [businessId, menuIds],
   );
   if (recipeRows.rowCount === 0) return;
 
-  const ingDelta = new Map();       // ingredient_id → totalQtyToRestore
-  const unitCost = new Map();       // ingredient_id → cost_per_unit_paise
+  const ingDelta = new Map(); // ingredient_id → totalQtyToRestore
+  const unitCost = new Map(); // ingredient_id → cost_per_unit_paise
   for (const it of orderItems) {
     for (const r of recipeRows.rows.filter((x) => x.menu_item_id === it.menuItemId)) {
       const qty = parseFloat(r.qty) * Number(it.qty);
@@ -227,7 +227,7 @@ async function restoreForOrder(client, { businessId, orderId, orderItems }) {
         SET stock = i.stock + d.qty
        FROM (SELECT UNNEST($1::uuid[]) AS id, UNNEST($2::numeric[]) AS qty) d
       WHERE i.id = d.id`,
-    [ids, deltas]
+    [ids, deltas],
   );
   // Offsetting +ve ledger rows. 'reverse' is the ingredient_txn_kind enum's
   // inverse-of-sale value (the enum has no 'returned'); using an invalid value
@@ -240,7 +240,7 @@ async function restoreForOrder(client, { businessId, orderId, orderItems }) {
             (SELECT stock FROM ingredients WHERE id = ing_id),
             cost, 'reverse', $2
        FROM UNNEST($3::uuid[], $4::numeric[], $5::int[]) AS t(ing_id, qty, cost)`,
-    [businessId, orderId, ids, deltas, ids.map((id) => unitCost.get(id))]
+    [businessId, orderId, ids, deltas, ids.map((id) => unitCost.get(id))],
   );
 }
 
@@ -261,11 +261,11 @@ async function reportFoodCost(businessId, { startDate, endDate } = {}) {
   LEFT JOIN orders o ON o.id = oi.order_id AND o.status <> 'cancelled'
       WHERE mi.business_id = $1
         AND mi.is_active = TRUE
-        ${startDate ? `AND o.created_at >= $2::date` : ''}
+        ${startDate ? 'AND o.created_at >= $2::date' : ''}
         ${endDate ? `AND o.created_at <= $${startDate ? '3' : '2'}::date + INTERVAL '1 day'` : ''}
       GROUP BY mi.id, mi.name, mi.price
       ORDER BY food_cost_pct DESC NULLS LAST`,
-    [businessId, ...(startDate ? [startDate] : []), ...(endDate ? [endDate] : [])]
+    [businessId, ...(startDate ? [startDate] : []), ...(endDate ? [endDate] : [])],
   );
   return r.rows.map((row) => ({
     menuItemId: row.id,

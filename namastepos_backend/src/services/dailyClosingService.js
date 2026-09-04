@@ -1,7 +1,7 @@
 // Daily closing / Z-report (Sprint 2 / FF-403)
 
 const { query, withTransaction } = require('../config/db');
-const { NotFound, Conflict, BadRequest } = require('../utils/errors');
+const { Conflict } = require('../utils/errors');
 
 async function preview(businessId, date) {
   // P1 fix (2026-08-22): default "today" in IST (queries bucket by IST).

@@ -6,9 +6,7 @@ async function refreshRules(businessId) {
   return withTransaction(async (client) => {
     // Find pairs that co-occur in the same order, weighted by recency.
     // Confidence = (#orders with both A and B) / (#orders with A) × 100.
-    await client.query(
-      `DELETE FROM co_purchase_rules WHERE business_id = $1`, [businessId]
-    );
+    await client.query('DELETE FROM co_purchase_rules WHERE business_id = $1', [businessId]);
     await client.query(
       `INSERT INTO co_purchase_rules
          (business_id, anchor_item_id, suggested_item_id, confidence, co_count)
@@ -26,11 +24,11 @@ async function refreshRules(businessId) {
         HAVING COUNT(*) >= 3
         ORDER BY COUNT(*) DESC
         LIMIT 500`,
-      [businessId]
+      [businessId],
     );
     const cnt = await client.query(
-      `SELECT COUNT(*)::int AS n FROM co_purchase_rules WHERE business_id = $1`,
-      [businessId]
+      'SELECT COUNT(*)::int AS n FROM co_purchase_rules WHERE business_id = $1',
+      [businessId],
     );
     return { rulesGenerated: cnt.rows[0].n };
   });
@@ -44,7 +42,7 @@ async function suggestFor(businessId, menuItemId, limit = 3) {
       WHERE cr.business_id = $1 AND cr.anchor_item_id = $2
         AND mi.is_active = TRUE AND mi.sold_out_until IS NULL
       ORDER BY cr.confidence DESC LIMIT $3`,
-    [businessId, menuItemId, limit]
+    [businessId, menuItemId, limit],
   );
   return r.rows;
 }

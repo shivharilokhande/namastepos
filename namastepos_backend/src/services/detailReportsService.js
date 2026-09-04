@@ -26,7 +26,7 @@ const { query } = require('../config/db');
 // ── Letterhead helper (shared with the income statement) ────────────────
 async function _letterhead(businessId) {
   try {
-    const r = await query(`SELECT * FROM businesses WHERE id = $1`, [businessId]);
+    const r = await query('SELECT * FROM businesses WHERE id = $1', [businessId]);
     const b = r.rows[0] || {};
     return {
       id: b.id,
@@ -75,7 +75,7 @@ async function incomeRegister(businessId, { startDate, endDate }) {
           AND (created_at AT TIME ZONE 'Asia/Kolkata')::date <= $3::date
           AND status <> 'cancelled'
         ORDER BY created_at DESC`,
-      [businessId, startDate, endDate]
+      [businessId, startDate, endDate],
     );
     rows = r.rows.map((row) => ({
       id: row.id,
@@ -100,14 +100,14 @@ async function incomeRegister(businessId, { startDate, endDate }) {
   }
 
   const totals = rows.reduce((t, r) => ({
-    orderCount:   t.orderCount + 1,
+    orderCount: t.orderCount + 1,
     taxableValue: t.taxableValue + r.taxableValue,
-    cgst:         t.cgst + r.cgst,
-    sgst:         t.sgst + r.sgst,
-    igst:         t.igst + r.igst,
+    cgst: t.cgst + r.cgst,
+    sgst: t.sgst + r.sgst,
+    igst: t.igst + r.igst,
     serviceCharge: t.serviceCharge + r.serviceCharge,
-    discount:     t.discount + r.discount,
-    total:        t.total + r.total,
+    discount: t.discount + r.discount,
+    total: t.total + r.total,
   }), { orderCount: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0, serviceCharge: 0, discount: 0, total: 0 });
 
   return {
@@ -138,7 +138,7 @@ async function expenseRegister(businessId, { startDate, endDate }) {
           AND date <= $3::date
           AND deleted_at IS NULL
         ORDER BY date DESC, created_at DESC`,
-      [businessId, startDate, endDate]
+      [businessId, startDate, endDate],
     );
     rows = r.rows.map((row) => ({
       id: row.id,
@@ -187,8 +187,8 @@ async function invoiceRegister(businessId, { startDate, endDate, status }) {
     const params = [businessId];
     const where = ['business_id = $1'];
     if (startDate) { params.push(startDate); where.push(`invoice_date::date >= $${params.length}::date`); }
-    if (endDate)   { params.push(endDate);   where.push(`invoice_date::date <= $${params.length}::date`); }
-    if (status)    { params.push(status);    where.push(`status = $${params.length}`); }
+    if (endDate) { params.push(endDate); where.push(`invoice_date::date <= $${params.length}::date`); }
+    if (status) { params.push(status); where.push(`status = $${params.length}`); }
     const r = await query(
       `SELECT id, invoice_no, invoice_date, fy,
               recipient_name, recipient_gstin, place_of_supply,
@@ -199,7 +199,7 @@ async function invoiceRegister(businessId, { startDate, endDate, status }) {
          FROM tax_invoices
         WHERE ${where.join(' AND ')}
         ORDER BY invoice_date DESC`,
-      params
+      params,
     );
     rows = r.rows.map((row) => ({
       id: row.id,
@@ -228,12 +228,12 @@ async function invoiceRegister(businessId, { startDate, endDate, status }) {
 
   const issued = rows.filter((r) => r.status === 'issued');
   const totals = issued.reduce((t, r) => ({
-    invoiceCount:  t.invoiceCount + 1,
-    taxableValue:  t.taxableValue + r.taxableValue,
-    cgst:          t.cgst + r.cgst,
-    sgst:          t.sgst + r.sgst,
-    igst:          t.igst + r.igst,
-    total:         t.total + r.total,
+    invoiceCount: t.invoiceCount + 1,
+    taxableValue: t.taxableValue + r.taxableValue,
+    cgst: t.cgst + r.cgst,
+    sgst: t.sgst + r.sgst,
+    igst: t.igst + r.igst,
+    total: t.total + r.total,
   }), { invoiceCount: 0, taxableValue: 0, cgst: 0, sgst: 0, igst: 0, total: 0 });
   totals.cancelledCount = rows.length - issued.length;
 

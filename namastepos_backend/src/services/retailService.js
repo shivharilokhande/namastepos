@@ -2,17 +2,17 @@
 // ledgers, cheques, quotations, warehouses (Sprints 9-10 / R-101 → R-210)
 
 const { query, withTransaction } = require('../config/db');
-const { NotFound, BadRequest, Conflict } = require('../utils/errors');
+const { NotFound, Conflict } = require('../utils/errors');
 
 // ── Items ────────────────────────────────────────────────────────────────
 async function listItems(businessId, { search, category } = {}) {
   const where = ['business_id = $1', 'is_active = TRUE'];
   const values = [businessId]; let idx = 2;
-  if (search) { where.push(`(name ILIKE $${idx} OR EXISTS (SELECT 1 FROM retail_barcodes b WHERE b.retail_item_id = retail_items.id AND b.barcode = $${idx+1}))`); values.push(`%${search}%`, search); idx += 2; }
+  if (search) { where.push(`(name ILIKE $${idx} OR EXISTS (SELECT 1 FROM retail_barcodes b WHERE b.retail_item_id = retail_items.id AND b.barcode = $${idx + 1}))`); values.push(`%${search}%`, search); idx += 2; }
   if (category) { where.push(`category = $${idx++}`); values.push(category); }
   const r = await query(
     `SELECT * FROM retail_items WHERE ${where.join(' AND ')} ORDER BY name`,
-    values
+    values,
   );
   return r.rows;
 }
@@ -24,9 +24,9 @@ async function createItem(businessId, body) {
         mrp_paise, default_price_paise, cost_paise, stock, reorder_level)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
     [businessId, body.name, body.category, body.unit || 'piece',
-     body.hsnCode, body.gstPct || 18, body.mrpPaise,
-     Math.round((body.priceInr || 0) * 100),
-     body.costPaise, body.stock || 0, body.reorderLevel || 0]
+      body.hsnCode, body.gstPct || 18, body.mrpPaise,
+      Math.round((body.priceInr || 0) * 100),
+      body.costPaise, body.stock || 0, body.reorderLevel || 0],
   );
   return r.rows[0];
 }
@@ -36,7 +36,7 @@ async function addBarcode(businessId, retailItemId, barcode, isPrimary = false) 
     await query(
       `INSERT INTO retail_barcodes (business_id, retail_item_id, barcode, is_primary)
        VALUES ($1, $2, $3, $4)`,
-      [businessId, retailItemId, barcode, isPrimary]
+      [businessId, retailItemId, barcode, isPrimary],
     );
   } catch (err) {
     if (err.code === '23505') throw new Conflict('Barcode already exists');
@@ -49,7 +49,7 @@ async function findByBarcode(businessId, barcode) {
     `SELECT ri.* FROM retail_items ri
        JOIN retail_barcodes b ON b.retail_item_id = ri.id
       WHERE ri.business_id = $1 AND b.barcode = $2 LIMIT 1`,
-    [businessId, barcode]
+    [businessId, barcode],
   );
   return r.rowCount > 0 ? r.rows[0] : null;
 }
@@ -60,9 +60,13 @@ async function bulkImport(businessId, rows) {
   for (const row of rows) {
     try {
       await createItem(businessId, {
-        name: row.name, category: row.category,
-        unit: row.unit, hsnCode: row.hsn_code, gstPct: row.gst_pct,
-        priceInr: row.price_inr, stock: row.stock,
+        name: row.name,
+        category: row.category,
+        unit: row.unit,
+        hsnCode: row.hsn_code,
+        gstPct: row.gst_pct,
+        priceInr: row.price_inr,
+        stock: row.stock,
       });
       created += 1;
     } catch (err) {
@@ -77,7 +81,7 @@ async function listVendors(businessId) {
   const r = await query(
     `SELECT * FROM vendors WHERE business_id = $1 AND is_active = TRUE
       ORDER BY name`,
-    [businessId]
+    [businessId],
   );
   return r.rows;
 }
@@ -89,8 +93,8 @@ async function createVendor(businessId, body) {
         gstin, payment_terms_days, credit_limit_paise)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
     [businessId, body.name, body.contactPerson, body.phone, body.email,
-     body.address, body.gstin, body.paymentTermsDays || 0,
-     body.creditLimitInr ? Math.round(body.creditLimitInr * 100) : 0]
+      body.address, body.gstin, body.paymentTermsDays || 0,
+      body.creditLimitInr ? Math.round(body.creditLimitInr * 100) : 0],
   );
   return r.rows[0];
 }
@@ -103,7 +107,7 @@ async function createPO(businessId, body, userId) {
       `INSERT INTO purchase_orders
          (business_id, po_no, vendor_id, expected_on, notes, created_by_user_id)
        VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [businessId, poNo, body.vendorId, body.expectedOn || null, body.notes, userId]
+      [businessId, poNo, body.vendorId, body.expectedOn || null, body.notes, userId],
     );
     let total = 0;
     for (const l of body.lines || []) {
@@ -115,13 +119,13 @@ async function createPO(businessId, body, userId) {
             qty_ordered, unit_price_paise, gst_pct, line_total_paise)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [po.rows[0].id, l.retailItemId || null, l.ingredientId || null,
-         l.description, l.qty, Math.round(l.unitPriceInr * 100),
-         l.gstPct || 0, lineTotal]
+          l.description, l.qty, Math.round(l.unitPriceInr * 100),
+          l.gstPct || 0, lineTotal],
       );
     }
     await client.query(
-      `UPDATE purchase_orders SET total_paise = $1 WHERE id = $2`,
-      [total, po.rows[0].id]
+      'UPDATE purchase_orders SET total_paise = $1 WHERE id = $2',
+      [total, po.rows[0].id],
     );
     return po.rows[0];
   });
@@ -134,8 +138,8 @@ async function receivePO(businessId, poId, body, userId) {
     // trusted from the request with no tenant scope, so a caller could receive
     // against another tenant's purchase order and corrupt their records.
     const po = await client.query(
-      `SELECT id FROM purchase_orders WHERE id = $1 AND business_id = $2 LIMIT 1`,
-      [poId, businessId]
+      'SELECT id FROM purchase_orders WHERE id = $1 AND business_id = $2 LIMIT 1',
+      [poId, businessId],
     );
     if (po.rowCount === 0) {
       const { NotFound } = require('../utils/errors');
@@ -146,7 +150,7 @@ async function receivePO(businessId, poId, body, userId) {
       `INSERT INTO goods_receipts
          (business_id, po_id, grn_no, received_by_user_id, notes)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [businessId, poId, grnNo, userId || null, body.notes || null]
+      [businessId, poId, grnNo, userId || null, body.notes || null],
     );
     for (const line of body.lines || []) {
       // S6: every line must belong to THIS PO (which we just confirmed is the
@@ -154,7 +158,7 @@ async function receivePO(businessId, poId, body, userId) {
       const own = await client.query(
         `SELECT retail_item_id FROM purchase_order_lines
           WHERE id = $1 AND po_id = $2 LIMIT 1`,
-        [line.poLineId, poId]
+        [line.poLineId, poId],
       );
       if (own.rowCount === 0) {
         const { BadRequest } = require('../utils/errors');
@@ -163,13 +167,13 @@ async function receivePO(businessId, poId, body, userId) {
       await client.query(
         `INSERT INTO goods_receipt_lines (grn_id, po_line_id, qty, batch_no, expires_on)
          VALUES ($1, $2, $3, $4, $5)`,
-        [grn.rows[0].id, line.poLineId, line.qty, line.batchNo || null, line.expiresOn || null]
+        [grn.rows[0].id, line.poLineId, line.qty, line.batchNo || null, line.expiresOn || null],
       );
       await client.query(
         `UPDATE purchase_order_lines
             SET qty_received = qty_received + $1
           WHERE id = $2 AND po_id = $3`,
-        [line.qty, line.poLineId, poId]
+        [line.qty, line.poLineId, poId],
       );
       // Pull retail_item_id from the (already tenant-verified) line.
       const ln = own;
@@ -177,7 +181,7 @@ async function receivePO(businessId, poId, body, userId) {
         await client.query(
           `UPDATE retail_items SET stock = stock + $1
             WHERE business_id = $2 AND id = $3`,
-          [line.qty, businessId, ln.rows[0].retail_item_id]
+          [line.qty, businessId, ln.rows[0].retail_item_id],
         );
         if (line.batchNo) {
           await client.query(
@@ -187,7 +191,7 @@ async function receivePO(businessId, poId, body, userId) {
              ON CONFLICT (retail_item_id, batch_no) DO UPDATE
                SET qty = retail_batches.qty + EXCLUDED.qty,
                    qty_remaining = retail_batches.qty_remaining + EXCLUDED.qty`,
-            [businessId, ln.rows[0].retail_item_id, line.batchNo, line.qty, line.expiresOn || null]
+            [businessId, ln.rows[0].retail_item_id, line.batchNo, line.qty, line.expiresOn || null],
           );
         }
       }
@@ -195,8 +199,8 @@ async function receivePO(businessId, poId, body, userId) {
     // Update PO status
     const status = body.partial ? 'partial' : 'received';
     await client.query(
-      `UPDATE purchase_orders SET status = $1 WHERE id = $2 AND business_id = $3`,
-      [status, poId, businessId]
+      'UPDATE purchase_orders SET status = $1 WHERE id = $2 AND business_id = $3',
+      [status, poId, businessId],
     );
     return grn.rows[0];
   });
@@ -210,7 +214,7 @@ async function postLedger(businessId, body) {
       `SELECT COALESCE(SUM(debit_paise - credit_paise), 0)::int AS bal
          FROM ledger_entries
         WHERE business_id = $1 AND party_kind = $2 AND party_id = $3`,
-      [businessId, body.partyKind, body.partyId]
+      [businessId, body.partyKind, body.partyId],
     );
     const balanceAfter = prior.rows[0].bal + (body.debitPaise || 0) - (body.creditPaise || 0);
     const r = await client.query(
@@ -219,8 +223,8 @@ async function postLedger(businessId, body) {
           debit_paise, credit_paise, balance_after_paise, note)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
       [businessId, body.partyKind, body.partyId,
-       body.entryDate || new Date(), body.kind, body.refNo || null,
-       body.debitPaise || 0, body.creditPaise || 0, balanceAfter, body.note || null]
+        body.entryDate || new Date(), body.kind, body.refNo || null,
+        body.debitPaise || 0, body.creditPaise || 0, balanceAfter, body.note || null],
     );
     return r.rows[0];
   });
@@ -231,7 +235,7 @@ async function partyLedger(businessId, partyKind, partyId) {
     `SELECT * FROM ledger_entries
       WHERE business_id = $1 AND party_kind = $2 AND party_id = $3
       ORDER BY entry_date, created_at`,
-    [businessId, partyKind, partyId]
+    [businessId, partyKind, partyId],
   );
   return r.rows;
 }
@@ -244,8 +248,8 @@ async function recordCheque(businessId, body) {
         bank_name, amount_paise, cheque_date, notes)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
     [businessId, body.direction, body.partyKind || null, body.partyId || null,
-     body.chequeNo, body.bankName, Math.round(body.amountInr * 100),
-     body.chequeDate, body.notes || null]
+      body.chequeNo, body.bankName, Math.round(body.amountInr * 100),
+      body.chequeDate, body.notes || null],
   );
   return r.rows[0];
 }
@@ -254,7 +258,7 @@ async function updateChequeStatus(businessId, id, status, clearedOn = null) {
   const r = await query(
     `UPDATE cheques SET status = $1, cleared_on = $2
       WHERE business_id = $3 AND id = $4 RETURNING *`,
-    [status, clearedOn, businessId, id]
+    [status, clearedOn, businessId, id],
   );
   if (r.rowCount === 0) throw new NotFound('Cheque not found');
   return r.rows[0];
@@ -263,8 +267,8 @@ async function updateChequeStatus(businessId, id, status, clearedOn = null) {
 // ── Price lists ─────────────────────────────────────────────────────────
 async function createPriceList(businessId, name, isDefault = false) {
   const r = await query(
-    `INSERT INTO price_lists (business_id, name, is_default) VALUES ($1, $2, $3) RETURNING *`,
-    [businessId, name, isDefault]
+    'INSERT INTO price_lists (business_id, name, is_default) VALUES ($1, $2, $3) RETURNING *',
+    [businessId, name, isDefault],
   );
   return r.rows[0];
 }
@@ -275,7 +279,7 @@ async function setPriceListLine(priceListId, retailItemId, priceInr) {
      VALUES ($1, $2, $3)
      ON CONFLICT (price_list_id, retail_item_id) DO UPDATE
        SET price_paise = EXCLUDED.price_paise`,
-    [priceListId, retailItemId, Math.round(priceInr * 100)]
+    [priceListId, retailItemId, Math.round(priceInr * 100)],
   );
 }
 
@@ -295,7 +299,7 @@ async function createQuotation(businessId, body) {
          (business_id, quote_no, customer_id, customer_name, expires_on)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
       [businessId, quoteNo, body.customerId || null,
-       body.customerName, body.expiresOn || null]
+        body.customerName, body.expiresOn || null],
     );
     for (const l of body.lines || []) {
       const lineTotal = Math.round(l.qty * l.unitPriceInr * 100);
@@ -306,7 +310,7 @@ async function createQuotation(businessId, body) {
             unit_price_paise, gst_pct, line_total_paise)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [q.rows[0].id, l.retailItemId || null, l.description,
-         l.qty, Math.round(l.unitPriceInr * 100), l.gstPct || 0, lineTotal]
+          l.qty, Math.round(l.unitPriceInr * 100), l.gstPct || 0, lineTotal],
       );
     }
 
@@ -316,14 +320,15 @@ async function createQuotation(businessId, body) {
     const baseInr = total / 100;
     const tcsLines = tdsTcs.compute({ kind: 'TCS', baseInr, rules });
     const tdsLines = tdsTcs.compute({ kind: 'TDS', baseInr, rules });
-    let tcsPaise = 0, tdsPaise = 0;
+    let tcsPaise = 0; let
+      tdsPaise = 0;
     for (const t of tcsLines) {
       tcsPaise += Math.round(t.amountInr * 100);
       await client.query(
         `INSERT INTO quotation_lines
            (quotation_id, description, qty, unit_price_paise, gst_pct, line_total_paise)
          VALUES ($1, $2, 1, $3, 0, $3)`,
-        [q.rows[0].id, `TCS @ ${t.rate}% (${t.code})`, Math.round(t.amountInr * 100)]
+        [q.rows[0].id, `TCS @ ${t.rate}% (${t.code})`, Math.round(t.amountInr * 100)],
       );
     }
     for (const t of tdsLines) {
@@ -332,8 +337,8 @@ async function createQuotation(businessId, body) {
 
     const finalTotal = total + tcsPaise - tdsPaise;
     await client.query(
-      `UPDATE quotations SET total_paise = $1 WHERE id = $2`,
-      [finalTotal, q.rows[0].id]
+      'UPDATE quotations SET total_paise = $1 WHERE id = $2',
+      [finalTotal, q.rows[0].id],
     );
     return { ...q.rows[0], total_paise: finalTotal, tcs_paise: tcsPaise, tds_paise: tdsPaise };
   });
@@ -344,7 +349,7 @@ async function createWarehouse(businessId, body) {
   const r = await query(
     `INSERT INTO warehouses (business_id, code, name, address, is_default)
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [businessId, body.code, body.name, body.address || null, body.isDefault === true]
+    [businessId, body.code, body.name, body.address || null, body.isDefault === true],
   );
   return r.rows[0];
 }
@@ -354,18 +359,28 @@ async function transferWarehouse(businessId, body) {
     `INSERT INTO warehouse_transfers
        (business_id, from_warehouse_id, to_warehouse_id, retail_item_id, qty)
      VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-    [businessId, body.fromWarehouseId, body.toWarehouseId, body.retailItemId, body.qty]
+    [businessId, body.fromWarehouseId, body.toWarehouseId, body.retailItemId, body.qty],
   );
   return r.rows[0];
 }
 
 module.exports = {
-  listItems, createItem, addBarcode, findByBarcode, bulkImport,
-  listVendors, createVendor,
-  createPO, receivePO,
-  postLedger, partyLedger,
-  recordCheque, updateChequeStatus,
-  createPriceList, setPriceListLine,
+  listItems,
+  createItem,
+  addBarcode,
+  findByBarcode,
+  bulkImport,
+  listVendors,
+  createVendor,
+  createPO,
+  receivePO,
+  postLedger,
+  partyLedger,
+  recordCheque,
+  updateChequeStatus,
+  createPriceList,
+  setPriceListLine,
   createQuotation,
-  createWarehouse, transferWarehouse,
+  createWarehouse,
+  transferWarehouse,
 };

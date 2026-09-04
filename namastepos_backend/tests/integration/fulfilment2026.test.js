@@ -21,7 +21,7 @@ const { resetDb, makeBusiness, tokenFor, closePool } = require('../setup');
 const { query } = require('../../src/config/db');
 const fulfilment = require('../../src/services/fulfilmentService');
 
-let app; let biz; let token; let itemId;
+let app; let biz; let token; let _itemId;
 
 beforeAll(async () => {
   await resetDb();
@@ -31,9 +31,9 @@ beforeAll(async () => {
   const m = await query(
     `INSERT INTO menu_items (business_id, name, price, category, is_active)
      VALUES ($1, 'Biryani', 250, 'main', TRUE) RETURNING id`,
-    [biz.id]
+    [biz.id],
   );
-  itemId = m.rows[0].id;
+  _itemId = m.rows[0].id;
 });
 afterAll(async () => { await closePool(); });
 
@@ -50,7 +50,7 @@ async function makeDeliveryOrder(orderNo) {
      VALUES ($1, $2, 'other', 'zomato', 'Ramesh', '9876500000',
              250, 12.5, 0, 262.5, 'pending', 'placed', $3)
      RETURNING id`,
-    [biz.id, orderNo, `ZO-${orderNo}-${Date.now()}`]
+    [biz.id, orderNo, `ZO-${orderNo}-${Date.now()}`],
   );
   return r.rows[0].id;
 }
@@ -61,7 +61,7 @@ const move = (orderId, body) => request(app)
 describe('fulfilment board', () => {
   it('lists live delivery orders and never leaks the expected OTP', async () => {
     const id = await makeDeliveryOrder(9001);
-    await query(`UPDATE orders SET rider_otp_expected = '4321' WHERE id = $1`, [id]);
+    await query('UPDATE orders SET rider_otp_expected = \'4321\' WHERE id = $1', [id]);
     const r = await request(app).get(url('/fulfilment/board')).set(auth());
     expect(r.status).toBe(200);
     const row = r.body.orders.find((o) => o.id === id);
@@ -76,7 +76,7 @@ describe('fulfilment board', () => {
 
   it('excludes finished orders from the live board', async () => {
     const id = await makeDeliveryOrder(9002);
-    await query(`UPDATE orders SET fulfilment_state = 'delivered' WHERE id = $1`, [id]);
+    await query('UPDATE orders SET fulfilment_state = \'delivered\' WHERE id = $1', [id]);
     const r = await request(app).get(url('/fulfilment/board')).set(auth());
     expect(r.body.orders.some((o) => o.id === id)).toBe(false);
   });
@@ -96,7 +96,7 @@ describe('the happy path, rung by rung', () => {
     const ready = await move(id, { state: 'food_ready' });
     expect(ready.body.order.state).toBe('food_ready');
     // Deliberate mirror: kitchen done ⇒ POS 'ready' so KDS/reports agree.
-    const afterReady = await query(`SELECT status FROM orders WHERE id = $1`, [id]);
+    const afterReady = await query('SELECT status FROM orders WHERE id = $1', [id]);
     expect(afterReady.rows[0].status).toBe('ready');
 
     const assigned = await move(id, {
@@ -114,7 +114,7 @@ describe('the happy path, rung by rung', () => {
     const done = await move(id, { state: 'delivered' });
     expect(done.body.order.state).toBe('delivered');
     // delivered ⇒ POS 'collected' exactly once, so revenue is recognised.
-    const fin = await query(`SELECT status, collected_at FROM orders WHERE id = $1`, [id]);
+    const fin = await query('SELECT status, collected_at FROM orders WHERE id = $1', [id]);
     expect(fin.rows[0].status).toBe('collected');
     expect(fin.rows[0].collected_at).toBeTruthy();
   });
@@ -191,7 +191,7 @@ describe('outbound callback queue', () => {
     const q = await query(
       `SELECT event, status, provider FROM aggregator_outbound_events
         WHERE order_id = $1 ORDER BY created_at`,
-      [id]
+      [id],
     );
     const events = q.rows.map((x) => x.event);
     expect(events).toContain('accepted');
@@ -207,9 +207,7 @@ describe('outbound callback queue', () => {
     const out = await fulfilment.drainOutbound({ limit: 20 });
     expect(out.considered).toBeGreaterThan(0);
     expect(out.failed).toBe(0);
-    const q = await query(
-      `SELECT status, last_error FROM aggregator_outbound_events WHERE order_id = $1`, [id]
-    );
+    const q = await query('SELECT status, last_error FROM aggregator_outbound_events WHERE order_id = $1', [id]);
     expect(q.rows[0].status).toBe('skipped');
     expect(q.rows[0].last_error).toMatch(/credential|configured|agreement/i);
   });
@@ -226,7 +224,7 @@ describe('inbound webhook event routing', () => {
        VALUES ($1, 'zomato', $2, 'k', $3, TRUE)
        ON CONFLICT (business_id, provider) DO UPDATE
          SET outlet_id = EXCLUDED.outlet_id, webhook_secret = EXCLUDED.webhook_secret`,
-      [biz.id, `OUT-${biz.id.slice(0, 8)}`, SECRET]
+      [biz.id, `OUT-${biz.id.slice(0, 8)}`, SECRET],
     );
   });
 
@@ -243,7 +241,7 @@ describe('inbound webhook event routing', () => {
 
   it('routes a rider-assigned callback to the rider rung, not a new order', async () => {
     const id = await makeDeliveryOrder(9040);
-    const ext = (await query(`SELECT aggregator_order_id FROM orders WHERE id = $1`, [id]))
+    const ext = (await query('SELECT aggregator_order_id FROM orders WHERE id = $1', [id]))
       .rows[0].aggregator_order_id;
     await move(id, { state: 'accepted', prepMinutes: 10 });
     await move(id, { state: 'food_ready' });
@@ -257,9 +255,7 @@ describe('inbound webhook event routing', () => {
     expect(r.status).toBe(200);
     expect(r.body.applied).toBe('rider_assigned');
 
-    const row = await query(
-      `SELECT fulfilment_state, rider_name, rider_otp_expected FROM orders WHERE id = $1`, [id]
-    );
+    const row = await query('SELECT fulfilment_state, rider_name, rider_otp_expected FROM orders WHERE id = $1', [id]);
     expect(row.rows[0].fulfilment_state).toBe('rider_assigned');
     expect(row.rows[0].rider_name).toBe('Zomato Rider');
     expect(row.rows[0].rider_otp_expected).toBe('5566');
@@ -267,21 +263,21 @@ describe('inbound webhook event routing', () => {
 
   it('routes a cancel callback to cancelled', async () => {
     const id = await makeDeliveryOrder(9041);
-    const ext = (await query(`SELECT aggregator_order_id FROM orders WHERE id = $1`, [id]))
+    const ext = (await query('SELECT aggregator_order_id FROM orders WHERE id = $1', [id]))
       .rows[0].aggregator_order_id;
     const r = await post({ event: 'order.cancelled', order_id: ext, reason: 'Diner cancelled' });
     expect(r.status).toBe(200);
     expect(r.body.applied).toBe('cancelled');
-    const row = await query(`SELECT fulfilment_state FROM orders WHERE id = $1`, [id]);
+    const row = await query('SELECT fulfilment_state FROM orders WHERE id = $1', [id]);
     expect(row.rows[0].fulfilment_state).toBe('cancelled');
   });
 
   it('acknowledges an unknown event without inventing an order', async () => {
-    const before = await query(`SELECT COUNT(*)::int AS c FROM orders WHERE business_id = $1`, [biz.id]);
+    const before = await query('SELECT COUNT(*)::int AS c FROM orders WHERE business_id = $1', [biz.id]);
     const r = await post({ event: 'order.rated', order_id: 'ZO-nope', rating: 5 });
     expect(r.status).toBe(200);
     expect(r.body.ignored).toMatch(/unhandled/i);
-    const after = await query(`SELECT COUNT(*)::int AS c FROM orders WHERE business_id = $1`, [biz.id]);
+    const after = await query('SELECT COUNT(*)::int AS c FROM orders WHERE business_id = $1', [biz.id]);
     expect(after.rows[0].c).toBe(before.rows[0].c);
   });
 });
@@ -298,14 +294,14 @@ describe('verification fixes', () => {
     const fulfilmentSvc = require('../../src/services/fulfilmentService');
     const r = await fulfilmentSvc.transition(biz.id, id, { state: 'delivered', force: true });
     expect(r.state).toBe('delivered');
-    const row = await query(`SELECT status, collected_at FROM orders WHERE id = $1`, [id]);
-    expect(row.rows[0].status).toBe('collected');   // revenue booked
+    const row = await query('SELECT status, collected_at FROM orders WHERE id = $1', [id]);
+    expect(row.rows[0].status).toBe('collected'); // revenue booked
     expect(row.rows[0].collected_at).toBeTruthy();
   });
 
   it('force still refuses to resurrect a cancelled order', async () => {
     const id = await makeDeliveryOrder(9051);
-    await query(`UPDATE orders SET fulfilment_state = 'cancelled' WHERE id = $1`, [id]);
+    await query('UPDATE orders SET fulfilment_state = \'cancelled\' WHERE id = $1', [id]);
     const fulfilmentSvc = require('../../src/services/fulfilmentService');
     await expect(fulfilmentSvc.transition(biz.id, id, { state: 'delivered', force: true }))
       .rejects.toThrow(/Cannot move/i);
@@ -318,12 +314,12 @@ describe('verification fixes', () => {
       `UPDATE orders SET fulfilment_state = 'delivered', delivered_at = NOW(),
               pos_mirror_error = 'simulated pool blip'
         WHERE id = $1`,
-      [id]
+      [id],
     );
     const fulfilmentSvc = require('../../src/services/fulfilmentService');
     const out = await fulfilmentSvc.repairPosMirrors({ limit: 20 });
     expect(out.repaired).toBeGreaterThan(0);
-    const row = await query(`SELECT status, pos_mirror_error FROM orders WHERE id = $1`, [id]);
+    const row = await query('SELECT status, pos_mirror_error FROM orders WHERE id = $1', [id]);
     expect(row.rows[0].status).toBe('collected');
     expect(row.rows[0].pos_mirror_error).toBeNull();
   });
@@ -334,13 +330,13 @@ describe('verification fixes', () => {
       `UPDATE orders SET fulfilment_state = 'delivered',
               delivered_at = NOW() - INTERVAL '2 hours', status = 'pending'
         WHERE id = $1`,
-      [id]
+      [id],
     );
     await query(
       `INSERT INTO aggregator_outbound_events
          (business_id, order_id, provider, event, status, attempts, last_error)
        VALUES ($1, $2, 'zomato', 'delivered', 'failed', 6, 'provider HTTP 500')`,
-      [biz.id, id]
+      [biz.id, id],
     );
     const integrity = require('../../src/services/revenueIntegrityService');
     const unbilled = await integrity.checkUnbilledDeliveries();
@@ -369,7 +365,7 @@ describe('verification fixes', () => {
     // gives us. Now only a row marked `handled` is a true duplicate.
     const agg = require('../../src/services/aggregatorService');
     const id = await makeDeliveryOrder(9055);
-    const ext = (await query(`SELECT aggregator_order_id FROM orders WHERE id = $1`, [id]))
+    const ext = (await query('SELECT aggregator_order_id FROM orders WHERE id = $1', [id]))
       .rows[0].aggregator_order_id;
     const payload = { event: 'order.cancelled', order_id: ext, event_id: `evt-9055-${Date.now()}` };
 
@@ -382,8 +378,8 @@ describe('verification fixes', () => {
 
     // Simulate the first attempt having died before finishing.
     await query(
-      `UPDATE aggregator_inbound_events SET handled = FALSE WHERE external_id = $1`,
-      [String(payload.event_id)]
+      'UPDATE aggregator_inbound_events SET handled = FALSE WHERE external_id = $1',
+      [String(payload.event_id)],
     );
     const retry = await agg.handleWebhookEvent(biz.id, 'zomato', payload, {});
     expect(retry.duplicate).toBeUndefined(); // reprocessed, not dropped

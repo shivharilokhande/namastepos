@@ -1,9 +1,9 @@
 // NamastePOS backend - public guest endpoints (no auth — token-driven)
 
 const Joi = require('joi');
+const crypto = require('crypto');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
-const crypto = require('crypto');
 const qr = require('../services/qrService');
 const orderService = require('../services/orderService');
 const otpService = require('../services/otpService');
@@ -54,14 +54,14 @@ async function _hasMembershipBenefit(businessId, phone) {
         AND ms.status = 'active' AND ms.expires_at > NOW()
         AND ms.remaining IS NOT NULL
       LIMIT 1`,
-    [businessId, phone]
+    [businessId, phone],
   );
   return r.rowCount > 0;
 }
 
 // ── GET /v1/guest/menu/:token ──────────────────────────────────────────
 const menu = asyncHandler(async (req, res) => {
-  const { businessId, tableId, business, table } = await qr.verifyToken(req.params.token);
+  const { businessId, business, table } = await qr.verifyToken(req.params.token);
   const items = await qr.guestMenu(businessId);
   const settings = await qr.getSettings(businessId);
   if (!settings.isEnabled) {
@@ -147,7 +147,7 @@ const placeOrder = [
     const checkR = await query(
       `SELECT id, name, price, is_active, stock FROM menu_items
         WHERE business_id = $1 AND id = ANY($2::uuid[])`,
-      [businessId, ids]
+      [businessId, ids],
     );
     const byId = new Map(checkR.rows.map((m) => [m.id, m]));
     for (const it of req.body.items) {
@@ -180,7 +180,8 @@ const placeOrder = [
 
     // Find / create the table session this order belongs to
     const { tableSessionId, guestSessionId } = await qr.ensureGuestSession({
-      businessId, tableId,
+      businessId,
+      tableId,
       customerPhone: req.body.customerPhone,
       customerName: req.body.customerName,
       ipAddress: req.ip,
@@ -192,9 +193,7 @@ const placeOrder = [
     // We mark source = 'qr' and bind to the table_session_id we just got.
     // Only honor the phone's membership benefit if a valid OTP-minted token
     // for THIS business + phone accompanies the order (2026-08-30 security fix).
-    const allowMemberBenefits = _benefitTokenValid(
-      req.body.benefitToken, businessId, req.body.customerPhone
-    );
+    const allowMemberBenefits = _benefitTokenValid(req.body.benefitToken, businessId, req.body.customerPhone);
 
     const order = await orderService.create(businessId, {
       clientId: req.body.clientId,
@@ -208,7 +207,7 @@ const placeOrder = [
       customerPhone: req.body.customerPhone,
       customerName: req.body.customerName,
       items: req.body.items,
-      paymentMethod: 'unpaid',  // settle later at the counter
+      paymentMethod: 'unpaid', // settle later at the counter
       allowMemberBenefits,
     }, { trustedChannel: true }); // NP-112: server-routed guest flow — tax settled at counter
 
@@ -216,7 +215,7 @@ const placeOrder = [
     await query(
       `UPDATE orders SET table_id = $1, table_session_id = $2
         WHERE id = $3`,
-      [tableId, tableSessionId, order.id]
+      [tableId, tableSessionId, order.id],
     );
 
     await qr.recordGuestSessionOrder({
@@ -251,7 +250,7 @@ const createCheckoutOrder = asyncHandler(async (req, res) => {
   const o = await query(
     `SELECT id, order_no, total FROM orders
       WHERE id = $1 AND business_id = $2 LIMIT 1`,
-    [req.params.orderId, businessId]
+    [req.params.orderId, businessId],
   );
   if (o.rowCount === 0) throw new BadRequest('Order not found');
   const amountPaise = Math.round(parseFloat(o.rows[0].total) * 100);
@@ -266,14 +265,14 @@ const createCheckoutOrder = asyncHandler(async (req, res) => {
 
 const confirmPayment = [
   validate({ body: Joi.object({
-    razorpayOrderId:   Joi.string().required(),
+    razorpayOrderId: Joi.string().required(),
     razorpayPaymentId: Joi.string().required(),
     razorpaySignature: Joi.string().required(),
   }) }),
   asyncHandler(async (req, res) => {
     const { businessId } = await qr.verifyToken(req.params.token);
     const ok = razorpay.verifyCheckoutSignature({
-      orderId:   req.body.razorpayOrderId,
+      orderId: req.body.razorpayOrderId,
       paymentId: req.body.razorpayPaymentId,
       signature: req.body.razorpaySignature,
     });
@@ -295,7 +294,7 @@ const confirmPayment = [
     const own = await query(
       `SELECT id, total FROM orders
         WHERE id = $1 AND business_id = $2 LIMIT 1`,
-      [req.params.orderId, businessId]
+      [req.params.orderId, businessId],
     );
     if (own.rowCount === 0) throw new BadRequest('Order not found');
     const expectedPaise = Math.round(parseFloat(own.rows[0].total) * 100);
@@ -317,7 +316,7 @@ const confirmPayment = [
           SET payment_method = 'upi', updated_at = NOW()
         WHERE id = $1 AND business_id = $2
           AND payment_method = 'unpaid'::payment_method`,
-      [req.params.orderId, businessId]
+      [req.params.orderId, businessId],
     );
     await orderService.updateStatus(businessId, req.params.orderId, 'collected');
     await query(
@@ -326,7 +325,7 @@ const confirmPayment = [
        SELECT $1, $2, 'upi', ROUND(total * 100), 'captured', $3
          FROM orders WHERE id = $2
        ON CONFLICT DO NOTHING`,
-      [businessId, req.params.orderId, req.body.razorpayPaymentId]
+      [businessId, req.params.orderId, req.body.razorpayPaymentId],
     );
     res.json({ ok: true });
   }),
@@ -348,7 +347,7 @@ const getRunningSession = asyncHandler(async (req, res) => {
        FROM table_sessions ts
       WHERE ts.business_id = $1 AND ts.table_id = $2 AND ts.closed_at IS NULL
       ORDER BY ts.opened_at DESC LIMIT 1`,
-    [businessId, tableId]
+    [businessId, tableId],
   );
   if (sess.rowCount === 0) return res.json({ session: null });
   const session = sess.rows[0];
@@ -359,7 +358,7 @@ const getRunningSession = asyncHandler(async (req, res) => {
       WHERE business_id = $1 AND table_session_id = $2
         AND status <> 'cancelled'
       ORDER BY created_at`,
-    [businessId, session.id]
+    [businessId, session.id],
   );
   const items = await query(
     `SELECT oi.order_id, oi.name, oi.qty, oi.price, oi.note
@@ -368,13 +367,13 @@ const getRunningSession = asyncHandler(async (req, res) => {
       WHERE o.business_id = $1 AND o.table_session_id = $2
         AND o.status <> 'cancelled'
       ORDER BY o.created_at, oi.id`,
-    [businessId, session.id]
+    [businessId, session.id],
   );
   const totals = orders.rows.reduce((acc, o) => ({
     subtotal: acc.subtotal + parseFloat(o.subtotal),
-    tax:      acc.tax      + parseFloat(o.tax),
+    tax: acc.tax + parseFloat(o.tax),
     discount: acc.discount + parseFloat(o.discount),
-    total:    acc.total    + parseFloat(o.total),
+    total: acc.total + parseFloat(o.total),
   }), { subtotal: 0, tax: 0, discount: 0, total: 0 });
   // If every order in this session is already collected, the customer
   // has paid — surface that so the UI shows "Paid" instead of Pay Now.
@@ -386,7 +385,8 @@ const getRunningSession = asyncHandler(async (req, res) => {
       customerName: session.customer_name,
       customerPhone: session.customer_phone,
       orders: orders.rows.map((o) => ({
-        id: o.id, orderNo: o.order_no,
+        id: o.id,
+        orderNo: o.order_no,
         subtotal: parseFloat(o.subtotal),
         tax: parseFloat(o.tax),
         discount: parseFloat(o.discount),
@@ -394,8 +394,10 @@ const getRunningSession = asyncHandler(async (req, res) => {
         status: o.status,
         paymentMethod: o.payment_method,
         items: items.rows.filter((i) => i.order_id === o.id).map((i) => ({
-          name: i.name, qty: parseFloat(i.qty),
-          price: parseFloat(i.price), note: i.note,
+          name: i.name,
+          qty: parseFloat(i.qty),
+          price: parseFloat(i.price),
+          note: i.note,
         })),
       })),
       totals,
@@ -417,7 +419,7 @@ const paySession = asyncHandler(async (req, res) => {
       WHERE ts.business_id = $1 AND ts.table_id = $2 AND ts.closed_at IS NULL
       GROUP BY ts.id
       ORDER BY ts.opened_at DESC LIMIT 1`,
-    [businessId, tableId]
+    [businessId, tableId],
   );
   if (s.rowCount === 0) throw new BadRequest('No open bill on this table');
   const { id: sessionId, total } = s.rows[0];
@@ -436,15 +438,15 @@ const paySession = asyncHandler(async (req, res) => {
 //   the session in one atomic transaction. Closes the table_session.
 const confirmSessionPayment = [
   validate({ body: Joi.object({
-    sessionId:         Joi.string().uuid().required(),
-    razorpayOrderId:   Joi.string().required(),
+    sessionId: Joi.string().uuid().required(),
+    razorpayOrderId: Joi.string().required(),
     razorpayPaymentId: Joi.string().required(),
     razorpaySignature: Joi.string().required(),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     const { businessId } = await qr.verifyToken(req.params.token);
     const ok = razorpay.verifyCheckoutSignature({
-      orderId:   req.body.razorpayOrderId,
+      orderId: req.body.razorpayOrderId,
       paymentId: req.body.razorpayPaymentId,
       signature: req.body.razorpaySignature,
     });
@@ -470,7 +472,7 @@ const confirmSessionPayment = [
                       AND o.status NOT IN ('cancelled','collected')
         WHERE ts.business_id = $1 AND ts.id = $2 AND ts.closed_at IS NULL
         GROUP BY ts.id`,
-      [businessId, req.body.sessionId]
+      [businessId, req.body.sessionId],
     );
     if (due.rowCount === 0) throw new BadRequest('No open bill for this session');
     const duePaise = Math.round(parseFloat(due.rows[0].due) * 100);
@@ -485,7 +487,7 @@ const confirmSessionPayment = [
               collected_at = NOW(), updated_at = NOW()
         WHERE business_id = $1 AND table_session_id = $2
           AND status NOT IN ('cancelled','collected')`,
-      [businessId, req.body.sessionId]
+      [businessId, req.body.sessionId],
     );
     // Record the payment for exactly the amount charged (= the validated
     // outstanding due). Bug fix (2026-08-30 review): the old version re-summed
@@ -497,27 +499,33 @@ const confirmSessionPayment = [
                               razorpay_payment_id, notes)
        VALUES ($1, 'upi', $2, 'captured', $3,
                jsonb_build_object('sessionId', $4::text, 'source', 'guest-qr-session'))`,
-      [businessId, duePaise, req.body.razorpayPaymentId, req.body.sessionId]
+      [businessId, duePaise, req.body.razorpayPaymentId, req.body.sessionId],
     );
     await query(
       `UPDATE table_sessions SET closed_at = NOW()
         WHERE id = $1 AND business_id = $2`,
-      [req.body.sessionId, businessId]
+      [req.body.sessionId, businessId],
     );
     // Free the table.
     await query(
       `UPDATE tables SET status = 'available'
         WHERE business_id = $1
           AND id = (SELECT table_id FROM table_sessions WHERE id = $2)`,
-      [businessId, req.body.sessionId]
+      [businessId, req.body.sessionId],
     );
     res.json({ ok: true });
   }),
 ];
 
 module.exports = {
-  menu, placeOrder, orderStatus,
-  benefitCheck, benefitVerify,                            // guest membership OTP
-  createCheckoutOrder, confirmPayment,
-  getRunningSession, paySession, confirmSessionPayment,   // FF-251
+  menu,
+  placeOrder,
+  orderStatus,
+  benefitCheck,
+  benefitVerify, // guest membership OTP
+  createCheckoutOrder,
+  confirmPayment,
+  getRunningSession,
+  paySession,
+  confirmSessionPayment, // FF-251
 };

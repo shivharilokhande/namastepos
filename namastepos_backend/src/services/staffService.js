@@ -398,7 +398,7 @@ async function createStaffWithPin(businessId, body) {
   let userId;
   let createdNewUser = false;
   const existingUser = await query(
-    `SELECT id FROM users WHERE phone = $1 ORDER BY created_at ASC LIMIT 1`,
+    'SELECT id FROM users WHERE phone = $1 ORDER BY created_at ASC LIMIT 1',
     [phone],
   );
   if (existingUser.rowCount > 0) {
@@ -449,14 +449,14 @@ async function createStaffWithPin(businessId, body) {
     // A reused user (shared with another restaurant) must never be deleted —
     // that would wipe the person's membership at their other job.
     if (createdNewUser) {
-      await query(`DELETE FROM users WHERE id = $1`, [userId]).catch(() => {});
+      await query('DELETE FROM users WHERE id = $1', [userId]).catch(() => {});
     }
     // 22P02 = invalid_text_representation → the role value isn't in the
     // user_role enum yet. This is exactly what happens for 'staff_driver'
     // when migration 054 (ADD VALUE 'staff_driver') hasn't been applied.
     if (err.code === '22P02' && role === 'staff_driver') {
       throw new BadRequest(
-        'The Driver role needs a pending database update. Run "npm run migrate" on the backend (applies migration 054), then try again.'
+        'The Driver role needs a pending database update. Run "npm run migrate" on the backend (applies migration 054), then try again.',
       );
     }
     throw err;

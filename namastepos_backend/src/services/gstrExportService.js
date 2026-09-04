@@ -52,7 +52,7 @@ async function gstr1(businessId, fromStr, toStr) {
         AND ti.issued_at::date BETWEEN $2::date AND $3::date
         AND ti.status = 'issued'
       ORDER BY ti.issued_at`,
-    [businessId, fromStr, toStr]
+    [businessId, fromStr, toStr],
   );
   const headers = [
     'GSTIN/UIN of Recipient', 'Receiver Name', 'Invoice Number',
@@ -77,31 +77,31 @@ async function gstr3b(businessId, fromStr, toStr) {
         AND status = 'issued'
       GROUP BY gst_pct
       ORDER BY gst_pct`,
-    [businessId, fromStr, toStr]
+    [businessId, fromStr, toStr],
   );
   const rows = r.rows.map((x) => ({
-    'Description': `Outward taxable @ ${x.rate}%`,
-    'Invoices': x.invoices,
+    Description: `Outward taxable @ ${x.rate}%`,
+    Invoices: x.invoices,
     'Taxable Value': x.taxable.toFixed(2),
-    'IGST': x.igst.toFixed(2),
-    'CGST': x.cgst.toFixed(2),
-    'SGST': x.sgst.toFixed(2),
+    IGST: x.igst.toFixed(2),
+    CGST: x.cgst.toFixed(2),
+    SGST: x.sgst.toFixed(2),
   }));
   // Totals
   const t = rows.reduce((acc, x) => ({
-    invoices:   acc.invoices + Number(x.Invoices),
-    taxable:    acc.taxable  + Number(x['Taxable Value']),
-    igst:       acc.igst     + Number(x.IGST),
-    cgst:       acc.cgst     + Number(x.CGST),
-    sgst:       acc.sgst     + Number(x.SGST),
+    invoices: acc.invoices + Number(x.Invoices),
+    taxable: acc.taxable + Number(x['Taxable Value']),
+    igst: acc.igst + Number(x.IGST),
+    cgst: acc.cgst + Number(x.CGST),
+    sgst: acc.sgst + Number(x.SGST),
   }), { invoices: 0, taxable: 0, igst: 0, cgst: 0, sgst: 0 });
   rows.push({
-    'Description': 'TOTAL',
-    'Invoices': t.invoices,
+    Description: 'TOTAL',
+    Invoices: t.invoices,
     'Taxable Value': t.taxable.toFixed(2),
-    'IGST': t.igst.toFixed(2),
-    'CGST': t.cgst.toFixed(2),
-    'SGST': t.sgst.toFixed(2),
+    IGST: t.igst.toFixed(2),
+    CGST: t.cgst.toFixed(2),
+    SGST: t.sgst.toFixed(2),
   });
   return toCsv(rows, ['Description', 'Invoices', 'Taxable Value', 'IGST', 'CGST', 'SGST']);
 }

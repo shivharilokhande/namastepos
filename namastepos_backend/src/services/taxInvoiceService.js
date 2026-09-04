@@ -25,8 +25,8 @@ function _financialYear(date = new Date()) {
   const fyStart = (m >= 3) ? y : y - 1;
   const fyEnd = fyStart + 1;
   return {
-    label: `${fyStart}-${String(fyEnd).slice(-2)}`,   // '2025-26'
-    short: `${String(fyStart).slice(-2)}${String(fyEnd).slice(-2)}`,   // '2526'
+    label: `${fyStart}-${String(fyEnd).slice(-2)}`, // '2025-26'
+    short: `${String(fyStart).slice(-2)}${String(fyEnd).slice(-2)}`, // '2526'
   };
 }
 
@@ -41,22 +41,22 @@ function _amountInWords(paise) {
 
 function _intToWords(n) {
   const a = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
-             'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
-             'Seventeen', 'Eighteen', 'Nineteen'];
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen',
+    'Seventeen', 'Eighteen', 'Nineteen'];
   const b = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
   if (n === 0) return 'Zero';
   function hundred(x) {
     let s = '';
-    if (x >= 100) { s += a[Math.floor(x / 100)] + ' Hundred '; x %= 100; }
-    if (x >= 20) { s += b[Math.floor(x / 10)] + ' '; x %= 10; }
-    if (x > 0) s += a[x] + ' ';
+    if (x >= 100) { s += `${a[Math.floor(x / 100)]} Hundred `; x %= 100; }
+    if (x >= 20) { s += `${b[Math.floor(x / 10)]} `; x %= 10; }
+    if (x > 0) s += `${a[x]} `;
     return s.trim();
   }
   if (n < 1000) return hundred(n);
   let result = '';
-  if (n >= 10000000) { result += hundred(Math.floor(n / 10000000)) + ' Crore '; n %= 10000000; }
-  if (n >= 100000) { result += hundred(Math.floor(n / 100000)) + ' Lakh '; n %= 100000; }
-  if (n >= 1000) { result += hundred(Math.floor(n / 1000)) + ' Thousand '; n %= 1000; }
+  if (n >= 10000000) { result += `${hundred(Math.floor(n / 10000000))} Crore `; n %= 10000000; }
+  if (n >= 100000) { result += `${hundred(Math.floor(n / 100000))} Lakh `; n %= 100000; }
+  if (n >= 1000) { result += `${hundred(Math.floor(n / 1000))} Thousand `; n %= 1000; }
   if (n > 0) result += hundred(n);
   return result.trim();
 }
@@ -89,7 +89,7 @@ function _buildItemsAndHsn(orderItemRows, isInterstate) {
     const cgstPaise = isInterstate ? 0 : Math.floor(gstPaise / 2);
     const sgstPaise = isInterstate ? 0 : gstPaise - cgstPaise;
     const igstPaise = isInterstate ? gstPaise : 0;
-    const hsn = (row.hsn || '').trim() || '996331';   // 996331 = restaurant service default
+    const hsn = (row.hsn || '').trim() || '996331'; // 996331 = restaurant service default
 
     items.push({
       name: row.name,
@@ -129,7 +129,7 @@ async function _nextSeq(client, businessId, fyShort) {
     `SELECT COALESCE(MAX(fy_seq), 0) AS m
        FROM tax_invoices
       WHERE business_id = $1 AND fy = $2`,
-    [businessId, fyShort]
+    [businessId, fyShort],
   );
   return (parseInt(r.rows[0].m, 10) || 0) + 1;
 }
@@ -174,8 +174,9 @@ async function issueFromOrder(businessId, orderId, opts = {}) {
     // the tenant scope a caller could pass another tenant's orderId and get
     // back that tenant's full invoice — recipient name, GSTIN, address, phone.
     const ex = await client.query(
-      `SELECT * FROM tax_invoices WHERE order_id = $1 AND business_id = $2`,
-      [orderId, businessId]);
+      'SELECT * FROM tax_invoices WHERE order_id = $1 AND business_id = $2',
+      [orderId, businessId],
+    );
     if (ex.rowCount > 0) return _serialize(ex.rows[0]);
 
     // Pull order + items + business
@@ -185,7 +186,7 @@ async function issueFromOrder(businessId, orderId, opts = {}) {
          FROM orders o
          JOIN businesses b ON b.id = o.business_id
         WHERE o.id = $1 AND o.business_id = $2`,
-      [orderId, businessId]
+      [orderId, businessId],
     );
     if (oRes.rowCount === 0) throw new NotFound('Order not found');
     const o = oRes.rows[0];
@@ -196,7 +197,7 @@ async function issueFromOrder(businessId, orderId, opts = {}) {
     LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
         WHERE oi.order_id = $1
         ORDER BY oi.id`,
-      [orderId]
+      [orderId],
     );
     if (itemsRes.rowCount === 0) throw new BadRequest('Order has no items');
 
@@ -210,10 +211,10 @@ async function issueFromOrder(businessId, orderId, opts = {}) {
     const { items, hsn_summary } = _buildItemsAndHsn(itemsRes.rows, isInterstate);
 
     const subtotalPaise = items.reduce((s, i) => s + i.lineTaxablePaise, 0);
-    const cgstPaise     = items.reduce((s, i) => s + i.cgstPaise, 0);
-    const sgstPaise     = items.reduce((s, i) => s + i.sgstPaise, 0);
-    const igstPaise     = items.reduce((s, i) => s + i.igstPaise, 0);
-    const servicePaise  = parseInt(o.service_charge_paise, 10) || 0;
+    const cgstPaise = items.reduce((s, i) => s + i.cgstPaise, 0);
+    const sgstPaise = items.reduce((s, i) => s + i.sgstPaise, 0);
+    const igstPaise = items.reduce((s, i) => s + i.igstPaise, 0);
+    const servicePaise = parseInt(o.service_charge_paise, 10) || 0;
     const discountPaise = Math.round(parseFloat(o.discount || 0) * 100);
     const beforeRound = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise - discountPaise;
     // NP-123: honour the round-off actually applied on the order (see helper).
@@ -270,7 +271,7 @@ async function issueFromOrder(businessId, orderId, opts = {}) {
         o.payment_method, o.status === 'collected' ? 'paid' : 'unpaid',
         o.status === 'collected' ? new Date() : null,
         qrPayload, opts.issuedByUserId || null,
-      ]
+      ],
     );
     return _serialize(insert.rows[0]);
   });
@@ -298,7 +299,7 @@ async function issueFromSession(businessId, sessionId, opts = {}) {
         WHERE o.table_session_id = $1 AND o.business_id = $2
           AND o.status <> 'cancelled'
         ORDER BY o.order_no ASC`,
-      [sessionId, businessId]
+      [sessionId, businessId],
     );
     if (ordersRes.rowCount === 0) throw new NotFound('Session has no orders');
     const head = ordersRes.rows[0];
@@ -309,8 +310,7 @@ async function issueFromSession(businessId, sessionId, opts = {}) {
     }
 
     // Idempotency via the head order.
-    const ex = await client.query(
-      `SELECT * FROM tax_invoices WHERE order_id = $1 AND status = 'issued'`, [head.id]);
+    const ex = await client.query('SELECT * FROM tax_invoices WHERE order_id = $1 AND status = \'issued\'', [head.id]);
     if (ex.rowCount > 0) return _serialize(ex.rows[0]);
 
     const orderIds = ordersRes.rows.map((o) => o.id);
@@ -320,7 +320,7 @@ async function issueFromSession(businessId, sessionId, opts = {}) {
     LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
         WHERE oi.order_id = ANY($1)
         ORDER BY oi.id`,
-      [orderIds]
+      [orderIds],
     );
     if (itemsRes.rowCount === 0) throw new BadRequest('Session has no items');
 
@@ -333,12 +333,12 @@ async function issueFromSession(businessId, sessionId, opts = {}) {
     const { items, hsn_summary } = _buildItemsAndHsn(itemsRes.rows, isInterstate);
 
     const subtotalPaise = items.reduce((s, i) => s + i.lineTaxablePaise, 0);
-    const cgstPaise     = items.reduce((s, i) => s + i.cgstPaise, 0);
-    const sgstPaise     = items.reduce((s, i) => s + i.sgstPaise, 0);
-    const igstPaise     = items.reduce((s, i) => s + i.igstPaise, 0);
+    const cgstPaise = items.reduce((s, i) => s + i.cgstPaise, 0);
+    const sgstPaise = items.reduce((s, i) => s + i.sgstPaise, 0);
+    const igstPaise = items.reduce((s, i) => s + i.igstPaise, 0);
     // Aggregate across every order in the session (settle-time discounts
     // land on the head order, per-KOT discounts on their own orders).
-    const servicePaise  = ordersRes.rows.reduce((s, o) => s + (parseInt(o.service_charge_paise, 10) || 0), 0);
+    const servicePaise = ordersRes.rows.reduce((s, o) => s + (parseInt(o.service_charge_paise, 10) || 0), 0);
     const discountPaise = ordersRes.rows.reduce((s, o) => s + Math.round(parseFloat(o.discount || 0) * 100), 0);
     const beforeRound = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise - discountPaise;
     // NP-123: sum the round-off actually applied per order (each order's
@@ -404,7 +404,7 @@ async function issueFromSession(businessId, sessionId, opts = {}) {
         JSON.stringify(items), JSON.stringify(hsn_summary),
         head.payment_method, 'paid', new Date(),
         qrPayload, opts.issuedByUserId || null,
-      ]
+      ],
     );
     return _serialize(insert.rows[0]);
   });
@@ -417,8 +417,9 @@ async function issueFromSession(businessId, sessionId, opts = {}) {
  */
 async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
   const ex = await client.query(
-    `SELECT * FROM tax_invoices WHERE order_id = $1 AND business_id = $2`,
-    [orderId, businessId]);
+    'SELECT * FROM tax_invoices WHERE order_id = $1 AND business_id = $2',
+    [orderId, businessId],
+  );
   if (ex.rowCount > 0) return _serialize(ex.rows[0]);
   // Delegate the heavy lifting to issueFromOrder AFTER this tx? No —
   // simplest correct approach: rerun the same INSERT flow via the
@@ -431,7 +432,7 @@ async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
             b.state_code AS biz_state, b.phone AS biz_phone
        FROM orders o JOIN businesses b ON b.id = o.business_id
       WHERE o.id = $1 AND o.business_id = $2`,
-    [orderId, businessId]
+    [orderId, businessId],
   );
   if (oRes.rowCount === 0) throw new NotFound('Order not found');
   const o = oRes.rows[0];
@@ -440,7 +441,7 @@ async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
        FROM order_items oi
   LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
       WHERE oi.order_id = $1 ORDER BY oi.id`,
-    [orderId]
+    [orderId],
   );
   if (itemsRes.rowCount === 0) throw new BadRequest('Order has no items');
 
@@ -461,8 +462,10 @@ async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
   const seq = await _nextSeq(client, businessId, fy.short);
   const invoiceNo = _formatInvoiceNo(fy.short, seq);
   const qrPayload = JSON.stringify({
-    sellerGstin: o.biz_gstin || null, buyerGstin: opts.recipientGstin || null,
-    invoice: invoiceNo, date: new Date().toISOString().slice(0, 10),
+    sellerGstin: o.biz_gstin || null,
+    buyerGstin: opts.recipientGstin || null,
+    invoice: invoiceNo,
+    date: new Date().toISOString().slice(0, 10),
     totalInr: totalPaise / 100,
   });
   const insert = await client.query(
@@ -494,7 +497,7 @@ async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
       o.payment_method, o.status === 'collected' ? 'paid' : 'unpaid',
       o.status === 'collected' ? new Date() : null,
       qrPayload, opts.issuedByUserId || null,
-    ]
+    ],
   );
   return _serialize(insert.rows[0]);
 }
@@ -503,7 +506,7 @@ async function getById(businessId, invoiceId) {
   const r = await query(
     `SELECT * FROM tax_invoices
       WHERE business_id = $1 AND id = $2`,
-    [businessId, invoiceId]
+    [businessId, invoiceId],
   );
   if (r.rowCount === 0) throw new NotFound('Invoice not found');
   return _serialize(r.rows[0]);
@@ -518,20 +521,20 @@ async function list(businessId, { startDate, endDate, status, limit = 200 } = {}
   // "today's invoices" looked wrong/missing to the owner. Invoices are IST
   // business documents — bucket the calendar-day filter in Asia/Kolkata.
   if (startDate) { params.push(startDate); where.push(`(invoice_date AT TIME ZONE 'Asia/Kolkata')::date >= $${params.length}::date`); }
-  if (endDate)   { params.push(endDate);   where.push(`(invoice_date AT TIME ZONE 'Asia/Kolkata')::date <= $${params.length}::date`); }
-  if (status)    { params.push(status);    where.push(`status = $${params.length}`); }
+  if (endDate) { params.push(endDate); where.push(`(invoice_date AT TIME ZONE 'Asia/Kolkata')::date <= $${params.length}::date`); }
+  if (status) { params.push(status); where.push(`status = $${params.length}`); }
   params.push(limit);
   const r = await query(
     `SELECT * FROM tax_invoices
       WHERE ${where.join(' AND ')}
       ORDER BY invoice_date DESC
       LIMIT $${params.length}`,
-    params
+    params,
   );
   return r.rows.map(_serialize);
 }
 
-async function cancel(businessId, invoiceId, reason, userId) {
+async function cancel(businessId, invoiceId, reason, _userId) {
   const r = await query(
     `UPDATE tax_invoices
         SET status = 'cancelled',
@@ -540,7 +543,7 @@ async function cancel(businessId, invoiceId, reason, userId) {
             updated_at = NOW()
       WHERE business_id = $1 AND id = $2 AND status = 'issued'
       RETURNING *`,
-    [businessId, invoiceId, reason || null]
+    [businessId, invoiceId, reason || null],
   );
   if (r.rowCount === 0) throw new NotFound('Invoice not found or already cancelled');
   return _serialize(r.rows[0]);
@@ -609,6 +612,12 @@ function _serialize(row) {
 }
 
 module.exports = {
-  issueFromOrder, issueFromSession, getById, list, cancel,
-  _financialYear, _formatInvoiceNo, _amountInWords,   // exported for tests
+  issueFromOrder,
+  issueFromSession,
+  getById,
+  list,
+  cancel,
+  _financialYear,
+  _formatInvoiceNo,
+  _amountInWords, // exported for tests
 };

@@ -33,16 +33,21 @@ const fulfilment = require('./fulfilmentService');
 const ownerDigest = require('./ownerDigestService');
 const referral = require('./referralService');
 const refundReconcile = require('./refundReconcileService');
+// NP-301/302/304 (2026-09-04): order-path durability sweeps — orders with no
+// kitchen ticket, unapplied inventory effects, stale print-job claims, and the
+// nightly usage-counter reconciliation.
+const orderDurability = require('./orderDurabilityService');
+const printer = require('./printerService');
 
 // FF-248 / FF-1002 / FF-334 / FF-326 / FF-336 / FF-333 tick counters.
 // Base tick is 60 s. Each scanner has its own interval-in-ticks so the
 // worker stays predictable and single-threaded.
-let _anomalyTicksSinceLast = 0;   // 15 min
-let _npsTicksSinceLast = 0;       // 15 min
-let _lateTicksSinceLast = 0;      // 5 min
-let _digestTicksSinceLast = 0;    // 60 min
-let _referralTicksSinceLast = 0;  // 6 hours
-let _refundTicksSinceLast = 0;    // 5 min (Day-1 reconciler)
+let _anomalyTicksSinceLast = 0; // 15 min
+let _npsTicksSinceLast = 0; // 15 min
+let _lateTicksSinceLast = 0; // 5 min
+let _digestTicksSinceLast = 0; // 60 min
+let _referralTicksSinceLast = 0; // 6 hours
+let _refundTicksSinceLast = 0; // 5 min (Day-1 reconciler)
 
 let timer = null;
 let isRunning = false;
@@ -53,7 +58,7 @@ let isRunning = false;
 // be a write amplification we don't want), so we keep the last outcome per
 // job in process memory. It resets on deploy — which is exactly the window
 // an operator cares about ("is the worker alive on THIS instance?").
-const _lastRun = Object.create(null);   // job name → { at, ms, ok, error }
+const _lastRun = Object.create(null); // job name → { at, ms, ok, error }
 let _lastTickAt = null;
 let _lastTickMs = null;
 let _startedAt = null;
@@ -70,7 +75,7 @@ async function _track(name, fn) {
     _lastRun[name] = {
       at: new Date().toISOString(), ms: Date.now() - t0, ok: false, error: e.message,
     };
-    throw e;   // preserve the existing per-job .catch() logging
+    throw e; // preserve the existing per-job .catch() logging
   }
 }
 
@@ -88,7 +93,7 @@ function stats() {
 }
 
 async function _runOnce() {
-  if (isRunning) return;               // in-process guard (same instance)
+  if (isRunning) return; // in-process guard (same instance)
   isRunning = true;
 
   // Cross-instance guard: grab a session advisory lock on a dedicated client.
@@ -125,68 +130,70 @@ async function _runOnce() {
   try {
     // P2 fix (2026-08-22): each job catches its own errors so one
     // failure can't starve the later jobs (or the tick counters below).
-    await _track('scheduled-messages', () => drainScheduledMessages()).catch((e) =>
-      logger.warn(`[scheduled-messages] tick error: ${e.message}`));
-    await _track('wa-outbound', () => drainOutboundWaMessages()).catch((e) =>
-      logger.warn(`[wa-outbound] tick error: ${e.message}`));
-    await _track('recurring-invoices', () => dueRecurringInvoices()).catch((e) =>
-      logger.warn(`[recurring-invoices] tick error: ${e.message}`));
-    await _track('auto-restock', () => autoRestock86()).catch((e) =>
-      logger.warn(`[auto-restock] tick error: ${e.message}`));
+    await _track('scheduled-messages', () => drainScheduledMessages()).catch((e) => logger.warn(`[scheduled-messages] tick error: ${e.message}`));
+    await _track('wa-outbound', () => drainOutboundWaMessages()).catch((e) => logger.warn(`[wa-outbound] tick error: ${e.message}`));
+    await _track('recurring-invoices', () => dueRecurringInvoices()).catch((e) => logger.warn(`[recurring-invoices] tick error: ${e.message}`));
+    await _track('auto-restock', () => autoRestock86()).catch((e) => logger.warn(`[auto-restock] tick error: ${e.message}`));
     // FF-248 anomaly scan every 15 ticks (~15 min at 60s cadence).
     if (++_anomalyTicksSinceLast >= 15) {
       _anomalyTicksSinceLast = 0;
-      await _track('anomaly-scan', () => anomaly.tick()).catch((e) =>
-        logger.warn(`[anomaly] tick error: ${e.message}`));
+      await _track('anomaly-scan', () => anomaly.tick()).catch((e) => logger.warn(`[anomaly] tick error: ${e.message}`));
     }
     // FF-1002 NPS post-meal ping — every 15 ticks (~15 min).
     if (++_npsTicksSinceLast >= 15) {
       _npsTicksSinceLast = 0;
-      await _track('nps', () => nps.scheduleTick()).catch((e) =>
-        logger.warn(`[nps] tick error: ${e.message}`));
+      await _track('nps', () => nps.scheduleTick()).catch((e) => logger.warn(`[nps] tick error: ${e.message}`));
     }
     // FF-334 late aggregator delivery — every 5 ticks (~5 min).
     if (++_lateTicksSinceLast >= 5) {
       _lateTicksSinceLast = 0;
-      await _track('late-delivery', () => lateDelivery.scan()).catch((e) =>
-        logger.warn(`[late-delivery] tick error: ${e.message}`));
+      await _track('late-delivery', () => lateDelivery.scan()).catch((e) => logger.warn(`[late-delivery] tick error: ${e.message}`));
     }
     // 2026-09-03 — drain queued aggregator status callbacks EVERY tick.
     // Accept/food-ready callbacks are SLA-graded by the aggregators, so this
     // is the one queue that must not wait minutes. With no partner
     // credentials each event is marked `skipped` and the drain is a no-op.
-    await _track('aggregator-outbound', () => fulfilment.drainOutbound()).catch((e) =>
-      logger.warn(`[aggregator-outbound] tick error: ${e.message}`));
+    await _track('aggregator-outbound', () => fulfilment.drainOutbound()).catch((e) => logger.warn(`[aggregator-outbound] tick error: ${e.message}`));
     // 2026-09-03 verification fix: an order can end up `delivered` with its POS
     // status never mirrored to `collected` (pool blip, or a human cancelling
     // between the two steps) — i.e. delivered food whose REVENUE was never
     // recognised. Retry those every tick; the sweep is index-bounded and the
     // set is normally empty.
-    await _track('pos-mirror-repair', () => fulfilment.repairPosMirrors()).catch((e) =>
-      logger.warn(`[pos-mirror-repair] tick error: ${e.message}`));
+    await _track('pos-mirror-repair', () => fulfilment.repairPosMirrors()).catch((e) => logger.warn(`[pos-mirror-repair] tick error: ${e.message}`));
     // Flush callbacks parked as `skipped` if partner outbound has since been
     // switched on (they would otherwise never be sent).
     await _track('outbound-requeue', () => fulfilment.requeueSkippedOutbound()).catch(() => {});
+    // NP-301 (2026-09-04): safety net for the kitchen. The order txn now
+    // guarantees ticket rows + queued print jobs commit with the sale, but an
+    // order written by an older build (or repaired by hand) can still sit
+    // billed-and-uncooked. Same shape as pos-mirror-repair: index-bounded by
+    // migration 083's idx_kot_tickets_order, and normally an empty set.
+    await _track('kot-repair', () => orderDurability.repairMissingKots()).catch((e) => logger.warn(`[kot-repair] tick error: ${e.message}`));
+    // NP-301: a print agent that claimed a job and died must not swallow the
+    // ticket it was holding — put 'printing' jobs older than 5 min back in the
+    // queue (or dead-letter them once attempts are exhausted).
+    await _track('print-requeue', () => printer.requeueStalePrintJobs()).catch((e) => logger.warn(`[print-requeue] tick error: ${e.message}`));
+    // NP-302: retry inventory effects the order path could not decide on
+    // (the recipe-costing entitlement lookup is the only non-critical step
+    // left; a critical deduction failure rolls the order back instead).
+    await _track('inventory-repair', () => orderDurability.repairInventoryEffects())
+      .catch((e) => logger.warn(`[inventory-repair] tick error: ${e.message}`));
     // FF-326 / FF-336 owner digests — every 60 ticks (~1 h) so both
     // the "am I at 9am now?" checks in ownerDigestService fire hourly.
     if (++_digestTicksSinceLast >= 60) {
       _digestTicksSinceLast = 0;
-      await _track('digest-daily', () => ownerDigest.dailyTick()).catch((e) =>
-        logger.warn(`[digest daily] ${e.message}`));
-      await _track('digest-weekly', () => ownerDigest.weeklyTick()).catch((e) =>
-        logger.warn(`[digest weekly] ${e.message}`));
+      await _track('digest-daily', () => ownerDigest.dailyTick()).catch((e) => logger.warn(`[digest daily] ${e.message}`));
+      await _track('digest-weekly', () => ownerDigest.weeklyTick()).catch((e) => logger.warn(`[digest weekly] ${e.message}`));
     }
     // FF-333 referral awarding — every 360 ticks (~6 h).
     if (++_referralTicksSinceLast >= 360) {
       _referralTicksSinceLast = 0;
-      await _track('referral-award', () => referral.awardEligible()).catch((e) =>
-        logger.warn(`[referral] ${e.message}`));
+      await _track('referral-award', () => referral.awardEligible()).catch((e) => logger.warn(`[referral] ${e.message}`));
     }
     // Day-1 CTO ask — drain pending gateway refunds every 5 ticks (~5 min).
     if (++_refundTicksSinceLast >= 5) {
       _refundTicksSinceLast = 0;
-      await _track('refund-reconciler', () => refundReconcile.tick()).catch((e) =>
-        logger.warn(`[refund-reconciler] tick error: ${e.message}`));
+      await _track('refund-reconciler', () => refundReconcile.tick()).catch((e) => logger.warn(`[refund-reconciler] tick error: ${e.message}`));
     }
     // Heavy jobs fire in the 02:00 IST slot (quietest hour for Indian
     // restaurants). P2 fix (2026-08-22): was server-local getHours() —
@@ -218,7 +225,7 @@ async function _runOnce() {
             WHERE status = 'active'
               AND current_period_end < NOW()
               AND cancel_at_period_end = FALSE
-            RETURNING business_id`
+            RETURNING business_id`,
         );
         if (healed.rowCount > 0) {
           logger.info(`[billing self-heal] rolled ${healed.rowCount} stale periods forward`);
@@ -268,6 +275,27 @@ async function _runOnce() {
       } catch (e) {
         logger.warn(`[retention] nightly sweep failed: ${e.message}`);
       }
+      // NP-304 (2026-09-04): usage-counter reconciliation. `monthly_orders` is
+      // bumped AFTER the order commits and the failure is swallowed on purpose
+      // (a quota counter must never un-sell food that is already cooking), so
+      // the counter can read LOWER than reality and hand the tenant free
+      // headroom. Compare COUNT(orders) for the current period against
+      // usage_counters and repair, logging every correction. Unconditional —
+      // it only ever raises a counter to the truth, so there is nothing to gate.
+      try {
+        const rec = await _track(
+          'usage-reconcile',
+          () => orderDurability.reconcileMonthlyOrders(),
+        );
+        if (rec.raised.length > 0 || rec.overCounted.length > 0) {
+          logger.warn(
+            `[usage-reconcile] ${rec.period}: raised ${rec.raised.length} counter(s), `
+            + `${rec.overCounted.length} over-counted left for a human`,
+          );
+        }
+      } catch (e) {
+        logger.error(`[usage-reconcile] nightly reconciliation failed: ${e.message}`);
+      }
       // NP-121 (2026-09-03): revenue-integrity sweep — plan-price drift,
       // refunds stuck pending >48h, webhook deliveries dead in-flight >1h.
       // DEFAULT OFF: runs only when REVENUE_INTEGRITY_CRON=true. Emails
@@ -310,7 +338,7 @@ async function drainOutboundWaMessages() {
       WHERE m.direction = 'out'
         AND m.provider_msg_id IS NULL
       ORDER BY m.created_at
-      LIMIT 50`
+      LIMIT 50`,
   );
   for (const m of due.rows) {
     if (!m.customer_phone) continue;
@@ -319,8 +347,8 @@ async function drainOutboundWaMessages() {
       // Stamp so we never re-send. Mock/misconfigured provider returns null →
       // mark 'mock-sent' so it drains instead of looping forever.
       await query(
-        `UPDATE wa_messages SET provider_msg_id = $1 WHERE id = $2`,
-        [sid || 'mock-sent', m.id]
+        'UPDATE wa_messages SET provider_msg_id = $1 WHERE id = $2',
+        [sid || 'mock-sent', m.id],
       );
     } catch (err) {
       logger.warn(`[wa-outbound] send failed for ${m.id}: ${err.message}`);
@@ -335,27 +363,27 @@ async function drainScheduledMessages() {
        FROM scheduled_messages sm
   LEFT JOIN customers c ON c.id = sm.customer_id
       WHERE sm.status = 'pending' AND sm.scheduled_at <= NOW()
-      ORDER BY sm.scheduled_at LIMIT 50`
+      ORDER BY sm.scheduled_at LIMIT 50`,
   );
   for (const m of due.rows) {
     const phone = m.customer_phone || (m.body.match(/\+?91\d{10}/) || [])[0];
     if (!phone) {
       await query(
-        `UPDATE scheduled_messages SET status = 'failed', error_message = $1 WHERE id = $2`,
-        ['No phone', m.id]
+        'UPDATE scheduled_messages SET status = \'failed\', error_message = $1 WHERE id = $2',
+        ['No phone', m.id],
       );
       continue;
     }
     try {
       await whatsapp._sendOutbound(m.business_id, phone, m.body);
       await query(
-        `UPDATE scheduled_messages SET status = 'sent', sent_at = NOW() WHERE id = $1`,
-        [m.id]
+        'UPDATE scheduled_messages SET status = \'sent\', sent_at = NOW() WHERE id = $1',
+        [m.id],
       );
     } catch (err) {
       await query(
-        `UPDATE scheduled_messages SET status = 'failed', error_message = $1 WHERE id = $2`,
-        [err.message, m.id]
+        'UPDATE scheduled_messages SET status = \'failed\', error_message = $1 WHERE id = $2',
+        [err.message, m.id],
       );
     }
   }
@@ -374,7 +402,7 @@ async function drainScheduledMessages() {
            WHERE sm.customer_id = c.id AND sm.kind = 'birthday'
              AND sm.created_at > NOW() - INTERVAL '1 day'
         )
-      LIMIT 100`
+      LIMIT 100`,
   );
 }
 
@@ -384,7 +412,7 @@ async function dueRecurringInvoices() {
     `SELECT * FROM recurring_invoices
       WHERE is_active = TRUE AND next_run_at <= NOW()
         AND (end_at IS NULL OR end_at > NOW())
-      LIMIT 50`
+      LIMIT 50`,
   );
   for (const r of due.rows) {
     // Simplified: log and bump. Real generation logic depends on tenant.
@@ -397,7 +425,7 @@ async function dueRecurringInvoices() {
     }[r.frequency] || "INTERVAL '1 month'";
     await query(
       `UPDATE recurring_invoices SET next_run_at = next_run_at + ${interval} WHERE id = $1`,
-      [r.id]
+      [r.id],
     );
   }
 }
@@ -405,7 +433,7 @@ async function dueRecurringInvoices() {
 async function autoRestock86() {
   await query(
     `UPDATE menu_items SET sold_out_until = NULL
-      WHERE sold_out_until IS NOT NULL AND sold_out_until <= NOW()`
+      WHERE sold_out_until IS NOT NULL AND sold_out_until <= NOW()`,
   );
 }
 
@@ -414,15 +442,15 @@ async function autoRestock86() {
 // duration grew linearly with tenant count and one slow tenant delayed all
 // the rest. Process in small concurrent batches instead. Tuning constants
 // (not env — batching size isn't config/secret, same pattern as CRON_LOCK_KEY):
-const ANALYTICS_BATCH_SIZE = 5;       // tenants refreshed concurrently
-const ANALYTICS_JITTER_MIN_MS = 50;   // per-tenant start jitter so a batch's
-const ANALYTICS_JITTER_MAX_MS = 250;  // first queries don't hit the pool at once
+const ANALYTICS_BATCH_SIZE = 5; // tenants refreshed concurrently
+const ANALYTICS_JITTER_MIN_MS = 50; // per-tenant start jitter so a batch's
+const ANALYTICS_JITTER_MAX_MS = 250; // first queries don't hit the pool at once
 
 const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function refreshAllBusinessAnalytics() {
   const startedAt = Date.now();
-  const biz = await query(`SELECT id FROM businesses WHERE deleted_at IS NULL`);
+  const biz = await query('SELECT id FROM businesses WHERE deleted_at IS NULL');
   let ok = 0;
   let failed = 0;
   for (let i = 0; i < biz.rows.length; i += ANALYTICS_BATCH_SIZE) {
@@ -431,7 +459,8 @@ async function refreshAllBusinessAnalytics() {
     // continue), so Promise.all here can never reject the whole batch.
     await Promise.all(batch.map(async (b) => {
       const jitter = ANALYTICS_JITTER_MIN_MS + Math.floor(
-        Math.random() * (ANALYTICS_JITTER_MAX_MS - ANALYTICS_JITTER_MIN_MS + 1));
+        Math.random() * (ANALYTICS_JITTER_MAX_MS - ANALYTICS_JITTER_MIN_MS + 1),
+      );
       await _sleep(jitter);
       try {
         await forecast.refreshForecast(b.id);
@@ -447,7 +476,8 @@ async function refreshAllBusinessAnalytics() {
   logger.info(
     `[analytics-refresh] tick done in ${Date.now() - startedAt}ms — `
     + `${biz.rows.length} businesses (${ok} ok, ${failed} failed, `
-    + `batch size ${ANALYTICS_BATCH_SIZE})`);
+    + `batch size ${ANALYTICS_BATCH_SIZE})`,
+  );
 }
 
 function start({ intervalMs = 60 * 1000 } = {}) {

@@ -8,18 +8,18 @@ const exporters = require('../services/reportExporters');
 
 const issueBody = Joi.object({
   orderId: Joi.string().uuid().required(),
-  recipientName:    Joi.string().max(255).allow('', null),
-  recipientGstin:   Joi.string().length(15).allow('', null),
+  recipientName: Joi.string().max(255).allow('', null),
+  recipientGstin: Joi.string().length(15).allow('', null),
   recipientAddress: Joi.string().max(500).allow('', null),
-  recipientPhone:   Joi.string().max(20).allow('', null),
-  placeOfSupply:    Joi.string().length(2).allow('', null),
-  reverseCharge:    Joi.boolean().default(false),
+  recipientPhone: Joi.string().max(20).allow('', null),
+  placeOfSupply: Joi.string().length(2).allow('', null),
+  reverseCharge: Joi.boolean().default(false),
 });
 
 const listQuery = Joi.object({
   startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/),
-  endDate:   Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/),
-  status:    Joi.string().valid('issued', 'cancelled'),
+  endDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/),
+  status: Joi.string().valid('issued', 'cancelled'),
 });
 
 const cancelBody = Joi.object({
@@ -36,14 +36,14 @@ module.exports = {
         req.params.businessId,
         req.body.orderId,
         {
-          recipientName:    req.body.recipientName || null,
-          recipientGstin:   req.body.recipientGstin || null,
+          recipientName: req.body.recipientName || null,
+          recipientGstin: req.body.recipientGstin || null,
           recipientAddress: req.body.recipientAddress || null,
-          recipientPhone:   req.body.recipientPhone || null,
-          placeOfSupply:    req.body.placeOfSupply || null,
-          reverseCharge:    !!req.body.reverseCharge,
-          issuedByUserId:   req.user?.id,
-        }
+          recipientPhone: req.body.recipientPhone || null,
+          placeOfSupply: req.body.placeOfSupply || null,
+          reverseCharge: !!req.body.reverseCharge,
+          issuedByUserId: req.user?.id,
+        },
       );
       res.status(201).json({ invoice });
     }),
@@ -72,8 +72,10 @@ module.exports = {
     validate({ body: cancelBody }),
     asyncHandler(async (req, res) => {
       const invoice = await svc.cancel(
-        req.params.businessId, req.params.invoiceId,
-        req.body.reason, req.user?.id
+        req.params.businessId,
+        req.params.invoiceId,
+        req.body.reason,
+        req.user?.id,
       );
       res.json({ invoice });
     }),

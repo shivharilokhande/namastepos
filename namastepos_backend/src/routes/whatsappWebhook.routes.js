@@ -57,7 +57,7 @@ router.post('/:businessId', asyncHandler(async (req, res) => {
   // Reconstruct the absolute URL Twilio used (must match what's configured
   // in the Twilio console). Honour X-Forwarded-* when behind a proxy.
   const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
-  const host  = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+  const host = (req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
   const fullUrl = `${proto}://${host}${req.originalUrl}`;
 
   const signature = req.headers['x-twilio-signature'];

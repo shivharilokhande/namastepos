@@ -26,7 +26,8 @@ const { Unauthorized, NotFound, Forbidden } = require('../utils/errors');
 // registrations are inserted via registerWithPassword().
 
 const bcrypt = require('../utils/bcrypt');
-const { BadRequest } = require('../utils/errors');     // Unauthorized already imported above
+const { BadRequest } = require('../utils/errors');
+// Unauthorized already imported above
 const PWD_SALT_ROUNDS = 12;
 
 async function registerWithPassword({ email, password, name }) {
@@ -36,8 +37,8 @@ async function registerWithPassword({ email, password, name }) {
   // Block re-registration with an existing email — friendlier message
   // than a SQL unique-violation explosion.
   const existing = await query(
-    `SELECT id, password_hash FROM users WHERE email = $1 LIMIT 1`,
-    [email]
+    'SELECT id, password_hash FROM users WHERE email = $1 LIMIT 1',
+    [email],
   );
   if (existing.rowCount > 0 && existing.rows[0].password_hash) {
     throw new BadRequest('That email is already registered. Try logging in.');
@@ -51,14 +52,14 @@ async function registerWithPassword({ email, password, name }) {
       `UPDATE users SET password_hash = $1, display_name = COALESCE($2, display_name),
                          last_login_method = 'password', last_seen_at = NOW()
         WHERE id = $3 RETURNING *`,
-      [hash, name, existing.rows[0].id]
+      [hash, name, existing.rows[0].id],
     );
     user = r.rows[0];
   } else {
     const r = await query(
       `INSERT INTO users (email, display_name, password_hash, last_login_method, last_seen_at)
        VALUES ($1, $2, $3, 'password', NOW()) RETURNING *`,
-      [email, name || email.split('@')[0], hash]
+      [email, name || email.split('@')[0], hash],
     );
     user = r.rows[0];
   }
@@ -68,8 +69,8 @@ async function registerWithPassword({ email, password, name }) {
 async function loginWithPassword({ email, password }) {
   if (!email || !password) throw new BadRequest('Email and password required');
   const r = await query(
-    `SELECT * FROM users WHERE email = $1 LIMIT 1`,
-    [email]
+    'SELECT * FROM users WHERE email = $1 LIMIT 1',
+    [email],
   );
   if (r.rowCount === 0 || !r.rows[0].password_hash) {
     throw new Unauthorized('Invalid email or password');
@@ -77,17 +78,16 @@ async function loginWithPassword({ email, password }) {
   const ok = await bcrypt.compare(password, r.rows[0].password_hash);
   if (!ok) throw new Unauthorized('Invalid email or password');
   await query(
-    `UPDATE users SET last_seen_at = NOW(), last_login_method = 'password' WHERE id = $1`,
-    [r.rows[0].id]
+    'UPDATE users SET last_seen_at = NOW(), last_login_method = \'password\' WHERE id = $1',
+    [r.rows[0].id],
   );
   return r.rows[0];
 }
 
 async function setPasswordForUser(userId, newPassword) {
-  if (!newPassword || newPassword.length < 8)
-    throw new BadRequest('Password must be at least 8 characters');
+  if (!newPassword || newPassword.length < 8) throw new BadRequest('Password must be at least 8 characters');
   const hash = await bcrypt.hash(newPassword, PWD_SALT_ROUNDS);
-  await query(`UPDATE users SET password_hash = $1 WHERE id = $2`, [hash, userId]);
+  await query('UPDATE users SET password_hash = $1 WHERE id = $2', [hash, userId]);
 }
 
 // Founder bug #1 (2026-08-25): change password from the profile screen.
@@ -102,8 +102,8 @@ async function changePassword(userId, { currentPassword, newPassword } = {}) {
     throw new BadRequest('Password must be at least 8 characters');
   }
   const r = await query(
-    `SELECT id, password_hash FROM users WHERE id = $1 LIMIT 1`,
-    [userId]
+    'SELECT id, password_hash FROM users WHERE id = $1 LIMIT 1',
+    [userId],
   );
   if (r.rowCount === 0) throw new NotFound('User not found');
 
@@ -116,21 +116,21 @@ async function changePassword(userId, { currentPassword, newPassword } = {}) {
 
   const hash = await bcrypt.hash(newPassword, PWD_SALT_ROUNDS);
   await query(
-    `UPDATE users SET password_hash = $1, last_login_method = 'password' WHERE id = $2`,
-    [hash, userId]
+    'UPDATE users SET password_hash = $1, last_login_method = \'password\' WHERE id = $2',
+    [hash, userId],
   );
 }
 
 async function findOrCreateUser({ sub, email, name, picture }) {
   // Prefer google_sub (stable identifier)
-  let r = await query(`SELECT * FROM users WHERE google_sub = $1 LIMIT 1`, [sub]);
+  let r = await query('SELECT * FROM users WHERE google_sub = $1 LIMIT 1', [sub]);
   if (r.rowCount > 0) {
     // Touch last_seen
-    await query(`UPDATE users SET last_seen_at = NOW() WHERE id = $1`, [r.rows[0].id]);
+    await query('UPDATE users SET last_seen_at = NOW() WHERE id = $1', [r.rows[0].id]);
     return { user: r.rows[0], created: false };
   }
   // Fall back to email (first link or returning after a Google account swap)
-  r = await query(`SELECT * FROM users WHERE email = $1 LIMIT 1`, [email]);
+  r = await query('SELECT * FROM users WHERE email = $1 LIMIT 1', [email]);
   if (r.rowCount > 0) {
     const upd = await query(
       `UPDATE users
@@ -139,20 +139,20 @@ async function findOrCreateUser({ sub, email, name, picture }) {
               photo_url = COALESCE($3, photo_url),
               last_seen_at = NOW()
         WHERE id = $4 RETURNING *`,
-      [sub, name, picture, r.rows[0].id]
+      [sub, name, picture, r.rows[0].id],
     );
     return { user: upd.rows[0], created: false };
   }
   const ins = await query(
     `INSERT INTO users (google_sub, email, display_name, photo_url, last_seen_at)
      VALUES ($1, $2, $3, $4, NOW()) RETURNING *`,
-    [sub, email, name, picture]
+    [sub, email, name, picture],
   );
   return { user: ins.rows[0], created: true };
 }
 
 async function getUserById(id) {
-  const r = await query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [id]);
+  const r = await query('SELECT * FROM users WHERE id = $1 LIMIT 1', [id]);
   return r.rows[0] || null;
 }
 
@@ -166,7 +166,7 @@ async function listMembershipsForUser(userId) {
        JOIN businesses b ON b.id = bu.business_id
       WHERE bu.user_id = $1 AND bu.is_active = TRUE
       ORDER BY bu.joined_at ASC`,
-    [userId]
+    [userId],
   );
   return r.rows.map((row) => ({
     businessId: row.business_id,
@@ -182,7 +182,7 @@ async function getMembership(userId, businessId) {
     `SELECT * FROM business_users
       WHERE user_id = $1 AND business_id = $2 AND is_active = TRUE
       LIMIT 1`,
-    [userId, businessId]
+    [userId, businessId],
   );
   return r.rows[0] || null;
 }
@@ -203,14 +203,14 @@ async function createBusinessForUser(user, { name }) {
      VALUES ($1, $2, $3, $4, $5, FALSE)
      RETURNING *`,
     [user.google_sub || `user-${user.id}`, user.email,
-     user.display_name, user.photo_url, name || (user.display_name || 'My Business')]
+      user.display_name, user.photo_url, name || (user.display_name || 'My Business')],
   );
   const business = r.rows[0];
   await query(
     `INSERT INTO business_users (business_id, user_id, role)
      VALUES ($1, $2, 'business_owner')
      ON CONFLICT (business_id, user_id) DO NOTHING`,
-    [business.id, user.id]
+    [business.id, user.id],
   );
   // Default subscription = Free trial. Hardcode-audit fix (2026-08-24):
   // trial length is env.TRIAL_DAYS (single source of truth), not an
@@ -220,7 +220,7 @@ async function createBusinessForUser(user, { name }) {
      VALUES ($1, (SELECT id FROM plans WHERE tier = 'free'),
              'trialing', NOW() + make_interval(days => $2), NOW() + make_interval(days => $2))
      ON CONFLICT (business_id) DO NOTHING`,
-    [business.id, env.TRIAL_DAYS]
+    [business.id, env.TRIAL_DAYS],
   );
   return business;
 }
@@ -243,7 +243,7 @@ async function issueSession({ user, businessId, role }, { userAgent, ip } = {}) 
   await query(
     `INSERT INTO refresh_tokens (business_id, user_id, token_hash, user_agent, ip_address, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [businessId, user.id, refreshHash, userAgent || null, ip || null, expiresAt]
+    [businessId, user.id, refreshHash, userAgent || null, ip || null, expiresAt],
   );
   return { accessToken, refreshToken };
 }
@@ -256,8 +256,8 @@ async function refreshSession(refreshToken, { userAgent, ip } = {}) {
   // but is already revoked, it means a rotated/stolen token was replayed —
   // revoke the whole family (this user's tokens in this business) and refuse.
   const seen = await query(
-    `SELECT business_id, user_id, revoked_at FROM refresh_tokens WHERE token_hash = $1 LIMIT 1`,
-    [hash]
+    'SELECT business_id, user_id, revoked_at FROM refresh_tokens WHERE token_hash = $1 LIMIT 1',
+    [hash],
   );
   if (seen.rowCount > 0 && seen.rows[0].revoked_at !== null) {
     const { business_id, user_id } = seen.rows[0];
@@ -265,7 +265,7 @@ async function refreshSession(refreshToken, { userAgent, ip } = {}) {
       await query(
         `UPDATE refresh_tokens SET revoked_at = NOW()
           WHERE business_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
-        [business_id, user_id]
+        [business_id, user_id],
       );
     }
     throw new Unauthorized('Session reuse detected — please sign in again');
@@ -285,22 +285,22 @@ async function refreshSession(refreshToken, { userAgent, ip } = {}) {
         AND rt.expires_at > NOW()
         AND rt.user_id IS NOT NULL
       LIMIT 1`,
-    [hash]
+    [hash],
   );
   if (r.rowCount === 0) throw new Unauthorized('Refresh token invalid or expired');
   const row = r.rows[0];
-  await query(`UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1`, [hash]);
+  await query('UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1', [hash]);
   const user = await getUserById(row.user_id);
   return issueSession(
     { user, businessId: row.business_id, role: row.role },
-    { userAgent, ip }
+    { userAgent, ip },
   );
 }
 
 async function revokeRefreshToken(refreshToken) {
   if (!refreshToken) return;
   const hash = hashRefreshToken(refreshToken);
-  await query(`UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1`, [hash]);
+  await query('UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1', [hash]);
 }
 
 // ── Switching active business (for users in multiple businesses) ─────────
@@ -310,14 +310,14 @@ async function switchBusiness({ user, businessId }, { userAgent, ip } = {}) {
   if (!membership) throw new Forbidden('You are not a member of that business');
   return issueSession(
     { user, businessId, role: membership.role },
-    { userAgent, ip }
+    { userAgent, ip },
   );
 }
 
 // ── Updates ──────────────────────────────────────────────────────────────
 
 async function getBusinessById(id) {
-  const r = await query(`SELECT * FROM businesses WHERE id = $1 LIMIT 1`, [id]);
+  const r = await query('SELECT * FROM businesses WHERE id = $1 LIMIT 1', [id]);
   return r.rows[0] || null;
 }
 
@@ -325,7 +325,7 @@ async function updateBusiness(id, patch) {
   const fields = [
     'name', 'phone', 'city', 'category', 'gstin', 'address',
     'upi_id', 'bank_account', 'bank_ifsc', 'logo_url', 'onboarded',
-    'default_service_mode',   // FF-252
+    'default_service_mode', // FF-252
     // 2026-08-25 — Google reviews source config (migration 061). Lives on
     // businesses, NOT platform_settings: that table is platform-global KV
     // with no business_id column, so per-business rows can't exist there.
@@ -347,7 +347,7 @@ async function updateBusiness(id, patch) {
   values.push(id);
   const r = await query(
     `UPDATE businesses SET ${updates.join(', ')} WHERE id = $${idx} RETURNING *`,
-    values
+    values,
   );
   return r.rows[0];
 }
@@ -399,10 +399,10 @@ function serializeBusiness(b) {
     // business cache and uses Intl.NumberFormat with the right locale.
     currency: b.currency_code || 'INR',
     locale: (b.currency_code === 'USD') ? 'en-US'
-          : (b.currency_code === 'EUR') ? 'de-DE'
-          : (b.currency_code === 'GBP') ? 'en-GB'
+      : (b.currency_code === 'EUR') ? 'de-DE'
+        : (b.currency_code === 'GBP') ? 'en-GB'
           : (b.currency_code === 'AED') ? 'ar-AE'
-          : 'en-IN',
+            : 'en-IN',
   };
 }
 

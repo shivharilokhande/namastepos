@@ -46,13 +46,13 @@ async function createTicket({ businessId, subject, priority = 'normal', body,
     `INSERT INTO support_tickets
        (business_id, subject, priority, created_by_user_id, created_by_admin, last_reply_at)
      VALUES ($1, $2, $3, $4, $5, NOW()) RETURNING *`,
-    [businessId, subject.slice(0, 200), priority, authorUserId, byAdmin]
+    [businessId, subject.slice(0, 200), priority, authorUserId, byAdmin],
   );
   const ticket = t.rows[0];
   await query(
     `INSERT INTO support_ticket_messages (ticket_id, author_type, author_id, author_email, body)
      VALUES ($1, $2, $3, $4, $5)`,
-    [ticket.id, byAdmin ? 'admin' : 'tenant', authorUserId, authorEmail, body]
+    [ticket.id, byAdmin ? 'admin' : 'tenant', authorUserId, authorEmail, body],
   );
   return serializeTicket(ticket);
 }
@@ -84,32 +84,28 @@ async function listTickets({ status, businessId, limit = 50, offset = 0 } = {}) 
                CASE t.priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
                t.last_reply_at DESC NULLS LAST
       LIMIT $${i++} OFFSET $${i++}`,
-    vals
+    vals,
   );
   const total = r.rows.length > 0 ? parseInt(r.rows[0].total_count, 10) : 0;
   return { tickets: r.rows.map(serializeTicket), total };
 }
 
 async function getTicket(id) {
-  const t = await query(
-    `SELECT t.*, b.name AS business_name FROM support_tickets t
-       JOIN businesses b ON b.id = t.business_id WHERE t.id = $1`, [id]
-  );
+  const t = await query(`SELECT t.*, b.name AS business_name FROM support_tickets t
+       JOIN businesses b ON b.id = t.business_id WHERE t.id = $1`, [id]);
   if (t.rowCount === 0) throw new NotFound('Ticket not found');
-  const msgs = await query(
-    `SELECT * FROM support_ticket_messages WHERE ticket_id = $1 ORDER BY created_at ASC`, [id]
-  );
+  const msgs = await query('SELECT * FROM support_ticket_messages WHERE ticket_id = $1 ORDER BY created_at ASC', [id]);
   return { ...serializeTicket(t.rows[0]), messages: msgs.rows.map(serializeMessage) };
 }
 
 async function addMessage(id, { body, authorType, authorId = null, authorEmail = null }) {
   if (!body) throw new BadRequest('body is required');
-  const t = await query(`SELECT id FROM support_tickets WHERE id = $1`, [id]);
+  const t = await query('SELECT id FROM support_tickets WHERE id = $1', [id]);
   if (t.rowCount === 0) throw new NotFound('Ticket not found');
   await query(
     `INSERT INTO support_ticket_messages (ticket_id, author_type, author_id, author_email, body)
      VALUES ($1, $2, $3, $4, $5)`,
-    [id, authorType === 'admin' ? 'admin' : 'tenant', authorId, authorEmail, body]
+    [id, authorType === 'admin' ? 'admin' : 'tenant', authorId, authorEmail, body],
   );
   // An admin reply moves an open ticket to 'pending' (awaiting tenant);
   // a tenant reply re-opens it.
@@ -120,17 +116,15 @@ async function addMessage(id, { body, authorType, authorId = null, authorEmail =
                           WHEN status NOT IN ('resolved','closed') THEN $2::support_ticket_status
                           ELSE status END
       WHERE id = $1`,
-    [id, newStatus]
+    [id, newStatus],
   );
   return getTicket(id);
 }
 
 async function setStatus(id, status) {
   if (!STATUSES.includes(status)) throw new BadRequest('Invalid status');
-  const r = await query(
-    `UPDATE support_tickets SET status = $2::support_ticket_status, updated_at = NOW()
-      WHERE id = $1 RETURNING *`, [id, status]
-  );
+  const r = await query(`UPDATE support_tickets SET status = $2::support_ticket_status, updated_at = NOW()
+      WHERE id = $1 RETURNING *`, [id, status]);
   if (r.rowCount === 0) throw new NotFound('Ticket not found');
   return serializeTicket(r.rows[0]);
 }

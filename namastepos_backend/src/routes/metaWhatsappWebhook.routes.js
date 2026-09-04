@@ -37,10 +37,10 @@ function verifySignature(req) {
   if (!env.META_WA_APP_SECRET) return !(env.isProd && env.isProd());
   const sig = req.headers['x-hub-signature-256'];
   if (!sig || !req.rawBody) return false;
-  const expected = 'sha256=' + crypto
+  const expected = `sha256=${crypto
     .createHmac('sha256', env.META_WA_APP_SECRET)
     .update(req.rawBody)
-    .digest('hex');
+    .digest('hex')}`;
   try {
     const a = Buffer.from(sig);
     const b = Buffer.from(expected);
@@ -59,7 +59,7 @@ async function _resolveBusiness(phone) {
     `SELECT DISTINCT business_id FROM customers
       WHERE right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = $1
       LIMIT 2`,
-    [digits]
+    [digits],
   );
   return r.rowCount === 1 ? r.rows[0].business_id : null;
 }

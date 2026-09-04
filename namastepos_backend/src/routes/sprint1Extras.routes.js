@@ -28,7 +28,8 @@ router.get('/modifier-groups', asyncHandler(async (req, res) => {
   res.json({ groups: await variants.listGroups(req.params.businessId) });
 }));
 
-router.put('/modifier-groups',
+router.put(
+  '/modifier-groups',
   requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({
     id: Joi.string().uuid().allow(null),
@@ -44,42 +45,44 @@ router.put('/modifier-groups',
       priceDeltaInr: Joi.number().default(0),
       displayOrder: Joi.number().integer().min(0),
     })).default([]),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     const groups = await variants.upsertGroup(req.params.businessId, req.body);
     res.json({ groups });
-  })
+  }),
 );
 
 // ── Cancel-reason picker ─────────────────────────────────────────────────
 router.get('/cancel-reasons', asyncHandler(async (req, res) => {
   res.json({ reasons: await cancelReasons.list(req.params.businessId, {
     includeInactive: req.query.all === 'true',
-  })});
+  }) });
 }));
 
-router.post('/cancel-reasons',
+router.post(
+  '/cancel-reasons',
   requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({
     code: Joi.string().min(1).max(40).required(),
     label: Joi.string().min(1).max(120).required(),
     displayOrder: Joi.number().integer().min(0).default(100),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     res.status(201).json({ reason: await cancelReasons.create(req.params.businessId, req.body) });
-  })
+  }),
 );
 
-router.put('/cancel-reasons/:id',
+router.put(
+  '/cancel-reasons/:id',
   requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({
     label: Joi.string().min(1).max(120),
     displayOrder: Joi.number().integer().min(0),
     isActive: Joi.boolean(),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     res.json({ reasons: await cancelReasons.update(req.params.businessId, req.params.id, req.body) });
-  })
+  }),
 );
 
 // ── Bill template ────────────────────────────────────────────────────────
@@ -91,7 +94,8 @@ router.get('/bill-template', asyncHandler(async (req, res) => {
 // custom-branding value prop (custom-branding addon grants the
 // 'custom_branding' feature; plans/overrides can grant it too). GET above
 // stays open so already-saved templates keep printing after a downgrade.
-router.put('/bill-template',
+router.put(
+  '/bill-template',
   requireRole(['business_owner']),
   require('../middleware/requireFeature')('custom_branding'),
   validate({ body: Joi.object({
@@ -103,14 +107,15 @@ router.put('/bill-template',
     showToken: Joi.boolean(),
     showTaxBreakdown: Joi.boolean(),
     paperWidthMm: Joi.number().integer().valid(58, 80),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     res.json({ template: await billTemplate.update(req.params.businessId, req.body) });
-  })
+  }),
 );
 
 // ── Order reprint (FF-305) ───────────────────────────────────────────────
-router.post('/orders/:orderId/reprint',
+router.post(
+  '/orders/:orderId/reprint',
   requireRole(['business_owner', 'staff_manager', 'staff_cashier']),
   requireNotImpersonating,
   asyncHandler(async (req, res) => {
@@ -130,7 +135,7 @@ router.post('/orders/:orderId/reprint',
       reprintCount: r.reprint_count,
       lastReprintAt: r.last_reprint_at,
     });
-  })
+  }),
 );
 
 module.exports = router;

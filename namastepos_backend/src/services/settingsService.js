@@ -3,7 +3,7 @@
 const { query } = require('../config/db');
 
 async function getAll() {
-  const r = await query(`SELECT * FROM platform_settings ORDER BY key`);
+  const r = await query('SELECT * FROM platform_settings ORDER BY key');
   return r.rows.map((row) => ({
     key: row.key,
     value: row.value,
@@ -13,14 +13,14 @@ async function getAll() {
 }
 
 async function get(key) {
-  const r = await query(`SELECT value FROM platform_settings WHERE key = $1`, [key]);
+  const r = await query('SELECT value FROM platform_settings WHERE key = $1', [key]);
   return r.rowCount > 0 ? r.rows[0].value : null;
 }
 
 async function getMany(keys) {
   const r = await query(
-    `SELECT key, value FROM platform_settings WHERE key = ANY($1::text[])`,
-    [keys]
+    'SELECT key, value FROM platform_settings WHERE key = ANY($1::text[])',
+    [keys],
   );
   return Object.fromEntries(r.rows.map((row) => [row.key, row.value]));
 }
@@ -35,7 +35,7 @@ async function set(key, value, { adminId, description } = {}) {
            updated_by = EXCLUDED.updated_by,
            updated_at = NOW()
      RETURNING *`,
-    [key, JSON.stringify(value), description || null, adminId || null]
+    [key, JSON.stringify(value), description || null, adminId || null],
   );
   return r.rows[0];
 }

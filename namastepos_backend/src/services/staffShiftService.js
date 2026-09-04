@@ -10,14 +10,14 @@
 //   3. Falls back to monthly_salary_inr / 30 / 8 if hourly not set
 
 const { query } = require('../config/db');
-const { BadRequest, NotFound } = require('../utils/errors');
+const { BadRequest } = require('../utils/errors');
 
 async function _getEffectiveRate(businessId, userId) {
   const r = await query(
     `SELECT hourly_rate_inr, monthly_salary_inr
        FROM business_users
       WHERE business_id = $1 AND user_id = $2 LIMIT 1`,
-    [businessId, userId]
+    [businessId, userId],
   );
   const row = r.rows[0];
   if (!row) return 0;
@@ -32,7 +32,7 @@ async function clockIn(businessId, userId) {
     `SELECT * FROM staff_shifts
       WHERE business_id = $1 AND user_id = $2 AND clock_out_at IS NULL
       ORDER BY clock_in_at DESC LIMIT 1`,
-    [businessId, userId]
+    [businessId, userId],
   );
   if (open.rowCount > 0) return open.rows[0];
   const rate = await _getEffectiveRate(businessId, userId);
@@ -40,7 +40,7 @@ async function clockIn(businessId, userId) {
     `INSERT INTO staff_shifts
        (business_id, user_id, clock_in_at, hourly_rate_inr)
      VALUES ($1, $2, NOW(), $3) RETURNING *`,
-    [businessId, userId, rate]
+    [businessId, userId, rate],
   );
   return r.rows[0];
 }
@@ -50,7 +50,7 @@ async function clockOut(businessId, userId) {
     `SELECT * FROM staff_shifts
       WHERE business_id = $1 AND user_id = $2 AND clock_out_at IS NULL
       ORDER BY clock_in_at DESC LIMIT 1`,
-    [businessId, userId]
+    [businessId, userId],
   );
   if (open.rowCount === 0) throw new BadRequest('No open shift for this staff');
   const shift = open.rows[0];
@@ -59,7 +59,7 @@ async function clockOut(businessId, userId) {
         SET clock_out_at = NOW(),
             hours_worked = EXTRACT(EPOCH FROM (NOW() - clock_in_at)) / 3600.0
       WHERE id = $1 RETURNING *`,
-    [shift.id]
+    [shift.id],
   );
   return r.rows[0];
 }
@@ -69,7 +69,7 @@ async function myOpenShift(businessId, userId) {
     `SELECT * FROM staff_shifts
       WHERE business_id = $1 AND user_id = $2 AND clock_out_at IS NULL
       ORDER BY clock_in_at DESC LIMIT 1`,
-    [businessId, userId]
+    [businessId, userId],
   );
   return r.rows[0] || null;
 }
@@ -78,14 +78,14 @@ async function listForBusiness(businessId, { from, to } = {}) {
   const params = [businessId];
   const where = ['s.business_id = $1'];
   if (from) { params.push(from); where.push(`s.clock_in_at::date >= $${params.length}::date`); }
-  if (to)   { params.push(to);   where.push(`s.clock_in_at::date <= $${params.length}::date`); }
+  if (to) { params.push(to); where.push(`s.clock_in_at::date <= $${params.length}::date`); }
   const r = await query(
     `SELECT s.*, u.display_name AS staff_name
        FROM staff_shifts s
   LEFT JOIN users u ON u.id = s.user_id
       WHERE ${where.join(' AND ')}
       ORDER BY s.clock_in_at DESC LIMIT 500`,
-    params
+    params,
   );
   return r.rows;
 }
@@ -112,7 +112,7 @@ async function payrollCsv(businessId, month /* YYYY-MM */) {
       WHERE bu.business_id = $2
       GROUP BY u.id, u.display_name, u.phone, bu.role
       ORDER BY u.display_name`,
-    [month, businessId]
+    [month, businessId],
   );
   const header = 'Name,Phone,Role,Hours worked,Hourly rate,Gross pay (₹)';
   const rows = r.rows.map((row) => [
@@ -122,7 +122,7 @@ async function payrollCsv(businessId, month /* YYYY-MM */) {
     (row.hours || 0).toFixed(2),
     (row.avg_rate || 0).toFixed(2),
     (row.gross_pay || 0).toFixed(2),
-  ].map((v) => /[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v).join(','));
+  ].map((v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(','));
   return [header, ...rows].join('\n');
 }
 

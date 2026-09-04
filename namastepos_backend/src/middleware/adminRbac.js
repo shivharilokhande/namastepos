@@ -58,8 +58,8 @@ async function _liveRole(adminId) {
   const hit = _roleCache.get(adminId);
   if (hit && hit.exp > Date.now()) return hit.role;
   const r = await query(
-    `SELECT role FROM admin_users WHERE id = $1 AND is_active = TRUE LIMIT 1`,
-    [adminId]
+    'SELECT role FROM admin_users WHERE id = $1 AND is_active = TRUE LIMIT 1',
+    [adminId],
   );
   const role = r.rows[0]?.role || null; // null = deactivated / gone → deny all
   _roleCache.set(adminId, { role, exp: Date.now() + ROLE_TTL_MS });

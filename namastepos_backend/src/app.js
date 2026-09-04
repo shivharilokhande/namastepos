@@ -12,21 +12,21 @@ const env = require('./config/env');
 const logger = require('./config/logger');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
-const authRoutes        = require('./routes/auth.routes');
-const adminRoutes       = require('./routes/admin.routes');
-const menuRoutes        = require('./routes/menu.routes');
-const ordersRoutes      = require('./routes/orders.routes');
-const expensesRoutes    = require('./routes/expenses.routes');
-const reportsRoutes     = require('./routes/reports.routes');
+const authRoutes = require('./routes/auth.routes');
+const adminRoutes = require('./routes/admin.routes');
+const menuRoutes = require('./routes/menu.routes');
+const ordersRoutes = require('./routes/orders.routes');
+const expensesRoutes = require('./routes/expenses.routes');
+const reportsRoutes = require('./routes/reports.routes');
 const taxInvoicesRoutes = require('./routes/taxInvoices.routes');
-const staffRoutes       = require('./routes/staff.routes');
-const billingRoutes     = require('./routes/billing.routes');
+const staffRoutes = require('./routes/staff.routes');
+const billingRoutes = require('./routes/billing.routes');
 const invitationsRoutes = require('./routes/invitations.routes');
-const addonRoutes       = require('./routes/addons.routes');
-const customersRoutes   = require('./routes/customers.routes');
-const opsRoutes         = require('./routes/ops.routes');
-const supportRoutes     = require('./routes/support.routes');
-const guestRoutes       = require('./routes/guest.routes');
+const addonRoutes = require('./routes/addons.routes');
+const customersRoutes = require('./routes/customers.routes');
+const opsRoutes = require('./routes/ops.routes');
+const supportRoutes = require('./routes/support.routes');
+const guestRoutes = require('./routes/guest.routes');
 const ingredientsRoutes = require('./routes/ingredients.routes');
 const sprint1ExtraRoutes = require('./routes/sprint1Extras.routes');
 const sprintsAllRoutes = require('./routes/sprintsAll.routes');
@@ -79,12 +79,15 @@ function buildApp() {
       // super-admin has granted each tier (no hardcoded feature lists).
       const out = await Promise.all(plans.map(async (p) => {
         let featureKeys = [];
-        try { featureKeys = await feat.listTierFeatures(p.tier, p.tierKind); }
-        catch (_) { featureKeys = []; }
+        try { featureKeys = await feat.listTierFeatures(p.tier, p.tierKind); } catch (_) { featureKeys = []; }
         return {
-          tier: p.tier, tierKind: p.tierKind, name: p.name,
-          priceInr: p.priceInr, priceYearlyInr: p.priceYearlyInr,
-          limits: p.limits || {}, features: p.features || {},
+          tier: p.tier,
+          tierKind: p.tierKind,
+          name: p.name,
+          priceInr: p.priceInr,
+          priceYearlyInr: p.priceYearlyInr,
+          limits: p.limits || {},
+          features: p.features || {},
           featureKeys,
         };
       }));
@@ -139,13 +142,13 @@ function buildApp() {
     // a previous login attempt would otherwise trip the double-submit check.
     const authPath = `${env.API_PREFIX}/auth`;
     if (
-      req.path === `${authPath}/google` ||
-      req.path === `${authPath}/login` ||
-      req.path === `${authPath}/register` ||
-      req.path === `${authPath}/dev-login` ||
-      req.path === `${authPath}/refresh` ||
-      req.path === `${authPath}/request-otp` ||
-      req.path === `${authPath}/verify-otp` ||
+      req.path === `${authPath}/google`
+      || req.path === `${authPath}/login`
+      || req.path === `${authPath}/register`
+      || req.path === `${authPath}/dev-login`
+      || req.path === `${authPath}/refresh`
+      || req.path === `${authPath}/request-otp`
+      || req.path === `${authPath}/verify-otp`
       // Staff phone+PIN sign-in is a PRE-LOGIN flow (no authenticated session
       // yet), same category as /auth/login. Without these exemptions a stale
       // ff_refresh cookie from a previous owner session on a shared PC makes
@@ -154,12 +157,12 @@ function buildApp() {
       // FB-17 (2026-09-01): /staff-picker is no longer pre-login — it now
       // requires auth (see auth.routes.js), so it's dropped from this exempt
       // list. Only the genuinely pre-login staff steps remain here.
-      req.path === `${authPath}/staff-resolve` ||
-      req.path === `${authPath}/pin-login` ||
+      || req.path === `${authPath}/staff-resolve`
+      || req.path === `${authPath}/pin-login`
       // NP-126 (2026-09-03): impersonation-code exchange is pre-login for the
       // dashboard tab the admin just opened — a stale ff_refresh cookie in
       // that browser must not 403 the exchange (one-time code IS the proof).
-      req.path === `${authPath}/impersonation-exchange`
+      || req.path === `${authPath}/impersonation-exchange`
     ) {
       return next();
     }
@@ -197,8 +200,11 @@ function buildApp() {
     } catch (_) { db = 'down'; }
     const status = db === 'ok' ? 'ok' : 'degraded';
     res.status(status === 'ok' ? 200 : 503).json({
-      status, service: 'namastepos-api', version: env.APP_VERSION || require('../package.json').version,
-      db, timestamp: new Date().toISOString(),
+      status,
+      service: 'namastepos-api',
+      version: env.APP_VERSION || require('../package.json').version,
+      db,
+      timestamp: new Date().toISOString(),
     });
   });
 
@@ -252,26 +258,26 @@ function buildApp() {
   app.use(`${env.API_PREFIX}/businesses/:businessId/uploads`, uploadsRoutes);
 
   // Business-scoped
-  app.use(`${env.API_PREFIX}/businesses/:businessId/menu`,     menuRoutes);
-  app.use(`${env.API_PREFIX}/businesses/:businessId/orders`,   ordersRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId/menu`, menuRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId/orders`, ordersRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId/expenses`, expensesRoutes);
-  app.use(`${env.API_PREFIX}/businesses/:businessId/reports`,  reportsRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId/reports`, reportsRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId/tax-invoices`, taxInvoicesRoutes);
-  app.use(`${env.API_PREFIX}/businesses/:businessId/staff`,    staffRoutes);
-  app.use(`${env.API_PREFIX}/businesses/:businessId/billing`,  billingRoutes);
-  app.use(`${env.API_PREFIX}/businesses/:businessId/addons`,    addonRoutes.businessRouter);
+  app.use(`${env.API_PREFIX}/businesses/:businessId/staff`, staffRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId/billing`, billingRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId/addons`, addonRoutes.businessRouter);
   app.use(`${env.API_PREFIX}/businesses/:businessId/customers`, customersRoutes);
-  app.use(`${env.API_PREFIX}/businesses/:businessId/ops`,        opsRoutes);
-  app.use(`${env.API_PREFIX}/businesses/:businessId/support`,    supportRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId/ops`, opsRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId/support`, supportRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId/ingredients`, ingredientsRoutes);
-  app.use(`${env.API_PREFIX}/businesses/:businessId`,             sprint1ExtraRoutes);
-  app.use(`${env.API_PREFIX}/businesses/:businessId`,             sprintsAllRoutes);
-  app.use(`${env.API_PREFIX}/businesses/:businessId`,             finalSprintRoutes);
-  app.use(`${env.API_PREFIX}/aggregator-webhooks`,                aggregatorWebhookRoutes);
-  app.use(`${env.API_PREFIX}/wa-webhooks`,                        whatsappWebhookRoutes);
-  app.use(`${env.API_PREFIX}/meta-wa-webhooks`,                   metaWhatsappWebhookRoutes);
-  app.use(`${env.API_PREFIX}/outlet-groups`,                      multiOutletRoutes);
-  app.use(`${env.API_PREFIX}/site`,                               publicSiteRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId`, sprint1ExtraRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId`, sprintsAllRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId`, finalSprintRoutes);
+  app.use(`${env.API_PREFIX}/aggregator-webhooks`, aggregatorWebhookRoutes);
+  app.use(`${env.API_PREFIX}/wa-webhooks`, whatsappWebhookRoutes);
+  app.use(`${env.API_PREFIX}/meta-wa-webhooks`, metaWhatsappWebhookRoutes);
+  app.use(`${env.API_PREFIX}/outlet-groups`, multiOutletRoutes);
+  app.use(`${env.API_PREFIX}/site`, publicSiteRoutes);
   // Founder bug #12 (2026-08-25): human-visible restaurant mini-site.
   // HTML (not JSON) so it lives OUTSIDE the /v1 API prefix:
   //   https://api.namastepos.in/site/<slug>

@@ -43,8 +43,8 @@ function legacyCustomTierFor(businessId) {
 
 async function _planRowFor(businessId) {
   const r = await query(
-    `SELECT * FROM plans WHERE business_id = $1 LIMIT 1`,
-    [businessId]
+    'SELECT * FROM plans WHERE business_id = $1 LIMIT 1',
+    [businessId],
   );
   return r.rowCount > 0 ? r.rows[0] : null;
 }
@@ -58,8 +58,8 @@ async function _planRowFor(businessId) {
 async function _basePlanRow(baseTier) {
   if (!baseTier) return null;
   const r = await query(
-    `SELECT * FROM plans WHERE tier = $1 AND is_public = TRUE LIMIT 1`,
-    [baseTier]
+    'SELECT * FROM plans WHERE tier = $1 AND is_public = TRUE LIMIT 1',
+    [baseTier],
   );
   return r.rowCount > 0 ? r.rows[0] : null;
 }
@@ -92,8 +92,8 @@ async function getForBusiness(businessId) {
   const row = await _planRowFor(businessId);
   if (!row) return null;
   const assignedQ = await query(
-    `SELECT 1 FROM subscriptions WHERE business_id = $1 AND plan_id = $2 LIMIT 1`,
-    [businessId, row.id]
+    'SELECT 1 FROM subscriptions WHERE business_id = $1 AND plan_id = $2 LIMIT 1',
+    [businessId, row.id],
   );
   const plan = await _serializeWithFeatures(row);
   plan.assigned = assignedQ.rowCount > 0;
@@ -107,8 +107,8 @@ async function getForBusiness(businessId) {
  */
 async function upsertForBusiness(businessId, body) {
   const biz = await query(
-    `SELECT id FROM businesses WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
-    [businessId]
+    'SELECT id FROM businesses WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
+    [businessId],
   );
   if (biz.rowCount === 0) throw new NotFound('Customer not found');
 
@@ -127,7 +127,7 @@ async function upsertForBusiness(businessId, body) {
   const base = await _basePlanRow(baseTier);
   if (baseTier && !base) throw new NotFound(`Base plan '${baseTier}' not found or not public`);
   const extras = Array.from(new Set(
-    (body.extraFeatureKeys || body.featureKeys || []).filter(Boolean)
+    (body.extraFeatureKeys || body.featureKeys || []).filter(Boolean),
   ));
   const inherited = base ? await features.listTierFeatures(base.tier, base.tier_kind) : [];
   const effective = Array.from(new Set([...inherited, ...extras]));
@@ -166,8 +166,8 @@ async function upsertForBusiness(businessId, body) {
            base_plan_tier = EXCLUDED.base_plan_tier
      RETURNING *`,
     [tier, tierKind, body.name, priceInr, yearly,
-     JSON.stringify(limits), JSON.stringify({ extraFeatureKeys: extras }),
-     businessId, baseTier]
+      JSON.stringify(limits), JSON.stringify({ extraFeatureKeys: extras }),
+      businessId, baseTier],
   );
   const row = r.rows[0];
 
@@ -197,12 +197,12 @@ async function upsertForBusiness(businessId, body) {
   }
 
   // Re-read so razorpay ids minted above are reflected.
-  const fresh = await query(`SELECT * FROM plans WHERE id = $1`, [row.id]);
+  const fresh = await query('SELECT * FROM plans WHERE id = $1', [row.id]);
   const plan = await _serializeWithFeatures(fresh.rows[0]);
   plan.assigned = !!subscription
     || (await query(
-      `SELECT 1 FROM subscriptions WHERE business_id = $1 AND plan_id = $2 LIMIT 1`,
-      [businessId, row.id]
+      'SELECT 1 FROM subscriptions WHERE business_id = $1 AND plan_id = $2 LIMIT 1',
+      [businessId, row.id],
     )).rowCount > 0;
   return { plan, subscription };
 }
@@ -224,23 +224,26 @@ async function removeForBusiness(businessId, { force = false } = {}) {
       .setPlanManually(businessId, fallback, { billingPeriod: 'monthly' });
   }
   const used = await query(
-    `SELECT COUNT(*)::int AS c FROM subscriptions WHERE plan_id = $1`,
-    [row.id]
+    'SELECT COUNT(*)::int AS c FROM subscriptions WHERE plan_id = $1',
+    [row.id],
   );
   if (used.rows[0].c > 0) {
     const err = new Conflict(
-      'Custom plan is assigned to the customer\'s subscription. Move them to another plan first.'
+      'Custom plan is assigned to the customer\'s subscription. Move them to another plan first.',
     );
     err.code = 'CUSTOM_PLAN_ASSIGNED';
     throw err;
   }
-  await query(`DELETE FROM plan_features WHERE tier_kind = $1`, [row.tier]);
-  await query(`DELETE FROM plans WHERE id = $1`, [row.id]);
+  await query('DELETE FROM plan_features WHERE tier_kind = $1', [row.tier]);
+  await query('DELETE FROM plans WHERE id = $1', [row.id]);
   try { features.clearAllCaches(); } catch (_) { /* non-fatal */ }
   return { deleted: true, tier: row.tier, movedTo };
 }
 
 module.exports = {
-  customTierFor, legacyCustomTierFor,
-  getForBusiness, upsertForBusiness, removeForBusiness,
+  customTierFor,
+  legacyCustomTierFor,
+  getForBusiness,
+  upsertForBusiness,
+  removeForBusiness,
 };

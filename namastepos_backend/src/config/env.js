@@ -30,10 +30,12 @@ const env = {
   // Fallbacks now exist only for test/development.
   DATABASE_URL: nodeEnv === 'production'
     ? required('DATABASE_URL')
-    : required('DATABASE_URL',
+    : required(
+      'DATABASE_URL',
       nodeEnv === 'test'
         ? 'postgresql://namastepos:namastepos@localhost:5432/namastepos_test'
-        : 'postgresql://namastepos:namastepos@localhost:5432/namastepos'),
+        : 'postgresql://namastepos:namastepos@localhost:5432/namastepos',
+    ),
   // Production sizing: the dev default of 10 starved concurrent
   // requests once >100 orders/min hit the API. Bumped to 30 so a
   // single Node worker can hold 30 concurrent PG connections without
@@ -59,8 +61,7 @@ const env = {
   // P1 (Lakshmi #1): access tokens were 24h in the worst case — now capped
   // at 1h for a POS context. Refresh keeps users seamlessly signed in.
   JWT_EXPIRES_IN: required('JWT_EXPIRES_IN', nodeEnv === 'production' ? '1h' : '30m'),
-  REFRESH_TOKEN_EXPIRES_IN_DAYS: parseInt(
-    required('REFRESH_TOKEN_EXPIRES_IN_DAYS', '30'), 10),
+  REFRESH_TOKEN_EXPIRES_IN_DAYS: parseInt(required('REFRESH_TOKEN_EXPIRES_IN_DAYS', '30'), 10),
 
   GOOGLE_CLIENT_IDS: required('GOOGLE_CLIENT_IDS', '')
     .split(',').map((s) => s.trim()).filter(Boolean),

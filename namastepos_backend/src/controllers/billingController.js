@@ -97,12 +97,10 @@ module.exports = {
           throw new HttpError(
             503,
             'Payments are temporarily unavailable. Please try again shortly.',
-            'PAYMENTS_UNAVAILABLE'
+            'PAYMENTS_UNAVAILABLE',
           );
         }
-        const subscription = await sub.changePlan(
-          req.params.businessId, tier, { billingPeriod: billingPeriod || 'monthly' }
-        );
+        const subscription = await sub.changePlan(req.params.businessId, tier, { billingPeriod: billingPeriod || 'monthly' });
         return res.json({
           subscription,
           manual: true,
@@ -112,9 +110,7 @@ module.exports = {
       // FF-402c — pass the cadence through so Razorpay picks the right
       // plan_id (razorpay_plan_id vs razorpay_plan_id_yearly) and
       // subscriptions.billing_period is persisted correctly.
-      const checkout = await razorpay.createSubscription(
-        req.params.businessId, tier, { billingPeriod: billingPeriod || 'monthly' }
-      );
+      const checkout = await razorpay.createSubscription(req.params.businessId, tier, { billingPeriod: billingPeriod || 'monthly' });
       res.json(checkout);
     }),
   ],
@@ -133,7 +129,7 @@ module.exports = {
     const r = await query(
       `SELECT * FROM invoices WHERE business_id = $1
         ORDER BY created_at DESC LIMIT 50`,
-      [req.params.businessId]
+      [req.params.businessId],
     );
     res.json({
       invoices: r.rows.map((i) => ({

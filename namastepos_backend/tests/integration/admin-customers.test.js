@@ -3,23 +3,10 @@
 const request = require('supertest');
 const buildApp = require('../../src/app');
 const { resetDb, makeBusiness, tokenFor, closePool } = require('../setup');
-const { issueAccessToken } = require('../../src/utils/jwt');
 
 let app;
 let ownerToken;
 let owner;
-
-// Issue a super-admin token by hand. The admin login flow uses email/password,
-// but for these tests we just need a token with role: 'super_admin'.
-function adminTokenFor() {
-  return issueAccessToken({
-    sub: '00000000-0000-0000-0000-000000000001',
-    bid: null,
-    email: 'admin@namastepos.in',
-    role: 'super_admin',
-    perms: ['customers.read', 'customers.write', 'plans.read', 'plans.change', 'reports.read'],
-  });
-}
 
 beforeAll(async () => {
   await resetDb();

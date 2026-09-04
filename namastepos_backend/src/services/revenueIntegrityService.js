@@ -15,6 +15,18 @@
 //      burned, so Razorpay retries are replaying "pending" forever and the
 //      side effects never ran.
 //
+// 2026-09-04 (NP-301/302/304) added four more, all "the order committed but a
+// side effect did not" escalations. Their detection queries live beside their
+// repair sweeps in orderDurabilityService and are re-exported below:
+//   6. Orders with no kot_tickets row — billed food the kitchen may never have
+//      seen. The cron repairs these; anything left after an hour is escalated.
+//   7. Orders carrying `inventory_error` — stock / food-cost understated.
+//   8. print_jobs dead-lettered after exhausting their retries — the KDS has
+//      the ticket but no paper ever reached the station.
+//   9. usage_counters.monthly_orders that still disagrees with COUNT(orders)
+//      after the nightly reconciler ran (i.e. counter ABOVE reality, which the
+//      reconciler deliberately refuses to lower).
+//
 // Scheduling lives in cronWorker (nightly 02:02 IST slot), gated on
 // REVENUE_INTEGRITY_CRON=true (default OFF). Recipient comes from
 // PLATFORM_ALERT_EMAIL — missing while the cron is enabled is a loud error
@@ -71,7 +83,7 @@ async function checkPlanPriceDrift() {
         AND li.amount_paise <> p.price_inr_paise
         AND li.amount_paise <> COALESCE(p.price_yearly_paise, p.price_inr_paise * 10)
       LIMIT $1`,
-    [LIST_LIMIT]
+    [LIST_LIMIT],
   );
   return r.rows;
 }
@@ -86,7 +98,7 @@ async function checkStuckRefunds() {
         AND created_at < NOW() - INTERVAL '48 hours'
       ORDER BY created_at
       LIMIT $1`,
-    [LIST_LIMIT]
+    [LIST_LIMIT],
   );
   return r.rows;
 }
@@ -100,11 +112,10 @@ async function checkDeadWebhookEvents() {
         AND created_at < NOW() - INTERVAL '1 hour'
       ORDER BY created_at
       LIMIT $1`,
-    [LIST_LIMIT]
+    [LIST_LIMIT],
   );
   return r.rows;
 }
-
 
 /**
  * Check 4 — delivered food whose REVENUE was never recognised.
@@ -125,7 +136,7 @@ async function checkUnbilledDeliveries() {
         AND o.delivered_at < NOW() - INTERVAL '1 hour'
       ORDER BY o.delivered_at ASC
       LIMIT $1`,
-    [LIST_LIMIT]
+    [LIST_LIMIT],
   );
   return r.rows;
 }
@@ -145,37 +156,69 @@ async function checkDeadOutboundCallbacks() {
         AND e.created_at > NOW() - INTERVAL '7 days'
       ORDER BY e.created_at DESC
       LIMIT $1`,
-    [LIST_LIMIT]
+    [LIST_LIMIT],
   );
   return r.rows;
 }
+
+// ── NP-301/302/304 (2026-09-04) — order-path durability escalations ─────
+// The sweeps in orderDurabilityService retry these every cron tick; what is
+// still broken after that needs a human, which is what this email is for.
+// Detection queries live next to their repairs (one source of truth) and are
+// re-exported here so the email and the tests read the same rows.
+const orderDurability = require('./orderDurabilityService');
+
+/** Check 6 — billed food the kitchen may never have seen (no KOT rows). */
+const checkOrdersMissingKot = (opts) => orderDurability.checkOrdersMissingKot(
+  { limit: LIST_LIMIT, ...opts },
+);
+
+/** Check 7 — orders whose inventory effects are still unapplied. */
+const checkStuckInventoryEffects = (opts) => orderDurability.checkStuckInventoryEffects(
+  { limit: LIST_LIMIT, ...opts },
+);
+
+/** Check 8 — print jobs that exhausted their retries (no paper reached a station). */
+const checkDeadPrintJobs = (opts) => orderDurability.checkDeadPrintJobs(
+  { limit: LIST_LIMIT, ...opts },
+);
+
+/** Check 9 — monthly_orders quota counters that disagree with reality. */
+const checkUsageDrift = (opts) => orderDurability.checkUsageDrift(
+  { limit: LIST_LIMIT, ...opts },
+);
 
 function _inr(paise) {
   return `₹${(Number(paise || 0) / 100).toFixed(2)}`;
 }
 
-function _renderEmail({ drift, stuckRefunds, deadEvents, unbilled, deadOutbound }) {
+function _renderEmail({
+  drift, stuckRefunds, deadEvents, unbilled, deadOutbound,
+  missingKot, stuckInventory, deadPrints, usageDrift,
+}) {
   const section = (title, rows, renderRow) => (rows.length === 0 ? '' : `
     <h3 style="margin:16px 0 4px">${title} (${rows.length}${rows.length === LIST_LIMIT ? '+' : ''})</h3>
     <ul style="margin:4px 0">${rows.map((row) => `<li>${renderRow(row)}</li>`).join('')}</ul>`);
 
   const html = `
     <p>Nightly revenue-integrity sweep found problems that need a human:</p>
-    ${section('Plan-price drift (charged amount matches a different plan)', drift, (d) =>
-    `business <code>${d.business_id}</code> — on <b>${d.current_tier}</b> but last paid `
+    ${section('Plan-price drift (charged amount matches a different plan)', drift, (d) => `business <code>${d.business_id}</code> — on <b>${d.current_tier}</b> but last paid `
       + `${_inr(d.last_paid_paise)} (= <b>${d.matched_tier}</b> pricing), `
       + `rzp sub <code>${d.razorpay_subscription_id}</code>`)}
-    ${section('Refunds stuck pending > 48h', stuckRefunds, (rf) =>
-    `refund <code>${rf.id}</code> — ${_inr(rf.amount_paise)}, business <code>${rf.business_id}</code>, `
+    ${section('Refunds stuck pending > 48h', stuckRefunds, (rf) => `refund <code>${rf.id}</code> — ${_inr(rf.amount_paise)}, business <code>${rf.business_id}</code>, `
       + `created ${new Date(rf.created_at).toISOString()}`)}
-    ${section('Webhook events dead in-flight > 1h (claimed, never finished)', deadEvents, (ev) =>
-    `<code>${ev.external_id}</code> (${ev.event_type}) — received ${new Date(ev.created_at).toISOString()}`)}
-    ${section('DELIVERED but never billed (revenue not recognised)', unbilled, (o) =>
-    `${o.business_name}: order #${o.order_no} ${_inr((Number(o.total) || 0) * 100)} still `
+    ${section('Webhook events dead in-flight > 1h (claimed, never finished)', deadEvents, (ev) => `<code>${ev.external_id}</code> (${ev.event_type}) — received ${new Date(ev.created_at).toISOString()}`)}
+    ${section('DELIVERED but never billed (revenue not recognised)', unbilled, (o) => `${o.business_name}: order #${o.order_no} ${_inr((Number(o.total) || 0) * 100)} still `
       + `<b>${o.status}</b>, delivered ${new Date(o.delivered_at).toISOString()}`
       + `${o.pos_mirror_error ? ` — ${o.pos_mirror_error}` : ''}`)}
-    ${section('Aggregator callbacks dead-lettered (SLA risk)', deadOutbound, (e) =>
-    `${e.business_name}: ${e.provider} <b>${e.event}</b> failed ${e.attempts}× — ${e.last_error || 'unknown'}`)}
+    ${section('Aggregator callbacks dead-lettered (SLA risk)', deadOutbound, (e) => `${e.business_name}: ${e.provider} <b>${e.event}</b> failed ${e.attempts}× — ${e.last_error || 'unknown'}`)}
+    ${section('BILLED but no kitchen ticket (food may never have been cooked)', missingKot, (o) => `${o.business_name}: order #${o.order_no} ${_inr((Number(o.total) || 0) * 100)} created `
+      + `${new Date(o.created_at).toISOString()}${o.kot_error ? ` — repair error: ${o.kot_error}` : ''}`)}
+    ${section('Inventory effects never applied (stock / food-cost understated)', stuckInventory, (o) => `${o.business_name}: order #${o.order_no} — ${o.inventory_error}`)}
+    ${section('Print jobs dead-lettered (no paper reached the station)', deadPrints, (p) => `${p.business_name}: ${p.kind}${p.order_no ? ` for order #${p.order_no}` : ''} failed `
+      + `${p.attempts}× — ${p.error_message || 'unknown'}`)}
+    ${section('Usage counters out of step with actual orders (quota drift)', usageDrift, (u) => `${u.business_name}: monthly_orders counter <b>${u.counted}</b> vs actual `
+      + `<b>${u.actual_count}</b> order(s)`)}
     <p>Lists are capped at ${LIST_LIMIT} rows each. Check the admin console for the full picture.</p>`;
 
   const text = [
@@ -185,6 +228,10 @@ function _renderEmail({ drift, stuckRefunds, deadEvents, unbilled, deadOutbound 
     ...deadEvents.map((ev) => `[webhook>1h] ${ev.external_id} (${ev.event_type}) received ${ev.created_at}`),
     ...unbilled.map((o) => `[unbilled-delivery] ${o.business_name} order #${o.order_no} still ${o.status} since ${o.delivered_at}`),
     ...deadOutbound.map((e) => `[callback-dead] ${e.business_name} ${e.provider}/${e.event} after ${e.attempts} attempts`),
+    ...missingKot.map((o) => `[no-kot] ${o.business_name} order #${o.order_no} created ${o.created_at}${o.kot_error ? ` (${o.kot_error})` : ''}`),
+    ...stuckInventory.map((o) => `[inventory-stuck] ${o.business_name} order #${o.order_no}: ${o.inventory_error}`),
+    ...deadPrints.map((p) => `[print-dead] ${p.business_name} ${p.kind} order #${p.order_no || '-'} after ${p.attempts} attempts`),
+    ...usageDrift.map((u) => `[usage-drift] ${u.business_name} counter ${u.counted} vs actual ${u.actual_count}`),
   ].join('\n');
 
   return { html, text };
@@ -200,42 +247,80 @@ async function runDaily() {
   // worse than no cron — it would "check" and tell no one.
   if (!env.PLATFORM_ALERT_EMAIL) {
     throw new Error(
-      'REVENUE_INTEGRITY_CRON is enabled but PLATFORM_ALERT_EMAIL is not set — refusing to run silently'
+      'REVENUE_INTEGRITY_CRON is enabled but PLATFORM_ALERT_EMAIL is not set — refusing to run silently',
     );
   }
 
-  const [drift, stuckRefunds, deadEvents, unbilled, deadOutbound] = [
+  const [drift, stuckRefunds, deadEvents, unbilled, deadOutbound,
+    missingKot, stuckInventory, deadPrints, usageDrift] = [
     await checkPlanPriceDrift(),
     await checkStuckRefunds(),
     await checkDeadWebhookEvents(),
     await checkUnbilledDeliveries(),
     await checkDeadOutboundCallbacks(),
+    // NP-301/302/304
+    await checkOrdersMissingKot(),
+    await checkStuckInventoryEffects(),
+    await checkDeadPrintJobs(),
+    await checkUsageDrift(),
   ];
 
   const total = drift.length + stuckRefunds.length + deadEvents.length
-    + unbilled.length + deadOutbound.length;
+    + unbilled.length + deadOutbound.length
+    + missingKot.length + stuckInventory.length + deadPrints.length + usageDrift.length;
   if (total === 0) {
     logger.info('[revenue-integrity] nightly sweep clean — no email sent');
-    return { clean: true, drift: 0, stuckRefunds: 0, deadEvents: 0, unbilled: 0, deadOutbound: 0 };
+    return {
+      clean: true,
+      drift: 0,
+      stuckRefunds: 0,
+      deadEvents: 0,
+      unbilled: 0,
+      deadOutbound: 0,
+      missingKot: 0,
+      stuckInventory: 0,
+      deadPrints: 0,
+      usageDrift: 0,
+    };
   }
 
-  const { html, text } = _renderEmail({ drift, stuckRefunds, deadEvents, unbilled, deadOutbound });
+  const { html, text } = _renderEmail({
+    drift,
+    stuckRefunds,
+    deadEvents,
+    unbilled,
+    deadOutbound,
+    missingKot,
+    stuckInventory,
+    deadPrints,
+    usageDrift,
+  });
   await email.sendMail({
     template: 'revenue_integrity_alert',
     recipient: env.PLATFORM_ALERT_EMAIL,
     subject: `[NamastePOS] Revenue integrity: ${total} issue${total === 1 ? '' : 's'} `
       + `(${drift.length} drift / ${stuckRefunds.length} stuck refunds / ${deadEvents.length} dead webhooks`
-      + ` / ${unbilled.length} unbilled deliveries / ${deadOutbound.length} dead callbacks)`,
-    html, text,
+      + ` / ${unbilled.length} unbilled deliveries / ${deadOutbound.length} dead callbacks`
+      + ` / ${missingKot.length} orders with no KOT / ${stuckInventory.length} inventory stuck`
+      + ` / ${deadPrints.length} dead prints / ${usageDrift.length} usage drift)`,
+    html,
+    text,
   });
   logger.warn(
-    `[revenue-integrity] drift=${drift.length} stuckRefunds=${stuckRefunds.length} deadEvents=${deadEvents.length} — alert emailed`
+    `[revenue-integrity] drift=${drift.length} stuckRefunds=${stuckRefunds.length} `
+    + `deadEvents=${deadEvents.length} missingKot=${missingKot.length} `
+    + `stuckInventory=${stuckInventory.length} deadPrints=${deadPrints.length} `
+    + `usageDrift=${usageDrift.length} — alert emailed`,
   );
   return {
     clean: false,
     drift: drift.length,
     stuckRefunds: stuckRefunds.length,
     deadEvents: deadEvents.length,
+    missingKot: missingKot.length,
+    stuckInventory: stuckInventory.length,
+    deadPrints: deadPrints.length,
+    usageDrift: usageDrift.length,
   };
 }
 
@@ -248,4 +333,9 @@ module.exports = {
   checkDeadWebhookEvents,
   checkUnbilledDeliveries,
   checkDeadOutboundCallbacks,
+  // NP-301/302/304 order-path durability escalations.
+  checkOrdersMissingKot,
+  checkStuckInventoryEffects,
+  checkDeadPrintJobs,
+  checkUsageDrift,
 };

@@ -28,7 +28,7 @@ async function fetch(businessId) {
           AND r.status = 'pending'
         ORDER BY r.created_at DESC
         LIMIT 10`,
-      [businessId]
+      [businessId],
     ),
 
     // 2. Menu items at or below reorder level. Uses is_active (menu_items
@@ -42,7 +42,7 @@ async function fetch(businessId) {
           AND stock <= reorder_level
         ORDER BY stock ASC
         LIMIT 10`,
-      [businessId]
+      [businessId],
     ),
 
     // 3. Cancelled orders in the last 24 hours with a reason attached.
@@ -58,7 +58,7 @@ async function fetch(businessId) {
           AND cancel_reason IS NOT NULL
         ORDER BY updated_at DESC
         LIMIT 10`,
-      [businessId]
+      [businessId],
     ),
 
     // 4. Subscriptions ending in the next 7 days (either trial ends
@@ -74,7 +74,7 @@ async function fetch(businessId) {
              OR (status = 'active' AND current_period_end BETWEEN NOW() AND NOW() + INTERVAL '3 days')
           )
         LIMIT 10`,
-      [businessId]
+      [businessId],
     ),
   ]);
 

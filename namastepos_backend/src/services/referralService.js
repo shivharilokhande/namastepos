@@ -10,12 +10,12 @@
 //   • cronWorker.dueRecurringInvoices — when awarding, extend both
 //     subscriptions' current_period_end by 30 days.
 
+const crypto = require('crypto');
 const { query } = require('../config/db');
 const { BadRequest, NotFound } = require('../utils/errors');
-const crypto = require('crypto');
 
 function genCode() {
-  return 'FF-' + crypto.randomBytes(4).toString('hex').toUpperCase();
+  return `FF-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 }
 
 async function myCode(businessId) {
@@ -23,7 +23,7 @@ async function myCode(businessId) {
     `SELECT code FROM referrals
       WHERE referrer_biz_id = $1 AND status = 'pending' AND referred_biz_id IS NULL
       ORDER BY created_at DESC LIMIT 1`,
-    [businessId]
+    [businessId],
   );
   if (existing.rowCount > 0) return existing.rows[0].code;
   // Not yet issued — mint one. Retry a couple of times on the vanishingly rare code collision.
@@ -33,11 +33,11 @@ async function myCode(businessId) {
       await query(
         `INSERT INTO referrals (referrer_biz_id, code, status)
          VALUES ($1, $2, 'pending')`,
-        [businessId, code]
+        [businessId, code],
       );
       return code;
     } catch (e) {
-      if (e.code !== '23505') throw e;   // unique violation: retry
+      if (e.code !== '23505') throw e; // unique violation: retry
     }
   }
   throw new BadRequest('Failed to mint referral code — try again');
@@ -54,9 +54,9 @@ async function associate(code, referredBizId) {
         SET referred_biz_id = $2, status = 'signed_up'
       WHERE code = $1 AND status = 'pending' AND referred_biz_id IS NULL
       RETURNING *`,
-    [code, referredBizId]
+    [code, referredBizId],
   );
-  if (r.rowCount === 0) return null;   // silently ignore stale codes
+  if (r.rowCount === 0) return null; // silently ignore stale codes
   return r.rows[0];
 }
 
@@ -73,18 +73,18 @@ async function awardEligible() {
       WHERE r.status = 'signed_up'
         AND r.referred_biz_id IS NOT NULL
         AND s.status IN ('active','trialing')
-        AND s.created_at < NOW() - INTERVAL '30 days'`
+        AND s.created_at < NOW() - INTERVAL '30 days'`,
   );
   for (const row of rows.rows) {
     await query(
       `UPDATE subscriptions
           SET current_period_end = current_period_end + INTERVAL '30 days'
         WHERE business_id IN ($1, $2)`,
-      [row.referrer_biz_id, row.referred_biz_id]
+      [row.referrer_biz_id, row.referred_biz_id],
     );
     await query(
-      `UPDATE referrals SET status = 'awarded', awarded_at = NOW() WHERE id = $1`,
-      [row.id]
+      'UPDATE referrals SET status = \'awarded\', awarded_at = NOW() WHERE id = $1',
+      [row.id],
     );
   }
   return rows.rowCount;
@@ -96,7 +96,7 @@ async function stats(businessId) {
        FROM referrals
       WHERE referrer_biz_id = $1
       GROUP BY status`,
-    [businessId]
+    [businessId],
   );
   return r.rows.reduce((acc, row) => { acc[row.status] = row.n; return acc; }, {});
 }
@@ -114,21 +114,23 @@ async function listAll({ status } = {}) {
        LEFT JOIN businesses db ON db.id = r.referred_biz_id
       WHERE ${where.join(' AND ')}
       ORDER BY r.created_at DESC`,
-    vals
+    vals,
   );
   return r.rows.map((x) => ({
-    id: x.id, code: x.code, status: x.status,
-    referrerName: x.referrer_name, referredName: x.referred_name || '—',
-    createdAt: x.created_at, awardedAt: x.awarded_at,
+    id: x.id,
+    code: x.code,
+    status: x.status,
+    referrerName: x.referrer_name,
+    referredName: x.referred_name || '—',
+    createdAt: x.created_at,
+    awardedAt: x.awarded_at,
   }));
 }
 
 // Manually award a signed-up referral now: extend both subscriptions by 30
 // days and flag it awarded. No-op if already awarded or not yet signed up.
 async function markAwarded(id) {
-  const r = await query(
-    `SELECT id, referrer_biz_id, referred_biz_id, status FROM referrals WHERE id = $1`, [id]
-  );
+  const r = await query('SELECT id, referrer_biz_id, referred_biz_id, status FROM referrals WHERE id = $1', [id]);
   if (r.rowCount === 0) throw new NotFound('Referral not found');
   const row = r.rows[0];
   if (row.status === 'awarded') return row;
@@ -137,11 +139,9 @@ async function markAwarded(id) {
     `UPDATE subscriptions
         SET current_period_end = current_period_end + INTERVAL '30 days'
       WHERE business_id IN ($1, $2)`,
-    [row.referrer_biz_id, row.referred_biz_id]
+    [row.referrer_biz_id, row.referred_biz_id],
   );
-  const upd = await query(
-    `UPDATE referrals SET status = 'awarded', awarded_at = NOW() WHERE id = $1 RETURNING *`, [id]
-  );
+  const upd = await query('UPDATE referrals SET status = \'awarded\', awarded_at = NOW() WHERE id = $1 RETURNING *', [id]);
   return upd.rows[0];
 }
 

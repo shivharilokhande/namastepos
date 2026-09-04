@@ -44,6 +44,12 @@ function serializeOrder(row, items = []) {
     gstBreakdown: row.gst_breakdown || null,
     discount: parseFloat(row.discount),
     total: parseFloat(row.total),
+    // NP-201 (2026-09-04): non-null when one or more lines arrived with a
+    // price that disagreed with the menu and the server re-priced them.
+    // [{menuItemId, name, clientPrice, serverPrice, qty}] — surfaced so the
+    // owner can see "the app quoted ₹250, we billed ₹300" (stale offline
+    // menu) instead of the gap being silent.
+    priceAdjustments: row.price_adjustments || null,
     paymentMethod: row.payment_method,
     // 2026-08-25 split payments: [{method, amountInr}] or null (single tender)
     paymentBreakdown: row.payment_breakdown || null,
@@ -286,29 +292,343 @@ async function create(businessId, body, opts = {}) {
     // (b) acquires all row locks in a deterministic order to avoid
     // deadlocks between concurrent multi-item orders.
     const menuIds = [...new Set(items.map((i) => i.menuItemId).filter(Boolean))].sort();
+    // NP-201 (2026-09-04): the very query that takes the row locks now also
+    // returns the AUTHORITATIVE price / gst_pct / name / is_active, so the
+    // pricing block below never has to trust `items[].price`. Tenant-scoped:
+    // a menu item id belonging to another business simply isn't in the map.
+    const menuById = new Map();
     if (menuIds.length > 0) {
-      await client.query(
-        `SELECT id FROM menu_items
+      const locked = await client.query(
+        `SELECT id, name, price, gst_pct, is_active FROM menu_items
           WHERE business_id = $1 AND id = ANY($2::uuid[])
           ORDER BY id FOR UPDATE`,
         [businessId, menuIds],
       );
+      for (const r of locked.rows) menuById.set(r.id, r);
     }
 
-    // Compute totals from items (server is source of truth).
-    // Modifier price deltas are folded into the line price during checkout
-    // (POS sums them up so price already includes modifier deltas).
-    // P0 fix (2026-08-22): aggregator orders (zomato/swiggy/other) may
-    // carry unmapped items with menuItemId=null — requiring menuItemId
-    // here dropped the entire webhook order over a single unmapped SKU.
-    // POS/guest sources still require a mapped menu item.
-    const allowUnmappedItems = ['zomato', 'swiggy', 'other'].includes(source);
+    // ── NP-202: variant + modifier catalogue (server decides) ────────────
+    // Everything a line references is loaded ONCE, tenant-scoped, inside the
+    // txn. Nothing the client asserted about a variant's price or a
+    // modifier's delta is used — only its ID is taken as input.
+    const variantIds = [...new Set(items.map((i) => i.variantId).filter(Boolean))];
+    const variantById = new Map();
+    if (variantIds.length > 0) {
+      const vr = await client.query(
+        `SELECT id, menu_item_id, label, price, is_active
+           FROM menu_item_variants
+          WHERE business_id = $1 AND id = ANY($2::uuid[])`,
+        [businessId, variantIds],
+      );
+      for (const r of vr.rows) variantById.set(r.id, r);
+    }
+
+    // Modifier lines arrive in TWO shapes in the wild and both are in
+    // production today (Joi allows unknown keys on the object):
+    //   mobile POS  → { groupId, groupLabel, optionId,   optionLabel, priceDelta }
+    //   web POS     → { modifierId, name, priceDeltaInr, qty }
+    // The option id is whichever of optionId/modifierId is present; the
+    // delta is ALWAYS modifiers.price_delta_inr from the DB.
+    const modIdOf = (m) => (m && (m.optionId || m.modifierId)) || null;
+    const modIds = [...new Set(items.flatMap(
+      (i) => (Array.isArray(i.modifierLines) ? i.modifierLines : []).map(modIdOf),
+    ).filter(Boolean))];
+    const modById = new Map();
+    if (modIds.length > 0) {
+      const mr = await client.query(
+        `SELECT m.id, m.group_id, m.name, m.price_delta_inr, m.is_active,
+                g.name AS group_name, g.kind, g.min_select, g.max_select,
+                g.is_active AS group_is_active
+           FROM modifiers m
+           JOIN modifier_groups g ON g.id = m.group_id AND g.business_id = m.business_id
+          WHERE m.business_id = $1 AND m.id = ANY($2::uuid[])`,
+        [businessId, modIds],
+      );
+      for (const r of mr.rows) modById.set(r.id, r);
+    }
+    // Which ACTIVE modifier groups are attached to which menu item, with the
+    // selection rules the schema actually records (modifier_groups.kind /
+    // min_select / max_select, migration 013).
+    // `item_modifier_groups` has no business_id of its own — tenancy comes
+    // from the (already tenant-scoped) menu ids plus modifier_groups.
+    const groupsByItem = new Map(); // menuItemId → Map(groupId → group meta)
+    if (menuById.size > 0) {
+      const ar = await client.query(
+        `SELECT img.menu_item_id, img.group_id,
+                g.name, g.kind, g.min_select, g.max_select
+           FROM item_modifier_groups img
+           JOIN modifier_groups g ON g.id = img.group_id
+          WHERE img.menu_item_id = ANY($1::uuid[])
+            AND g.business_id = $2 AND g.is_active = TRUE`,
+        [[...menuById.keys()], businessId],
+      );
+      for (const r of ar.rows) {
+        if (!groupsByItem.has(r.menu_item_id)) groupsByItem.set(r.menu_item_id, new Map());
+        groupsByItem.get(r.menu_item_id).set(r.group_id, r);
+      }
+    }
+
+    // ── NP-201: server-authoritative line pricing ────────────────────────
+    // THE BUG this replaces: `subtotal += Number(it.price) * Number(it.qty)`
+    // let the CLIENT propose the selling price, so a patched app could bill
+    // ₹1 for a ₹300 pizza (GST was already recomputed server-side, but from
+    // the forged base). The line price is now derived entirely from the DB:
+    //
+    //   price = (validated variant price ?? menu_items.price)
+    //           + Σ modifiers.price_delta_inr of the VALIDATED modifiers
+    //
+    // Compatibility carve-outs, both keyed off `trustedChannel` (set only by
+    // server-side callers — aggregatorService / guestController — and never
+    // derivable from the request body):
+    //  * menuItemId = null lines are legitimate ONLY there (aggregator
+    //    "[unmapped]" SKUs). An untrusted caller sending one is a 400: the
+    //    server has nothing to price it from and will not let the client
+    //    name its own price.
+    //  * a trusted caller's PLATFORM price stays authoritative for mapped
+    //    lines too — Zomato/Swiggy sell off their own (higher) menu, so
+    //    replacing their price with ours would break payout reconciliation.
+    //    Exactly the same posture the tax recompute already takes via
+    //    `channelTaxAuthoritative`. Divergences are logged.
+    // A divergence that IS applied is recorded on orders.price_adjustments
+    // (migration 082) so the owner can see the bill they were quoted vs the
+    // bill they were charged — this is the offline-sync case: a device with a
+    // stale cached menu prices a line at yesterday's ₹250, the server bills
+    // today's ₹300, and the gap is auditable instead of silent.
+    const allowUnmappedItems = trustedChannel;
+    const priceAdjustments = [];
+    const lines = [];
     let subtotal = 0;
     for (const it of items) {
-      if ((!it.menuItemId && !allowUnmappedItems) || !it.name || it.price == null || it.qty == null) {
+      if (!it.name || it.qty == null) {
         throw new BadRequest('Each item needs menuItemId, name, price, qty');
       }
-      subtotal += Number(it.price) * Number(it.qty);
+      const qty = Number(it.qty);
+      if (!Number.isFinite(qty) || qty <= 0) {
+        throw new BadRequest('Each item needs a positive qty');
+      }
+      const clientPrice = (it.price == null || !Number.isFinite(Number(it.price)))
+        ? null : Number(it.price);
+
+      // (a) Unmapped line — there is no menu row to price from.
+      if (!it.menuItemId) {
+        if (!allowUnmappedItems) {
+          throw new HttpError(
+            400,
+            `"${it.name}" is not linked to a menu item — the server cannot price it`,
+            'ITEM_NOT_MAPPED',
+          );
+        }
+        if (clientPrice == null || clientPrice < 0) {
+          throw new BadRequest('Each item needs menuItemId, name, price, qty');
+        }
+        const p = round2(clientPrice);
+        lines.push({
+          menuItemId: null,
+          name: it.name,
+          price: p,
+          qty,
+          note: it.note || null,
+          variantId: null,
+          variantLabel: null,
+          modifierLines: (Array.isArray(it.modifierLines) && it.modifierLines.length > 0)
+            ? it.modifierLines : null,
+          gstPct: 0,
+        });
+        subtotal += p * qty;
+        continue;
+      }
+
+      // (b) Mapped line — menu_items is the source of truth.
+      const mi = menuById.get(it.menuItemId);
+      if (!mi) {
+        // Previously this id was inserted verbatim at the client's price;
+        // order_items.menu_item_id FKs menu_items(id) GLOBALLY, so another
+        // tenant's item id used to sail straight through.
+        throw new HttpError(
+          400,
+          `"${it.name}" is not on this restaurant's menu`,
+          'MENU_ITEM_NOT_FOUND',
+        );
+      }
+      // De-listed (soft-deleted) items are still PRICED from the menu rather
+      // than rejected: an offline order synced after the owner delisted the
+      // item is a real sale, and pricing it from the DB loses no money.
+      if (mi.is_active === false) {
+        require('../config/logger').warn(
+          `[order] line references de-listed menu item ${mi.id} (${mi.name}) — `
+          + `priced from the menu (business ${businessId}, source ${source})`,
+        );
+      }
+
+      let basePrice = Number(mi.price);
+      let variantId = null;
+      let variantLabel = null;
+      if (it.variantId) {
+        const v = variantById.get(it.variantId);
+        if (!v) {
+          throw new HttpError(
+            400,
+            `Unknown option for "${mi.name}"`,
+            'VARIANT_NOT_FOUND',
+          );
+        }
+        if (v.menu_item_id !== it.menuItemId) {
+          throw new HttpError(
+            400,
+            `Option "${v.label}" does not belong to "${mi.name}"`,
+            'VARIANT_ITEM_MISMATCH',
+          );
+        }
+        if (v.is_active === false) {
+          throw new HttpError(
+            400,
+            `Option "${v.label}" of "${mi.name}" is no longer available`,
+            'VARIANT_INACTIVE',
+          );
+        }
+        basePrice = Number(v.price);
+        variantId = v.id;
+        variantLabel = v.label; // server's label, not the client's
+      }
+
+      // Modifiers: each option must resolve to an ACTIVE modifier, in an
+      // ACTIVE group, that is ATTACHED to THIS menu item and owned by THIS
+      // business. Its delta comes from the DB.
+      const attachedGroups = groupsByItem.get(it.menuItemId) || new Map();
+      const rawMods = Array.isArray(it.modifierLines) ? it.modifierLines : [];
+      const outMods = [];
+      const perGroupCount = new Map();
+      let deltaSum = 0;
+      for (const ml of rawMods) {
+        const optId = modIdOf(ml);
+        if (!optId) {
+          throw new HttpError(
+            400,
+            `An add-on on "${mi.name}" has no id — the server cannot price it`,
+            'MODIFIER_NOT_IDENTIFIED',
+          );
+        }
+        const mod = modById.get(optId);
+        if (!mod) {
+          throw new HttpError(
+            400,
+            `Unknown add-on on "${mi.name}"`,
+            'MODIFIER_NOT_FOUND',
+          );
+        }
+        if (mod.is_active === false || mod.group_is_active === false) {
+          throw new HttpError(
+            400,
+            `Add-on "${mod.name}" is no longer available`,
+            'MODIFIER_INACTIVE',
+          );
+        }
+        if (!attachedGroups.has(mod.group_id)) {
+          throw new HttpError(
+            400,
+            `Add-on "${mod.name}" is not available on "${mi.name}"`,
+            'MODIFIER_NOT_ATTACHED',
+          );
+        }
+        // max_select is a MONEY rule, not just UX: without it the same
+        // negative-delta option ("Happy-hour −₹50") could be repeated N
+        // times on a single_select group to drive the line to zero.
+        const n = (perGroupCount.get(mod.group_id) || 0) + 1;
+        perGroupCount.set(mod.group_id, n);
+        const maxSelect = mod.max_select == null ? null : Number(mod.max_select);
+        if (maxSelect != null && maxSelect > 0 && n > maxSelect) {
+          throw new HttpError(
+            400,
+            `"${mod.group_name}" on "${mi.name}" allows at most `
+            + `${maxSelect} choice${maxSelect === 1 ? '' : 's'}`,
+            'MODIFIER_MAX_EXCEEDED',
+          );
+        }
+        const delta = Number(mod.price_delta_inr || 0);
+        deltaSum += delta;
+        // Persist BOTH field spellings so the mobile receipt renderer
+        // (optionLabel/priceDelta) and the web/thermal one (name/
+        // priceDeltaInr, printerService.js:117) both keep working — with the
+        // server's numbers in both.
+        outMods.push({
+          groupId: mod.group_id,
+          groupLabel: mod.group_name,
+          optionId: mod.id,
+          optionLabel: mod.name,
+          priceDelta: delta,
+          modifierId: mod.id,
+          name: mod.name,
+          priceDeltaInr: delta,
+          qty: 1,
+        });
+      }
+
+      // Required groups: modifier_groups.min_select >= 1 means the diner MUST
+      // pick from that group, and both production pickers already gate their
+      // Add button on it (mobile item_config_sheet `_isValid`, web
+      // NewOrderDialog `isValid`) — so enforcing it here rejects only forged
+      // or badly-stale payloads. Trusted channels are EXEMPT: the aggregator
+      // and guest-QR payload schemas cannot express modifiers at all, so
+      // enforcing it there would reject perfectly good orders.
+      if (!trustedChannel) {
+        for (const [gid, meta] of attachedGroups) {
+          const minSelect = meta.min_select == null ? 0 : Number(meta.min_select);
+          if (minSelect > 0 && (perGroupCount.get(gid) || 0) < minSelect) {
+            throw new HttpError(
+              400,
+              `"${meta.name}" on "${mi.name}" needs at least `
+              + `${minSelect} choice${minSelect === 1 ? '' : 's'}`,
+              'MODIFIER_MIN_NOT_MET',
+            );
+          }
+        }
+      }
+
+      let authPrice = round2(basePrice + deltaSum);
+      if (authPrice < 0) {
+        // A misconfigured negative delta must never produce negative revenue.
+        require('../config/logger').warn(
+          `[order] negative computed line price for ${mi.id} (${mi.name}): `
+          + `base ₹${basePrice} + deltas ₹${deltaSum} — clamped to ₹0 `
+          + `(business ${businessId})`,
+        );
+        authPrice = 0;
+      }
+
+      let effPrice = authPrice;
+      if (trustedChannel && clientPrice != null && clientPrice >= 0) {
+        effPrice = round2(clientPrice); // platform price is authoritative
+      }
+      if (clientPrice != null && Math.abs(round2(clientPrice) - authPrice) > 0.01) {
+        if (effPrice === authPrice) {
+          priceAdjustments.push({
+            menuItemId: it.menuItemId,
+            name: mi.name,
+            clientPrice: round2(clientPrice),
+            serverPrice: authPrice,
+            qty,
+          });
+        } else {
+          require('../config/logger').warn(
+            `[order] trusted-channel price kept: client ₹${round2(clientPrice)} vs `
+            + `menu ₹${authPrice} for ${mi.id} (${mi.name}) `
+            + `(business ${businessId}, source ${source})`,
+          );
+        }
+      }
+
+      lines.push({
+        menuItemId: it.menuItemId,
+        name: it.name,
+        price: effPrice,
+        qty,
+        note: it.note || null,
+        variantId,
+        variantLabel,
+        modifierLines: outMods.length > 0 ? outMods : null,
+        gstPct: parseFloat(mi.gst_pct || 0),
+      });
+      subtotal += effPrice * qty;
     }
     subtotal = round2(subtotal);
 
@@ -341,27 +661,30 @@ async function create(businessId, body, opts = {}) {
             const subRow = subQ.rows[0];
             const remaining = Array.isArray(subRow.remaining)
               ? subRow.remaining.map((e) => ({ ...e })) : [];
-            const lines = [];
-            for (const it of items) {
-              if (!it.menuItemId) continue;
+            // NP-201: valued at the SERVER's line price. Previously this used
+            // `it.price`, so a forged high price would have burned the
+            // customer's bundle entitlement at an inflated value.
+            const redeemLines = [];
+            for (const l of lines) {
+              if (!l.menuItemId) continue;
               const ent = remaining.find(
-                (e) => e.menuItemId === it.menuItemId && Number(e.qty) > 0,
+                (e) => e.menuItemId === l.menuItemId && Number(e.qty) > 0,
               );
               if (!ent) continue;
-              const covered = Math.min(Number(it.qty), Number(ent.qty));
+              const covered = Math.min(l.qty, Number(ent.qty));
               if (covered <= 0) continue;
               ent.qty = Number(ent.qty) - covered;
-              const valueInr = covered * Number(it.price);
+              const valueInr = round2(covered * l.price);
               membershipDiscount += valueInr;
-              lines.push({ menuItemId: it.menuItemId, qty: covered, valueInr });
+              redeemLines.push({ menuItemId: l.menuItemId, qty: covered, valueInr });
             }
-            if (lines.length > 0) {
+            if (redeemLines.length > 0) {
               await client.query(
                 `UPDATE membership_subscriptions
                     SET remaining = $1::jsonb WHERE id = $2`,
                 [JSON.stringify(remaining), subRow.id],
               );
-              _membershipRedeem = { subId: subRow.id, lines };
+              _membershipRedeem = { subId: subRow.id, lines: redeemLines };
             }
           }
         }
@@ -410,6 +733,37 @@ async function create(businessId, body, opts = {}) {
     // null/undefined = default pre-tax (only an explicit false means
     // post-tax "instant cashback" mode).
     const preTax = discountIsPreTax !== false;
+
+    // ── NP-203: hard discount cap ────────────────────────────────────────
+    // `Math.max(0, taxableBase - discountEff)` below used to SWALLOW an
+    // oversized discount: a ₹5,000 discount on a ₹200 bill produced a ₹0
+    // total while every report recorded ₹5,000 of "discount given" —
+    // unbounded, unauditable shrinkage. A discount can never exceed the
+    // amount it is eligible against: pre-tax it applies to subtotal +
+    // service charge; post-tax ("instant cashback") it applies to the
+    // taxed total. Membership-bundle value is inside `discountEff`, so the
+    // SUM of cashier + membership discount is what gets capped.
+    // This is composable with (and runs before) the FF-502 manager-approval
+    // check below, which still governs the cashier-entered portion.
+    // A NEGATIVE discount is a surcharge in disguise (it inflates `total`) —
+    // the route's Joi min(0) blocks it, but service-level callers must not be
+    // able to slip one through either.
+    if (!Number.isFinite(Number(discount)) || Number(discount) < 0) {
+      throw new BadRequest('Discount must be zero or more');
+    }
+    const discountEligibleBase = round2(
+      subtotal + serviceCharge
+      + ((preTax || membershipDiscount > 0) ? 0 : (Number(tax) || 0)),
+    );
+    if (discountEff > round2(discountEligibleBase + 0.01)) {
+      throw new HttpError(
+        400,
+        `Discount ₹${discountEff.toFixed(2)} is more than the bill it applies to `
+        + `(₹${discountEligibleBase.toFixed(2)})`,
+        'DISCOUNT_EXCEEDS_BILL',
+      );
+    }
+
     let taxableBase = round2(subtotal + serviceCharge);
     let total;
     if (preTax || membershipDiscount > 0) {
@@ -428,8 +782,13 @@ async function create(businessId, body, opts = {}) {
       igst = 0;
     const itemsWithGst = items.filter((it) => it.gst_pct || it.gstPct);
     if (itemsWithGst.length > 0) {
-      const normalised = items.map((it) => ({
-        price: it.price, qty: it.qty, gst_pct: it.gst_pct || it.gstPct || 0,
+      // NP-201: the slab still comes from the client here (legacy back-compat,
+      // superseded by the server recompute below) but the AMOUNT it applies to
+      // is now the server's line price.
+      const normalised = items.map((it, ix) => ({
+        price: lines[ix].price,
+        qty: lines[ix].qty,
+        gst_pct: it.gst_pct || it.gstPct || 0,
       }));
       // Intra-state (CGST+SGST) by default — correct for on-premise food, whose
       // place of supply is the restaurant's own state. `isInterState` opts into
@@ -464,18 +823,16 @@ async function create(businessId, body, opts = {}) {
     // client-supplied source/channel strings no longer grant the exemption.
     const channelTaxAuthoritative = trustedChannel;
     let serverGst = null;
-    if (menuIds.length > 0) {
-      const gstCfg = await client.query(
-        `SELECT id, gst_pct FROM menu_items
-          WHERE business_id = $1 AND id = ANY($2::uuid[])`,
-        [businessId, menuIds],
-      );
-      const pctById = new Map(gstCfg.rows.map((r) => [r.id, parseFloat(r.gst_pct || 0)]));
-      const mapped = items.filter((it) => it.menuItemId && pctById.has(it.menuItemId));
+    if (menuById.size > 0) {
+      // NP-201: gst_pct and the base it applies to now BOTH come from the
+      // menu snapshot taken (and row-locked) at the top of this txn — the
+      // extra SELECT this used to run is gone, and the base is no longer the
+      // client's forgeable `it.price`.
+      const mapped = lines.filter((l) => l.menuItemId && menuById.has(l.menuItemId));
       if (mapped.length > 0) {
         serverGst = computeGstBreakdown({
-          orderItems: mapped.map((it) => ({
-            price: it.price, qty: it.qty, gst_pct: pctById.get(it.menuItemId),
+          orderItems: mapped.map((l) => ({
+            price: l.price, qty: l.qty, gst_pct: l.gstPct,
           })),
           isInterState: isInterState === true,
         });
@@ -635,6 +992,32 @@ async function create(businessId, body, opts = {}) {
       );
       orderRow = ins.rows[0];
 
+      // NP-201: audit trail for every line whose client-proposed price
+      // disagreed with the menu and was overridden. Written only when
+      // non-empty. Done as a separate UPDATE inside a SAVEPOINT rather than a
+      // 27th column on the INSERT above, so a database that has not yet run
+      // migration 082 degrades to "no audit record" instead of failing every
+      // sale (a plain try/catch would not help — a failed statement aborts the
+      // whole Postgres transaction).
+      if (priceAdjustments.length > 0) {
+        await client.query('SAVEPOINT np201_price_adj');
+        try {
+          const pa = await client.query(
+            `UPDATE orders SET price_adjustments = $1::jsonb
+              WHERE id = $2 RETURNING price_adjustments`,
+            [JSON.stringify(priceAdjustments), orderRow.id],
+          );
+          orderRow.price_adjustments = pa.rows[0].price_adjustments;
+          await client.query('RELEASE SAVEPOINT np201_price_adj');
+        } catch (e) {
+          await client.query('ROLLBACK TO SAVEPOINT np201_price_adj');
+          require('../config/logger').warn(
+            '[order] price_adjustments not recorded (migration 082 pending?): '
+            + `${e?.message} — adjustments: ${JSON.stringify(priceAdjustments)}`,
+          );
+        }
+      }
+
       // NP-112: claim the manager approval this order consumed so the same
       // approval can't authorise a second over-threshold discount, and the
       // audit trail links approval → order.
@@ -713,16 +1096,19 @@ async function create(businessId, body, opts = {}) {
       throw err;
     }
 
-    // items — capture optional variant + modifier choices (Sprint 1 FF-201/202)
+    // items — NP-201/202: everything persisted here is the SERVER's version:
+    // the authoritative line price, the variant label read off
+    // menu_item_variants, and modifier lines carrying DB deltas. Receipts,
+    // KOTs and the e-invoice therefore print what was actually charged.
     const itemRows = [];
-    for (const it of items) {
+    for (const it of lines) {
       const ins = await client.query(
         `INSERT INTO order_items
            (order_id, menu_item_id, name, price, qty, note,
             variant_id, variant_label, modifier_lines)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-        [orderRow.id, it.menuItemId, it.name, it.price, it.qty, it.note || null,
-          it.variantId || null, it.variantLabel || null,
+        [orderRow.id, it.menuItemId, it.name, it.price, it.qty, it.note,
+          it.variantId, it.variantLabel,
           it.modifierLines ? JSON.stringify(it.modifierLines) : null],
       );
       itemRows.push(ins.rows[0]);
@@ -746,6 +1132,9 @@ async function create(businessId, body, opts = {}) {
         // from staff POS / guest QR. Aggregator orders pass through —
         // they were accepted on the platform already; the availability
         // fanout keeps those menus in sync separately.
+        // NP-201: the exemption is now keyed off `trustedChannel`
+        // (allowUnmappedItems) instead of the client-supplied `source`, so a
+        // cashier tagging an order source:'other' no longer sells 86'd stock.
         if (!allowUnmappedItems
             && cur.rows[0].sold_out_until
             && new Date(cur.rows[0].sold_out_until) > new Date()) {
@@ -774,63 +1163,131 @@ async function create(businessId, body, opts = {}) {
     }
 
     // ── KOT routing: generate one ticket per station ──────────────────────
-    try {
-      const itemsForKot = itemRows.map((it) => {
-        const src = items.find((i) => i.menuItemId === it.menu_item_id);
-        return {
-          orderItemId: it.id,
-          menuItemId: it.menu_item_id,
-          name: it.name,
-          qty: parseFloat(it.qty),
-          note: it.note,
-        };
-      });
-      await kot.generateTickets(client, {
-        businessId, orderId: orderRow.id, orderItems: itemsForKot,
-      });
-    } catch (_) { /* KOT generation is best-effort; never block order creation */ }
+    // NP-301 (2026-09-04): this block used to end in `catch (_) {}` — "KOT
+    // generation is best-effort; never block order creation". That is
+    // operationally catastrophic: the order committed, the diner was told
+    // "accepted", and the kitchen never saw it. A bill whose kitchen record
+    // failed to write is not a valid bill, so the ticket ROWS now live or die
+    // with the order (no catch — a failure rolls the whole sale back and the
+    // cashier retries, which is recoverable; a missing ticket is not).
+    //
+    // PRINTING stays decoupled: `enqueueTicketPrints` writes one `print_jobs`
+    // row per ticket in THIS transaction and the print agent drains them
+    // (queued → printing → done, with a backoff on failure). So an offline
+    // thermal printer costs nobody a sale, and no sale can happen without the
+    // kitchen's work order being both recorded and queued to print.
+    const itemsForKot = itemRows.map((it) => ({
+      orderItemId: it.id,
+      menuItemId: it.menu_item_id,
+      name: it.name,
+      qty: parseFloat(it.qty),
+      note: it.note,
+    }));
+    const kotTickets = await kot.generateTickets(client, {
+      businessId, orderId: orderRow.id, orderItems: itemsForKot,
+    });
+    await kot.enqueueTicketPrints(client, {
+      businessId,
+      orderId: orderRow.id,
+      tickets: kotTickets,
+      order: {
+        orderNo: orderRow.order_no,
+        source: orderRow.source,
+        tableLabel: orderRow.table_no,
+        tokenNo: orderRow.token_no,
+      },
+    });
 
     // ── Recipe-based ingredient deduction (gated by 'recipe-costing' addon) ─
+    // NP-302 (2026-09-04): this was `catch (_) {}` too, so a failed deduction
+    // left sales correct and stock / food-cost wrong — silently. Split by
+    // criticality:
+    //   • The DEDUCTION itself is critical and now runs uncaught inside the
+    //     txn: a genuine failure rolls the order back. "No recipe configured
+    //     for this item" is NOT a failure — recipeService.deductForOrder
+    //     returns `{orderFoodCostPaise: 0}` for that case without throwing —
+    //     so the legitimate empty case is already distinguished from a broken
+    //     one, and only the broken one aborts.
+    //   • The ENTITLEMENT lookup (`hasAddon`, a pool read, not part of this
+    //     txn) is non-critical: if it fails we cannot tell whether to deduct,
+    //     so we skip and STAMP the order for the repair sweep instead of
+    //     dropping the fact on the floor.
+    let hasRecipes = false;
     try {
-      const hasRecipes = await addons.hasAddon(businessId, 'recipe-costing');
-      if (hasRecipes) {
-        const itemsForRecipe = itemRows.map((it) => ({
-          orderItemId: it.id,
-          menuItemId: it.menu_item_id,
-          qty: parseFloat(it.qty),
-        }));
-        await recipes.deductForOrder(client, {
-          businessId, orderId: orderRow.id, orderItems: itemsForRecipe,
-        });
+      hasRecipes = await addons.hasAddon(businessId, 'recipe-costing');
+    } catch (e) {
+      hasRecipes = null; // unknown — do not guess, record for repair
+      // SAVEPOINT for the same reason NP-201 uses one above: a database that
+      // has not yet run migration 083 would abort the whole txn (and every
+      // sale) on the unknown column, and a bare try/catch cannot recover an
+      // aborted Postgres transaction.
+      await client.query('SAVEPOINT np302_inv_err');
+      try {
+        await client.query(
+          'UPDATE orders SET inventory_error = $1 WHERE id = $2',
+          [`recipe-costing entitlement lookup failed: ${String(e?.message).slice(0, 200)}`,
+            orderRow.id],
+        );
+        await client.query('RELEASE SAVEPOINT np302_inv_err');
+      } catch (e2) {
+        await client.query('ROLLBACK TO SAVEPOINT np302_inv_err');
+        require('../config/logger').warn(
+          `[order ${orderRow.id}] inventory_error not recorded (migration 083 pending?): ${e2?.message}`,
+        );
       }
-    } catch (_) { /* never block order creation on a recipe miss */ }
+    }
+    if (hasRecipes === true) {
+      const itemsForRecipe = itemRows.map((it) => ({
+        orderItemId: it.id,
+        menuItemId: it.menu_item_id,
+        qty: parseFloat(it.qty),
+      }));
+      await recipes.deductForOrder(client, {
+        businessId, orderId: orderRow.id, orderItems: itemsForRecipe,
+      });
+    }
 
     // ── Bar / liquor FIFO deduction (FF-902) ─────────────────────────────
     // For lines whose menu_item has `is_liquor = TRUE`, walk the matching
     // liquor_batches in FIFO order and subtract `pour_ml * qty`. Required
     // for excise reporting in licensed restaurants.
-    try {
-      const bar = require('./barFifoService');
-      const liquorMeta = await client.query(
-        `SELECT id, is_liquor, pour_ml FROM menu_items
-          WHERE business_id = $1
-            AND id = ANY($2::uuid[])
-            AND is_liquor = TRUE`,
-        [businessId, itemRows.map((r) => r.menu_item_id)],
-      );
-      const byId = new Map(liquorMeta.rows.map((r) => [r.id, r]));
-      const liquorLines = itemRows
-        .filter((it) => byId.has(it.menu_item_id))
-        .map((it) => ({
-          menuItemId: it.menu_item_id,
-          qty: parseFloat(it.qty),
-          isLiquor: true,
-          pourMl: byId.get(it.menu_item_id).pour_ml,
-        }));
-      if (liquorLines.length > 0) {
-        await bar.deductForOrder(client, businessId, liquorLines);
+    // NP-302 (2026-09-04): the `catch (_) {}` here was the worst of the three —
+    // liquor movement is EXCISE-relevant (duty-stamped batch → pour), so a
+    // swallowed failure is a compliance gap, not just a wrong report. It now
+    // runs uncaught inside the txn. As with recipes, "nothing to do" is already
+    // distinct from "failed to do it": an order with no liquor lines skips the
+    // call entirely, and barFifoService.deductForOrder deliberately does NOT
+    // throw when a pour exceeds the remaining batch stock (bar staff over-pour
+    // and reconcile at closing) — it reports `shortMl`, which we log so the
+    // oversell is visible instead of invisible.
+    const bar = require('./barFifoService');
+    const liquorMeta = await client.query(
+      `SELECT id, is_liquor, pour_ml FROM menu_items
+        WHERE business_id = $1
+          AND id = ANY($2::uuid[])
+          AND is_liquor = TRUE`,
+      [businessId, itemRows.map((r) => r.menu_item_id)],
+    );
+    const byLiquorId = new Map(liquorMeta.rows.map((r) => [r.id, r]));
+    const liquorLines = itemRows
+      .filter((it) => byLiquorId.has(it.menu_item_id))
+      .map((it) => ({
+        menuItemId: it.menu_item_id,
+        qty: parseFloat(it.qty),
+        isLiquor: true,
+        pourMl: byLiquorId.get(it.menu_item_id).pour_ml,
+      }));
+    if (liquorLines.length > 0) {
+      const barReport = await bar.deductForOrder(client, businessId, liquorLines);
+      const short = barReport.filter((r) => r.shortMl > 0);
+      if (short.length > 0) {
+        require('../config/logger').warn(
+          `[order ${orderRow.id}] liquor oversold — no duty-stamped batch covered ${
+            short.map((s) => `${s.menuItemId}:${s.shortMl}ml`).join(', ')
+          } (stock-take needed)`,
+        );
       }
-    } catch (_) { /* bar deduction is non-blocking */ }
+    }
 
     // FF-903 — attribute server + tip. Done as UPDATE so we don't have
     // to touch the (already gnarly) 25-column INSERT above. Server
@@ -983,7 +1440,10 @@ async function create(businessId, body, opts = {}) {
           );
         }
         await require('./giftCardService').debitWalletTx(
-          client, businessId, customerRow.id, walletPaise,
+          client,
+          businessId,
+          customerRow.id,
+          walletPaise,
           { reason: 'order_payment', orderId: orderRow.id, note: `Order #${orderRow.order_no} payment` },
         );
       }
@@ -1021,6 +1481,12 @@ async function create(businessId, body, opts = {}) {
     // Bug fix (B20): log the failure so plan-cap enforcement drift is
     // visible to support. Still non-blocking — the order itself is
     // committed by this point.
+    // NP-304 (2026-09-04): still deliberately non-blocking — a quota counter
+    // must never un-sell food that is already cooking. The drift it can cause
+    // (counter reads LOWER than reality → the tenant gets free headroom) is now
+    // REPAIRED rather than tolerated: orderDurabilityService.reconcileMonthlyOrders
+    // runs in the nightly 02:02 IST slot, compares COUNT(orders) for the period
+    // against usage_counters.monthly_orders, and corrects the counter.
     try { await sub.incrementUsage(businessId, 'monthly_orders'); } catch (e) {
       // eslint-disable-next-line no-console
       console.warn(`[orderService] incrementUsage failed biz=${businessId}: ${e?.message}`);
@@ -1069,7 +1535,7 @@ function collapseBySession(orders) {
   }
   // Status priority: pending > ready > collected > cancelled
   const statusRank = { pending: 0, ready: 1, collected: 2, cancelled: 3 };
-  for (const [sid, kots] of bySession.entries()) {
+  for (const [, kots] of bySession.entries()) {
     // Sort so the smallest order_no wins as displayNo
     kots.sort((a, b) => (a.orderNo || 0) - (b.orderNo || 0));
     const live = kots.filter((k) => k.status !== 'cancelled');
@@ -1196,7 +1662,7 @@ async function list(businessId, { date, status, source, channel, groupBy, update
   //     chips are for; the index on (business_id, created_at DESC) covers it.
   let channelCounts = null;
   if (!updatedSince) {
-    if (!date) countWhere.push(`created_at >= NOW() - INTERVAL '90 days'`);
+    if (!date) countWhere.push('created_at >= NOW() - INTERVAL \'90 days\'');
     const cr = await query(
       `SELECT CASE WHEN source IN ('zomato','swiggy','other') THEN 'online' ELSE 'offline' END AS ch,
               COUNT(*)::int AS n
@@ -1506,7 +1972,10 @@ async function updateStatus(businessId, orderId, status, reason = null, reasonCo
             const refundPaise = -parseInt(w.net_paise, 10); // net debit is negative
             if (refundPaise > 0) {
               await require('./giftCardService').creditWalletTx(
-                client, businessId, w.customer_id, refundPaise,
+                client,
+                businessId,
+                w.customer_id,
+                refundPaise,
                 { reason: 'refund', orderId, note: 'Cancelled order — wallet tender refund' },
               );
             }
@@ -1598,8 +2067,7 @@ async function updateStatus(businessId, orderId, status, reason = null, reasonCo
       // table is settled (tableService.closeSession →
       // taxInvoiceService.issueFromSession). Standalone orders
       // (takeaway/QR/delivery) keep the instant per-order invoice.
-      const sess = await query(
-        'SELECT table_session_id FROM orders WHERE id = $1', [orderId]);
+      const sess = await query('SELECT table_session_id FROM orders WHERE id = $1', [orderId]);
       if (!sess.rows[0]?.table_session_id) {
         await require('./taxInvoiceService').issueFromOrder(businessId, orderId);
       }

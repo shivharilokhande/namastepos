@@ -41,8 +41,7 @@ async function cohortRetention({ months = 6 } = {}) {
       cohorts[row.cohort] = { cohort: row.cohort, size: row.cohort_size, retention: {} };
     }
     if (row.months_after != null) {
-      cohorts[row.cohort].retention[row.months_after] =
-        Math.round((row.active_count / row.cohort_size) * 100);
+      cohorts[row.cohort].retention[row.months_after] = Math.round((row.active_count / row.cohort_size) * 100);
     }
   }
   return Object.values(cohorts);
@@ -53,12 +52,12 @@ async function cohortRetention({ months = 6 } = {}) {
  */
 async function signupFunnel({ days = 30 } = {}) {
   const total = await query(
-    `SELECT COUNT(*)::int AS c FROM businesses WHERE created_at > NOW() - INTERVAL '${parseInt(days, 10)} days'`
+    `SELECT COUNT(*)::int AS c FROM businesses WHERE created_at > NOW() - INTERVAL '${parseInt(days, 10)} days'`,
   );
   const withOrder = await query(
     `SELECT COUNT(DISTINCT b.id)::int AS c
        FROM businesses b JOIN orders o ON o.business_id = b.id
-      WHERE b.created_at > NOW() - INTERVAL '${parseInt(days, 10)} days'`
+      WHERE b.created_at > NOW() - INTERVAL '${parseInt(days, 10)} days'`,
   );
   const onPaid = await query(
     `SELECT COUNT(DISTINCT b.id)::int AS c
@@ -66,7 +65,7 @@ async function signupFunnel({ days = 30 } = {}) {
        JOIN subscriptions s ON s.business_id = b.id
        JOIN plans p ON p.id = s.plan_id
       WHERE b.created_at > NOW() - INTERVAL '${parseInt(days, 10)} days'
-        AND p.tier <> 'free' AND s.status = 'active'`
+        AND p.tier <> 'free' AND s.status = 'active'`,
   );
   return {
     days,
@@ -103,7 +102,7 @@ async function ltv() {
  */
 async function churnRate() {
   const active = await query(
-    `SELECT COUNT(*)::int AS c FROM subscriptions WHERE status = 'active'`
+    'SELECT COUNT(*)::int AS c FROM subscriptions WHERE status = \'active\'',
   );
   const cancelled = await query(`
     SELECT COUNT(*)::int AS c
@@ -184,7 +183,8 @@ async function mrrTrend({ months = 12 } = {}) {
     ORDER BY d.month;
   `);
   return r.rows.map((row) => ({
-    month: row.month, activeSubs: row.active_subs,
+    month: row.month,
+    activeSubs: row.active_subs,
     mrrInr: parseInt(row.mrr_paise, 10) / 100,
   }));
 }
@@ -216,7 +216,7 @@ async function outstandingInvoices() {
        FROM invoices i
        JOIN businesses b ON b.id = i.business_id
       WHERE i.status = 'open'
-      ORDER BY days_overdue DESC, i.amount_paise DESC`
+      ORDER BY days_overdue DESC, i.amount_paise DESC`,
   );
   const rows = r.rows.map((x) => ({
     id: x.id,
@@ -231,8 +231,7 @@ async function outstandingInvoices() {
     daysOverdue: parseInt(x.days_overdue, 10),
   }));
   // Aging buckets
-  const bucket = (d) =>
-    d <= 30 ? '0-30' : d <= 60 ? '31-60' : d <= 90 ? '61-90' : '90+';
+  const bucket = (d) => (d <= 30 ? '0-30' : d <= 60 ? '31-60' : d <= 90 ? '61-90' : '90+');
   const aging = { '0-30': 0, '31-60': 0, '61-90': 0, '90+': 0 };
   let total = 0;
   for (const r of rows) {
@@ -287,7 +286,7 @@ async function consolidatedPnl({ from = null, to = null } = {}) {
          FROM invoices
         WHERE status = 'paid'
           AND created_at::date BETWEEN $1::date AND $2::date`,
-      [from, to]
+      [from, to],
     );
   } catch (e) {
     subs = { rows: [{ p: '0', n: 0 }] };
@@ -305,7 +304,7 @@ async function consolidatedPnl({ from = null, to = null } = {}) {
          FROM addon_invoices
         WHERE status = 'paid'
           AND created_at::date BETWEEN $1::date AND $2::date`,
-      [from, to]
+      [from, to],
     );
     addonsTotalPaise = parseInt(ai.rows[0].p, 10);
     addonsRowCount = ai.rows[0].n;
@@ -317,7 +316,7 @@ async function consolidatedPnl({ from = null, to = null } = {}) {
          JOIN addons a ON a.id = ba.addon_id
         WHERE ba.status = 'active'
           AND ba.activated_at::date BETWEEN $1::date AND $2::date`,
-      [from, to]
+      [from, to],
     );
     addonsTotalPaise = parseInt(ai.rows[0].p, 10);
     addonsRowCount = ai.rows[0].n;
@@ -333,7 +332,7 @@ async function consolidatedPnl({ from = null, to = null } = {}) {
          FROM refunds
         WHERE status = 'processed'
           AND created_at::date BETWEEN $1::date AND $2::date`,
-      [from, to]
+      [from, to],
     );
   } catch (e) {
     ref = { rows: [{ p: '0', n: 0 }] };
@@ -348,7 +347,7 @@ async function consolidatedPnl({ from = null, to = null } = {}) {
         WHERE created_at::date BETWEEN $1::date AND $2::date
         GROUP BY category
         ORDER BY p DESC`,
-      [from, to]
+      [from, to],
     );
     const items = ex.rows.map((r) => ({
       category: r.category,
@@ -370,7 +369,8 @@ async function consolidatedPnl({ from = null, to = null } = {}) {
   const netProfitInr = grossRevenueInr - expensesTotal;
 
   return {
-    from, to,
+    from,
+    to,
     income: {
       subscriptionInr,
       subscriptionInvoiceCount: subs.rows[0].n,
@@ -487,9 +487,9 @@ async function revenueBreakdown({ months = 12 } = {}) {
     if (!map.has(m)) map.set(m, { month: m, subscriptionInr: 0, addonsInr: 0, refundsInr: 0 });
     return map.get(m);
   };
-  for (const r of sub.rows)     ensure(r.month).subscriptionInr = parseInt(r.p, 10) / 100;
-  for (const r of addonRows)    ensure(r.month).addonsInr       = parseInt(r.p, 10) / 100;
-  for (const r of ref.rows)     ensure(r.month).refundsInr      = parseInt(r.p, 10) / 100;
+  for (const r of sub.rows) ensure(r.month).subscriptionInr = parseInt(r.p, 10) / 100;
+  for (const r of addonRows) ensure(r.month).addonsInr = parseInt(r.p, 10) / 100;
+  for (const r of ref.rows) ensure(r.month).refundsInr = parseInt(r.p, 10) / 100;
   const series = Array.from(map.values()).sort((a, b) => a.month.localeCompare(b.month));
   for (const r of series) {
     r.netInr = +(r.subscriptionInr + r.addonsInr - r.refundsInr).toFixed(2);
@@ -519,7 +519,7 @@ async function subscriptionLedger({ status, billingMode } = {}) {
        FROM subscriptions s
        JOIN businesses b ON b.id = s.business_id AND b.deleted_at IS NULL
        LEFT JOIN plans p ON p.id = s.plan_id
-      ORDER BY s.current_period_end ASC NULLS LAST`
+      ORDER BY s.current_period_end ASC NULLS LAST`,
   );
   let rows = r.rows.map((x) => ({
     id: x.id,
@@ -552,8 +552,7 @@ async function subscriptionLedger({ status, billingMode } = {}) {
   };
   for (const r0 of rows) {
     summary.byStatus[r0.status] = (summary.byStatus[r0.status] || 0) + 1;
-    summary.byBillingMode[r0.billingMode] =
-      (summary.byBillingMode[r0.billingMode] || 0) + 1;
+    summary.byBillingMode[r0.billingMode] = (summary.byBillingMode[r0.billingMode] || 0) + 1;
     if (r0.status === 'active' && r0.billingMode === 'paid') summary.mrrInr += r0.priceInr;
     if (r0.status === 'past_due') summary.pastDueCount += 1;
   }
@@ -573,15 +572,19 @@ async function addonPayouts() {
        LEFT JOIN business_addons ba ON ba.addon_id = a.id
       WHERE COALESCE(a.revenue_share_pct,0) > 0 OR a.partner_name IS NOT NULL
       GROUP BY a.id
-      ORDER BY a.partner_name NULLS LAST, a.name`
+      ORDER BY a.partner_name NULLS LAST, a.name`,
   );
   const rows = r.rows.map((x) => {
     const grossInr = (x.price_inr_paise / 100) * x.active_count;
     const pct = x.revenue_share_pct != null ? Number(x.revenue_share_pct) : 0;
     return {
-      slug: x.slug, name: x.name, partner: x.partner_name || '—',
-      revenueSharePct: pct, activeCount: x.active_count,
-      grossInr, payoutInr: Math.round(grossInr * pct) / 100,
+      slug: x.slug,
+      name: x.name,
+      partner: x.partner_name || '—',
+      revenueSharePct: pct,
+      activeCount: x.active_count,
+      grossInr,
+      payoutInr: Math.round(grossInr * pct) / 100,
     };
   });
   const totals = rows.reduce((acc, r0) => {
@@ -591,8 +594,17 @@ async function addonPayouts() {
 }
 
 module.exports = {
-  cohortRetention, signupFunnel, ltv, churnRate,
-  topItems, topCities, mrrTrend,
-  outstandingInvoices, subscriptionLedger, addonPayouts,
-  consolidatedPnl, customersKpi, revenueBreakdown,
+  cohortRetention,
+  signupFunnel,
+  ltv,
+  churnRate,
+  topItems,
+  topCities,
+  mrrTrend,
+  outstandingInvoices,
+  subscriptionLedger,
+  addonPayouts,
+  consolidatedPnl,
+  customersKpi,
+  revenueBreakdown,
 };

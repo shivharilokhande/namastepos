@@ -116,7 +116,7 @@ async function requestOtp({ phone, purpose = 'signin', meta = {} }) {
   const recent = await query(
     `SELECT COUNT(*)::int AS c FROM otp_requests
       WHERE phone = $1 AND created_at > NOW() - INTERVAL '1 hour'`,
-    [p]
+    [p],
   );
   if (recent.rows[0].c >= OTP_RATE_LIMIT_PER_HOUR) {
     throw new TooManyRequests('Too many OTP requests. Try again in an hour.');
@@ -128,7 +128,7 @@ async function requestOtp({ phone, purpose = 'signin', meta = {} }) {
        (phone, purpose, code_hash, expires_at, meta)
      VALUES ($1, $2, $3, NOW() + ($4 || ' minutes')::interval, $5::jsonb)
      RETURNING id, expires_at`,
-    [p, purpose, codeHash, String(OTP_TTL_MIN), JSON.stringify(meta || {})]
+    [p, purpose, codeHash, String(OTP_TTL_MIN), JSON.stringify(meta || {})],
   );
   try {
     // Prefer WhatsApp (free-er, Meta direct) when a WABA + OTP template is
@@ -166,11 +166,11 @@ async function verifyOtp({ requestId, code }) {
       WHERE id = $1 AND verified_at IS NULL
         AND expires_at > NOW() AND attempts < $2
       RETURNING *`,
-    [requestId, OTP_MAX_ATTEMPTS]
+    [requestId, OTP_MAX_ATTEMPTS],
   );
   if (claim.rowCount === 0) {
     // Figure out the precise reason for a helpful error.
-    const r = await query(`SELECT verified_at, expires_at, attempts FROM otp_requests WHERE id = $1`, [requestId]);
+    const r = await query('SELECT verified_at, expires_at, attempts FROM otp_requests WHERE id = $1', [requestId]);
     if (r.rowCount === 0) throw new NotFound('OTP request not found');
     const row = r.rows[0];
     if (row.verified_at) throw new BadRequest('OTP already used');
@@ -182,13 +182,13 @@ async function verifyOtp({ requestId, code }) {
   if (!ok) {
     const remaining = OTP_MAX_ATTEMPTS - row.attempts;
     throw new BadRequest(
-      remaining > 0 ? `Wrong OTP — ${remaining} tries left` : 'Wrong OTP — request a new one'
+      remaining > 0 ? `Wrong OTP — ${remaining} tries left` : 'Wrong OTP — request a new one',
     );
   }
   // Single-winner verification — only the first correct submission flips it.
   const done = await query(
     'UPDATE otp_requests SET verified_at = NOW() WHERE id = $1 AND verified_at IS NULL RETURNING id',
-    [requestId]
+    [requestId],
   );
   if (done.rowCount === 0) throw new BadRequest('OTP already used');
   return { verified: true, phone: row.phone, purpose: row.purpose, meta: row.meta };

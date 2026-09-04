@@ -48,7 +48,8 @@ describe('Tables CRUD', () => {
     const floorId = fl.body?.floors?.[0]?.id;
     const r = await request(app).post(url('/ops/tables')).set(auth())
       .send({ floorId: floorId || '00000000-0000-0000-0000-000000000000',
-              label: 'T2', seats: -3 });
+        label: 'T2',
+        seats: -3 });
     expect([400, 402, 403, 422]).toContain(r.status);
   });
 });

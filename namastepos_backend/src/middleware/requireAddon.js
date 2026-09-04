@@ -31,10 +31,11 @@ function requireAddon(slug, { orFeature = null } = {}) {
         const features = require('../services/featureService');
         if (await features.hasFeature(businessId, orFeature)) return next();
       }
-      const err = new HttpError(402,
+      const err = new HttpError(
+        402,
         `This feature requires the ${slug} add-on`,
         'ADDON_REQUIRED',
-        { addonSlug: slug }
+        { addonSlug: slug },
       );
       return next(err);
     } catch (e) {

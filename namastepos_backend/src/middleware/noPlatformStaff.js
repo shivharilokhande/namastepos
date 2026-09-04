@@ -36,7 +36,7 @@ function noPlatformStaff(req, _res, next) {
   if (req.user?.isSuperAdmin && !req.user?.impersonator) {
     return next(new Forbidden(
       'Platform staff cannot read a tenant\'s end-customer data. '
-      + 'Use an impersonation session (audited) if the restaurant has asked you to act on their behalf.'
+      + 'Use an impersonation session (audited) if the restaurant has asked you to act on their behalf.',
     ));
   }
   return next();

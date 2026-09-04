@@ -8,9 +8,11 @@ const c = require('../controllers/guestController');
 const router = express.Router();
 
 const tokenLimiter = rateLimit({
-  windowMs: 60_000, max: 100,          // 100 requests/min per IP per token
+  windowMs: 60_000,
+  max: 100, // 100 requests/min per IP per token
   keyGenerator: (req) => `${req.ip}:${req.params.token?.slice(0, 16) || ''}`,
-  standardHeaders: true, legacyHeaders: false,
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 // NP-120 (2026-09-03): /benefit/check fires a REAL SMS/WhatsApp OTP when the
@@ -19,23 +21,25 @@ const tokenLimiter = rateLimit({
 // per PHONE, so rotating phones sidesteps it). Dedicated 5/min per-IP budget;
 // the per-phone cap stays as the second wall.
 const otpSendLimiter = rateLimit({
-  windowMs: 60_000, max: 5,            // 5 OTP-send attempts/min per IP
-  standardHeaders: true, legacyHeaders: false,
+  windowMs: 60_000,
+  max: 5, // 5 OTP-send attempts/min per IP
+  standardHeaders: true,
+  legacyHeaders: false,
   message: { error: 'RATE_LIMITED', message: 'Too many verification attempts. Try again in a minute.' },
 });
 
-router.get ('/menu/:token',                   tokenLimiter, c.menu);
-router.post('/orders/:token',                 tokenLimiter, ...c.placeOrder);
-router.get ('/orders/:token/:orderId',        tokenLimiter, c.orderStatus);
+router.get('/menu/:token', tokenLimiter, c.menu);
+router.post('/orders/:token', tokenLimiter, ...c.placeOrder);
+router.get('/orders/:token/:orderId', tokenLimiter, c.orderStatus);
 // Guest membership-benefit OTP gate (2026-08-30)
-router.post('/benefit/check/:token',          otpSendLimiter, tokenLimiter, ...c.benefitCheck);
-router.post('/benefit/verify/:token',         tokenLimiter, ...c.benefitVerify);
+router.post('/benefit/check/:token', otpSendLimiter, tokenLimiter, ...c.benefitCheck);
+router.post('/benefit/verify/:token', tokenLimiter, ...c.benefitVerify);
 // FF-250 — guest can pay via Razorpay Checkout without any NamastePOS login
-router.post('/orders/:token/:orderId/pay',         tokenLimiter, c.createCheckoutOrder);
+router.post('/orders/:token/:orderId/pay', tokenLimiter, c.createCheckoutOrder);
 router.post('/orders/:token/:orderId/confirm-pay', tokenLimiter, ...c.confirmPayment);
 // FF-251 — running bill for this table's open session + settle all in one go
-router.get ('/session/:token/current',             tokenLimiter, c.getRunningSession);
-router.post('/session/:token/pay',                 tokenLimiter, c.paySession);
-router.post('/session/:token/confirm-pay',         tokenLimiter, ...c.confirmSessionPayment);
+router.get('/session/:token/current', tokenLimiter, c.getRunningSession);
+router.post('/session/:token/pay', tokenLimiter, c.paySession);
+router.post('/session/:token/confirm-pay', tokenLimiter, ...c.confirmSessionPayment);
 
 module.exports = router;

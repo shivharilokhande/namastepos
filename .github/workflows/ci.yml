@@ -27,7 +27,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '18', cache: 'npm', cache-dependency-path: namastepos_backend/package-lock.json }
+        with: { node-version: '22', cache: 'npm', cache-dependency-path: namastepos_backend/package-lock.json }
 
       - name: Install backend
         working-directory: namastepos_backend
@@ -49,7 +49,7 @@ jobs:
 
       - name: Lint backend
         working-directory: namastepos_backend
-        run: npm run lint || true # warning-only for now
+        run: npm run lint   # blocking: eslint --max-warnings 0
 
       - name: Run backend tests
         working-directory: namastepos_backend
@@ -63,7 +63,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '18', cache: 'npm', cache-dependency-path: namastepos_dashboard/package-lock.json }
+        with: { node-version: '22', cache: 'npm', cache-dependency-path: namastepos_dashboard/package-lock.json }
       - name: Install dashboard
         working-directory: namastepos_dashboard
         run: npm ci
@@ -73,3 +73,48 @@ jobs:
       - name: Build dashboard
         working-directory: namastepos_dashboard
         run: npm run build
+
+  # 2026-09-04: CI covered only backend + dashboard, so the admin console and
+  # the entire Flutter app — the client most restaurants actually run — could
+  # break on main without anyone noticing. Both are now gated.
+  admin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22', cache: 'npm', cache-dependency-path: namastepos_admin/package-lock.json }
+      - name: Install admin
+        working-directory: namastepos_admin
+        run: npm ci
+      - name: Type-check admin
+        working-directory: namastepos_admin
+        run: npx tsc --noEmit -p .
+      - name: Build admin
+        working-directory: namastepos_admin
+        run: npm run build
+
+  mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with: { channel: stable, cache: true }
+      - name: Fetch packages
+        working-directory: namastepos_flutter
+        run: flutter pub get
+      - name: Analyze (blocking)
+        working-directory: namastepos_flutter
+        run: flutter analyze
+      - name: Unit tests
+        working-directory: namastepos_flutter
+        # `|| true` deliberately absent — but a repo with no test/ dir exits 1,
+        # so only run when tests exist.
+        run: |
+          if [ -d test ] && [ -n "$(find test -name '*_test.dart' -print -quit)" ]; then
+            flutter test
+          else
+            echo "No Flutter tests yet — analyze is the gate."
+          fi
+      - name: Build APK (release, no signing)
+        working-directory: namastepos_flutter
+        run: flutter build apk --release --no-shrink

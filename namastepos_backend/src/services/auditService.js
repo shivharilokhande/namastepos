@@ -13,8 +13,8 @@ async function log({
          module, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [adminId || null, businessId || null, action, entityType || null,
-       entityId || null, payload || null, module || null, ip || null,
-       userAgent || null]
+        entityId || null, payload || null, module || null, ip || null,
+        userAgent || null],
     );
   } catch (_) {
     /* audit failures must never break business operations */
@@ -29,11 +29,15 @@ function middlewareLog(module, action, getEntity) {
       if (res.statusCode < 400) {
         const entity = getEntity ? getEntity(req, body) : {};
         log({
-          module, action,
-          entityType: entity.type, entityId: entity.id,
+          module,
+          action,
+          entityType: entity.type,
+          entityId: entity.id,
           payload: { params: req.params, body: _sanitizeBody(req.body) },
-          adminId: req.user?.id, businessId: req.params?.businessId,
-          ip: req.ip, userAgent: req.headers['user-agent'],
+          adminId: req.user?.id,
+          businessId: req.params?.businessId,
+          ip: req.ip,
+          userAgent: req.headers['user-agent'],
         });
       }
       return oldJson(body);
@@ -54,9 +58,9 @@ async function recent({ limit = 100, offset = 0, module, adminId, businessId } =
   const where = ['1=1'];
   const values = [];
   let idx = 1;
-  if (module)     { where.push(`module = $${idx++}`);     values.push(module); }
-  if (adminId)    { where.push(`admin_id = $${idx++}`);   values.push(adminId); }
-  if (businessId) { where.push(`business_id = $${idx++}`);values.push(businessId); }
+  if (module) { where.push(`module = $${idx++}`); values.push(module); }
+  if (adminId) { where.push(`admin_id = $${idx++}`); values.push(adminId); }
+  if (businessId) { where.push(`business_id = $${idx++}`); values.push(businessId); }
   values.push(limit, offset);
   const r = await query(
     `SELECT a.*, au.email AS admin_email, b.name AS business_name
@@ -66,13 +70,18 @@ async function recent({ limit = 100, offset = 0, module, adminId, businessId } =
       WHERE ${where.join(' AND ')}
       ORDER BY a.created_at DESC
       LIMIT $${idx++} OFFSET $${idx}`,
-    values
+    values,
   );
   return r.rows.map((row) => ({
-    id: row.id, module: row.module, action: row.action,
-    entityType: row.entity_type, entityId: row.entity_id,
-    adminEmail: row.admin_email, businessName: row.business_name,
-    payload: row.payload, ipAddress: row.ip_address,
+    id: row.id,
+    module: row.module,
+    action: row.action,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    adminEmail: row.admin_email,
+    businessName: row.business_name,
+    payload: row.payload,
+    ipAddress: row.ip_address,
     createdAt: row.created_at,
   }));
 }
@@ -91,8 +100,8 @@ async function logTenant({
          module, ip_address, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
       [businessId || null, userId || null, action, entityType || null,
-       entityId || null, payload ? _sanitizeBody(payload) : null,
-       module || null, ip || null, userAgent || null]
+        entityId || null, payload ? _sanitizeBody(payload) : null,
+        module || null, ip || null, userAgent || null],
     );
   } catch (_) { /* audit must never break business ops */ }
 }
@@ -108,10 +117,13 @@ function tenantMiddlewareLog(module, action, getEntity) {
         logTenant({
           businessId: req.params?.businessId,
           userId: req.user?.id,
-          module, action,
-          entityType: entity.type, entityId: entity.id,
+          module,
+          action,
+          entityType: entity.type,
+          entityId: entity.id,
           payload: { params: req.params, body: _sanitizeBody(req.body || {}) },
-          ip: req.ip, userAgent: req.headers['user-agent'],
+          ip: req.ip,
+          userAgent: req.headers['user-agent'],
         });
       }
       return oldJson(body);
@@ -129,17 +141,27 @@ async function recentTenant({ businessId, limit = 100, offset = 0 } = {}) {
       WHERE a.business_id = $1 AND a.actor_id IS NOT NULL
       ORDER BY a.created_at DESC
       LIMIT $2 OFFSET $3`,
-    [businessId, Math.min(limit, 500), offset]
+    [businessId, Math.min(limit, 500), offset],
   );
   return r.rows.map((row) => ({
-    id: row.id, module: row.module, action: row.action,
-    entityType: row.entity_type, entityId: row.entity_id,
-    actorEmail: row.actor_email, actorName: row.actor_name,
-    payload: row.payload, ipAddress: row.ip_address, createdAt: row.created_at,
+    id: row.id,
+    module: row.module,
+    action: row.action,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    actorEmail: row.actor_email,
+    actorName: row.actor_name,
+    payload: row.payload,
+    ipAddress: row.ip_address,
+    createdAt: row.created_at,
   }));
 }
 
 module.exports = {
-  log, middlewareLog, recent,
-  logTenant, tenantMiddlewareLog, recentTenant,
+  log,
+  middlewareLog,
+  recent,
+  logTenant,
+  tenantMiddlewareLog,
+  recentTenant,
 };

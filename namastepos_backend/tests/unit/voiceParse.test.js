@@ -1,15 +1,14 @@
 // Voice ordering parser (F43) — mirrored from dashboard/components/VoiceCommand.
 
 function parseSpokenOrder(text) {
-  const NUMS = { one:1, two:2, three:3, four:4, five:5, six:6, seven:7, eight:8, nine:9, ten:10 };
+  const NUMS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
   const lower = text.toLowerCase().replace(/[^\w\s]/g, ' ');
   const tokens = lower.split(/\s+/).filter(Boolean);
   const items = [];
   let i = 0;
   while (i < tokens.length) {
     let qty = 1;
-    if (/^\d+$/.test(tokens[i])) { qty = Number(tokens[i]); i += 1; }
-    else if (NUMS[tokens[i]]) { qty = NUMS[tokens[i]]; i += 1; }
+    if (/^\d+$/.test(tokens[i])) { qty = Number(tokens[i]); i += 1; } else if (NUMS[tokens[i]]) { qty = NUMS[tokens[i]]; i += 1; }
     const nameParts = [];
     while (i < tokens.length && !/^\d+$/.test(tokens[i]) && !NUMS[tokens[i]] && nameParts.length < 4) {
       nameParts.push(tokens[i]); i += 1;

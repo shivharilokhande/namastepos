@@ -46,12 +46,12 @@ async function gstrSummary(month) {
         AND i.paid_at >= ($1 || '-01')::date
         AND i.paid_at <  (($1 || '-01')::date + INTERVAL '1 month')
       ORDER BY i.paid_at ASC`,
-    [month]
+    [month],
   );
 
   const rows = r.rows.map((inv) => {
     const subtotal = inv.subtotal_paise ?? Math.round(inv.amount_paise / 1.18);
-    const tax     = inv.tax_paise ?? (inv.amount_paise - subtotal);
+    const tax = inv.tax_paise ?? (inv.amount_paise - subtotal);
     const custState = (inv.customer_gstin || '').slice(0, 2);
     // Place of supply: a registered recipient in a different state = inter-state
     // (IGST); same state = intra (CGST+SGST). An UNREGISTERED recipient (no
@@ -123,17 +123,19 @@ function hsnSummary(summary) {
   for (const r of summary.rows) {
     const e = byHsn.get(r.hsn_code) || {
       hsn_code: r.hsn_code,
-      uqc: 'NOS',         // unit qty code — services default
-      total_quantity: 0,  // we don't track item-level qty at invoice level
+      uqc: 'NOS', // unit qty code — services default
+      total_quantity: 0, // we don't track item-level qty at invoice level
       taxable_value: 0,
-      igst: 0, cgst: 0, sgst: 0,
+      igst: 0,
+      cgst: 0,
+      sgst: 0,
       total: 0,
       rate_pct: r.tax_rate_pct,
     };
     e.taxable_value += r.subtotal_inr;
-    e.igst  += r.igst_inr;
-    e.cgst  += r.cgst_inr;
-    e.sgst  += r.sgst_inr;
+    e.igst += r.igst_inr;
+    e.cgst += r.cgst_inr;
+    e.sgst += r.sgst_inr;
     e.total += r.total_inr;
     byHsn.set(r.hsn_code, e);
   }
@@ -172,6 +174,9 @@ function b2bB2cSplit(summary) {
 }
 
 module.exports = {
-  gstrSummary, gstr1Csv, gstr3bSummary,
-  hsnSummary, b2bB2cSplit,
+  gstrSummary,
+  gstr1Csv,
+  gstr3bSummary,
+  hsnSummary,
+  b2bB2cSplit,
 };

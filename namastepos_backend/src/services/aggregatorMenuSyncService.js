@@ -107,12 +107,12 @@ async function syncItemAvailability(businessId, menuItemId, isAvailable) {
       `SELECT provider, api_key, webhook_secret
          FROM aggregator_credentials
         WHERE business_id = $1 AND is_active = TRUE`,
-      [businessId]
+      [businessId],
     ),
     query(
       `SELECT external_skus FROM menu_items
         WHERE business_id = $1 AND id = $2 LIMIT 1`,
-      [businessId, menuItemId]
+      [businessId, menuItemId],
     ),
   ]);
 
@@ -123,7 +123,7 @@ async function syncItemAvailability(businessId, menuItemId, isAvailable) {
   const externalSkus = itemRows.rows[0]?.external_skus || {};
 
   const results = await Promise.all(credRows.rows.map(async (c) => {
-    const provider = c.provider;
+    const { provider } = c;
     const fn = PROVIDERS[provider];
     if (!fn) return { provider, ok: false, msg: `Unknown provider ${provider}` };
     const externalSku = externalSkus[provider] || null;

@@ -38,20 +38,20 @@ async function makeStaff(role, { permissions = null, tag = role } = {}) {
   const u = await query(
     `INSERT INTO users (email, display_name, google_sub)
      VALUES ($1, $2, $3) RETURNING *`,
-    [`${tag}-${uniq}@example.com`, tag, `sub-${tag}-${uniq}`]
+    [`${tag}-${uniq}@example.com`, tag, `sub-${tag}-${uniq}`],
   );
   const user = u.rows[0];
   if (permissions === null) {
     await query(
       `INSERT INTO business_users (business_id, user_id, role, is_active)
        VALUES ($1, $2, $3, TRUE)`,
-      [biz.id, user.id, role]
+      [biz.id, user.id, role],
     );
   } else {
     await query(
       `INSERT INTO business_users (business_id, user_id, role, is_active, permissions)
        VALUES ($1, $2, $3, TRUE, $4)`,
-      [biz.id, user.id, role, JSON.stringify(permissions)]
+      [biz.id, user.id, role, JSON.stringify(permissions)],
     );
   }
   return issueAccessToken({
@@ -84,22 +84,22 @@ const as = (t) => ({ Authorization: `Bearer ${t}` });
 // Routes a `staff_kitchen` cook must NOT reach. Their default grants are
 // ['home', 'kds'] — nothing here is in that set.
 const FORBIDDEN_FOR_KITCHEN = [
-  ['reports — daily revenue',      '/reports/daily'],
-  ['reports — monthly revenue',    '/reports/monthly'],
-  ['reports — P&L',                '/reports/income-statement'],
-  ['reports — income register',    '/reports/income-register'],
-  ['reports — expense register',   '/reports/expense-register'],
-  ['reports — invoice register',   '/reports/invoice-register'],
-  ['reports — GSTR-1 CSV',         '/reports/gstr1.csv?from=2026-01-01&to=2026-01-31'],
-  ['reports — menu engineering',   '/reports/menu-engineering'],
-  ['reports — NPS',                '/reports/nps'],
-  ['action centre',                '/action-center'],
-  ['accounting — export history',  '/exports'],
-  ['expenses ledger',              '/expenses'],
-  ['staff management — roster',    '/staff'],
+  ['reports — daily revenue', '/reports/daily'],
+  ['reports — monthly revenue', '/reports/monthly'],
+  ['reports — P&L', '/reports/income-statement'],
+  ['reports — income register', '/reports/income-register'],
+  ['reports — expense register', '/reports/expense-register'],
+  ['reports — invoice register', '/reports/invoice-register'],
+  ['reports — GSTR-1 CSV', '/reports/gstr1.csv?from=2026-01-01&to=2026-01-31'],
+  ['reports — menu engineering', '/reports/menu-engineering'],
+  ['reports — NPS', '/reports/nps'],
+  ['action centre', '/action-center'],
+  ['accounting — export history', '/exports'],
+  ['expenses ledger', '/expenses'],
+  ['staff management — roster', '/staff'],
   ['billing — subscription invoices', '/billing/invoices'],
-  ['daily closing — history',      '/daily-closings'],
-  ['daily closing — Z preview',    '/daily-closings/preview'],
+  ['daily closing — history', '/daily-closings'],
+  ['daily closing — Z preview', '/daily-closings/preview'],
 ];
 
 describe('NP-201 — staff_kitchen is refused on owner/manager surfaces', () => {
@@ -200,12 +200,12 @@ describe('NP-201 — permission resolution rules', () => {
     const u = await query(
       `INSERT INTO users (email, display_name, google_sub)
        VALUES ($1, 'Liar', $2) RETURNING *`,
-      [`liar-${uniq}@example.com`, `sub-liar-${uniq}`]
+      [`liar-${uniq}@example.com`, `sub-liar-${uniq}`],
     );
     await query(
       `INSERT INTO business_users (business_id, user_id, role, is_active)
        VALUES ($1, $2, 'staff_kitchen', TRUE)`,
-      [biz.id, u.rows[0].id]
+      [biz.id, u.rows[0].id],
     );
     const forgedOwnerToken = issueAccessToken({
       sub: u.rows[0].id,

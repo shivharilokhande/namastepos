@@ -42,7 +42,7 @@ async function makeAdmin(email, role) {
     `INSERT INTO admin_users (email, password_hash, role, is_active)
      VALUES ($1, 'x-not-a-real-hash', $2, TRUE)
      RETURNING id, email, role`,
-    [email, role]
+    [email, role],
   );
   return issueAccessToken({
     sid: r.rows[0].id,
@@ -64,7 +64,7 @@ async function givePaidSubscription(businessId, { status = 'active' } = {}) {
      ON CONFLICT (business_id) DO UPDATE
        SET status = $2::subscription_status,
            plan_id = (SELECT id FROM plans WHERE tier = 'basic')`,
-    [businessId, status]
+    [businessId, status],
   );
 }
 
@@ -85,16 +85,16 @@ beforeAll(async () => {
   await query(
     `UPDATE subscriptions SET dunning_attempts = 2, last_dunning_at = NOW() - INTERVAL '2 days'
       WHERE business_id = $1`,
-    [dunningBiz.id]
+    [dunningBiz.id],
   );
   await query(
     `INSERT INTO dunning_events (business_id, subscription_id, event, attempt_no, reason, emailed)
      SELECT $1, s.id, 'payment_failed', 1, 'card declined', TRUE
        FROM subscriptions s WHERE s.business_id = $1`,
-    [dunningBiz.id]
+    [dunningBiz.id],
   );
 
-  superToken   = await makeAdmin('ops-super@namastepos.in', 'super_admin');
+  superToken = await makeAdmin('ops-super@namastepos.in', 'super_admin');
   supportToken = await makeAdmin('ops-support@namastepos.in', 'support');
   financeToken = await makeAdmin('ops-finance@namastepos.in', 'finance');
 });
@@ -280,12 +280,12 @@ describe('usage vs plan limits', () => {
       const u = await query(
         `INSERT INTO users (email, display_name, google_sub)
          VALUES ($1, 'Staffer', $2) RETURNING id`,
-        [`ops-staff-${i}@example.com`, `ops-staff-sub-${i}`]
+        [`ops-staff-${i}@example.com`, `ops-staff-sub-${i}`],
       );
       await query(
         `INSERT INTO business_users (business_id, user_id, role, is_active)
          VALUES ($1, $2, 'staff_cashier', TRUE)`,
-        [biz.id, u.rows[0].id]
+        [biz.id, u.rows[0].id],
       );
     }
     const r = await request(app)
@@ -348,13 +348,13 @@ describe('dunning / billing ops', () => {
     const ev = await query(
       `SELECT * FROM dunning_events
         WHERE business_id = $1 AND event = 'manual_retry'`,
-      [dunningBiz.id]
+      [dunningBiz.id],
     );
     expect(ev.rowCount).toBe(1);
 
     const sub = await query(
-      `SELECT dunning_attempts, status FROM subscriptions WHERE business_id = $1`,
-      [dunningBiz.id]
+      'SELECT dunning_attempts, status FROM subscriptions WHERE business_id = $1',
+      [dunningBiz.id],
     );
     expect(sub.rows[0].dunning_attempts).toBe(3);
     // A nudge must NOT quietly restore service.
@@ -369,9 +369,7 @@ describe('dunning / billing ops', () => {
   });
 
   it('waive reactivates, clears dunning, and creates NO invoice', async () => {
-    const before = await query(
-      `SELECT COUNT(*)::int AS c FROM invoices WHERE business_id = $1`, [dunningBiz.id]
-    );
+    const before = await query('SELECT COUNT(*)::int AS c FROM invoices WHERE business_id = $1', [dunningBiz.id]);
     const r = await request(app)
       .post(`/v1/admin/dunning/${dunningBiz.id}/waive`)
       .set(auth(financeToken)).send({ reason: 'goodwill after outage' });
@@ -380,15 +378,13 @@ describe('dunning / billing ops', () => {
     expect(r.body.subscription.dunning_attempts).toBe(0);
     expect(r.body.subscription.last_dunning_at).toBeNull();
 
-    const after = await query(
-      `SELECT COUNT(*)::int AS c FROM invoices WHERE business_id = $1`, [dunningBiz.id]
-    );
+    const after = await query('SELECT COUNT(*)::int AS c FROM invoices WHERE business_id = $1', [dunningBiz.id]);
     // Nothing was collected → nothing may appear in revenue.
     expect(after.rows[0].c).toBe(before.rows[0].c);
 
     const ev = await query(
-      `SELECT reason FROM dunning_events WHERE business_id = $1 AND event = 'waived'`,
-      [dunningBiz.id]
+      'SELECT reason FROM dunning_events WHERE business_id = $1 AND event = \'waived\'',
+      [dunningBiz.id],
     );
     expect(ev.rowCount).toBe(1);
     expect(ev.rows[0].reason).toContain('goodwill after outage');
@@ -397,8 +393,8 @@ describe('dunning / billing ops', () => {
   it('mark-paid writes a PAID invoice, reactivates, and logs recovery', async () => {
     // Put it back into the past-due state first.
     await query(
-      `UPDATE subscriptions SET status = 'past_due', dunning_attempts = 1 WHERE business_id = $1`,
-      [dunningBiz.id]
+      'UPDATE subscriptions SET status = \'past_due\', dunning_attempts = 1 WHERE business_id = $1',
+      [dunningBiz.id],
     );
     const r = await request(app)
       .post(`/v1/admin/dunning/${dunningBiz.id}/mark-paid`)
@@ -409,8 +405,8 @@ describe('dunning / billing ops', () => {
     expect(r.body.invoice.paid_at).toBeTruthy();
 
     const sub = await query(
-      `SELECT status, dunning_attempts FROM subscriptions WHERE business_id = $1`,
-      [dunningBiz.id]
+      'SELECT status, dunning_attempts FROM subscriptions WHERE business_id = $1',
+      [dunningBiz.id],
     );
     expect(sub.rows[0].status).toBe('active');
     expect(sub.rows[0].dunning_attempts).toBe(0);
@@ -418,7 +414,7 @@ describe('dunning / billing ops', () => {
     const ev = await query(
       `SELECT reason FROM dunning_events
         WHERE business_id = $1 AND event = 'recovered'`,
-      [dunningBiz.id]
+      [dunningBiz.id],
     );
     expect(ev.rowCount).toBeGreaterThanOrEqual(1);
     expect(ev.rows.some((x) => (x.reason || '').includes('UTR-TEST-1'))).toBe(true);
@@ -433,7 +429,7 @@ describe('dunning / billing ops', () => {
 
   it('every dunning mutation landed on the audit log', async () => {
     const r = await query(
-      `SELECT action FROM audit_log WHERE module = 'dunning' ORDER BY created_at`
+      'SELECT action FROM audit_log WHERE module = \'dunning\' ORDER BY created_at',
     );
     const actions = r.rows.map((x) => x.action);
     expect(actions).toContain('retry');
@@ -475,7 +471,7 @@ describe('customer lifecycle actions', () => {
     await query(
       `INSERT INTO refresh_tokens (business_id, token_hash, expires_at)
        VALUES ($1, $2, NOW() + INTERVAL '30 days')`,
-      [biz.id, `hash-ops-${Date.now()}`]
+      [biz.id, `hash-ops-${Date.now()}`],
     );
     const r = await request(app)
       .post(`/v1/admin/customers/${biz.id}/owner-email`)
@@ -486,14 +482,14 @@ describe('customer lifecycle actions', () => {
     const u = await query(
       `SELECT u.email FROM business_users bu JOIN users u ON u.id = bu.user_id
         WHERE bu.business_id = $1 AND bu.role = 'business_owner'`,
-      [biz.id]
+      [biz.id],
     );
     expect(u.rows[0].email).toBe('new-owner@example.com');
 
     const live = await query(
       `SELECT COUNT(*)::int AS c FROM refresh_tokens
         WHERE business_id = $1 AND revoked_at IS NULL`,
-      [biz.id]
+      [biz.id],
     );
     expect(live.rows[0].c).toBe(0);
   });
@@ -511,7 +507,7 @@ describe('customer lifecycle actions', () => {
           SET pin_hash = 'bcrypt-ish', pin_fail_count = 5,
               pin_locked_until = NOW() + INTERVAL '1 hour'
         WHERE business_id = $1 AND role = 'business_owner'`,
-      [biz.id]
+      [biz.id],
     );
     const r = await request(app)
       .post(`/v1/admin/customers/${biz.id}/reset-owner-credentials`)
@@ -522,7 +518,7 @@ describe('customer lifecycle actions', () => {
     const bu = await query(
       `SELECT pin_hash, pin_fail_count, pin_locked_until FROM business_users
         WHERE business_id = $1 AND role = 'business_owner'`,
-      [biz.id]
+      [biz.id],
     );
     expect(bu.rows[0].pin_hash).toBeNull();
     expect(bu.rows[0].pin_fail_count).toBe(0);
@@ -587,7 +583,7 @@ describe('POST /v1/admin/customers/:id/anonymise', () => {
     await query(
       `INSERT INTO orders (business_id, order_no, status, total)
        VALUES ($1, 9001, 'collected', 500)`,
-      [eraseBiz.id]
+      [eraseBiz.id],
     );
 
     const r = await request(app)
@@ -598,8 +594,8 @@ describe('POST /v1/admin/customers/:id/anonymise', () => {
     expect(r.body.usersErased).toBeGreaterThanOrEqual(1);
 
     const b = await query(
-      `SELECT name, email, phone, gstin, deleted_at FROM businesses WHERE id = $1`,
-      [eraseBiz.id]
+      'SELECT name, email, phone, gstin, deleted_at FROM businesses WHERE id = $1',
+      [eraseBiz.id],
     );
     expect(b.rows[0].name).toBe('Erased Business');
     expect(b.rows[0].email).toMatch(/^erased\+[0-9a-f]{16}@erased\.namastepos\.invalid$/);
@@ -610,7 +606,7 @@ describe('POST /v1/admin/customers/:id/anonymise', () => {
       `SELECT u.email, u.display_name, u.is_active
          FROM business_users bu JOIN users u ON u.id = bu.user_id
         WHERE bu.business_id = $1`,
-      [eraseBiz.id]
+      [eraseBiz.id],
     );
     expect(u.rows[0].display_name).toBe('Erased User');
     expect(u.rows[0].email).toMatch(/@erased\.namastepos\.invalid$/);
@@ -618,26 +614,22 @@ describe('POST /v1/admin/customers/:id/anonymise', () => {
     // A completed DSR was filed for traceability.
     const dsr = await query(
       `SELECT COUNT(*)::int AS c FROM data_subject_requests
-        WHERE request_type = 'erasure' AND status = 'completed'`
+        WHERE request_type = 'erasure' AND status = 'completed'`,
     );
     expect(dsr.rows[0].c).toBeGreaterThanOrEqual(1);
 
     // Financial history retained.
-    const orders = await query(
-      `SELECT COUNT(*)::int AS c FROM orders WHERE business_id = $1`, [eraseBiz.id]
-    );
+    const orders = await query('SELECT COUNT(*)::int AS c FROM orders WHERE business_id = $1', [eraseBiz.id]);
     expect(orders.rows[0].c).toBeGreaterThanOrEqual(1);
 
     // Subscription cancelled + sessions revoked.
-    const sub = await query(
-      `SELECT status FROM subscriptions WHERE business_id = $1`, [eraseBiz.id]
-    );
+    const sub = await query('SELECT status FROM subscriptions WHERE business_id = $1', [eraseBiz.id]);
     expect(sub.rows[0].status).toBe('cancelled');
 
     const audit = await query(
       `SELECT COUNT(*)::int AS c FROM audit_log
         WHERE module = 'customers' AND action = 'anonymise' AND entity_id = $1`,
-      [eraseBiz.id]
+      [eraseBiz.id],
     );
     expect(audit.rows[0].c).toBe(1);
   });

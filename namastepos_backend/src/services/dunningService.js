@@ -23,15 +23,15 @@ async function _lookup(razorpaySubId) {
        LEFT JOIN plans p ON p.id = s.plan_id
       WHERE s.razorpay_subscription_id = $1
       LIMIT 1`,
-    [razorpaySubId]
+    [razorpaySubId],
   );
   return r.rows[0] || null;
 }
 
 function _emailBody(name, businessName, planName, attemptNo) {
   const subject = attemptNo >= 3
-    ? `Action needed: your NamastePOS subscription is at risk`
-    : `We couldn't process your NamastePOS payment`;
+    ? 'Action needed: your NamastePOS subscription is at risk'
+    : 'We couldn\'t process your NamastePOS payment';
   const plan = planName ? ` (${planName} plan)` : '';
   const text = `Hi ${name || businessName || 'there'},
 
@@ -63,7 +63,7 @@ async function onPaymentFailed(razorpaySubId, { reason, halted = false } = {}) {
     `UPDATE subscriptions
         SET status = 'past_due', dunning_attempts = $2, last_dunning_at = NOW()
       WHERE id = $1`,
-    [info.sub_id, attemptNo]
+    [info.sub_id, attemptNo],
   );
 
   let emailed = false;
@@ -74,7 +74,9 @@ async function onPaymentFailed(razorpaySubId, { reason, halted = false } = {}) {
       await email.sendMail({
         template: 'dunning_payment_failed',
         recipient: info.business_email,
-        subject: tpl.subject, html: tpl.html, text: tpl.text,
+        subject: tpl.subject,
+        html: tpl.html,
+        text: tpl.text,
         businessId: info.business_id,
       });
       emailed = true;
@@ -86,7 +88,7 @@ async function onPaymentFailed(razorpaySubId, { reason, halted = false } = {}) {
   await query(
     `INSERT INTO dunning_events (business_id, subscription_id, event, attempt_no, reason, emailed)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [info.business_id, info.sub_id, halted ? 'halted' : 'payment_failed', attemptNo, reason || null, emailed]
+    [info.business_id, info.sub_id, halted ? 'halted' : 'payment_failed', attemptNo, reason || null, emailed],
   );
   logger.info(`dunning: past_due for business ${info.business_id} attempt ${attemptNo} (emailed=${emailed})`);
 }
@@ -98,13 +100,13 @@ async function onRecovered(razorpaySubId) {
   if (!info) return;
   if ((info.dunning_attempts || 0) === 0) return; // nothing to clear
   await query(
-    `UPDATE subscriptions SET dunning_attempts = 0, last_dunning_at = NULL WHERE id = $1`,
-    [info.sub_id]
+    'UPDATE subscriptions SET dunning_attempts = 0, last_dunning_at = NULL WHERE id = $1',
+    [info.sub_id],
   );
   await query(
     `INSERT INTO dunning_events (business_id, subscription_id, event, attempt_no)
      VALUES ($1, $2, 'recovered', 0)`,
-    [info.business_id, info.sub_id]
+    [info.business_id, info.sub_id],
   );
   logger.info(`dunning: recovered for business ${info.business_id}`);
 }

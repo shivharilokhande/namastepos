@@ -20,7 +20,7 @@ async function log(businessId, body, userId) {
     // business's menu item (see security pattern — scope every id lookup).
     const mi = await query(
       'SELECT name FROM menu_items WHERE business_id = $1 AND id = $2',
-      [businessId, menuItemId]
+      [businessId, menuItemId],
     );
     if (!mi.rows.length) throw new BadRequest('Menu item not found');
     menuItemName = mi.rows[0].name;
@@ -41,14 +41,14 @@ async function log(businessId, body, userId) {
           cost_paise, reason, note, logged_by_user_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [businessId, ingredientId || null, menuItemId || null, qty,
-       unit || null, costPaise || 0, reason, note || null, userId || null]
+        unit || null, costPaise || 0, reason, note || null, userId || null],
     );
     // Decrement ingredient stock
     if (ingredientId) {
       await client.query(
         `UPDATE ingredients SET stock = GREATEST(0, stock - $1)
           WHERE business_id = $2 AND id = $3`,
-        [qty, businessId, ingredientId]
+        [qty, businessId, ingredientId],
       );
       await client.query(
         `INSERT INTO ingredient_transactions
@@ -56,7 +56,7 @@ async function log(businessId, body, userId) {
          SELECT $1, $2, -$3,
                 (SELECT stock FROM ingredients WHERE id = $2),
                 'waste', $4`,
-        [businessId, ingredientId, qty, note || `Wastage: ${reason}`]
+        [businessId, ingredientId, qty, note || `Wastage: ${reason}`],
       );
     }
     return r.rows[0];
@@ -74,9 +74,9 @@ async function log(businessId, body, userId) {
           // 2026-08-25: dish wastage rides the same mirror — the only
           // difference is the description names the dish + plate count.
           [businessId, costPaise / 100,
-            `Wastage (${reason})` +
-            `${menuItemName ? ` — ${qty} × ${menuItemName}` : ''}` +
-            `${note ? ` — ${note}` : ''}`]
+            `Wastage (${reason})`
+            + `${menuItemName ? ` — ${qty} × ${menuItemName}` : ''}`
+            + `${note ? ` — ${note}` : ''}`],
         );
       } catch (e) {
         // eslint-disable-next-line no-console
@@ -93,19 +93,19 @@ async function report(businessId, { startDate, endDate } = {}) {
   // IST date bucketing so this report ties out with P&L COGS (which sums
   // wastage by IST date). created_at is TIMESTAMPTZ stored UTC.
   if (startDate) { where.push(`(created_at AT TIME ZONE 'Asia/Kolkata')::date >= $${idx++}::date`); values.push(startDate); }
-  if (endDate)   { where.push(`(created_at AT TIME ZONE 'Asia/Kolkata')::date <= $${idx++}::date`); values.push(endDate); }
+  if (endDate) { where.push(`(created_at AT TIME ZONE 'Asia/Kolkata')::date <= $${idx++}::date`); values.push(endDate); }
   const total = await query(
     `SELECT COALESCE(SUM(cost_paise), 0) / 100.0 AS total_inr,
             COUNT(*)::int AS event_count
        FROM wastage_log WHERE ${where.join(' AND ')}`,
-    values
+    values,
   );
   const byReason = await query(
     `SELECT reason, COUNT(*)::int AS n,
             COALESCE(SUM(cost_paise), 0) / 100.0 AS inr
        FROM wastage_log WHERE ${where.join(' AND ')}
        GROUP BY reason ORDER BY inr DESC`,
-    values
+    values,
   );
   // 2026-08-22: also join menu_items — mobile logs wastage against menu
   // items, and `recent` had no display name for those rows.
@@ -119,7 +119,7 @@ async function report(businessId, { startDate, endDate } = {}) {
   LEFT JOIN menu_items mi ON mi.id = wl.menu_item_id
       WHERE ${recentWhere.join(' AND ')}
       ORDER BY wl.created_at DESC LIMIT 100`,
-    values
+    values,
   );
   return {
     summary: total.rows[0],

@@ -10,7 +10,8 @@ const request = require('supertest');
 const buildApp = require('../../src/app');
 const { resetDb, makeBusiness, tokenFor, closePool } = require('../setup');
 
-let app, business, token, itemId;
+let app; let business; let token; let
+  itemId;
 
 beforeAll(async () => {
   await resetDb();
@@ -141,8 +142,8 @@ describe('NP-137 — expense clientKey idempotency', () => {
     expect(r2.body.expense.id).toBe(r1.body.expense.id); // same row, no dup
     const { query } = require('../../src/config/db');
     const n = (await query(
-      `SELECT count(*)::int AS c FROM expenses WHERE business_id = $1 AND client_key = $2`,
-      [business.id, key]
+      'SELECT count(*)::int AS c FROM expenses WHERE business_id = $1 AND client_key = $2',
+      [business.id, key],
     )).rows[0].c;
     expect(n).toBe(1);
   });

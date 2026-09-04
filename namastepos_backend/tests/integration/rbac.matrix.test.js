@@ -10,13 +10,13 @@ const ROLES = ['super_admin', 'finance', 'support', 'sales'];
 
 const PROBES = [
   // permission, expected pass roles
-  { perm: 'customers.read',      ok: ['super_admin', 'finance', 'support', 'sales'] },
-  { perm: 'customers.write',     ok: ['super_admin', 'support', 'sales'] },
-  { perm: 'refunds.write',       ok: ['super_admin', 'finance'] },
-  { perm: 'settings.write',      ok: ['super_admin'] }, // QA-1 P0-12
-  { perm: 'notes.write',         ok: ['super_admin', 'support'] },
-  { perm: 'plans.change',        ok: ['super_admin', 'sales'] },
-  { perm: 'gst.write',           ok: ['super_admin', 'finance'] },
+  { perm: 'customers.read', ok: ['super_admin', 'finance', 'support', 'sales'] },
+  { perm: 'customers.write', ok: ['super_admin', 'support', 'sales'] },
+  { perm: 'refunds.write', ok: ['super_admin', 'finance'] },
+  { perm: 'settings.write', ok: ['super_admin'] }, // QA-1 P0-12
+  { perm: 'notes.write', ok: ['super_admin', 'support'] },
+  { perm: 'plans.change', ok: ['super_admin', 'sales'] },
+  { perm: 'gst.write', ok: ['super_admin', 'finance'] },
   { perm: 'customers.impersonate', ok: ['super_admin', 'support'] },
 ];
 

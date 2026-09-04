@@ -22,7 +22,8 @@ function runPerm(perm, user) {
   });
 }
 
-let A, B;
+let A; let
+  B;
 beforeAll(async () => {
   await resetDb();
   A = await makeBusiness({ email: `a-${Date.now()}` });
@@ -67,12 +68,10 @@ describe('Cross-tenant IDOR — variants', () => {
   it("setVariants refuses an item that isn't the caller's", async () => {
     const item = await menuService.create(B.id, { name: 'B Dosa', price: 80 });
     await expect(
-      variantService.setVariants(A.id, item.id, [{ label: 'Large', price: 100 }])
+      variantService.setVariants(A.id, item.id, [{ label: 'Large', price: 100 }]),
     ).rejects.toThrow(/not found/i);
     // B's item still has no variants tampered in.
-    const stillEmpty = await query(
-      `SELECT count(*)::int AS c FROM menu_item_variants WHERE menu_item_id = $1`, [item.id]
-    );
+    const stillEmpty = await query('SELECT count(*)::int AS c FROM menu_item_variants WHERE menu_item_id = $1', [item.id]);
     expect(stillEmpty.rows[0].c).toBe(0);
   });
 });
@@ -84,11 +83,13 @@ describe('Cross-tenant IDOR — reservation table reference', () => {
       floorId: floorB?.id || null, label: 'B-T1', seats: 4,
     });
     const resA = await reservationService.create(A.id, {
-      customerName: 'X', customerPhone: '9999999999',
-      reservedAt: new Date(Date.now() + 3600e3).toISOString(), partySize: 2,
+      customerName: 'X',
+      customerPhone: '9999999999',
+      reservedAt: new Date(Date.now() + 3600e3).toISOString(),
+      partySize: 2,
     });
     await expect(
-      reservationService.update(A.id, resA.id, { tableId: tableB.id })
+      reservationService.update(A.id, resA.id, { tableId: tableB.id }),
     ).rejects.toThrow(/not found/i);
   });
 });
@@ -99,7 +100,7 @@ describe('Cross-tenant IDOR — tax invoice idempotency', () => {
     const ord = await query(
       `INSERT INTO orders (business_id, order_no, status, subtotal, tax, total, source)
        VALUES ($1, 9001, 'collected', 100, 5, 105, 'dineIn') RETURNING id`,
-      [B.id]
+      [B.id],
     );
     const orderId = ord.rows[0].id;
     await query(
@@ -108,11 +109,11 @@ describe('Cross-tenant IDOR — tax invoice idempotency', () => {
           place_of_supply, subtotal_paise, total_paise, items, status)
        VALUES ($1, $2, 'B-2026-0001', '2026-27', 1, 'B Restaurant',
                '27', 10000, 10500, '[]'::jsonb, 'issued')`,
-      [B.id, orderId]
+      [B.id, orderId],
     );
     // Tenant A must NOT receive B's invoice; it should fail to find the order.
     await expect(
-      taxInvoiceService.issueFromOrder(A.id, orderId)
+      taxInvoiceService.issueFromOrder(A.id, orderId),
     ).rejects.toThrow();
   });
 });

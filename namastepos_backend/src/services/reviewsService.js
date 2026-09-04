@@ -15,7 +15,7 @@ async function listReviews(businessId, { source, limit = 50 } = {}) {
   const r = await query(
     `SELECT * FROM reviews WHERE ${where.join(' AND ')}
       ORDER BY posted_at DESC NULLS LAST LIMIT $${idx}`,
-    values
+    values,
   );
   return r.rows;
 }
@@ -25,11 +25,11 @@ async function reviewStats(businessId) {
     `SELECT source, COUNT(*)::int AS n, AVG(rating)::float AS avg_rating
        FROM reviews WHERE business_id = $1
        GROUP BY source`,
-    [businessId]
+    [businessId],
   );
   const overall = await query(
-    `SELECT AVG(rating)::float AS avg, COUNT(*)::int AS n FROM reviews WHERE business_id = $1`,
-    [businessId]
+    'SELECT AVG(rating)::float AS avg, COUNT(*)::int AS n FROM reviews WHERE business_id = $1',
+    [businessId],
   );
   return { sources: r.rows, overall: overall.rows[0] };
 }
@@ -38,7 +38,7 @@ async function postReply(businessId, reviewId, replyText) {
   const r = await query(
     `UPDATE reviews SET reply = $1, reply_at = NOW()
       WHERE business_id = $2 AND id = $3 RETURNING *`,
-    [replyText, businessId, reviewId]
+    [replyText, businessId, reviewId],
   );
   return r.rows[0];
 }
@@ -51,7 +51,7 @@ async function ingestReview(businessId, body) {
      VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT (business_id, source, external_id) DO NOTHING`,
     [businessId, body.source, body.externalId, body.rating,
-     body.reviewerName, body.body, body.postedAt || new Date()]
+      body.reviewerName, body.body, body.postedAt || new Date()],
   );
 }
 
@@ -177,8 +177,8 @@ async function fetchAllProviders(businessId) {
   }
 
   const bizRow = await query(
-    `SELECT google_place_id, google_maps_url FROM businesses WHERE id = $1 LIMIT 1`,
-    [businessId]
+    'SELECT google_place_id, google_maps_url FROM businesses WHERE id = $1 LIMIT 1',
+    [businessId],
   );
   const biz = bizRow.rows[0] || {};
   let placeId = biz.google_place_id || null;
@@ -205,8 +205,8 @@ async function fetchAllProviders(businessId) {
       // Persist the resolved ID so future fetches (and npsService's
       // write-a-review link) skip re-parsing the URL.
       await query(
-        `UPDATE businesses SET google_place_id = $1 WHERE id = $2`,
-        [placeId, businessId]
+        'UPDATE businesses SET google_place_id = $1 WHERE id = $2',
+        [placeId, businessId],
       );
     } else {
       logger.info(`Reviews fetch ${businessId}: maps URL has no extractable place_id`);
@@ -236,7 +236,7 @@ async function fetchAllProviders(businessId) {
       {
         params: { place_id: placeId, fields: 'reviews,rating,user_ratings_total', key: apiKey },
         timeout: 8000,
-      }
+      },
     );
     data = r.data;
   } catch (err) {

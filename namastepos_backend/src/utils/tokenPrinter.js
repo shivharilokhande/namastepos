@@ -5,7 +5,7 @@
 // API returns this string so receipts can be re-rendered or e-mailed).
 
 function padRight(s, n) { return (s + ' '.repeat(n)).slice(0, n); }
-function padLeft (s, n) { return (' '.repeat(n) + s).slice(-n); }
+function padLeft(s, n) { return (' '.repeat(n) + s).slice(-n); }
 function center(s, width = 32) {
   if (s.length >= width) return s.slice(0, width);
   const left = Math.floor((width - s.length) / 2);
@@ -18,14 +18,17 @@ function formatToken(order, business, width = 32) {
   const lines = [];
   lines.push(center(business.name.toUpperCase(), width));
   if (business.address) lines.push(center(business.address, width));
-  if (business.phone)   lines.push(center(`Ph: ${business.phone}`, width));
-  if (business.gstin)   lines.push(center(`GSTIN: ${business.gstin}`, width));
+  if (business.phone) lines.push(center(`Ph: ${business.phone}`, width));
+  if (business.gstin) lines.push(center(`GSTIN: ${business.gstin}`, width));
   lines.push(hr(width));
 
   lines.push(`${padRight(`TOKEN #${order.orderNo}`, width - 8)}${padLeft(order.source.toUpperCase(), 8)}`);
   lines.push(new Date(order.createdAt).toLocaleString('en-IN', {
-    day: '2-digit', month: 'short', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   }));
   if (order.tableNo) lines.push(`Table: ${order.tableNo}`);
   if (order.customerPhone) lines.push(`Customer: ${order.customerPhone}`);
@@ -43,10 +46,9 @@ function formatToken(order, business, width = 32) {
   lines.push(hr(width));
 
   // Totals
-  const t = (label, val) =>
-    `${padRight(label, width - 12)}${padLeft(`Rs.${Number(val).toFixed(2)}`, 12)}`;
+  const t = (label, val) => `${padRight(label, width - 12)}${padLeft(`Rs.${Number(val).toFixed(2)}`, 12)}`;
   lines.push(t('Subtotal', order.subtotal));
-  if (Number(order.tax) > 0)      lines.push(t('Tax', order.tax));
+  if (Number(order.tax) > 0) lines.push(t('Tax', order.tax));
   if (Number(order.discount) > 0) lines.push(t('Discount', -order.discount));
   lines.push(t('TOTAL', order.total));
   lines.push(hr(width));

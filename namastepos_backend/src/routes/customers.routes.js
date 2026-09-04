@@ -18,24 +18,32 @@ const router = express.Router({ mergeParams: true });
 // list any restaurant's diners with no ticket and no audit trail.
 // noPlatformStaff blocks the plain admin token and still allows an audited
 // impersonation session. See middleware/noPlatformStaff.js.
-router.use(requireAuth, requireBusinessOwnership, noPlatformStaff,
-           requireAddon('loyalty', { orFeature: 'loyalty' }));
+router.use(
+  requireAuth,
+  requireBusinessOwnership,
+  noPlatformStaff,
+  requireAddon('loyalty', { orFeature: 'loyalty' }),
+);
 
 // Customer CRUD
-router.get   ('/',                   requireRole(['business_owner', 'staff_manager', 'staff_cashier']), ...c.list);
-router.get   ('/lookup',             requireRole(['business_owner', 'staff_manager', 'staff_cashier']), c.lookup);       // ?phone=…
-router.post  ('/',                   ...c.upsert);
-router.get   ('/:customerId',        requireRole(['business_owner', 'staff_manager', 'staff_cashier']), c.get);
-router.patch ('/:customerId',        ...c.update);
-router.delete('/:customerId',        requireRole(['business_owner']), c.remove);
-router.post  ('/:customerId/points',
-              requireRole(['business_owner', 'staff_manager']),
-              ...c.adjustPoints);
+router.get('/', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), ...c.list);
+router.get('/lookup', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), c.lookup); // ?phone=…
+router.post('/', ...c.upsert);
+router.get('/:customerId', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), c.get);
+router.patch('/:customerId', ...c.update);
+router.delete('/:customerId', requireRole(['business_owner']), c.remove);
+router.post(
+  '/:customerId/points',
+  requireRole(['business_owner', 'staff_manager']),
+  ...c.adjustPoints,
+);
 
 // Loyalty settings
-router.get   ('/_settings/loyalty', c.getLoyaltySettings);
-router.put   ('/_settings/loyalty',
-              requireRole(['business_owner']),
-              c.updateLoyaltySettings);
+router.get('/_settings/loyalty', c.getLoyaltySettings);
+router.put(
+  '/_settings/loyalty',
+  requireRole(['business_owner']),
+  c.updateLoyaltySettings,
+);
 
 module.exports = router;

@@ -13,7 +13,7 @@ const catalog = asyncHandler(async (_req, res) => {
 // ── Per-business: list active addons ────────────────────────────────────
 const myAddons = asyncHandler(async (req, res) => {
   const active = await addons.listActiveForBusiness(req.params.businessId);
-  const all    = await addons.listAllForBusiness(req.params.businessId);
+  const all = await addons.listAllForBusiness(req.params.businessId);
   res.json({ active, history: all });
 });
 
@@ -56,11 +56,12 @@ const adminCreateBody = Joi.object({
   tagline: Joi.string().max(255).allow('', null),
   description: Joi.string().max(2000).allow('', null),
   icon: Joi.string().max(50).allow('', null),
-  category: Joi.string().valid('integrations','marketing','operations','reports').required(),
+  category: Joi.string().valid('integrations', 'marketing', 'operations', 'reports').required(),
   price_inr_paise: Joi.number().integer().min(0).required(),
-  billing_period: Joi.string().valid('monthly','yearly','one_time').default('monthly'),
+  billing_period: Joi.string().valid('monthly', 'yearly', 'one_time').default('monthly'),
   required_plan_tier: Joi.string().pattern(/^[a-z][a-z0-9_-]{1,39}$/).allow(null, ''),
-  trial_days: Joi.number().integer().min(0).max(365).default(0),
+  trial_days: Joi.number().integer().min(0).max(365)
+    .default(0),
   features: Joi.object().default({}),
   is_active: Joi.boolean().default(true),
   display_order: Joi.number().integer().default(100),
@@ -94,9 +95,9 @@ const adminUpdateBody = Joi.object({
   tagline: Joi.string().max(255).allow('', null),
   description: Joi.string().max(2000).allow('', null),
   icon: Joi.string().max(50).allow('', null),
-  category: Joi.string().valid('integrations','marketing','operations','reports'),
+  category: Joi.string().valid('integrations', 'marketing', 'operations', 'reports'),
   price_inr_paise: Joi.number().integer().min(0),
-  billing_period: Joi.string().valid('monthly','yearly','one_time'),
+  billing_period: Joi.string().valid('monthly', 'yearly', 'one_time'),
   required_plan_tier: Joi.string().pattern(/^[a-z][a-z0-9_-]{1,39}$/).allow(null, ''),
   trial_days: Joi.number().integer().min(0).max(365),
   features: Joi.object(),
@@ -150,8 +151,15 @@ const adminDetachFromCustomer = asyncHandler(async (req, res) => {
 module.exports = {
   catalog,
   myAddons,
-  subscribe, cancel, resume, updateSettings,
-  adminList, adminCreate, adminUpdate, adminSyncRazorpay,
+  subscribe,
+  cancel,
+  resume,
+  updateSettings,
+  adminList,
+  adminCreate,
+  adminUpdate,
+  adminSyncRazorpay,
   adminActivationsForCustomer,
-  adminAttachToCustomer, adminDetachFromCustomer,
+  adminAttachToCustomer,
+  adminDetachFromCustomer,
 };

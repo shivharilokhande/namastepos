@@ -23,7 +23,7 @@ async function classify(businessId, fromStr, toStr) {
   // P2 fix (2026-08-22): default range in IST to match report bucketing
   const istDay = (ms = 0) => new Date(Date.now() + ms)
     .toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  const to   = toStr   || istDay();
+  const to = toStr || istDay();
   const from = fromStr || istDay(-30 * 24 * 3600 * 1000);
 
   const r = await query(
@@ -45,7 +45,7 @@ async function classify(businessId, fromStr, toStr) {
       GROUP BY mi.id
       HAVING COALESCE(SUM(oi.qty), 0) > 0
       ORDER BY units DESC`,
-    [businessId, from, to]
+    [businessId, from, to],
   );
   const items = r.rows.map((row) => ({
     id: row.id,
@@ -71,29 +71,29 @@ async function classify(businessId, fromStr, toStr) {
   const marginThreshold = median(items.filter((i) => i.unitMargin != null).map((i) => i.unitMargin));
 
   for (const it of items) {
-    const highPop    = it.units > popThreshold;
+    const highPop = it.units > popThreshold;
     const highMargin = it.unitMargin != null && it.unitMargin > marginThreshold;
-    it.quadrant =
-      highPop && highMargin ? 'star' :
-      highPop && !highMargin ? 'horse' :
-      !highPop && highMargin ? 'puzzle' :
-      'dog';
+    it.quadrant = highPop && highMargin ? 'star'
+      : highPop && !highMargin ? 'horse'
+        : !highPop && highMargin ? 'puzzle'
+          : 'dog';
     it.recommendation = {
-      star:   'Feature prominently. Test small price increases.',
-      horse:  'Popular but thin margin. Try recipe cost-out or bundle.',
+      star: 'Feature prominently. Test small price increases.',
+      horse: 'Popular but thin margin. Try recipe cost-out or bundle.',
       puzzle: 'Great margin, low volume. Merchandise better or reposition.',
-      dog:    'Consider removing. Frees menu space + kitchen prep.',
+      dog: 'Consider removing. Frees menu space + kitchen prep.',
     }[it.quadrant];
   }
 
   return {
-    from, to,
+    from,
+    to,
     thresholds: { popularity: popThreshold, margin: marginThreshold },
     counts: {
-      star:   items.filter((i) => i.quadrant === 'star').length,
-      horse:  items.filter((i) => i.quadrant === 'horse').length,
+      star: items.filter((i) => i.quadrant === 'star').length,
+      horse: items.filter((i) => i.quadrant === 'horse').length,
       puzzle: items.filter((i) => i.quadrant === 'puzzle').length,
-      dog:    items.filter((i) => i.quadrant === 'dog').length,
+      dog: items.filter((i) => i.quadrant === 'dog').length,
     },
     items,
   };

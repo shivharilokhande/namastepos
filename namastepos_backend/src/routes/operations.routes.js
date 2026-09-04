@@ -24,38 +24,44 @@ const shifts = require('../services/staffShiftService');
 const router = express.Router({ mergeParams: true });
 
 // ── FF-330 device tokens (mobile registers on cold start) ──────────────
-router.post('/device-tokens',
+router.post(
+  '/device-tokens',
   validate({ body: Joi.object({
     token: Joi.string().required(),
     platform: Joi.string().valid('android', 'ios', 'web').default('android'),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     await push.registerToken(req.user.id, req.params.businessId, req.body);
     res.json({ ok: true });
-  }));
+  }),
+);
 
 // ── FF-332 staff shifts + payroll ──────────────────────────────────────
-router.post('/shifts/clock-in',
-  asyncHandler(async (req, res) =>
-    res.json(await shifts.clockIn(req.params.businessId, req.user.id))));
-router.post('/shifts/clock-out',
-  asyncHandler(async (req, res) =>
-    res.json(await shifts.clockOut(req.params.businessId, req.user.id))));
-router.get('/shifts/mine',
-  asyncHandler(async (req, res) =>
-    res.json({ shift: await shifts.myOpenShift(req.params.businessId, req.user.id) })));
-router.get('/shifts',
+router.post(
+  '/shifts/clock-in',
+  asyncHandler(async (req, res) => res.json(await shifts.clockIn(req.params.businessId, req.user.id))),
+);
+router.post(
+  '/shifts/clock-out',
+  asyncHandler(async (req, res) => res.json(await shifts.clockOut(req.params.businessId, req.user.id))),
+);
+router.get(
+  '/shifts/mine',
+  asyncHandler(async (req, res) => res.json({ shift: await shifts.myOpenShift(req.params.businessId, req.user.id) })),
+);
+router.get(
+  '/shifts',
   requireRole(['business_owner', 'staff_manager']),
-  asyncHandler(async (req, res) =>
-    res.json({ shifts: await shifts.listForBusiness(
-      req.params.businessId, req.query
-    )})));
-router.get('/shifts/payroll.csv',
+  asyncHandler(async (req, res) => res.json({ shifts: await shifts.listForBusiness(req.params.businessId, req.query) })),
+);
+router.get(
+  '/shifts/payroll.csv',
   requireRole(['business_owner']),
   asyncHandler(async (req, res) => {
     const csv = await shifts.payrollCsv(req.params.businessId, req.query.month);
     res.type('text/csv').attachment(`payroll-${req.query.month}.csv`).send(csv);
-  }));
+  }),
+);
 
 // ── Daily closing / Z-report ─────────────────────────────────────────────
 // NP-201: the Z-report preview and the closing history are cash-position
@@ -66,40 +72,38 @@ router.get('/shifts/payroll.csv',
 // not, matching DEFAULT_PERMS_BY_ROLE).
 const canDailyClosing = requireStaffPerm('daily_closing');
 
-router.get ('/daily-closings/preview',
+router.get(
+  '/daily-closings/preview',
   canDailyClosing,
-  asyncHandler(async (req, res) =>
-    res.json({ preview: await dailyClosing.preview(req.params.businessId, req.query.date) })
-  )
+  asyncHandler(async (req, res) => res.json({ preview: await dailyClosing.preview(req.params.businessId, req.query.date) })),
 );
-router.get ('/daily-closings', canDailyClosing, asyncHandler(async (req, res) =>
-  res.json({ closings: await dailyClosing.list(req.params.businessId) })));
-router.post('/daily-closings',
-  requireRole(['business_owner','staff_manager']),
+router.get('/daily-closings', canDailyClosing, asyncHandler(async (req, res) => res.json({ closings: await dailyClosing.list(req.params.businessId) })));
+router.post(
+  '/daily-closings',
+  requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({
     date: Joi.date().iso().required(),
     cashCounted: Joi.number().integer().min(0).required(),
     notes: Joi.string().max(2000).allow('', null),
     signature: Joi.string().max(255).allow('', null),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.status(201).json({ closing: await dailyClosing.close(req.params.businessId, {
-      ...req.body, closedByUserId: req.user?.id,
-    })})
-  )
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json({ closing: await dailyClosing.close(req.params.businessId, {
+    ...req.body, closedByUserId: req.user?.id,
+  }) })),
 );
-router.post('/daily-closings/:date/reopen',
+router.post(
+  '/daily-closings/:date/reopen',
   requireRole(['business_owner']),
   asyncHandler(async (req, res) => {
     await dailyClosing.reopen(req.params.businessId, req.params.date);
     res.json({ success: true });
-  })
+  }),
 );
 
 // ── Wastage ──────────────────────────────────────────────────────────────
-router.get ('/wastage', asyncHandler(async (req, res) =>
-  res.json({ report: await wastage.report(req.params.businessId, req.query) })));
-router.post('/wastage',
+router.get('/wastage', asyncHandler(async (req, res) => res.json({ report: await wastage.report(req.params.businessId, req.query) })));
+router.post(
+  '/wastage',
   // 2026-08-25 (founder): dish wastage — "prepared 20 plates, sold 17" →
   // log the 3 unsold plates against the MENU ITEM. Either ingredientId or
   // menuItemId must be set (service enforces; Joi can't cleanly express
@@ -112,23 +116,22 @@ router.post('/wastage',
     qty: Joi.number().positive().required(),
     unit: Joi.string().max(20).allow('', null),
     costPaise: Joi.number().integer().min(0),
-    reason: Joi.string().valid('expired','spilled','over_prep','extra_prepared','damaged','other').required(),
+    reason: Joi.string().valid('expired', 'spilled', 'over_prep', 'extra_prepared', 'damaged', 'other').required(),
     note: Joi.string().max(500).allow('', null),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.status(201).json({ entry: await wastage.log(req.params.businessId, req.body, req.user?.id) })
-  )
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json({ entry: await wastage.log(req.params.businessId, req.body, req.user?.id) })),
 );
 
 // ── Reservations + wait list ─────────────────────────────────────────────
-router.get ('/reservations', asyncHandler(async (req, res) =>
-  res.json({ reservations: await reservation.list(req.params.businessId, req.query) })));
-router.post('/reservations',
+router.get('/reservations', asyncHandler(async (req, res) => res.json({ reservations: await reservation.list(req.params.businessId, req.query) })));
+router.post(
+  '/reservations',
   validate({ body: Joi.object({
     customerName: Joi.string().min(1).max(255).required(),
     customerPhone: Joi.string().min(7).max(20).required(),
     customerEmail: Joi.string().email().allow('', null),
-    partySize: Joi.number().integer().min(1).max(50).required(),
+    partySize: Joi.number().integer().min(1).max(50)
+      .required(),
     // Founder bug #11 (2026-08-25): reservations could be booked in the
     // past or years ahead. Enforced via .custom() so "now" is computed at
     // REQUEST time — a module-load-time `new Date()` would freeze the
@@ -144,77 +147,80 @@ router.post('/reservations',
       }
       return value;
     }),
-    durationMin: Joi.number().integer().min(15).max(360).default(90),
+    durationMin: Joi.number().integer().min(15).max(360)
+      .default(90),
     tableId: Joi.string().uuid().allow(null),
     specialRequests: Joi.string().max(1000).allow('', null),
     source: Joi.string().max(40).default('phone'),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.status(201).json({ reservation: await reservation.create(req.params.businessId, req.body, req.user?.id) })
-  )
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json({ reservation: await reservation.create(req.params.businessId, req.body, req.user?.id) })),
 );
-router.put ('/reservations/:id', asyncHandler(async (req, res) =>
-  res.json({ reservation: await reservation.update(req.params.businessId, req.params.id, req.body) })));
-router.post('/reservations/:id/seat', asyncHandler(async (req, res) =>
-  res.json({ reservation: await reservation.seat(req.params.businessId, req.params.id) })));
-router.get ('/wait-list', asyncHandler(async (req, res) =>
-  res.json({ entries: await reservation.listWaitList(req.params.businessId) })));
-router.post('/wait-list',
+router.put('/reservations/:id', asyncHandler(async (req, res) => res.json({ reservation: await reservation.update(req.params.businessId, req.params.id, req.body) })));
+router.post('/reservations/:id/seat', asyncHandler(async (req, res) => res.json({ reservation: await reservation.seat(req.params.businessId, req.params.id) })));
+router.get('/wait-list', asyncHandler(async (req, res) => res.json({ entries: await reservation.listWaitList(req.params.businessId) })));
+router.post(
+  '/wait-list',
   validate({ body: Joi.object({
-    customerName: Joi.string().required(), customerPhone: Joi.string().required(),
+    customerName: Joi.string().required(),
+    customerPhone: Joi.string().required(),
     partySize: Joi.number().integer().positive().required(),
     estimatedWaitMin: Joi.number().integer().min(0),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.status(201).json({ entry: await reservation.addToWaitList(req.params.businessId, req.body) })
-  )
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json({ entry: await reservation.addToWaitList(req.params.businessId, req.body) })),
 );
 
 // ── Customer history ─────────────────────────────────────────────────────
-router.get ('/customer-history/:phone', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), asyncHandler(async (req, res) => {
+router.get('/customer-history/:phone', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), asyncHandler(async (req, res) => {
   const profile = await customerHistory.profileForCashier(req.params.businessId, req.params.phone);
   if (!profile) return res.status(404).json({ error: 'NOT_FOUND' });
   res.json(profile);
 }));
-router.get ('/customers/:id/reorder-last', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), asyncHandler(async (req, res) => {
+router.get('/customers/:id/reorder-last', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), asyncHandler(async (req, res) => {
   const items = await customerHistory.reorderSameAsLast(req.params.businessId, req.params.id);
   res.json({ items });
 }));
 
 // ── Printer + KDS ────────────────────────────────────────────────────────
-router.get ('/printers', asyncHandler(async (req, res) =>
-  res.json({ printers: await printer.listPrinters(req.params.businessId) })));
-router.put ('/printers',
-  requireRole(['business_owner','staff_manager']),
+router.get('/printers', asyncHandler(async (req, res) => res.json({ printers: await printer.listPrinters(req.params.businessId) })));
+router.put(
+  '/printers',
+  requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({
     id: Joi.string().uuid().allow(null),
     name: Joi.string().required(),
-    kind: Joi.string().valid('bill','kot').required(),
-    connection: Joi.string().valid('bluetooth','wifi','usb','network').required(),
+    kind: Joi.string().valid('bill', 'kot').required(),
+    connection: Joi.string().valid('bluetooth', 'wifi', 'usb', 'network').required(),
     address: Joi.string().max(120).allow('', null),
     paperWidthMm: Joi.number().valid(58, 80),
     stationId: Joi.string().uuid().allow(null),
     isDefault: Joi.boolean(),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.json({ printer: await printer.upsertPrinter(req.params.businessId, req.body) })
-  )
+  }) }),
+  asyncHandler(async (req, res) => res.json({ printer: await printer.upsertPrinter(req.params.businessId, req.body) })),
 );
-router.delete('/printers/:id',
+router.delete(
+  '/printers/:id',
   requireRole(['business_owner']),
   asyncHandler(async (req, res) => {
     await printer.deletePrinter(req.params.businessId, req.params.id);
     res.json({ success: true });
-  })
+  }),
 );
-router.get ('/print-jobs/next', asyncHandler(async (req, res) =>
-  res.json({ job: await printer.dequeueNext(req.params.businessId) })));
-router.post('/print-jobs/:id/done',
-  validate({ body: Joi.object({ ok: Joi.boolean().required(), errorMessage: Joi.string().allow('', null) })}),
+router.get('/print-jobs/next', asyncHandler(async (req, res) => res.json({ job: await printer.dequeueNext(req.params.businessId) })));
+router.post(
+  '/print-jobs/:id/done',
+  validate({ body: Joi.object({ ok: Joi.boolean().required(), errorMessage: Joi.string().allow('', null) }) }),
   asyncHandler(async (req, res) => {
-    await printer.markJobDone(req.params.businessId, req.params.id, req.body.ok, req.body.errorMessage);
-    res.json({ success: true });
-  })
+    // NP-301: a failed job is no longer terminal — it goes back to 'queued'
+    // with a backoff until its attempts are exhausted. Tell the agent which of
+    // the two happened so it can stop reporting a dead-lettered job.
+    const outcome = await printer.markJobDone(req.params.businessId, req.params.id, req.body.ok, req.body.errorMessage);
+    res.json({
+      success: true,
+      status: outcome?.status || null,
+      attempts: outcome?.attempts ?? null,
+      willRetry: outcome?.status === 'queued',
+    });
+  }),
 );
 
 // ── Bulk-import hub (Founder request 2026-08-25) ────────────────────────
@@ -237,7 +243,8 @@ const ingredientSvc = require('../services/ingredientService');
 const expenseSvc = require('../services/expenseService');
 
 const importRowsBody = Joi.object({
-  rows: Joi.array().items(Joi.object().unknown(true)).min(1).max(1000).required(),
+  rows: Joi.array().items(Joi.object().unknown(true)).min(1).max(1000)
+    .required(),
 });
 
 // Mirrors ingredientController.ingredientBody — keep the two in sync.
@@ -285,16 +292,37 @@ const expenseRowSchema = Joi.object({
     .custom((v) => {
       const k = String(v || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
       const SYNONYMS = {
-        food: 'ingredients', groceries: 'ingredients', raw_material: 'ingredients',
-        vegetables: 'ingredients', provisions: 'ingredients', purchase: 'ingredients',
-        salary: 'staff_salary', salaries: 'staff_salary', wages: 'staff_salary',
-        staff: 'staff_salary', chef: 'chef_salary', helper: 'helper_salary',
-        lpg: 'gas', cylinder: 'gas', power: 'electricity', current_bill: 'electricity',
-        eb: 'electricity', internet: 'utilities', phone: 'utilities',
-        license: 'license_fees', licence: 'license_fees', licence_fees: 'license_fees',
-        repair: 'maintenance', repairs: 'maintenance', ads: 'marketing',
-        advertising: 'marketing', promotion: 'marketing', delivery: 'transport',
-        fuel_petrol: 'fuel', petrol: 'fuel', diesel: 'fuel',
+        food: 'ingredients',
+        groceries: 'ingredients',
+        raw_material: 'ingredients',
+        vegetables: 'ingredients',
+        provisions: 'ingredients',
+        purchase: 'ingredients',
+        salary: 'staff_salary',
+        salaries: 'staff_salary',
+        wages: 'staff_salary',
+        staff: 'staff_salary',
+        chef: 'chef_salary',
+        helper: 'helper_salary',
+        lpg: 'gas',
+        cylinder: 'gas',
+        power: 'electricity',
+        current_bill: 'electricity',
+        eb: 'electricity',
+        internet: 'utilities',
+        phone: 'utilities',
+        license: 'license_fees',
+        licence: 'license_fees',
+        licence_fees: 'license_fees',
+        repair: 'maintenance',
+        repairs: 'maintenance',
+        ads: 'marketing',
+        advertising: 'marketing',
+        promotion: 'marketing',
+        delivery: 'transport',
+        fuel_petrol: 'fuel',
+        petrol: 'fuel',
+        diesel: 'fuel',
       };
       const mapped = SYNONYMS[k] || k;
       return EXPENSE_CATEGORIES.includes(mapped) ? mapped : 'other';
@@ -347,14 +375,14 @@ async function runImport(rows, schema, handler) {
   return { imported, failed, warnings };
 }
 
-router.post('/imports/ingredients',
+router.post(
+  '/imports/ingredients',
   requireRole(['business_owner', 'staff_manager']),
   validate({ body: importRowsBody }),
   asyncHandler(async (req, res) => {
-    const result = await runImport(req.body.rows, ingredientRowSchema, (row) =>
-      ingredientSvc.create(req.params.businessId, row));
+    const result = await runImport(req.body.rows, ingredientRowSchema, (row) => ingredientSvc.create(req.params.businessId, row));
     res.json(result);
-  })
+  }),
 );
 
 // Purchases = goods received against existing ingredients. Reuses
@@ -362,7 +390,8 @@ router.post('/imports/ingredients',
 // ingredient_transactions audit log all update exactly like a manual entry.
 // (The retail purchase_orders/goods_receipts tables are a multi-step
 // PO→GRN flow scoped to retail SKUs — not a fit for a flat CSV.)
-router.post('/imports/ingredients/purchases',
+router.post(
+  '/imports/ingredients/purchases',
   requireRole(['business_owner', 'staff_manager']),
   validate({ body: importRowsBody }),
   asyncHandler(async (req, res) => {
@@ -376,17 +405,17 @@ router.post('/imports/ingredients/purchases',
       await ingredientSvc.recordPurchase(req.params.businessId, id, purchase);
     });
     res.json(result);
-  })
+  }),
 );
 
-router.post('/imports/expenses',
+router.post(
+  '/imports/expenses',
   requireRole(['business_owner', 'staff_manager']),
   validate({ body: importRowsBody }),
   asyncHandler(async (req, res) => {
-    const result = await runImport(req.body.rows, expenseRowSchema, (row) =>
-      expenseSvc.create(req.params.businessId, row));
+    const result = await runImport(req.body.rows, expenseRowSchema, (row) => expenseSvc.create(req.params.businessId, row));
     res.json(result);
-  })
+  }),
 );
 
 // ── "Switch to NamastePOS" migration imports (2026-09-03) ───────────────
@@ -402,7 +431,7 @@ const customerImportRowSchema = Joi.object({
     .messages({ 'string.pattern.base': 'phone must be a 10-digit mobile number' }),
   name: Joi.string().max(255).allow('', null),
   email: Joi.string().email().allow('', null),
-  tags: Joi.string().max(500).allow('', null),          // comma/;/| separated
+  tags: Joi.string().max(500).allow('', null), // comma/;/| separated
   whatsappOptIn: Joi.boolean()
     .truthy('yes', 'y', 'Y', 'Yes', 'YES', '1')
     .falsy('no', 'n', 'N', 'No', 'NO', '0'),
@@ -411,14 +440,14 @@ const customerImportRowSchema = Joi.object({
   notes: Joi.string().max(1000).allow('', null),
 });
 
-router.post('/imports/customers',
+router.post(
+  '/imports/customers',
   requireRole(['business_owner', 'staff_manager']),
   validate({ body: importRowsBody }),
   asyncHandler(async (req, res) => {
-    const result = await runImport(req.body.rows, customerImportRowSchema, (row) =>
-      migrationSvc.importCustomerRow(req.params.businessId, row));
+    const result = await runImport(req.body.rows, customerImportRowSchema, (row) => migrationSvc.importCustomerRow(req.params.businessId, row));
     res.json(result);
-  })
+  }),
 );
 
 // Date is a plain YYYY-MM-DD string (not Joi.date()) so there's no timezone
@@ -434,17 +463,18 @@ const salesHistoryRowSchema = Joi.object({
 
 // Cap 1100 rows (3 years of daily aggregates) instead of the usual 1000.
 const salesHistoryBody = Joi.object({
-  rows: Joi.array().items(Joi.object().unknown(true)).min(1).max(1100).required(),
+  rows: Joi.array().items(Joi.object().unknown(true)).min(1).max(1100)
+    .required(),
 });
 
-router.post('/imports/sales-history',
+router.post(
+  '/imports/sales-history',
   requireRole(['business_owner', 'staff_manager']),
   validate({ body: salesHistoryBody }),
   asyncHandler(async (req, res) => {
-    const result = await runImport(req.body.rows, salesHistoryRowSchema, (row) =>
-      migrationSvc.importSalesRow(req.params.businessId, row));
+    const result = await runImport(req.body.rows, salesHistoryRowSchema, (row) => migrationSvc.importSalesRow(req.params.businessId, row));
     res.json(result);
-  })
+  }),
 );
 
 module.exports = router;

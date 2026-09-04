@@ -15,22 +15,22 @@ const incomeStmt = require('./incomeStatementService');
 
 // ── Chart of accounts seed ───────────────────────────────────────────────
 const DEFAULT_COA = [
-  { code: '1100', name: 'Cash on hand',          kind: 'asset' },
-  { code: '1110', name: 'Bank',                  kind: 'asset' },
-  { code: '1200', name: 'Accounts receivable',   kind: 'asset' },
-  { code: '1400', name: 'Inventory',             kind: 'asset' },
-  { code: '2100', name: 'Accounts payable',      kind: 'liability' },
-  { code: '2200', name: 'GST payable',           kind: 'liability' },
-  { code: '3000', name: 'Owner equity',          kind: 'equity' },
-  { code: '4000', name: 'Sales revenue',         kind: 'income' },
-  { code: '4100', name: 'Service charge',        kind: 'income' },
-  { code: '5000', name: 'COGS',                  kind: 'expense' },
-  { code: '5100', name: 'Rent',                  kind: 'expense' },
-  { code: '5200', name: 'Utilities',             kind: 'expense' },
-  { code: '5300', name: 'Salaries',              kind: 'expense' },
-  { code: '5400', name: 'Marketing',             kind: 'expense' },
-  { code: '5900', name: 'Wastage',               kind: 'expense' },
-  { code: '5999', name: 'Other expense',         kind: 'expense' },
+  { code: '1100', name: 'Cash on hand', kind: 'asset' },
+  { code: '1110', name: 'Bank', kind: 'asset' },
+  { code: '1200', name: 'Accounts receivable', kind: 'asset' },
+  { code: '1400', name: 'Inventory', kind: 'asset' },
+  { code: '2100', name: 'Accounts payable', kind: 'liability' },
+  { code: '2200', name: 'GST payable', kind: 'liability' },
+  { code: '3000', name: 'Owner equity', kind: 'equity' },
+  { code: '4000', name: 'Sales revenue', kind: 'income' },
+  { code: '4100', name: 'Service charge', kind: 'income' },
+  { code: '5000', name: 'COGS', kind: 'expense' },
+  { code: '5100', name: 'Rent', kind: 'expense' },
+  { code: '5200', name: 'Utilities', kind: 'expense' },
+  { code: '5300', name: 'Salaries', kind: 'expense' },
+  { code: '5400', name: 'Marketing', kind: 'expense' },
+  { code: '5900', name: 'Wastage', kind: 'expense' },
+  { code: '5999', name: 'Other expense', kind: 'expense' },
 ];
 
 async function seedCoa(businessId) {
@@ -38,7 +38,7 @@ async function seedCoa(businessId) {
     await query(
       `INSERT INTO accounts (business_id, code, name, kind)
        VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-      [businessId, a.code, a.name, a.kind]
+      [businessId, a.code, a.name, a.kind],
     );
   }
 }
@@ -53,7 +53,7 @@ async function journalizeOrder(businessId, orderId) {
     const o = await client.query(
       `SELECT subtotal, tax, service_charge_paise, discount, total, payment_method
          FROM orders WHERE business_id = $1 AND id = $2`,
-      [businessId, orderId]
+      [businessId, orderId],
     );
     if (o.rowCount === 0) return;
     const order = o.rows[0];
@@ -65,7 +65,7 @@ async function journalizeOrder(businessId, orderId) {
     const je = await client.query(
       `INSERT INTO journal_entries (business_id, entry_date, ref_kind, ref_id, description)
        VALUES ($1, CURRENT_DATE, 'order', $2, $3) RETURNING id`,
-      [businessId, orderId, `Order collected`]
+      [businessId, orderId, 'Order collected'],
     );
     const jeId = je.rows[0].id;
 
@@ -77,7 +77,7 @@ async function journalizeOrder(businessId, orderId) {
        ($1, '4000', 0, $4),
        ($1, '4100', 0, $5),
        ($1, '2200', 0, $6)`,
-      [jeId, cashAccount, totalPaise, salesPaise, servicePaise, taxPaise]
+      [jeId, cashAccount, totalPaise, salesPaise, servicePaise, taxPaise],
     );
   });
 }
@@ -96,9 +96,10 @@ async function trialBalance(businessId, asOfDate) {
         AND (je.entry_date IS NULL OR je.entry_date <= $2::date)
       GROUP BY a.code, a.name, a.kind
       ORDER BY a.code`,
-    [businessId, asOfDate || new Date().toISOString().slice(0, 10)]
+    [businessId, asOfDate || new Date().toISOString().slice(0, 10)],
   );
-  let totalDebit = 0, totalCredit = 0;
+  let totalDebit = 0; let
+    totalCredit = 0;
   const lines = r.rows.map((x) => {
     const balance = x.kind === 'asset' || x.kind === 'expense'
       ? Number(x.debit) - Number(x.credit)
@@ -151,7 +152,7 @@ async function profitAndLoss(businessId, { startDate, endDate }) {
           AND status IN ('pending', 'processed')
           AND (created_at AT TIME ZONE 'Asia/Kolkata')::date >= $2::date
           AND (created_at AT TIME ZONE 'Asia/Kolkata')::date <= $3::date`,
-      [businessId, startDate, endDate]
+      [businessId, startDate, endDate],
     );
     refundsInr = Number(r.rows[0]?.p || 0) / 100;
   } catch (e) {
@@ -200,7 +201,8 @@ async function profitAndLoss(businessId, { startDate, endDate }) {
   const totalIncome = income.reduce((s, x) => s + x.amount_inr, 0);
   const totalExpense = expense.reduce((s, x) => s + x.amount_inr, 0);
   return {
-    income, expense,
+    income,
+    expense,
     totalIncomeInr: totalIncome,
     totalExpenseInr: totalExpense,
     netProfitInr: totalIncome - totalExpense,
@@ -224,6 +226,10 @@ async function balanceSheet(businessId, asOfDate) {
 }
 
 module.exports = {
-  seedCoa, journalizeOrder, trialBalance, profitAndLoss, balanceSheet,
+  seedCoa,
+  journalizeOrder,
+  trialBalance,
+  profitAndLoss,
+  balanceSheet,
   DEFAULT_COA,
 };

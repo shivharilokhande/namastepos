@@ -16,7 +16,7 @@ process.env.DB_POOL_MAX = process.env.DB_POOL_MAX || '2';
 
 const fs = require('fs');
 const path = require('path');
-const { pool, query } = require('../src/config/db');
+const { query } = require('../src/config/db');
 const { issueAccessToken } = require('../src/utils/jwt');
 
 // Stub Google ID token verification → return a fake profile.
@@ -70,7 +70,7 @@ async function makeBusiness({
   const u = await query(
     `INSERT INTO users (email, phone, display_name, google_sub)
      VALUES ($1, $2, $3, $4) RETURNING *`,
-    [userEmail, null, 'Owner', `sub-${uniq}`]
+    [userEmail, null, 'Owner', `sub-${uniq}`],
   );
   const user = u.rows[0];
 
@@ -81,14 +81,14 @@ async function makeBusiness({
     const b = await query(
       `INSERT INTO businesses (google_sub, email, name, onboarded, owner_user_id)
        VALUES ($1, $2, $3, TRUE, $4) RETURNING *`,
-      [`sub-${uniq}`, userEmail, name, user.id]
+      [`sub-${uniq}`, userEmail, name, user.id],
     );
     business = b.rows[0];
   } catch (_) {
     const b = await query(
       `INSERT INTO businesses (google_sub, email, name, onboarded)
        VALUES ($1, $2, $3, TRUE) RETURNING *`,
-      [`sub-${uniq}`, userEmail, name]
+      [`sub-${uniq}`, userEmail, name],
     );
     business = b.rows[0];
   }
@@ -99,7 +99,7 @@ async function makeBusiness({
     await query(
       `INSERT INTO business_users (business_id, user_id, role, is_active)
        VALUES ($1, $2, 'business_owner', TRUE)`,
-      [business.id, user.id]
+      [business.id, user.id],
     );
   } catch (_) {
     // Fall back without is_active
@@ -107,7 +107,7 @@ async function makeBusiness({
       await query(
         `INSERT INTO business_users (business_id, user_id, role)
          VALUES ($1, $2, 'business_owner')`,
-        [business.id, user.id]
+        [business.id, user.id],
       );
     } catch (_2) { /* schema mismatch — skip; some tests may still 403 */ }
   }

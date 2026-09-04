@@ -4,6 +4,7 @@
 // synthetic payloads — no Sentry SDK or network calls needed.
 
 const sentry = require('../../src/config/sentry');
+
 const { __scrubString: scrubString, __scrubTree: scrubTree, __beforeSend: beforeSend } = sentry;
 
 describe('PII scrubber — strings', () => {
@@ -69,7 +70,7 @@ describe('PII scrubber — trees', () => {
   });
   test('does not blow up on cycles (depth-limited)', () => {
     const a = {};
-    a.self = a;                 // cyclic
+    a.self = a; // cyclic
     expect(() => scrubTree(a)).not.toThrow();
   });
 });

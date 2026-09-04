@@ -1,16 +1,93 @@
 {
-  "env": { "node": true, "es2022": true, "jest": true },
-  "extends": ["airbnb-base", "plugin:jest/recommended"],
-  "plugins": ["jest"],
-  "parserOptions": { "ecmaVersion": 2022, "sourceType": "script" },
+  "env": {
+    "node": true,
+    "es2022": true,
+    "jest": true
+  },
+  "extends": [
+    "airbnb-base",
+    "plugin:jest/recommended"
+  ],
+  "plugins": [
+    "jest"
+  ],
+  "parserOptions": {
+    "ecmaVersion": 2022,
+    "sourceType": "script"
+  },
   "rules": {
     "no-console": "warn",
     "no-underscore-dangle": "off",
     "no-await-in-loop": "off",
     "no-restricted-syntax": "off",
     "consistent-return": "off",
-    "max-len": ["warn", { "code": 120, "ignoreStrings": true, "ignoreUrls": true }],
+    "max-len": [
+      "warn",
+      {
+        "code": 120,
+        "ignoreStrings": true,
+        "ignoreUrls": true
+      }
+    ],
     "object-curly-newline": "off",
-    "import/no-extraneous-dependencies": ["error", { "devDependencies": ["**/tests/**", "scripts/**"] }]
+    "import/no-extraneous-dependencies": [
+      "error",
+      {
+        "devDependencies": [
+          "**/tests/**",
+          "scripts/**"
+        ]
+      }
+    ],
+    "global-require": "off",
+    "no-plusplus": "off",
+    "no-continue": "off",
+    "camelcase": "warn",
+    "no-use-before-define": [
+      "error",
+      {
+        "functions": false,
+        "classes": true,
+        "variables": true
+      }
+    ],
+    "no-bitwise": "off",
+    "no-nested-ternary": "off",
+    "no-empty": [
+      "error",
+      {
+        "allowEmptyCatch": true
+      }
+    ],
+    "no-promise-executor-return": "off",
+    "no-param-reassign": "warn",
+    "no-unused-vars": [
+      "error",
+      {
+        "argsIgnorePattern": "^_",
+        "varsIgnorePattern": "^_"
+      }
+    ],
+    "no-shadow": "warn",
+    "max-classes-per-file": "off",
+    "prefer-destructuring": "off",
+    "arrow-body-style": "off",
+    "implicit-arrow-linebreak": "off",
+    "function-paren-newline": "off",
+    "operator-linebreak": "off",
+    "quote-props": "off",
+    "no-loop-func": "off",
+    "no-mixed-operators": "warn",
+    "jest/no-conditional-expect": "warn",
+    "jest/no-standalone-expect": "warn",
+    "jest/expect-expect": "warn",
+    "default-param-last": "warn",
+    "radix": "warn"
+  },
+  "settings": {
+    "import/core-modules": [
+      "ioredis",
+      "axios"
+    ]
   }
 }

@@ -6,6 +6,7 @@
 //   - extend trial / set plan / suspend / restore
 //   - drill into menu, orders, staff, invoices, payments, notes
 
+const crypto = require('crypto');
 const { query, withTransaction } = require('../config/db');
 const env = require('../config/env');
 const { NotFound, BadRequest, Conflict } = require('../utils/errors');
@@ -20,14 +21,14 @@ async function createCustomer({
 
   return withTransaction(async (client) => {
     // Block if a business with this email already exists
-    const dup = await client.query(`SELECT id FROM businesses WHERE email = $1`, [email]);
+    const dup = await client.query('SELECT id FROM businesses WHERE email = $1', [email]);
     if (dup.rowCount > 0) throw new Conflict('Customer with this email already exists');
 
     // 1) Create the user (no google_sub yet — owner will link on first Google login)
     const userIns = await client.query(
       `INSERT INTO users (email, display_name, phone)
        VALUES ($1, $2, $3) RETURNING *`,
-      [email, ownerName || name, phone]
+      [email, ownerName || name, phone],
     );
     const user = userIns.rows[0];
 
@@ -36,7 +37,7 @@ async function createCustomer({
       `INSERT INTO businesses (google_sub, email, display_name, name, phone, city, category, onboarded)
        VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
        RETURNING *`,
-      [`pending-${user.id}`, email, ownerName, name, phone, city, category]
+      [`pending-${user.id}`, email, ownerName, name, phone, city, category],
     );
     const business = bizIns.rows[0];
 
@@ -44,7 +45,7 @@ async function createCustomer({
     await client.query(
       `INSERT INTO business_users (business_id, user_id, role)
        VALUES ($1, $2, 'business_owner')`,
-      [business.id, user.id]
+      [business.id, user.id],
     );
 
     // 4) Subscription
@@ -52,8 +53,8 @@ async function createCustomer({
     // so a brand-new customer may only be put on a shared/public plan — never
     // on another tenant's bespoke one.
     const plan = await client.query(
-      `SELECT id FROM plans WHERE tier = $1 AND business_id IS NULL`,
-      [planTier]
+      'SELECT id FROM plans WHERE tier = $1 AND business_id IS NULL',
+      [planTier],
     );
     if (plan.rowCount === 0) throw new NotFound(`Plan ${planTier} not found`);
     const status = planTier === 'free' ? 'trialing' : 'active';
@@ -63,7 +64,7 @@ async function createCustomer({
        VALUES ($1, $2, $3::subscription_status,
                NOW() + make_interval(days => $4),
                NOW() + make_interval(days => $4))`,
-      [business.id, plan.rows[0].id, status, trialDays]
+      [business.id, plan.rows[0].id, status, trialDays],
     );
 
     return business;
@@ -91,13 +92,13 @@ async function updateCustomer(businessId, patch) {
   // Redacted on the way out too (see adminService.redactBusinessRow) —
   // otherwise a no-op PATCH is a read of the fields we just removed.
   if (sets.length === 0) {
-    const r = await query(`SELECT * FROM businesses WHERE id = $1`, [businessId]);
+    const r = await query('SELECT * FROM businesses WHERE id = $1', [businessId]);
     return require('./adminService').redactBusinessRow(r.rows[0]);
   }
   values.push(businessId);
   const r = await query(
     `UPDATE businesses SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Customer not found');
   return require('./adminService').redactBusinessRow(r.rows[0]);
@@ -113,13 +114,13 @@ async function extendTrial(businessId, additionalDays) {
             status = 'trialing'::subscription_status
       WHERE business_id = $2
       RETURNING *`,
-    [additionalDays, businessId]
+    [additionalDays, businessId],
   );
   if (r.rowCount === 0) throw new NotFound('No subscription');
   return r.rows[0];
 }
 
-async function setPlanManually(businessId, tier, { reason = 'admin-manual', billingPeriod } = {}) {
+async function setPlanManually(businessId, tier, { billingPeriod } = {}) {
   // Scope custom plans to their owner: a `custom-xxxxxxxx` tier belongs to one
   // tenant (plans.business_id, migration 074) and must never be attachable to
   // a different business — that would hand them another customer's bespoke
@@ -127,7 +128,7 @@ async function setPlanManually(businessId, tier, { reason = 'admin-manual', bill
   const plan = await query(
     `SELECT * FROM plans
       WHERE tier = $1 AND (business_id IS NULL OR business_id = $2)`,
-    [tier, businessId]
+    [tier, businessId],
   );
   if (plan.rowCount === 0) throw new NotFound('Plan not found');
   // FF-402c — persist the cadence choice too so renewal + Razorpay
@@ -161,7 +162,7 @@ async function setPlanManually(businessId, tier, { reason = 'admin-manual', bill
       RETURNING *`,
     setBillingPeriod
       ? [plan.rows[0].id, tier, businessId, billingPeriod]
-      : [plan.rows[0].id, tier, businessId]
+      : [plan.rows[0].id, tier, businessId],
   );
   if (r.rowCount === 0) throw new NotFound('No subscription');
   // Push 4: Invalidate the in-process tier cache so the next /auth/me or
@@ -231,31 +232,30 @@ async function drilldown(businessId) {
     `SELECT b.*, ${adminLegacy.OUTLET_SELECT}
        FROM businesses b ${adminLegacy.OUTLET_JOIN}
       WHERE b.id = $1`,
-    [businessId]
+    [businessId],
   );
   if (biz.rowCount === 0) throw new NotFound('Customer not found');
 
-  const [sub, staff, menu, orderAgg, revByMonth, invoices, payments, notes, siblings] =
-    await Promise.all([
-      query(`SELECT s.*, p.tier, p.name AS plan_name, p.price_inr_paise
+  const [sub, staff, menu, orderAgg, revByMonth, invoices, payments, notes, siblings] = await Promise.all([
+    query(`SELECT s.*, p.tier, p.name AS plan_name, p.price_inr_paise
                FROM subscriptions s JOIN plans p ON p.id = s.plan_id
               WHERE s.business_id = $1`, [businessId]),
-      query(`SELECT bu.*, u.email, u.display_name
+    query(`SELECT bu.*, u.email, u.display_name
                FROM business_users bu JOIN users u ON u.id = bu.user_id
               WHERE bu.business_id = $1 AND bu.is_active = TRUE`, [businessId]),
-      query(`SELECT id, name, category, price, stock, is_active
+    query(`SELECT id, name, category, price, stock, is_active
                FROM menu_items WHERE business_id = $1 ORDER BY category, name`, [businessId]),
-      // AGGREGATES ONLY — no ids, no order numbers, no diner columns. Enough
-      // to answer "are they actually using it / how big are they / when did
-      // they last transact", which is all support and billing need.
-      query(`SELECT (COUNT(*) FILTER (WHERE status <> 'cancelled'))::int AS order_count,
+    // AGGREGATES ONLY — no ids, no order numbers, no diner columns. Enough
+    // to answer "are they actually using it / how big are they / when did
+    // they last transact", which is all support and billing need.
+    query(`SELECT (COUNT(*) FILTER (WHERE status <> 'cancelled'))::int AS order_count,
                     (COUNT(*) FILTER (WHERE status = 'cancelled'))::int  AS cancelled_count,
                     (COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled'), 0))::float
                                                                         AS gross_volume,
                     MAX(created_at) FILTER (WHERE status <> 'cancelled') AS last_order_at,
                     MIN(created_at) FILTER (WHERE status <> 'cancelled') AS first_order_at
                FROM orders WHERE business_id = $1`, [businessId]),
-      query(`SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS month,
+    query(`SELECT to_char(date_trunc('month', created_at), 'YYYY-MM') AS month,
                     COUNT(*)::int                    AS orders,
                     COALESCE(SUM(total), 0)::float   AS revenue
                FROM orders
@@ -263,22 +263,22 @@ async function drilldown(businessId) {
                 AND status <> 'cancelled'
                 AND created_at >= date_trunc('month', NOW()) - INTERVAL '11 months'
               GROUP BY 1 ORDER BY 1 ASC`, [businessId]),
-      // OUR subscription invoices to the tenant — deliberately kept in full.
-      query(`SELECT * FROM invoices WHERE business_id = $1
+    // OUR subscription invoices to the tenant — deliberately kept in full.
+    query(`SELECT * FROM invoices WHERE business_id = $1
               ORDER BY created_at DESC LIMIT 50`, [businessId]),
-      // OUR subscription charges. Explicit column list: `SELECT *` also
-      // returned `raw_payload`, the whole Razorpay object (payer contact,
-      // card metadata). The UI never used it.
-      query(`SELECT id, invoice_id, amount_paise, currency, method,
+    // OUR subscription charges. Explicit column list: `SELECT *` also
+    // returned `raw_payload`, the whole Razorpay object (payer contact,
+    // card metadata). The UI never used it.
+    query(`SELECT id, invoice_id, amount_paise, currency, method,
                     razorpay_payment_id, status, failure_reason, created_at
                FROM payments WHERE business_id = $1
               ORDER BY created_at DESC LIMIT 50`, [businessId]),
-      query(`SELECT n.*, au.email AS admin_email
+    query(`SELECT n.*, au.email AS admin_email
                FROM support_notes n JOIN admin_users au ON au.id = n.admin_id
               WHERE n.business_id = $1
               ORDER BY n.pinned DESC, n.created_at DESC`, [businessId]),
-      adminLegacy.outletSiblings(businessId),
-    ]);
+    adminLegacy.outletSiblings(businessId),
+  ]);
 
   const agg = orderAgg.rows[0] || {};
   const orderCount = agg.order_count || 0;
@@ -293,8 +293,11 @@ async function drilldown(businessId) {
     },
     subscription: sub.rows[0] || null,
     staff: staff.rows.map((s) => ({
-      userId: s.user_id, email: s.email, displayName: s.display_name,
-      role: s.role, joinedAt: s.joined_at,
+      userId: s.user_id,
+      email: s.email,
+      displayName: s.display_name,
+      role: s.role,
+      joinedAt: s.joined_at,
     })),
     menu: menu.rows,
     // REPLACES the removed `orders` array. Back-compat note: `orders` is gone
@@ -314,8 +317,11 @@ async function drilldown(businessId) {
     invoices: invoices.rows,
     payments: payments.rows,
     notes: notes.rows.map((n) => ({
-      id: n.id, body: n.body, pinned: n.pinned,
-      adminEmail: n.admin_email, createdAt: n.created_at,
+      id: n.id,
+      body: n.body,
+      pinned: n.pinned,
+      adminEmail: n.admin_email,
+      createdAt: n.created_at,
     })),
   };
 }
@@ -337,7 +343,8 @@ async function drilldown(businessId) {
 function maskName(name) {
   if (!name) return null;
   const initials = String(name).trim().split(/\s+/)
-    .filter(Boolean).map((w) => w[0].toUpperCase());
+    .filter(Boolean)
+    .map((w) => w[0].toUpperCase());
   return initials.length ? `${initials.join('.')}.` : null;
 }
 
@@ -359,7 +366,7 @@ async function singleOrderForSupport(businessId, orderId) {
             payment_method, cancel_reason, customer_name, customer_phone,
             created_at, updated_at
        FROM orders WHERE id = $1 AND business_id = $2 LIMIT 1`,
-    [orderId, businessId]
+    [orderId, businessId],
   );
   if (r.rowCount === 0) throw new NotFound('Order not found for this customer');
   const o = r.rows[0];
@@ -367,7 +374,7 @@ async function singleOrderForSupport(businessId, orderId) {
   const items = await query(
     `SELECT name, qty, price, note FROM order_items WHERE order_id = $1
       ORDER BY name ASC`,
-    [orderId]
+    [orderId],
   );
 
   return {
@@ -406,7 +413,7 @@ async function addNote({ businessId, adminId, body, pinned = false }) {
   const r = await query(
     `INSERT INTO support_notes (business_id, admin_id, body, pinned)
      VALUES ($1, $2, $3, $4) RETURNING *`,
-    [businessId, adminId, body, pinned]
+    [businessId, adminId, body, pinned],
   );
   return r.rows[0];
 }
@@ -415,8 +422,8 @@ async function addNote({ businessId, adminId, body, pinned = false }) {
 // permission could DELETE any note across tenants by guessing UUIDs.
 async function deleteNote(businessId, noteId) {
   const r = await query(
-    `DELETE FROM support_notes WHERE id = $1 AND business_id = $2 RETURNING id`,
-    [noteId, businessId]
+    'DELETE FROM support_notes WHERE id = $1 AND business_id = $2 RETURNING id',
+    [noteId, businessId],
   );
   if (r.rowCount === 0) throw new NotFound('Note not found for this customer');
 }
@@ -430,12 +437,12 @@ async function deleteNote(businessId, noteId) {
 // paths should filter on `deleted_at IS NULL`.
 async function deleteCustomer(businessId) {
   await query(
-    `UPDATE businesses SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`,
-    [businessId]
+    'UPDATE businesses SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL',
+    [businessId],
   );
   await query(
-    `UPDATE subscriptions SET status = 'cancelled' WHERE business_id = $1`,
-    [businessId]
+    'UPDATE subscriptions SET status = \'cancelled\' WHERE business_id = $1',
+    [businessId],
   );
 }
 
@@ -445,8 +452,6 @@ async function deleteCustomer(businessId) {
 // previously had no endpoint at all. They are deliberately thin wrappers
 // around existing, already-hardened services (subscriptionService,
 // complianceService, onboardingEmailService) rather than reimplementations.
-
-const crypto = require('crypto');
 
 /**
  * Cancel a subscription.
@@ -458,7 +463,7 @@ const crypto = require('crypto');
  */
 async function cancelSubscription(businessId, { immediate = false, reason = null } = {}) {
   const sub = require('./subscriptionService');
-  const row = await sub.cancelAtPeriodEnd(businessId);   // also cancels at the gateway
+  const row = await sub.cancelAtPeriodEnd(businessId); // also cancels at the gateway
   if (!immediate) return row;
 
   const r = await query(
@@ -466,7 +471,7 @@ async function cancelSubscription(businessId, { immediate = false, reason = null
         SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
       WHERE business_id = $1
       RETURNING *`,
-    [businessId]
+    [businessId],
   );
   _activity(businessId, 'billing', 'Subscription cancelled immediately', reason);
   return r.rows[0];
@@ -486,9 +491,7 @@ async function changeOwnerEmail(businessId, newEmail) {
     throw new BadRequest('A valid email is required');
   }
   return withTransaction(async (client) => {
-    const b = await client.query(
-      `SELECT id, email FROM businesses WHERE id = $1 FOR UPDATE`, [businessId]
-    );
+    const b = await client.query('SELECT id, email FROM businesses WHERE id = $1 FOR UPDATE', [businessId]);
     if (b.rowCount === 0) throw new NotFound('Customer not found');
     const previous = b.rows[0].email;
 
@@ -501,29 +504,29 @@ async function changeOwnerEmail(businessId, newEmail) {
                                 AND is_active = TRUE LIMIT 1),
                             '00000000-0000-0000-0000-000000000000'::uuid)
        LIMIT 1`,
-      [email, businessId]
+      [email, businessId],
     );
     if (clash.rowCount > 0) throw new Conflict('That email is already in use');
 
     await client.query(
-      `UPDATE businesses SET email = $2, updated_at = NOW() WHERE id = $1`,
-      [businessId, email]
+      'UPDATE businesses SET email = $2, updated_at = NOW() WHERE id = $1',
+      [businessId, email],
     );
     await client.query(
       `UPDATE users SET email = $2, updated_at = NOW()
         WHERE id = (SELECT user_id FROM business_users
                      WHERE business_id = $1 AND role = 'business_owner'
                        AND is_active = TRUE LIMIT 1)`,
-      [businessId, email]
+      [businessId, email],
     );
     // The identity behind every live session just changed.
     await client.query(
       `UPDATE refresh_tokens SET revoked_at = NOW()
         WHERE business_id = $1 AND revoked_at IS NULL`,
-      [businessId]
+      [businessId],
     );
     _activity(businessId, 'account', 'Owner email changed', `${previous} → ${email}`);
-    const out = await client.query(`SELECT * FROM businesses WHERE id = $1`, [businessId]);
+    const out = await client.query('SELECT * FROM businesses WHERE id = $1', [businessId]);
     return out.rows[0];
   });
 }
@@ -547,16 +550,20 @@ async function resetOwnerCredentials(businessId) {
             pin_first_fail_at = NULL
       WHERE business_id = $1 AND role = 'business_owner'
       RETURNING user_id`,
-    [businessId]
+    [businessId],
   );
   if (r.rowCount === 0) throw new NotFound('No owner found for this customer');
   const revoked = await query(
     `UPDATE refresh_tokens SET revoked_at = NOW()
       WHERE business_id = $1 AND revoked_at IS NULL`,
-    [businessId]
+    [businessId],
   );
-  _activity(businessId, 'account', 'Owner MPIN reset by admin',
-    'Owner must sign in with Google again and set a new MPIN');
+  _activity(
+    businessId,
+    'account',
+    'Owner MPIN reset by admin',
+    'Owner must sign in with Google again and set a new MPIN',
+  );
   return { mpinCleared: true, sessionsRevoked: revoked.rowCount };
 }
 
@@ -577,7 +584,7 @@ async function resendWelcomeEmail(businessId) {
        JOIN businesses b ON b.id = bu.business_id
       WHERE bu.business_id = $1 AND bu.role = 'business_owner' AND bu.is_active = TRUE
       LIMIT 1`,
-    [businessId]
+    [businessId],
   );
   const owner = r.rows[0];
   if (!owner) throw new NotFound('No active owner found for this customer');
@@ -589,7 +596,9 @@ async function resendWelcomeEmail(businessId) {
   const logRow = await email.sendMail({
     template: `onboarding_d0_resend_${Date.now()}`,
     recipient: owner.email,
-    subject: tpl.subject, html: tpl.html, text: tpl.text,
+    subject: tpl.subject,
+    html: tpl.html,
+    text: tpl.text,
     businessId,
     // userId deliberately omitted: the (user_id, template) unique index is
     // the scheduler's idempotency guard, not ours.
@@ -613,7 +622,7 @@ async function setAccountFields(businessId, { accountOwnerEmail, tags, lifecycle
     const clean = Array.from(new Set(
       (Array.isArray(tags) ? tags : [])
         .map((t) => String(t).trim().toLowerCase())
-        .filter((t) => t.length > 0 && t.length <= 40)
+        .filter((t) => t.length > 0 && t.length <= 40),
     )).slice(0, 20);
     sets.push(`tags = $${idx++}::text[]`);
     values.push(clean);
@@ -628,7 +637,7 @@ async function setAccountFields(businessId, { accountOwnerEmail, tags, lifecycle
   const r = await query(
     `UPDATE businesses SET ${sets.join(', ')}, updated_at = NOW()
       WHERE id = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Customer not found');
   return r.rows[0];
@@ -646,22 +655,18 @@ async function setAccountFields(businessId, { accountOwnerEmail, tags, lifecycle
  *
  * Irreversible. The caller must pass an explicit confirmation string.
  */
-async function anonymiseCustomer(businessId, { reason, adminId = null, confirm } = {}) {
+async function anonymiseCustomer(businessId, { reason, confirm } = {}) {
   if (confirm !== 'ANONYMISE') {
     throw new BadRequest('Set confirm to "ANONYMISE" to run an irreversible DPDP erasure');
   }
   if (!reason || !String(reason).trim()) {
     throw new BadRequest('A reason is required (recorded on the DSR trail)');
   }
-  const b = await query(
-    `SELECT id, name, email, deleted_at FROM businesses WHERE id = $1`, [businessId]
-  );
+  const b = await query('SELECT id, name, email, deleted_at FROM businesses WHERE id = $1', [businessId]);
   if (b.rowCount === 0) throw new NotFound('Customer not found');
 
   // 1. Erase each attached user (identifiers → hashed tokens + DSR row).
-  const users = await query(
-    `SELECT DISTINCT user_id FROM business_users WHERE business_id = $1`, [businessId]
-  );
+  const users = await query('SELECT DISTINCT user_id FROM business_users WHERE business_id = $1', [businessId]);
   const compliance = require('./complianceService');
   const erased = [];
   const failed = [];
@@ -706,17 +711,17 @@ async function anonymiseCustomer(businessId, { reason, adminId = null, confirm }
             deleted_at   = COALESCE(deleted_at, NOW()),
             updated_at   = NOW()
       WHERE id = $1`,
-    [businessId, `erased+${anon}@erased.namastepos.invalid`, `erased-${anon}`]
+    [businessId, `erased+${anon}@erased.namastepos.invalid`, `erased-${anon}`],
   );
   await query(
     `UPDATE subscriptions SET status = 'cancelled', cancelled_at = COALESCE(cancelled_at, NOW())
       WHERE business_id = $1`,
-    [businessId]
+    [businessId],
   );
   await query(
     `UPDATE refresh_tokens SET revoked_at = NOW()
       WHERE business_id = $1 AND revoked_at IS NULL`,
-    [businessId]
+    [businessId],
   );
 
   return {
@@ -740,14 +745,25 @@ function _activity(businessId, kind, title, body) {
 }
 
 module.exports = {
-  createCustomer, updateCustomer,
-  extendTrial, setPlanManually,
-  drilldown, addNote, deleteNote, deleteCustomer,
+  createCustomer,
+  updateCustomer,
+  extendTrial,
+  setPlanManually,
+  drilldown,
+  addNote,
+  deleteNote,
+  deleteCustomer,
   // 2026-09-03 tenant-privacy: the ONLY admin path to a single tenant order.
   // Super-admin only + audit-logged at the controller. See the policy block
   // above singleOrderForSupport before wiring this anywhere else.
-  singleOrderForSupport, maskName, maskPhone,
+  singleOrderForSupport,
+  maskName,
+  maskPhone,
   // 2026-09-03 lifecycle actions
-  cancelSubscription, changeOwnerEmail, resetOwnerCredentials,
-  resendWelcomeEmail, setAccountFields, anonymiseCustomer,
+  cancelSubscription,
+  changeOwnerEmail,
+  resetOwnerCredentials,
+  resendWelcomeEmail,
+  setAccountFields,
+  anonymiseCustomer,
 };

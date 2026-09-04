@@ -50,8 +50,8 @@ function serializeTxn(t) {
 // ── Settings ────────────────────────────────────────────────────────────
 async function getSettings(businessId) {
   const r = await query(
-    `SELECT * FROM loyalty_settings WHERE business_id = $1 LIMIT 1`,
-    [businessId]
+    'SELECT * FROM loyalty_settings WHERE business_id = $1 LIMIT 1',
+    [businessId],
   );
   if (r.rowCount === 0) {
     // Auto-create defaults. is_active=TRUE (2026-08-22): the schema
@@ -61,7 +61,7 @@ async function getSettings(businessId) {
     const ins = await query(
       `INSERT INTO loyalty_settings (business_id, is_active)
        VALUES ($1, TRUE) RETURNING *`,
-      [businessId]
+      [businessId],
     );
     return serializeSettings(ins.rows[0]);
   }
@@ -70,9 +70,9 @@ async function getSettings(businessId) {
 
 async function updateSettings(businessId, patch) {
   const fields = ['is_active', 'earn_rate_paise', 'redemption_value_paise',
-                  'min_redemption_points', 'max_redemption_pct',
-                  'points_expire_months', 'welcome_bonus', 'birthday_bonus',
-                  'tier_silver_threshold', 'tier_gold_threshold'];
+    'min_redemption_points', 'max_redemption_pct',
+    'points_expire_months', 'welcome_bonus', 'birthday_bonus',
+    'tier_silver_threshold', 'tier_gold_threshold'];
   const sets = []; const values = []; let idx = 1;
   for (const f of fields) {
     if (patch[f] !== undefined) { sets.push(`${f} = $${idx++}`); values.push(patch[f]); }
@@ -84,7 +84,7 @@ async function updateSettings(businessId, patch) {
   const r = await query(
     `UPDATE loyalty_settings SET ${sets.join(', ')}
       WHERE business_id = $${idx} RETURNING *`,
-    values
+    values,
   );
   return serializeSettings(r.rows[0]);
 }
@@ -128,7 +128,7 @@ async function earn({ businessId, customerId, orderId, amountPaise, settings }) 
     const cust = await client.query(
       `SELECT points_balance FROM customers
         WHERE id = $1 AND business_id = $2 FOR UPDATE`,
-      [customerId, businessId]
+      [customerId, businessId],
     );
     if (cust.rowCount === 0) return 0;
     const newBalance = cust.rows[0].points_balance + points;
@@ -149,7 +149,7 @@ async function earn({ businessId, customerId, orderId, amountPaise, settings }) 
          WHERE kind = 'earn' AND order_id IS NOT NULL
          DO NOTHING
        RETURNING id`,
-      [businessId, customerId, points, newBalance, orderId]
+      [businessId, customerId, points, newBalance, orderId],
     );
     if (ledger.rowCount === 0) return points; // duplicate — already credited
 
@@ -164,7 +164,7 @@ async function earn({ businessId, customerId, orderId, amountPaise, settings }) 
                 ELSE 'bronze'
               END
         WHERE id = $3 AND business_id = $2`,
-      [points, businessId, customerId]
+      [points, businessId, customerId],
     );
     return points;
   });
@@ -183,8 +183,8 @@ async function redeem({ businessId, customerId, orderId, points, settings }) {
 
   return withTransaction(async (client) => {
     const c = await client.query(
-      `SELECT points_balance FROM customers WHERE id = $1 AND business_id = $2 FOR UPDATE`,
-      [customerId, businessId]
+      'SELECT points_balance FROM customers WHERE id = $1 AND business_id = $2 FOR UPDATE',
+      [customerId, businessId],
     );
     if (c.rowCount === 0) throw new NotFound('Customer not found');
     const bal = c.rows[0].points_balance;
@@ -195,23 +195,22 @@ async function redeem({ businessId, customerId, orderId, points, settings }) {
           SET points_balance    = points_balance - $1,
               lifetime_redeemed = lifetime_redeemed + $1
         WHERE id = $2 RETURNING points_balance`,
-      [points, customerId]
+      [points, customerId],
     );
 
     await client.query(
       `INSERT INTO loyalty_transactions
          (business_id, customer_id, kind, points, balance_after, order_id)
        VALUES ($1, $2, 'redeem', $3, $4, $5)`,
-      [businessId, customerId, -points, updated.rows[0].points_balance, orderId]
+      [businessId, customerId, -points, updated.rows[0].points_balance, orderId],
     );
 
-    const discountPaise = points * settings.redemption_value_paise || points * settings.redemptionValuePaise;
     return { points, discountPaise: points * settings.redemptionValuePaise };
   });
 }
 
 /** Manual credit/debit by owner (e.g., service recovery, complaint). */
-async function manualAdjust({ businessId, customerId, points, note, adminUserId }) {
+async function manualAdjust({ businessId, customerId, points, note }) {
   if (!points) throw new BadRequest('Points required');
   return withTransaction(async (client) => {
     const r = await client.query(
@@ -220,7 +219,7 @@ async function manualAdjust({ businessId, customerId, points, note, adminUserId 
               lifetime_points = lifetime_points + GREATEST($1, 0),
               lifetime_redeemed = lifetime_redeemed + GREATEST(-$1, 0)
         WHERE id = $2 AND business_id = $3 RETURNING points_balance`,
-      [points, customerId, businessId]
+      [points, customerId, businessId],
     );
     if (r.rowCount === 0) throw new NotFound('Customer not found');
     await client.query(
@@ -228,8 +227,8 @@ async function manualAdjust({ businessId, customerId, points, note, adminUserId 
          (business_id, customer_id, kind, points, balance_after, note)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [businessId, customerId,
-       points > 0 ? 'manual_credit' : 'manual_debit',
-       points, r.rows[0].points_balance, note || null]
+        points > 0 ? 'manual_credit' : 'manual_debit',
+        points, r.rows[0].points_balance, note || null],
     );
     return r.rows[0].points_balance;
   });
@@ -240,7 +239,7 @@ async function listTransactions(businessId, customerId, { limit = 50 } = {}) {
     `SELECT * FROM loyalty_transactions
       WHERE business_id = $1 AND customer_id = $2
       ORDER BY created_at DESC LIMIT $3`,
-    [businessId, customerId, limit]
+    [businessId, customerId, limit],
   );
   return r.rows.map(serializeTxn);
 }
@@ -253,20 +252,28 @@ async function awardWelcomeBonus({ businessId, customerId, settings }) {
     `UPDATE customers
         SET points_balance = points_balance + $1, lifetime_points = lifetime_points + $1
       WHERE id = $2 AND business_id = $3 RETURNING points_balance`,
-    [points, customerId, businessId]
+    [points, customerId, businessId],
   );
   await query(
     `INSERT INTO loyalty_transactions
        (business_id, customer_id, kind, points, balance_after, note)
      VALUES ($1, $2, 'welcome', $3, $4, 'Welcome bonus')`,
-    [businessId, customerId, points, updated.rows[0]?.points_balance || points]
+    [businessId, customerId, points, updated.rows[0]?.points_balance || points],
   );
   return points;
 }
 
 module.exports = {
-  getSettings, updateSettings,
-  pointsEarnedFor, maxRedeemablePoints, inrToPointsRedemption,
-  earn, redeem, manualAdjust, listTransactions, awardWelcomeBonus,
-  serializeSettings, serializeTxn,
+  getSettings,
+  updateSettings,
+  pointsEarnedFor,
+  maxRedeemablePoints,
+  inrToPointsRedemption,
+  earn,
+  redeem,
+  manualAdjust,
+  listTransactions,
+  awardWelcomeBonus,
+  serializeSettings,
+  serializeTxn,
 };

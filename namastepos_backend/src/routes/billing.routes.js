@@ -24,18 +24,15 @@ router.use(requireAuth, requireBusinessOwnership);
 // past-due tenant and show the blocking screen. Gating it would strand staff
 // on a broken home screen instead of the correct "renew" message. It returns
 // tier + status only, no invoice or payment-instrument data.
-router.get  ('/',              c.current);
-router.post ('/change',        requireRole('business_owner'),
-             audit.tenantMiddlewareLog('billing', 'plan_change', () => ({ type: 'subscription' })),
-             ...c.changePlan);
-router.post ('/cancel',        requireRole('business_owner'),
-             audit.tenantMiddlewareLog('billing', 'plan_cancel', () => ({ type: 'subscription' })),
-             c.cancel);
-router.post ('/resume',        requireRole('business_owner'),
-             audit.tenantMiddlewareLog('billing', 'plan_resume', () => ({ type: 'subscription' })),
-             c.resume);
-router.get  ('/invoices',      requireRole(['business_owner', 'staff_manager']), c.invoices);
-router.get  ('/invoices/:invoiceId/pdf',
-             requireRole(['business_owner', 'staff_manager']), c.invoicePdf);
+router.get('/', c.current);
+router.post('/change', requireRole('business_owner'), audit.tenantMiddlewareLog('billing', 'plan_change', () => ({ type: 'subscription' })), ...c.changePlan);
+router.post('/cancel', requireRole('business_owner'), audit.tenantMiddlewareLog('billing', 'plan_cancel', () => ({ type: 'subscription' })), c.cancel);
+router.post('/resume', requireRole('business_owner'), audit.tenantMiddlewareLog('billing', 'plan_resume', () => ({ type: 'subscription' })), c.resume);
+router.get('/invoices', requireRole(['business_owner', 'staff_manager']), c.invoices);
+router.get(
+  '/invoices/:invoiceId/pdf',
+  requireRole(['business_owner', 'staff_manager']),
+  c.invoicePdf,
+);
 
 module.exports = router;

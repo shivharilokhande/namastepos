@@ -33,19 +33,18 @@ async function scheduleTick() {
         AND o.collected_at BETWEEN NOW() - INTERVAL '4 hours'
                               AND NOW() - INTERVAL '1 hour'
       ORDER BY o.collected_at DESC
-      LIMIT 100`
+      LIMIT 100`,
   );
   for (const row of r.rows) {
     try {
-      const body =
-        `Hi from ${row.business_name}! How was your visit? ` +
-        `Reply with a number 0-10 (10 = loved it, 0 = never again). ` +
-        `Order #${row.order_no}.`;
+      const body = `Hi from ${row.business_name}! How was your visit? `
+        + 'Reply with a number 0-10 (10 = loved it, 0 = never again). '
+        + `Order #${row.order_no}.`;
       await wa.sendRaw({ to: row.customer_phone, body });
       await query(
         `INSERT INTO nps_pings (order_id, business_id) VALUES ($1, $2)
          ON CONFLICT (order_id) DO NOTHING`,
-        [row.id, row.business_id]
+        [row.id, row.business_id],
       );
     } catch (e) {
       logger.warn(`[nps] ping failed for order ${row.id}: ${e.message}`);
@@ -76,7 +75,7 @@ async function handleReply({ businessId, phone, body }) {
         AND r.id IS NULL
         AND p.sent_at > NOW() - INTERVAL '48 hours'
       ORDER BY p.sent_at DESC LIMIT 1`,
-    [businessId, phone]
+    [businessId, phone],
   );
   if (orderQ.rowCount === 0) return null;
   const order = orderQ.rows[0];
@@ -85,7 +84,7 @@ async function handleReply({ businessId, phone, body }) {
     `INSERT INTO nps_responses (business_id, order_id, customer_phone, score)
      VALUES ($1, $2, $3, $4)
      ON CONFLICT (order_id) DO NOTHING`,
-    [businessId, order.id, phone, score]
+    [businessId, order.id, phone, score],
   );
 
   // Hardcode-audit fix (2026-08-24): the old reply carried a broken,
@@ -96,15 +95,15 @@ async function handleReply({ businessId, phone, body }) {
     const placeQ = await query(
       `SELECT value FROM platform_settings
         WHERE business_id = $1 AND key = 'google_place_id' LIMIT 1`,
-      [businessId]
+      [businessId],
     );
     if (placeQ.rowCount > 0 && placeQ.rows[0].value) {
       return `Thank you — that means a lot! Would you leave us a Google review? https://search.google.com/local/writereview?placeid=${placeQ.rows[0].value}`;
     }
-    return `Thank you — that means a lot!`;
+    return 'Thank you — that means a lot!';
   }
-  if (score >= 7) return `Thanks for the feedback! We'll keep improving.`;
-  return `Sorry we didn't hit the mark. What could we do better? Reply here — the owner reads every message.`;
+  if (score >= 7) return 'Thanks for the feedback! We\'ll keep improving.';
+  return 'Sorry we didn\'t hit the mark. What could we do better? Reply here — the owner reads every message.';
 }
 
 /**
@@ -118,11 +117,12 @@ async function summary(businessId, days = 30) {
         AND responded_at > NOW() - ($2::text || ' days')::interval
       GROUP BY score
       ORDER BY score`,
-    [businessId, String(days)]
+    [businessId, String(days)],
   );
-  let promoters = 0, passives = 0, detractors = 0, total = 0;
+  let promoters = 0; let passives = 0; let detractors = 0; let
+    total = 0;
   for (const row of r.rows) {
-    const n = row.n;
+    const { n } = row;
     total += n;
     if (row.score >= 9) promoters += n;
     else if (row.score >= 7) passives += n;
@@ -132,7 +132,12 @@ async function summary(businessId, days = 30) {
     ? Math.round(((promoters - detractors) / total) * 100)
     : null;
   return {
-    days, total, promoters, passives, detractors, nps,
+    days,
+    total,
+    promoters,
+    passives,
+    detractors,
+    nps,
     breakdown: r.rows,
   };
 }

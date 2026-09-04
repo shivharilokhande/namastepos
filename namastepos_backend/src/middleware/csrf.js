@@ -28,7 +28,7 @@ function issue(req, res) {
   if (existing) return existing;
   const token = generate();
   res.cookie(COOKIE_NAME, token, {
-    httpOnly: false,    // intentionally readable by JS — double-submit pattern
+    httpOnly: false, // intentionally readable by JS — double-submit pattern
     sameSite: 'strict',
     secure: process.env.NODE_ENV === 'production',
     maxAge: 60 * 60 * 1000,

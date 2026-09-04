@@ -30,7 +30,8 @@ function chargedPayload({ subId, planId, payId, amount = 29900 }) {
   return {
     event: 'subscription.charged',
     payload: {
-      subscription: { entity: { id: subId, plan_id: planId,
+      subscription: { entity: { id: subId,
+        plan_id: planId,
         current_end: Math.floor(Date.now() / 1000) + 365 * 86400 } },
       payment: { entity: { id: payId, amount, method: 'upi' } },
     },
@@ -40,24 +41,22 @@ function chargedPayload({ subId, planId, payId, amount = 29900 }) {
 describe('NP-101: yearly plan id resolves to the paid tier', () => {
   it('flips plan_id to the paid plan when the charge is against razorpay_plan_id_yearly', async () => {
     const biz = await makeBusiness({ email: `yrly-${Date.now()}` });
-    await query(`UPDATE plans SET razorpay_plan_id_yearly = 'plan_YRLY_TEST' WHERE tier = 'pro'`);
-    const proPlan = (await query(`SELECT id FROM plans WHERE tier = 'pro'`)).rows[0];
-    const freePlan = (await query(`SELECT id FROM plans WHERE tier = 'free'`)).rows[0];
+    await query('UPDATE plans SET razorpay_plan_id_yearly = \'plan_YRLY_TEST\' WHERE tier = \'pro\'');
+    const proPlan = (await query('SELECT id FROM plans WHERE tier = \'pro\'')).rows[0];
+    const freePlan = (await query('SELECT id FROM plans WHERE tier = \'free\'')).rows[0];
     await query(
       `INSERT INTO subscriptions
          (business_id, plan_id, status, razorpay_subscription_id)
        VALUES ($1, $2, 'active', 'sub_YRLY_TEST')`,
-      [biz.id, freePlan.id]
+      [biz.id, freePlan.id],
     );
 
     await razorpayService.handleWebhook(
       chargedPayload({ subId: 'sub_YRLY_TEST', planId: 'plan_YRLY_TEST', payId: `pay-yrly-${Date.now()}` }),
-      `evt_yrly_${Date.now()}`
+      `evt_yrly_${Date.now()}`,
     );
 
-    const sub = (await query(
-      `SELECT plan_id, status FROM subscriptions WHERE business_id = $1`, [biz.id]
-    )).rows[0];
+    const sub = (await query('SELECT plan_id, status FROM subscriptions WHERE business_id = $1', [biz.id])).rows[0];
     expect(sub.plan_id).toBe(proPlan.id); // paid tier granted — no fallback to old plan
     expect(sub.status).toBe('active');
   });
@@ -66,13 +65,13 @@ describe('NP-101: yearly plan id resolves to the paid tier', () => {
 describe('NP-109: dedup keys on the x-razorpay-event-id header', () => {
   it('same header event id delivered twice → second delivery is a no-op replay', async () => {
     const biz = await makeBusiness({ email: `dedup-${Date.now()}` });
-    await query(`UPDATE plans SET razorpay_plan_id = 'plan_DEDUP_TEST' WHERE tier = 'pro'`);
-    const freePlan = (await query(`SELECT id FROM plans WHERE tier = 'free'`)).rows[0];
+    await query('UPDATE plans SET razorpay_plan_id = \'plan_DEDUP_TEST\' WHERE tier = \'pro\'');
+    const freePlan = (await query('SELECT id FROM plans WHERE tier = \'free\'')).rows[0];
     await query(
       `INSERT INTO subscriptions
          (business_id, plan_id, status, razorpay_subscription_id)
        VALUES ($1, $2, 'active', 'sub_DEDUP_TEST')`,
-      [biz.id, freePlan.id]
+      [biz.id, freePlan.id],
     );
 
     const eventId = `evt_hdr_${Date.now()}`;
@@ -88,13 +87,9 @@ describe('NP-109: dedup keys on the x-razorpay-event-id header', () => {
     // Replay: stored response echoed, side effects NOT re-run.
     expect(second).toEqual(first);
 
-    const invoices = (await query(
-      `SELECT count(*)::int AS c FROM invoices WHERE business_id = $1`, [biz.id]
-    )).rows[0].c;
+    const invoices = (await query('SELECT count(*)::int AS c FROM invoices WHERE business_id = $1', [biz.id])).rows[0].c;
     expect(invoices).toBe(1);
-    const events = (await query(
-      `SELECT count(*)::int AS c FROM webhook_events WHERE external_id = $1`, [eventId]
-    )).rows[0].c;
+    const events = (await query('SELECT count(*)::int AS c FROM webhook_events WHERE external_id = $1', [eventId])).rows[0].c;
     expect(events).toBe(1);
   });
 
@@ -114,9 +109,7 @@ describe('NP-109: dedup keys on the x-razorpay-event-id header', () => {
     expect(r.status).toBe(200);
     expect(r.body.eventId).toBe(eventId); // header reached the service
 
-    const row = (await query(
-      `SELECT count(*)::int AS c FROM webhook_events WHERE external_id = $1`, [eventId]
-    )).rows[0].c;
+    const row = (await query('SELECT count(*)::int AS c FROM webhook_events WHERE external_id = $1', [eventId])).rows[0].c;
     expect(row).toBe(1);
   });
 });
@@ -124,13 +117,13 @@ describe('NP-109: dedup keys on the x-razorpay-event-id header', () => {
 describe('NP-110: dedup claim is atomic (zero-rowCount path)', () => {
   it('a delivery that loses the INSERT claim runs no side effects', async () => {
     const biz = await makeBusiness({ email: `atomic-${Date.now()}` });
-    await query(`UPDATE plans SET razorpay_plan_id = 'plan_ATOMIC_TEST' WHERE tier = 'pro'`);
-    const freePlan = (await query(`SELECT id FROM plans WHERE tier = 'free'`)).rows[0];
+    await query('UPDATE plans SET razorpay_plan_id = \'plan_ATOMIC_TEST\' WHERE tier = \'pro\'');
+    const freePlan = (await query('SELECT id FROM plans WHERE tier = \'free\'')).rows[0];
     await query(
       `INSERT INTO subscriptions
          (business_id, plan_id, status, razorpay_subscription_id)
        VALUES ($1, $2, 'active', 'sub_ATOMIC_TEST')`,
-      [biz.id, freePlan.id]
+      [biz.id, freePlan.id],
     );
 
     const eventId = `evt_atomic_${Date.now()}`;
@@ -139,12 +132,12 @@ describe('NP-110: dedup claim is atomic (zero-rowCount path)', () => {
     await query(
       `INSERT INTO webhook_events (provider, external_id, event_type, payload)
        VALUES ('razorpay', $1, 'subscription.charged', '{}'::jsonb)`,
-      [eventId]
+      [eventId],
     );
 
     const result = await razorpayService.handleWebhook(
       chargedPayload({ subId: 'sub_ATOMIC_TEST', planId: 'plan_ATOMIC_TEST', payId: `pay-atomic-${Date.now()}` }),
-      eventId
+      eventId,
     );
     // Loser must NOT ack while the winner is in flight: pending → controller
     // maps to HTTP 409 so Razorpay retries (winner may still fail and release
@@ -152,13 +145,9 @@ describe('NP-110: dedup claim is atomic (zero-rowCount path)', () => {
     expect(result).toEqual({ received: false, pending: true, replayed: true });
 
     // And NONE of the charge side effects ran.
-    const sub = (await query(
-      `SELECT plan_id FROM subscriptions WHERE business_id = $1`, [biz.id]
-    )).rows[0];
+    const sub = (await query('SELECT plan_id FROM subscriptions WHERE business_id = $1', [biz.id])).rows[0];
     expect(sub.plan_id).toBe(freePlan.id); // not upgraded
-    const invoices = (await query(
-      `SELECT count(*)::int AS c FROM invoices WHERE business_id = $1`, [biz.id]
-    )).rows[0].c;
+    const invoices = (await query('SELECT count(*)::int AS c FROM invoices WHERE business_id = $1', [biz.id])).rows[0].c;
     expect(invoices).toBe(0);
   });
 });

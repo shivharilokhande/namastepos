@@ -14,10 +14,11 @@ async function list(businessId) {
     `SELECT * FROM delivery_zones
       WHERE business_id = $1 AND is_active = TRUE
       ORDER BY display_order, name`,
-    [businessId]
+    [businessId],
   );
   return r.rows.map((z) => ({
-    id: z.id, name: z.name,
+    id: z.id,
+    name: z.name,
     feeInr: parseFloat(z.fee_inr_paise) / 100,
     minOrderInr: parseFloat(z.min_order_inr_paise) / 100,
     pincodes: z.pincodes || [],
@@ -35,7 +36,7 @@ async function upsert(businessId, body) {
           SET name = $1, fee_inr_paise = $2, min_order_inr_paise = $3,
               pincodes = $4::text[], display_order = $5
         WHERE business_id = $6 AND id = $7 RETURNING *`,
-      [name, feePaise, minPaise, pincodes, displayOrder, businessId, id]
+      [name, feePaise, minPaise, pincodes, displayOrder, businessId, id],
     );
     if (r.rowCount === 0) throw new NotFound('Zone not found');
     return r.rows[0];
@@ -45,7 +46,7 @@ async function upsert(businessId, body) {
        (business_id, name, fee_inr_paise, min_order_inr_paise,
         pincodes, display_order)
      VALUES ($1, $2, $3, $4, $5::text[], $6) RETURNING *`,
-    [businessId, name, feePaise, minPaise, pincodes, displayOrder]
+    [businessId, name, feePaise, minPaise, pincodes, displayOrder],
   );
   return r.rows[0];
 }
@@ -54,7 +55,7 @@ async function remove(businessId, id) {
   await query(
     `UPDATE delivery_zones SET is_active = FALSE
       WHERE business_id = $1 AND id = $2`,
-    [businessId, id]
+    [businessId, id],
   );
 }
 
@@ -71,12 +72,13 @@ async function resolveForPincode(businessId, pincode) {
         AND $2 = ANY(pincodes)
       ORDER BY fee_inr_paise ASC
       LIMIT 1`,
-    [businessId, String(pincode).trim()]
+    [businessId, String(pincode).trim()],
   );
   if (r.rowCount === 0) return null;
   const z = r.rows[0];
   return {
-    id: z.id, name: z.name,
+    id: z.id,
+    name: z.name,
     feeInr: parseFloat(z.fee_inr_paise) / 100,
     minOrderInr: parseFloat(z.min_order_inr_paise) / 100,
   };

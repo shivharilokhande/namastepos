@@ -30,7 +30,7 @@ async function create(businessId, body) {
     const dup = await query(
       `SELECT * FROM expenses
         WHERE business_id = $1 AND client_key = $2 AND deleted_at IS NULL`,
-      [businessId, clientKey]
+      [businessId, clientKey],
     );
     if (dup.rowCount > 0) return serialize(dup.rows[0]);
   }
@@ -38,15 +38,15 @@ async function create(businessId, body) {
     const r = await query(
       `INSERT INTO expenses (business_id, category, amount, description, date, receipt_url, client_key)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-      [businessId, category, amount, description, date, receiptUrl, clientKey]
+      [businessId, category, amount, description, date, receiptUrl, clientKey],
     );
     return serialize(r.rows[0]);
   } catch (err) {
     // Concurrent retry lost the unique-index race — return the winner's row.
     if (err.code === '23505' && err.constraint === 'uq_expenses_client_key') {
       const winner = await query(
-        `SELECT * FROM expenses WHERE business_id = $1 AND client_key = $2`,
-        [businessId, clientKey]
+        'SELECT * FROM expenses WHERE business_id = $1 AND client_key = $2',
+        [businessId, clientKey],
       );
       if (winner.rowCount > 0) return serialize(winner.rows[0]);
     }
@@ -70,14 +70,14 @@ async function list(businessId, { startDate, endDate, category, limit, offset = 
   const values = [businessId];
   let idx = 2;
   if (startDate) { where.push(`date >= $${idx++}`); values.push(startDate); }
-  if (endDate)   { where.push(`date <= $${idx++}`); values.push(endDate); }
-  if (category)  { where.push(`category = $${idx++}`); values.push(category); }
+  if (endDate) { where.push(`date <= $${idx++}`); values.push(endDate); }
+  if (category) { where.push(`category = $${idx++}`); values.push(category); }
   const paged = limit !== undefined && limit !== null;
   const pageSql = paged ? ` LIMIT $${idx++} OFFSET $${idx}` : '';
   const r = await query(
     `SELECT *, COUNT(*) OVER ()::int AS _total FROM expenses WHERE ${where.join(' AND ')}
      ORDER BY date DESC, created_at DESC${pageSql}`,
-    paged ? [...values, limit, offset] : values
+    paged ? [...values, limit, offset] : values,
   );
   const rows = r.rows.map(serialize);
   rows.total = r.rows[0]?._total || 0;
@@ -89,7 +89,7 @@ async function softDelete(businessId, expenseId) {
     `UPDATE expenses SET deleted_at = NOW()
      WHERE business_id = $1 AND id = $2 AND deleted_at IS NULL
      RETURNING id`,
-    [businessId, expenseId]
+    [businessId, expenseId],
   );
   if (r.rowCount === 0) throw new NotFound('Expense not found');
   return { id: r.rows[0].id };

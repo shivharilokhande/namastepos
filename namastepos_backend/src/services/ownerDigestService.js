@@ -32,7 +32,7 @@ async function _dayStats(businessId, dayOffset) {
        FROM orders
       WHERE business_id = $1
         AND created_at::date = (NOW()::date + $2::int)`,
-    [businessId, dayOffset]
+    [businessId, dayOffset],
   );
   return r.rows[0];
 }
@@ -51,18 +51,17 @@ async function dailyTick() {
        FROM businesses b
        JOIN business_users bu ON bu.business_id = b.id AND bu.role = 'business_owner'
        JOIN users u ON u.id = bu.user_id
-      WHERE b.deleted_at IS NULL AND u.phone IS NOT NULL`
+      WHERE b.deleted_at IS NULL AND u.phone IS NOT NULL`,
   );
   for (const biz of bizs.rows) {
     try {
       const s = await _dayStats(biz.id, -1);
       if (!s || s.orders === 0) continue;
-      const body =
-        `Good morning ${biz.name} 👋\n\n` +
-        `Yesterday: ${s.orders} orders · ${rupee(s.revenue)}\n` +
-        (s.top_item ? `Top item: ${s.top_item}\n` : '') +
-        (s.cancels > 0 ? `Cancellations: ${s.cancels}\n` : '') +
-        `\nOpen NamastePOS → Overview for the full report.`;
+      const body = `Good morning ${biz.name} 👋\n\n`
+        + `Yesterday: ${s.orders} orders · ${rupee(s.revenue)}\n${
+          s.top_item ? `Top item: ${s.top_item}\n` : ''
+        }${s.cancels > 0 ? `Cancellations: ${s.cancels}\n` : ''
+        }\nOpen NamastePOS → Overview for the full report.`;
       await wa.sendRaw({ to: biz.owner_phone, body });
     } catch (e) {
       logger.warn(`[digest daily] failed for ${biz.id}: ${e.message}`);
@@ -73,7 +72,7 @@ async function dailyTick() {
 /** Weekly — email every Monday morning. */
 async function weeklyTick() {
   const now = new Date();
-  if (now.getUTCDay() !== 1) return { skipped: 'not-monday' };   // 1 = Monday UTC (good enough for IST)
+  if (now.getUTCDay() !== 1) return { skipped: 'not-monday' }; // 1 = Monday UTC (good enough for IST)
   const istHour = new Date(now.getTime() + (5.5 * 60 - now.getTimezoneOffset()) * 60 * 1000).getUTCHours();
   if (istHour !== 9) return { skipped: 'not-9am' };
 
@@ -90,7 +89,7 @@ async function weeklyTick() {
       WHERE b.deleted_at IS NULL
         AND b.email IS NOT NULL
         AND w.business_id IS NULL`,
-    [weekStartStr]
+    [weekStartStr],
   );
 
   for (const biz of bizs.rows) {
@@ -102,7 +101,7 @@ async function weeklyTick() {
            FROM orders
           WHERE business_id = $1
             AND created_at::date > NOW()::date - INTERVAL '7 days'`,
-        [biz.id]
+        [biz.id],
       );
       const s = totals.rows[0];
       if (s.orders === 0) continue;
@@ -128,7 +127,7 @@ async function weeklyTick() {
       await query(
         `INSERT INTO weekly_digest_log (business_id, week_start)
          VALUES ($1, $2::date) ON CONFLICT DO NOTHING`,
-        [biz.id, weekStartStr]
+        [biz.id, weekStartStr],
       );
     } catch (e) {
       logger.warn(`[digest weekly] failed for ${biz.id}: ${e.message}`);

@@ -249,16 +249,12 @@ async function processIncomingOrder(businessId, provider, payload) {
     ...it,
     menuItemId: it.menuItemId || null,
   }));
-  // If we couldn't map ANY item, record it in mapping_issues so the
-  // owner sees a red badge on the Aggregators page and can fix it.
-  if (mapped.length === 0) {
-    try {
-      const svc = require('./mappingIssuesService');
-      if (svc && typeof svc.recordUnmappedBatch === 'function') {
-        await svc.recordUnmappedBatch(businessId, provider, items);
-      }
-    } catch (_) { /* non-fatal — don't drop the order over telemetry */ }
-  }
+  // NOTE (2026-09-04): a block here used to `require('./mappingIssuesService')`
+  // — a module that has never existed — inside a try/catch with a typeof
+  // guard, so it silently did nothing on every unmapped order. Removed: the
+  // real recording already happens PER ITEM in _resolveItems above (the
+  // `aggregator_mapping_issues` upsert), which is what drives the red badge on
+  // the Aggregators page. Found by making lint blocking (import/no-unresolved).
   const created = await orderService.create(businessId, {
     source: enumSource,
     channel: provider,
@@ -341,7 +337,7 @@ function _eventTypeOf(payload, headers = {}) {
     || payload?.status_update
     || headers['x-event-type']
     || headers['x-webhook-event']
-    || ''
+    || '',
   ).toLowerCase().trim();
 }
 
@@ -358,7 +354,7 @@ async function _findOrder(businessId, payload) {
   const r = await query(
     `SELECT id FROM orders
       WHERE business_id = $1 AND aggregator_order_id = $2 LIMIT 1`,
-    [businessId, String(ext)]
+    [businessId, String(ext)],
   );
   return r.rowCount > 0 ? r.rows[0].id : null;
 }
@@ -380,7 +376,7 @@ async function handleWebhookEvent(businessId, provider, payload, { headers = {} 
          DO NOTHING
        RETURNING id`,
       [businessId, provider, event || 'unknown', externalId ? String(externalId) : null,
-       JSON.stringify(payload || {})]
+        JSON.stringify(payload || {})],
     );
     if (ins.rowCount === 0 && externalId) {
       // A row already exists — but "seen" is NOT "done". If the first attempt
@@ -392,7 +388,7 @@ async function handleWebhookEvent(businessId, provider, payload, { headers = {} 
         `SELECT id, handled FROM aggregator_inbound_events
           WHERE business_id = $1 AND provider = $2 AND external_id = $3 AND event_type = $4
           LIMIT 1`,
-        [businessId, provider, String(externalId), event || 'unknown']
+        [businessId, provider, String(externalId), event || 'unknown'],
       );
       if (prior.rows[0]?.handled) {
         return { duplicate: true, event, externalId };
@@ -407,7 +403,7 @@ async function handleWebhookEvent(businessId, provider, payload, { headers = {} 
 
   const done = async (result) => {
     if (logId) {
-      await query(`UPDATE aggregator_inbound_events SET handled = TRUE WHERE id = $1`, [logId])
+      await query('UPDATE aggregator_inbound_events SET handled = TRUE WHERE id = $1', [logId])
         .catch(() => {});
     }
     return { event, ...result };
@@ -476,7 +472,7 @@ async function handleWebhookEvent(businessId, provider, payload, { headers = {} 
       await query(
         `UPDATE orders SET fulfilment_state = COALESCE(fulfilment_state, 'placed')
           WHERE business_id = $1 AND id = $2`,
-        [businessId, oid]
+        [businessId, oid],
       ).catch(() => {});
     }
     return done(result);

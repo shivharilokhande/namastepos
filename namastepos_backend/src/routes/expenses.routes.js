@@ -2,8 +2,7 @@
 
 const express = require('express');
 const c = require('../controllers/expenseController');
-const { requireAuth, requireBusinessOwnership, requireStaffPerm, requireRole } =
-  require('../middleware/auth');
+const { requireAuth, requireBusinessOwnership, requireStaffPerm, requireRole } = require('../middleware/auth');
 
 const router = express.Router({ mergeParams: true });
 router.use(requireAuth, requireBusinessOwnership);
@@ -15,9 +14,9 @@ router.use(requireAuth, requireBusinessOwnership);
 // contain a key that did not exist yet) keeps working.
 const canExpenses = requireStaffPerm(['expenses', 'expense_register']);
 
-router.post  ('/',              canExpenses, ...c.create);
-router.get   ('/',              canExpenses, ...c.list);
+router.post('/', canExpenses, ...c.create);
+router.get('/', canExpenses, ...c.list);
 // Deleting a booked expense rewrites the P&L — owner/manager only.
-router.delete('/:expenseId',    requireRole(['business_owner', 'staff_manager']), c.remove);
+router.delete('/:expenseId', requireRole(['business_owner', 'staff_manager']), c.remove);
 
 module.exports = router;

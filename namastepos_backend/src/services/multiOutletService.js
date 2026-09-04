@@ -1,6 +1,12 @@
 // Multi-outlet / franchise rollup (Sprint 8 / FF-1201, FF-1202, FF-1203)
 
 const { query, withTransaction } = require('../config/db');
+// BUG FIX (2026-09-04, found by making lint blocking): this file used `logger`
+// in three places without importing it. Two were live paths — the plan-sync
+// success log on every HQ plan change, and the final log in
+// deleteOutletWithOtp, which threw a ReferenceError AFTER the outlet was
+// already deleted, so the owner saw "delete failed" on a delete that worked.
+const logger = require('../config/logger');
 const { NotFound } = require('../utils/errors');
 
 async function listGroups() {
@@ -8,7 +14,7 @@ async function listGroups() {
     `SELECT g.*, COUNT(b.id)::int AS outlet_count
        FROM outlet_groups g
   LEFT JOIN businesses b ON b.outlet_group_id = g.id
-      GROUP BY g.id ORDER BY g.name`
+      GROUP BY g.id ORDER BY g.name`,
   );
   return r.rows;
 }
@@ -17,7 +23,7 @@ async function createGroup(name, parentBusinessId) {
   const r = await query(
     `INSERT INTO outlet_groups (name, parent_business_id)
      VALUES ($1, $2) RETURNING *`,
-    [name, parentBusinessId || null]
+    [name, parentBusinessId || null],
   );
   return r.rows[0];
 }
@@ -43,20 +49,18 @@ async function provisionOutlet({
   // Resolve (or create) the group this outlet belongs to.
   let gid = groupId || null;
   if (!gid) {
-    const existing = await query(
-      `SELECT outlet_group_id FROM businesses WHERE id = $1`, [parentBusinessId]
-    );
+    const existing = await query('SELECT outlet_group_id FROM businesses WHERE id = $1', [parentBusinessId]);
     gid = existing.rows[0]?.outlet_group_id || null;
   }
   if (!gid) {
-    const parent = await query(`SELECT name FROM businesses WHERE id = $1`, [parentBusinessId]);
+    const parent = await query('SELECT name FROM businesses WHERE id = $1', [parentBusinessId]);
     if (parent.rowCount === 0) throw new NF('Parent business not found');
     const g = await createGroup(`${parent.rows[0].name} Group`, parentBusinessId);
     gid = g.id;
     // The parent becomes the first outlet in its own group.
     await query(
-      `UPDATE businesses SET outlet_group_id = $1 WHERE id = $2 AND outlet_group_id IS NULL`,
-      [gid, parentBusinessId]
+      'UPDATE businesses SET outlet_group_id = $1 WHERE id = $2 AND outlet_group_id IS NULL',
+      [gid, parentBusinessId],
     );
   }
 
@@ -66,7 +70,7 @@ async function provisionOutlet({
        FROM businesses b
        LEFT JOIN subscriptions s ON s.business_id = b.id
       WHERE b.id = $1`,
-    [parentBusinessId]
+    [parentBusinessId],
   );
   if (parent.rowCount === 0) throw new NF('Parent business not found');
   const p = parent.rows[0];
@@ -88,8 +92,8 @@ async function provisionOutlet({
        VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, $9)
        RETURNING *`,
       [`outlet-${gid}-${stamp}`, outletEmail, p.display_name, p.photo_url,
-       String(name).trim(), city || p.city || null, p.category || null,
-       gid, (label || String(name)).trim().slice(0, 80)]
+        String(name).trim(), city || p.city || null, p.category || null,
+        gid, (label || String(name)).trim().slice(0, 80)],
     );
     const outlet = ins.rows[0];
 
@@ -98,7 +102,7 @@ async function provisionOutlet({
       `INSERT INTO business_users (business_id, user_id, role)
        VALUES ($1, $2, 'business_owner')
        ON CONFLICT (business_id, user_id) DO NOTHING`,
-      [outlet.id, ownerUserId]
+      [outlet.id, ownerUserId],
     );
 
     // Mirror the parent's plan so gating/limits behave from day one.
@@ -107,7 +111,7 @@ async function provisionOutlet({
        VALUES ($1, COALESCE($2, (SELECT id FROM plans WHERE tier = 'free')),
                'active', NOW() + INTERVAL '30 days')
        ON CONFLICT (business_id) DO NOTHING`,
-      [outlet.id, p.plan_id || null]
+      [outlet.id, p.plan_id || null],
     );
 
     // Seed the HQ's staff roster (same roles + permission lists) unless the
@@ -137,15 +141,15 @@ async function syncPlanToOutlets(parentBusinessId) {
        FROM outlet_groups og
       WHERE og.parent_business_id = $1
       LIMIT 1`,
-    [parentBusinessId]
+    [parentBusinessId],
   );
-  if (g.rowCount === 0) return [];   // not an HQ — nothing to propagate
+  if (g.rowCount === 0) return []; // not an HQ — nothing to propagate
   const groupId = g.rows[0].group_id;
 
   const parentSub = await query(
     `SELECT plan_id, status, billing_period, current_period_end
        FROM subscriptions WHERE business_id = $1 LIMIT 1`,
-    [parentBusinessId]
+    [parentBusinessId],
   );
   if (parentSub.rowCount === 0) return [];
   const p = parentSub.rows[0];
@@ -153,7 +157,7 @@ async function syncPlanToOutlets(parentBusinessId) {
   const kids = await query(
     `SELECT id FROM businesses
       WHERE outlet_group_id = $1 AND id <> $2 AND deleted_at IS NULL`,
-    [groupId, parentBusinessId]
+    [groupId, parentBusinessId],
   );
   const updated = [];
   for (const k of kids.rows) {
@@ -168,7 +172,7 @@ async function syncPlanToOutlets(parentBusinessId) {
              billing_period = EXCLUDED.billing_period,
              current_period_end = EXCLUDED.current_period_end,
              updated_at = NOW()`,
-      [k.id, p.plan_id, p.status, p.billing_period || 'monthly', p.current_period_end]
+      [k.id, p.plan_id, p.status, p.billing_period || 'monthly', p.current_period_end],
     );
     try { require('./featureService').clearCache(k.id); } catch (_) { /* non-fatal */ }
     // Feature overrides the admin set on the HQ apply to the whole group too,
@@ -180,7 +184,7 @@ async function syncPlanToOutlets(parentBusinessId) {
          FROM business_feature_overrides WHERE business_id = $2
        ON CONFLICT (business_id, feature_key) DO UPDATE
          SET enabled = EXCLUDED.enabled`,
-      [k.id, parentBusinessId]
+      [k.id, parentBusinessId],
     );
     try { require('./featureService').clearCache(k.id); } catch (_) { /* non-fatal */ }
     updated.push(k.id);
@@ -208,7 +212,7 @@ async function copyStaffToOutlet(parentBusinessId, outletId, client = null) {
       WHERE bu.business_id = $2 AND bu.is_active = TRUE
      ON CONFLICT (business_id, user_id) DO NOTHING
      RETURNING user_id`,
-    [outletId, parentBusinessId]
+    [outletId, parentBusinessId],
   );
   return r.rowCount;
 }
@@ -228,7 +232,7 @@ async function listOutletsForUser(userId, currentBusinessId) {
        LEFT JOIN outlet_groups og ON og.id = b.outlet_group_id
       WHERE bu.user_id = $1 AND bu.is_active = TRUE AND b.deleted_at IS NULL
       ORDER BY (og.parent_business_id = b.id) DESC NULLS LAST, b.created_at ASC`,
-    [userId]
+    [userId],
   );
   return r.rows.map((row) => ({
     businessId: row.id,
@@ -260,7 +264,7 @@ async function _hqFor(businessId) {
        FROM businesses b
        LEFT JOIN outlet_groups og ON og.id = b.outlet_group_id
       WHERE b.id = $1`,
-    [businessId]
+    [businessId],
   );
   if (r.rowCount === 0) return null;
   return { hqId: r.rows[0].parent_business_id, groupId: r.rows[0].outlet_group_id };
@@ -289,7 +293,7 @@ async function assertCanDeleteOutlet(userId, callerBusinessId, targetBusinessId)
     `SELECT 1 FROM business_users
       WHERE user_id = $1 AND business_id = $2
         AND role = 'business_owner' AND is_active = TRUE LIMIT 1`,
-    [userId, target.hqId]
+    [userId, target.hqId],
   );
   if (own.rowCount === 0) throw new FB('Only the primary outlet owner can delete an outlet');
   return target;
@@ -299,24 +303,20 @@ async function assertCanDeleteOutlet(userId, callerBusinessId, targetBusinessId)
 async function requestOutletDeleteOtp({ userId, callerBusinessId, targetBusinessId }) {
   await assertCanDeleteOutlet(userId, callerBusinessId, targetBusinessId);
   const bcrypt = require('bcryptjs');
-  const owner = await query(
-    `SELECT u.email FROM users u WHERE u.id = $1`, [userId]
-  );
+  const owner = await query('SELECT u.email FROM users u WHERE u.id = $1', [userId]);
   const email = owner.rows[0]?.email;
   if (!email) {
     const { BadRequest: BR } = require('../utils/errors');
     throw new BR('No email on file for your account');
   }
-  const target = await query(
-    `SELECT name, outlet_label FROM businesses WHERE id = $1`, [targetBusinessId]
-  );
+  const target = await query('SELECT name, outlet_label FROM businesses WHERE id = $1', [targetBusinessId]);
   const label = target.rows[0]?.outlet_label || target.rows[0]?.name || 'this outlet';
 
   // Rate-limit: 5 delete-OTPs per hour per email.
   const recent = await query(
     `SELECT COUNT(*)::int AS c FROM otp_requests
       WHERE phone = $1 AND purpose = $2 AND created_at > NOW() - INTERVAL '1 hour'`,
-    [email, OUTLET_DELETE_PURPOSE]
+    [email, OUTLET_DELETE_PURPOSE],
   );
   if (recent.rows[0].c >= 5) {
     const { TooManyRequests } = require('../utils/errors');
@@ -330,7 +330,7 @@ async function requestOutletDeleteOtp({ userId, callerBusinessId, targetBusiness
      VALUES ($1, $2, $3, NOW() + ($4 || ' minutes')::interval, $5::jsonb)
      RETURNING id, expires_at`,
     [email, OUTLET_DELETE_PURPOSE, codeHash, String(OUTLET_DELETE_TTL_MIN),
-     JSON.stringify({ targetBusinessId, callerBusinessId, userId })]
+      JSON.stringify({ targetBusinessId, callerBusinessId, userId })],
   );
 
   await require('./emailService').sendMail({
@@ -345,7 +345,8 @@ async function requestOutletDeleteOtp({ userId, callerBusinessId, targetBusiness
     text: `Code ${code} to delete outlet "${label}". Expires in ${OUTLET_DELETE_TTL_MIN} minutes.`,
   }).catch((e) => { logger.warn(`[outlets] delete OTP email failed: ${e.message}`); });
 
-  return { requestId: ins.rows[0].id, sentTo: email.replace(/^(.).*(@.*)$/, '$1•••$2'),
+  return { requestId: ins.rows[0].id,
+    sentTo: email.replace(/^(.).*(@.*)$/, '$1•••$2'),
     expiresAt: ins.rows[0].expires_at };
 }
 
@@ -359,7 +360,7 @@ async function deleteOutletWithOtp({ userId, callerBusinessId, targetBusinessId,
       WHERE id = $1 AND purpose = $2 AND verified_at IS NULL
         AND expires_at > NOW() AND attempts < 5
       LIMIT 1`,
-    [requestId, OUTLET_DELETE_PURPOSE]
+    [requestId, OUTLET_DELETE_PURPOSE],
   );
   if (r.rowCount === 0) throw new BR('Code expired or already used — request a new one');
   const row = r.rows[0];
@@ -369,24 +370,24 @@ async function deleteOutletWithOtp({ userId, callerBusinessId, targetBusinessId,
     throw new FB('This code was issued for a different request');
   }
   const ok = await bcrypt.compare(String(code), row.code_hash);
-  await query(`UPDATE otp_requests SET attempts = attempts + 1 WHERE id = $1`, [requestId]);
+  await query('UPDATE otp_requests SET attempts = attempts + 1 WHERE id = $1', [requestId]);
   if (!ok) throw new BR('Incorrect code');
-  await query(`UPDATE otp_requests SET verified_at = NOW() WHERE id = $1`, [requestId]);
+  await query('UPDATE otp_requests SET verified_at = NOW() WHERE id = $1', [requestId]);
 
   // Soft delete: the row (and its orders/invoices) stays for GST + audit, but
   // the outlet disappears from the switcher, rollups and every listing.
   await query(
-    `UPDATE businesses SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL`,
-    [targetBusinessId]
+    'UPDATE businesses SET deleted_at = NOW() WHERE id = $1 AND deleted_at IS NULL',
+    [targetBusinessId],
   );
   await query(
-    `UPDATE business_users SET is_active = FALSE WHERE business_id = $1`,
-    [targetBusinessId]
+    'UPDATE business_users SET is_active = FALSE WHERE business_id = $1',
+    [targetBusinessId],
   );
   await query(
     `UPDATE subscriptions SET status = 'cancelled', cancel_at_period_end = TRUE
       WHERE business_id = $1`,
-    [targetBusinessId]
+    [targetBusinessId],
   );
   try { require('./featureService').clearCache(targetBusinessId); } catch (_) { /* non-fatal */ }
   logger.info(`[outlets] outlet ${targetBusinessId} deleted by owner ${userId} (OTP verified)`);
@@ -397,7 +398,7 @@ async function addOutlet(groupId, businessId, label) {
   await query(
     `UPDATE businesses SET outlet_group_id = $1, outlet_label = $2
       WHERE id = $3`,
-    [groupId, label || null, businessId]
+    [groupId, label || null, businessId],
   );
 }
 
@@ -405,7 +406,7 @@ async function groupRollup(groupId, { startDate, endDate }) {
   const outlets = await query(
     `SELECT id, name, outlet_label FROM businesses
       WHERE outlet_group_id = $1 AND deleted_at IS NULL`,
-    [groupId]
+    [groupId],
   );
   if (outlets.rowCount === 0) throw new NotFound('No outlets in group');
 
@@ -421,7 +422,7 @@ async function groupRollup(groupId, { startDate, endDate }) {
         AND created_at < ($3::date + INTERVAL '1 day')
         AND status <> 'cancelled'
       GROUP BY business_id`,
-    [ids, startDate, endDate]
+    [ids, startDate, endDate],
   );
   const byBiz = new Map(perOutlet.rows.map((r) => [r.business_id, r]));
   const grouped = outlets.rows.map((o) => ({
@@ -433,7 +434,7 @@ async function groupRollup(groupId, { startDate, endDate }) {
   return {
     outlets: grouped,
     totals: {
-      orders:   grouped.reduce((s, x) => s + Number(x.metrics.orders), 0),
+      orders: grouped.reduce((s, x) => s + Number(x.metrics.orders), 0),
       grossInr: grouped.reduce((s, x) => s + Number(x.metrics.gross), 0),
       foodCostInr: grouped.reduce((s, x) => s + Number(x.metrics.food_cost_paise), 0) / 100,
     },
@@ -465,7 +466,7 @@ async function transferStock(groupId, body, initiatedBy) {
           menu_item_id, qty, unit, initiated_by_user_id, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [groupId, fromBusinessId, toBusinessId, ingredientId || null,
-       menuItemId || null, qty, unit || null, initiatedBy, notes || null]
+        menuItemId || null, qty, unit || null, initiatedBy, notes || null],
     );
     return t.rows[0];
   });
@@ -482,7 +483,7 @@ async function receiveTransfer(transferId, receivedBy, groupId = null) {
         WHERE id = $2 AND status IN ('pending', 'in_transit')
           AND ($3::uuid IS NULL OR outlet_group_id = $3::uuid)
         RETURNING *`,
-      [receivedBy, transferId, groupId]
+      [receivedBy, transferId, groupId],
     );
     if (t.rowCount === 0) throw new NotFound('Transfer not found or already received');
     const xfer = t.rows[0];
@@ -493,12 +494,12 @@ async function receiveTransfer(transferId, receivedBy, groupId = null) {
       await client.query(
         `UPDATE ingredients SET stock = stock + $1
           WHERE business_id = $2 AND id = $3`,
-        [xfer.qty, xfer.to_business_id, xfer.ingredient_id]
+        [xfer.qty, xfer.to_business_id, xfer.ingredient_id],
       );
       await client.query(
         `UPDATE ingredients SET stock = GREATEST(0, stock - $1)
           WHERE business_id = $2 AND id = $3`,
-        [xfer.qty, xfer.from_business_id, xfer.ingredient_id]
+        [xfer.qty, xfer.from_business_id, xfer.ingredient_id],
       );
     }
     return xfer;
@@ -511,14 +512,14 @@ async function setFranchisePrice(groupId, sku, price) {
      VALUES ($1, $2, $3)
      ON CONFLICT (outlet_group_id, menu_item_sku) DO UPDATE
        SET price = EXCLUDED.price, updated_at = NOW()`,
-    [groupId, sku, price]
+    [groupId, sku, price],
   );
 }
 
 async function listFranchisePrices(groupId) {
   const r = await query(
-    `SELECT * FROM franchise_prices WHERE outlet_group_id = $1 ORDER BY menu_item_sku`,
-    [groupId]
+    'SELECT * FROM franchise_prices WHERE outlet_group_id = $1 ORDER BY menu_item_sku',
+    [groupId],
   );
   return r.rows;
 }
@@ -531,16 +532,26 @@ async function listGroupsForOwner(businessId) {
        JOIN businesses b1 ON b1.outlet_group_id = g.id AND b1.id = $1
   LEFT JOIN businesses b2 ON b2.outlet_group_id = g.id
       GROUP BY g.id ORDER BY g.name`,
-    [businessId]
+    [businessId],
   );
   return r.rows;
 }
 
 module.exports = {
-  listGroups, listGroupsForOwner, createGroup, addOutlet, groupRollup,
-  provisionOutlet, listOutletsForUser,
-  syncPlanToOutlets, copyStaffToOutlet,
-  assertCanDeleteOutlet, requestOutletDeleteOtp, deleteOutletWithOtp,
-  transferStock, receiveTransfer,
-  setFranchisePrice, listFranchisePrices,
+  listGroups,
+  listGroupsForOwner,
+  createGroup,
+  addOutlet,
+  groupRollup,
+  provisionOutlet,
+  listOutletsForUser,
+  syncPlanToOutlets,
+  copyStaffToOutlet,
+  assertCanDeleteOutlet,
+  requestOutletDeleteOtp,
+  deleteOutletWithOtp,
+  transferStock,
+  receiveTransfer,
+  setFranchisePrice,
+  listFranchisePrices,
 };

@@ -23,16 +23,16 @@ beforeAll(async () => {
                WHERE tier <> 'pro' AND (price_inr_paise = 29900
                   OR price_inr_paise = 299000
                   OR COALESCE(price_yearly_paise, price_inr_paise * 10) IN (29900, 299000))`);
-  await query(`UPDATE plans SET price_inr_paise = 29900, price_yearly_paise = 299000 WHERE tier = 'pro'`);
+  await query('UPDATE plans SET price_inr_paise = 29900, price_yearly_paise = 299000 WHERE tier = \'pro\'');
 });
 afterAll(async () => { await closePool(); });
 
 async function makeSub(biz, { tier, rzSubId }) {
-  const plan = (await query(`SELECT id FROM plans WHERE tier = $1`, [tier])).rows[0];
+  const plan = (await query('SELECT id FROM plans WHERE tier = $1', [tier])).rows[0];
   const s = await query(
     `INSERT INTO subscriptions (business_id, plan_id, status, razorpay_subscription_id)
      VALUES ($1, $2, 'active', $3) RETURNING id`,
-    [biz.id, plan.id, rzSubId]
+    [biz.id, plan.id, rzSubId],
   );
   return { subId: s.rows[0].id, planId: plan.id };
 }
@@ -45,7 +45,7 @@ async function payInvoice(biz, subId, amountPaise, { paidAgoDays = 0 } = {}) {
      VALUES ($1, $2, $3, 'paid', $4, 'INR', NOW(), NOW() + INTERVAL '1 month',
              NOW() - make_interval(days => $5::int))`,
     [biz.id, subId, `TST-${subId.slice(0, 8)}-${amountPaise}-${Date.now()}`,
-      amountPaise, paidAgoDays]
+      amountPaise, paidAgoDays],
   );
 }
 
@@ -95,17 +95,17 @@ describe('checkStuckRefunds', () => {
     const old = await query(
       `INSERT INTO refunds (business_id, amount_paise, status, created_at)
        VALUES ($1, 5000, 'pending', NOW() - INTERVAL '3 days') RETURNING id`,
-      [biz.id]
+      [biz.id],
     );
     await query(
       `INSERT INTO refunds (business_id, amount_paise, status, created_at)
        VALUES ($1, 4000, 'pending', NOW() - INTERVAL '1 hour')`,
-      [biz.id]
+      [biz.id],
     );
     await query(
       `INSERT INTO refunds (business_id, amount_paise, status, created_at, processed_at)
        VALUES ($1, 3000, 'processed', NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days')`,
-      [biz.id]
+      [biz.id],
     );
 
     const stuck = await integrity.checkStuckRefunds();
@@ -123,18 +123,18 @@ describe('checkDeadWebhookEvents', () => {
     await query(
       `INSERT INTO webhook_events (provider, external_id, event_type, payload, created_at)
        VALUES ('razorpay', $1, 'subscription.charged', '{}'::jsonb, NOW() - INTERVAL '2 hours')`,
-      [dead]
+      [dead],
     );
     await query(
       `INSERT INTO webhook_events (provider, external_id, event_type, payload, created_at)
        VALUES ('razorpay', $1, 'subscription.charged', '{}'::jsonb, NOW() - INTERVAL '10 minutes')`,
-      [fresh]
+      [fresh],
     );
     await query(
       `INSERT INTO webhook_events (provider, external_id, event_type, payload, created_at, response_body)
        VALUES ('razorpay', $1, 'subscription.charged', '{}'::jsonb, NOW() - INTERVAL '2 hours',
                '{"received":true}'::jsonb)`,
-      [done]
+      [done],
     );
 
     const rows = await integrity.checkDeadWebhookEvents();

@@ -1,14 +1,14 @@
 // Memberships + gift cards + wallet + tips (Sprint 4 / FF-1006, FF-1005, FF-903)
 
 const { query, withTransaction } = require('../config/db');
-const { NotFound, BadRequest, Conflict } = require('../utils/errors');
+const { NotFound, BadRequest } = require('../utils/errors');
 
 // ── Memberships ──────────────────────────────────────────────────────────
 async function listMemberships(businessId) {
   const r = await query(
     `SELECT * FROM memberships WHERE business_id = $1 AND is_active = TRUE
       ORDER BY price_paise ASC`,
-    [businessId]
+    [businessId],
   );
   return r.rows;
 }
@@ -20,7 +20,7 @@ async function createMembership(businessId, body) {
        (business_id, name, description, price_paise, validity_days, benefits)
      VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
     [businessId, name, description || null, Math.round(priceInr * 100),
-     validityDays || 30, benefits ? JSON.stringify(benefits) : null]
+      validityDays || 30, benefits ? JSON.stringify(benefits) : null],
   );
   return r.rows[0];
 }
@@ -30,8 +30,11 @@ async function createMembership(businessId, body) {
 // stuck re-creating. Partial update: only the fields sent are changed.
 async function updateMembership(businessId, id, body) {
   const allowed = {
-    name: 'name', description: 'description',
-    priceInr: 'price_paise', validityDays: 'validity_days', benefits: 'benefits',
+    name: 'name',
+    description: 'description',
+    priceInr: 'price_paise',
+    validityDays: 'validity_days',
+    benefits: 'benefits',
   };
   const sets = [];
   const values = [];
@@ -45,7 +48,7 @@ async function updateMembership(businessId, id, body) {
     values.push(v);
   }
   if (!sets.length) {
-    const cur = await query(`SELECT * FROM memberships WHERE business_id = $1 AND id = $2`, [businessId, id]);
+    const cur = await query('SELECT * FROM memberships WHERE business_id = $1 AND id = $2', [businessId, id]);
     if (cur.rowCount === 0) throw new NotFound('Membership not found');
     return cur.rows[0];
   }
@@ -54,7 +57,7 @@ async function updateMembership(businessId, id, body) {
     `UPDATE memberships SET ${sets.join(', ')}
       WHERE business_id = $${idx++} AND id = $${idx} AND is_active = TRUE
       RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Membership not found');
   return r.rows[0];
@@ -68,7 +71,7 @@ async function deleteMembership(businessId, id) {
     `UPDATE memberships SET is_active = FALSE
       WHERE business_id = $1 AND id = $2 AND is_active = TRUE
       RETURNING id`,
-    [businessId, id]
+    [businessId, id],
   );
   if (r.rowCount === 0) throw new NotFound('Membership not found');
   return { deleted: true, id };
@@ -94,7 +97,7 @@ async function subscribe(businessId, body) {
     const dup = await q(
       `SELECT * FROM membership_subscriptions
         WHERE business_id = $1 AND client_key = $2 LIMIT 1`,
-      [businessId, clientKey]
+      [businessId, clientKey],
     );
     return dup.rows[0] || null;
   };
@@ -107,8 +110,8 @@ async function subscribe(businessId, body) {
       if (existing) return existing;
     }
     const m = await client.query(
-      `SELECT * FROM memberships WHERE business_id = $1 AND id = $2`,
-      [businessId, membershipId]
+      'SELECT * FROM memberships WHERE business_id = $1 AND id = $2',
+      [businessId, membershipId],
     );
     if (m.rowCount === 0) throw new NotFound('Membership not found');
     const plan = m.rows[0];
@@ -117,8 +120,8 @@ async function subscribe(businessId, body) {
     // Tenant-scope the customer (standing security rule: every id lookup
     // is scoped) — also needed before we touch their wallet.
     const cust = await client.query(
-      `SELECT id FROM customers WHERE business_id = $1 AND id = $2`,
-      [businessId, customerId]
+      'SELECT id FROM customers WHERE business_id = $1 AND id = $2',
+      [businessId, customerId],
     );
     if (cust.rowCount === 0) throw new NotFound('Customer not found');
 
@@ -139,7 +142,7 @@ async function subscribe(businessId, body) {
       if (Math.abs(sumPaise - pricePaise) > 1) {
         throw new BadRequest(
           `paymentBreakdown legs total ₹${(sumPaise / 100).toFixed(2)} but the `
-          + `membership price is ₹${(pricePaise / 100).toFixed(2)} — they must match`
+          + `membership price is ₹${(pricePaise / 100).toFixed(2)} — they must match`,
         );
       }
       walletPaise = legs.filter((l) => l.method === 'wallet')
@@ -166,7 +169,7 @@ async function subscribe(businessId, body) {
           amount_paid_paise, remaining, payment_method, client_key)
        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8) RETURNING *`,
       [businessId, customerId, membershipId, expires, pricePaise, bundle,
-        recordedMethod, clientKey]
+        recordedMethod, clientKey],
     );
     return ins.rows[0];
   });
@@ -227,7 +230,7 @@ async function cancelSubscription(businessId, subscriptionId, {
          JOIN memberships m ON m.id = ms.membership_id
         WHERE ms.business_id = $1 AND ms.id = $2
         FOR UPDATE OF ms`,
-      [businessId, subscriptionId]
+      [businessId, subscriptionId],
     );
     if (q.rowCount === 0) throw new NotFound('Subscription not found');
     const sub = q.rows[0];
@@ -260,7 +263,10 @@ async function cancelSubscription(businessId, subscriptionId, {
     if (refundPaise > 0) {
       if (mode === 'wallet') {
         await require('./giftCardService').creditWalletTx(
-          client, businessId, sub.customer_id, refundPaise,
+          client,
+          businessId,
+          sub.customer_id,
+          refundPaise,
           { reason: 'membership_refund', note: `Membership cancelled — ${sub.plan_name}` },
         );
       } else {
@@ -291,7 +297,7 @@ async function cancelSubscription(businessId, subscriptionId, {
           SET status = 'cancelled', cancelled_at = NOW(),
               refund_paise = $1, refund_mode = $2, cancellation_fee_paise = $3
         WHERE id = $4 RETURNING *`,
-      [refundPaise, mode, feePaise, subscriptionId]
+      [refundPaise, mode, feePaise, subscriptionId],
     );
     return {
       subscription: upd.rows[0],
@@ -318,7 +324,7 @@ async function activeForCustomer(businessId, customerId) {
       WHERE ms.business_id = $1 AND ms.customer_id = $2
         AND ms.status = 'active' AND ms.expires_at > NOW()
       ORDER BY ms.expires_at DESC LIMIT 1`,
-    [businessId, customerId]
+    [businessId, customerId],
   );
   return r.rows[0] || null;
 }
@@ -334,7 +340,7 @@ async function lastExpiredForCustomer(businessId, customerId) {
         AND ms.expires_at <= NOW()
         AND m.is_active = TRUE
       ORDER BY ms.expires_at DESC LIMIT 1`,
-    [businessId, customerId]
+    [businessId, customerId],
   );
   return r.rows[0] || null;
 }
@@ -355,15 +361,15 @@ async function recordTip(businessId, body) {
   const r = await query(
     `INSERT INTO tips (business_id, order_id, server_user_id, amount_paise)
      VALUES ($1, $2, $3, $4) RETURNING *`,
-    [businessId, orderId || null, serverUserId || null, Math.round(amountInr * 100)]
+    [businessId, orderId || null, serverUserId || null, Math.round(amountInr * 100)],
   );
   if (orderId) {
     // Cross-tenant fix (B1): scope the UPDATE to the caller's business
     // so an attacker who guesses another tenant's orderId can't spike
     // tips on someone else's order.
     await query(
-      `UPDATE orders SET tip_paise = $1 WHERE id = $2 AND business_id = $3`,
-      [Math.round(amountInr * 100), orderId, businessId]
+      'UPDATE orders SET tip_paise = $1 WHERE id = $2 AND business_id = $3',
+      [Math.round(amountInr * 100), orderId, businessId],
     );
   }
   return r.rows[0];
@@ -373,13 +379,13 @@ async function tipReport(businessId, { startDate, endDate } = {}) {
   const where = ['business_id = $1'];
   const values = [businessId]; let idx = 2;
   if (startDate) { where.push(`created_at >= $${idx++}::date`); values.push(startDate); }
-  if (endDate)   { where.push(`created_at < ($${idx++}::date + INTERVAL '1 day')`); values.push(endDate); }
+  if (endDate) { where.push(`created_at < ($${idx++}::date + INTERVAL '1 day')`); values.push(endDate); }
   const r = await query(
     `SELECT server_user_id, COUNT(*)::int AS tip_count,
             COALESCE(SUM(amount_paise), 0) / 100.0 AS total_inr
        FROM tips WHERE ${where.join(' AND ')}
       GROUP BY server_user_id ORDER BY total_inr DESC`,
-    values
+    values,
   );
   return r.rows;
 }
@@ -418,9 +424,15 @@ async function listSubscribers(businessId) {
 }
 
 module.exports = {
-  listMemberships, createMembership, updateMembership, deleteMembership, subscribe,
+  listMemberships,
+  createMembership,
+  updateMembership,
+  deleteMembership,
+  subscribe,
   listSubscribers,
   cancelSubscription,
-  activeForCustomer, lastExpiredForCustomer,
-  recordTip, tipReport,
+  activeForCustomer,
+  lastExpiredForCustomer,
+  recordTip,
+  tipReport,
 };

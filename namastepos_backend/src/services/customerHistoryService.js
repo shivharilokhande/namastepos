@@ -11,7 +11,7 @@ async function profileForCashier(businessId, phone) {
             wallet_balance_paise
        FROM customers
       WHERE business_id = $1 AND phone = $2 LIMIT 1`,
-    [businessId, phone]
+    [businessId, phone],
   );
   if (cust.rowCount === 0) return null;
   const c = cust.rows[0];
@@ -22,7 +22,7 @@ async function profileForCashier(businessId, phone) {
        FROM orders
       WHERE business_id = $1 AND customer_id = $2
       ORDER BY created_at DESC LIMIT 5`,
-    [businessId, c.id]
+    [businessId, c.id],
   );
 
   const favourites = await query(
@@ -33,7 +33,7 @@ async function profileForCashier(businessId, phone) {
       WHERE o.business_id = $1 AND o.customer_id = $2
       GROUP BY oi.menu_item_id, oi.name
       ORDER BY n DESC LIMIT 5`,
-    [businessId, c.id]
+    [businessId, c.id],
   );
 
   // Active membership (2026-08-23: include the remaining bundle so the
@@ -45,7 +45,7 @@ async function profileForCashier(businessId, phone) {
       WHERE ms.business_id = $1 AND ms.customer_id = $2
         AND ms.status = 'active' AND ms.expires_at > NOW()
       ORDER BY ms.expires_at DESC LIMIT 1`,
-    [businessId, c.id]
+    [businessId, c.id],
   );
 
   // Mask email if present
@@ -55,12 +55,19 @@ async function profileForCashier(businessId, phone) {
 
   return {
     customer: {
-      id: c.id, name: c.name, phone: c.phone,
-      emailMasked: maskedEmail, birthday: c.birthday,
-      tier: c.tier, pointsBalance: c.points_balance,
-      totalOrders: c.total_orders, totalSpent: parseFloat(c.total_spent),
-      firstOrderAt: c.first_order_at, lastOrderAt: c.last_order_at,
-      notes: c.notes, walletInr: (c.wallet_balance_paise || 0) / 100,
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      emailMasked: maskedEmail,
+      birthday: c.birthday,
+      tier: c.tier,
+      pointsBalance: c.points_balance,
+      totalOrders: c.total_orders,
+      totalSpent: parseFloat(c.total_spent),
+      firstOrderAt: c.first_order_at,
+      lastOrderAt: c.last_order_at,
+      notes: c.notes,
+      walletInr: (c.wallet_balance_paise || 0) / 100,
     },
     recentOrders: recent.rows,
     favourites: favourites.rows,
@@ -73,13 +80,13 @@ async function reorderSameAsLast(businessId, customerId) {
     `SELECT id FROM orders
       WHERE business_id = $1 AND customer_id = $2 AND status <> 'cancelled'
       ORDER BY created_at DESC LIMIT 1`,
-    [businessId, customerId]
+    [businessId, customerId],
   );
   if (last.rowCount === 0) return [];
   const items = await query(
     `SELECT menu_item_id, name, price, qty
        FROM order_items WHERE order_id = $1`,
-    [last.rows[0].id]
+    [last.rows[0].id],
   );
   return items.rows.map((r) => ({
     menuItemId: r.menu_item_id,

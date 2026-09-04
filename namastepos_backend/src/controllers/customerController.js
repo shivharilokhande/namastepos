@@ -10,7 +10,8 @@ const listQuery = Joi.object({
   search: Joi.string().max(100),
   tier: Joi.string().valid('bronze', 'silver', 'gold'),
   sort: Joi.string().valid('recent', 'top_spender', 'top_loyalty').default('recent'),
-  limit: Joi.number().integer().min(1).max(500).default(100),
+  limit: Joi.number().integer().min(1).max(500)
+    .default(100),
   offset: Joi.number().integer().min(0).default(0),
 });
 
@@ -60,11 +61,9 @@ module.exports = {
     let expiredMembership = null;
     try {
       const membershipSvc = require('../services/membershipService');
-      membership = await membershipSvc.activeForCustomer(
-        req.params.businessId, customer.id);
+      membership = await membershipSvc.activeForCustomer(req.params.businessId, customer.id);
       if (!membership) {
-        expiredMembership = await membershipSvc.lastExpiredForCustomer(
-          req.params.businessId, customer.id);
+        expiredMembership = await membershipSvc.lastExpiredForCustomer(req.params.businessId, customer.id);
       }
     } catch (_) { /* membership tables may predate migration 020/055 */ }
     res.json({ customer, loyaltySettings: settings, membership, expiredMembership });

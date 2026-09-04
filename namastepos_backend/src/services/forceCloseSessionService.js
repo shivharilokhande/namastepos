@@ -17,6 +17,7 @@ const { NotFound, BadRequest } = require('../utils/errors');
 
 async function forceCloseUnpaid(businessId, sessionId, { reason, adminId } = {}) {
   return withTransaction(async (client) => {
+    // eslint-disable-next-line no-lone-blocks -- removing the braces means de-indenting the body, which would rewrite the contents of the multi-line SQL template literals below.
     {
       // Session exists + is still open
       const s = await client.query(
@@ -24,7 +25,7 @@ async function forceCloseUnpaid(businessId, sessionId, { reason, adminId } = {})
            FROM table_sessions
           WHERE business_id = $1 AND id = $2
           FOR UPDATE`,
-        [businessId, sessionId]
+        [businessId, sessionId],
       );
       if (s.rowCount === 0) throw new NotFound('Table session not found');
       if (s.rows[0].closed_at) {
@@ -38,7 +39,7 @@ async function forceCloseUnpaid(businessId, sessionId, { reason, adminId } = {})
           WHERE business_id = $1
             AND table_session_id = $2
             AND status IN ('pending', 'ready')`,
-        [businessId, sessionId]
+        [businessId, sessionId],
       );
 
       let totalLoss = 0;
@@ -51,7 +52,7 @@ async function forceCloseUnpaid(businessId, sessionId, { reason, adminId } = {})
                   cancel_reason = COALESCE($1, 'Force-closed as unpaid by support'),
                   cancelled_at = NOW()
             WHERE id = $2`,
-          [reason || null, o.id]
+          [reason || null, o.id],
         );
       }
 
@@ -66,13 +67,13 @@ async function forceCloseUnpaid(businessId, sessionId, { reason, adminId } = {})
                         E'\n[force-closed as unpaid by super-admin ' || $2::text ||
                         ']'
           WHERE id = $1`,
-        [sessionId, adminId || 'unknown', Math.round(totalLoss * 100)]
+        [sessionId, adminId || 'unknown', Math.round(totalLoss * 100)],
       );
       await client.query(
         `UPDATE tables
             SET status = 'available', current_session_id = NULL
           WHERE business_id = $1 AND current_session_id = $2`,
-        [businessId, sessionId]
+        [businessId, sessionId],
       );
 
       // Record the leakage event so it lands on the owner's dashboard.
@@ -88,7 +89,7 @@ async function forceCloseUnpaid(businessId, sessionId, { reason, adminId } = {})
           Math.round(totalLoss * 100),
           sessionId,
           reason || 'Guest walked out without paying — force-closed by support',
-        ]
+        ],
       );
 
       return {

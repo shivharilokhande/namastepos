@@ -47,7 +47,8 @@ function _decrypt(enc) {
 
 function _base32Encode(buf) {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let bits = '', out = '';
+  let bits = ''; let
+    out = '';
   for (const b of buf) bits += b.toString(2).padStart(8, '0');
   for (let i = 0; i + 5 <= bits.length; i += 5) {
     out += alphabet[parseInt(bits.substr(i, 5), 2)];
@@ -73,10 +74,10 @@ function _totp(secret, t = Math.floor(Date.now() / 1000)) {
   const mac = crypto.createHmac('sha1', secret).update(cbuf).digest();
   const off = mac[mac.length - 1] & 0x0f;
   const code = (
-    ((mac[off] & 0x7f) << 24) |
-    ((mac[off + 1] & 0xff) << 16) |
-    ((mac[off + 2] & 0xff) << 8)  |
-    (mac[off + 3] & 0xff)
+    ((mac[off] & 0x7f) << 24)
+    | ((mac[off + 1] & 0xff) << 16)
+    | ((mac[off + 2] & 0xff) << 8)
+    | (mac[off + 3] & 0xff)
   ) % 10 ** DIGITS;
   return code.toString().padStart(DIGITS, '0');
 }
@@ -99,9 +100,7 @@ async function startEnrolment(adminId, adminEmail) {
   // clobber an active enrolment. To rotate, the admin must first disable (which
   // now requires a valid current code) and then enrol afresh. This keeps the
   // existing enrolment fully intact until a new one is confirmed.
-  const cur = await query(
-    `SELECT totp_enrolled_at FROM admin_users WHERE id = $1`, [adminId]
-  );
+  const cur = await query('SELECT totp_enrolled_at FROM admin_users WHERE id = $1', [adminId]);
   if (cur.rowCount > 0 && cur.rows[0].totp_enrolled_at) {
     throw new BadRequest('2FA is already enabled — disable it first to re-enrol');
   }
@@ -128,19 +127,17 @@ async function startEnrolment(adminId, adminEmail) {
             recovery_codes  = $2,
             totp_enrolled_at = NULL
       WHERE id = $3`,
-    [enc, recoveryHashes, adminId]
+    [enc, recoveryHashes, adminId],
   );
 
   const issuer = encodeURIComponent('NamastePOS');
-  const label  = encodeURIComponent(adminEmail);
+  const label = encodeURIComponent(adminEmail);
   const otpauth = `otpauth://totp/${issuer}:${label}?secret=${b32}&issuer=${issuer}&digits=${DIGITS}&period=${STEP_S}`;
   return { otpauth, secret: b32, recoveryCodes };
 }
 
 async function confirmEnrolment(adminId, code) {
-  const r = await query(
-    `SELECT totp_secret_enc FROM admin_users WHERE id = $1`, [adminId]
-  );
+  const r = await query('SELECT totp_secret_enc FROM admin_users WHERE id = $1', [adminId]);
   if (r.rowCount === 0 || !r.rows[0].totp_secret_enc) {
     throw new BadRequest('No enrolment in progress — request enrolment first');
   }
@@ -148,17 +145,15 @@ async function confirmEnrolment(adminId, code) {
   if (!_verifyTotp(secret, code)) throw new Unauthorized('Invalid TOTP code');
 
   await query(
-    `UPDATE admin_users SET totp_enrolled_at = NOW() WHERE id = $1`,
-    [adminId]
+    'UPDATE admin_users SET totp_enrolled_at = NOW() WHERE id = $1',
+    [adminId],
   );
   return { enrolled: true };
 }
 
 // ── Login challenge ───────────────────────────────────────────────────────
 async function isEnrolled(adminId) {
-  const r = await query(
-    `SELECT totp_enrolled_at FROM admin_users WHERE id = $1`, [adminId]
-  );
+  const r = await query('SELECT totp_enrolled_at FROM admin_users WHERE id = $1', [adminId]);
   return r.rowCount > 0 && r.rows[0].totp_enrolled_at !== null;
 }
 
@@ -166,7 +161,7 @@ async function startChallenge(adminId) {
   const r = await query(
     `INSERT INTO admin_2fa_pending (admin_id, expires_at)
      VALUES ($1, NOW() + INTERVAL '15 minutes') RETURNING challenge_id`,
-    [adminId]
+    [adminId],
   );
   return { challengeId: r.rows[0].challenge_id };
 }
@@ -196,8 +191,8 @@ async function _checkCode(row, code) {
         const remaining = row.recovery_codes.slice();
         remaining.splice(i, 1);
         await query(
-          `UPDATE admin_users SET recovery_codes = $1 WHERE id = $2`,
-          [remaining, row.admin_id]
+          'UPDATE admin_users SET recovery_codes = $1 WHERE id = $2',
+          [remaining, row.admin_id],
         );
         return true;
       }
@@ -212,7 +207,7 @@ async function verifyChallenge(challengeId, code) {
        FROM admin_2fa_pending p
        JOIN admin_users a ON a.id = p.admin_id
       WHERE p.challenge_id = $1 AND p.expires_at > NOW()`,
-    [challengeId]
+    [challengeId],
   );
   if (ch.rowCount === 0) throw new Unauthorized('Challenge expired or invalid');
   const row = ch.rows[0];
@@ -224,7 +219,7 @@ async function verifyChallenge(challengeId, code) {
     const n = (_attempts.get(challengeId) || 0) + 1;
     if (n >= MAX_ATTEMPTS) {
       _attempts.delete(challengeId);
-      await query(`DELETE FROM admin_2fa_pending WHERE challenge_id = $1`, [challengeId]);
+      await query('DELETE FROM admin_2fa_pending WHERE challenge_id = $1', [challengeId]);
       throw new Unauthorized('Too many attempts — restart sign-in');
     }
     _attempts.set(challengeId, n);
@@ -233,7 +228,7 @@ async function verifyChallenge(challengeId, code) {
 
   // Burn the challenge (and its attempt counter)
   _attempts.delete(challengeId);
-  await query(`DELETE FROM admin_2fa_pending WHERE challenge_id = $1`, [challengeId]);
+  await query('DELETE FROM admin_2fa_pending WHERE challenge_id = $1', [challengeId]);
   return { adminId: row.admin_id };
 }
 
@@ -244,7 +239,7 @@ async function disable(adminId, code) {
   const r = await query(
     `SELECT id AS admin_id, totp_secret_enc, totp_enrolled_at, recovery_codes
        FROM admin_users WHERE id = $1`,
-    [adminId]
+    [adminId],
   );
   if (r.rowCount === 0) throw new NotFound('Admin not found');
   const row = r.rows[0];
@@ -257,12 +252,15 @@ async function disable(adminId, code) {
     `UPDATE admin_users
         SET totp_secret_enc = NULL, totp_enrolled_at = NULL, recovery_codes = NULL
       WHERE id = $1`,
-    [adminId]
+    [adminId],
   );
 }
 
 module.exports = {
-  startEnrolment, confirmEnrolment,
-  isEnrolled, startChallenge, verifyChallenge,
+  startEnrolment,
+  confirmEnrolment,
+  isEnrolled,
+  startChallenge,
+  verifyChallenge,
   disable,
 };

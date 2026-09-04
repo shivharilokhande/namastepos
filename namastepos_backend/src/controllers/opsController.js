@@ -51,7 +51,7 @@ const listTickets = asyncHandler(async (req, res) => {
     stationId: req.query.stationId,
     status: req.query.status,
     day: req.query.day,
-  })});
+  }) });
 });
 const updateTicketStatus = [
   validate({ body: ticketStatusBody }),
@@ -78,7 +78,8 @@ const floorPatch = Joi.object({
 const tableBody = Joi.object({
   floorId: Joi.string().uuid().required(),
   label: Joi.string().min(1).max(20).required(),
-  seats: Joi.number().integer().min(1).max(50).default(4),
+  seats: Joi.number().integer().min(1).max(50)
+    .default(4),
   shape: Joi.string().valid('round', 'square', 'rectangle', 'booth').default('square'),
   xPos: Joi.number().integer().default(0),
   yPos: Joi.number().integer().default(0),
@@ -103,7 +104,8 @@ const tablePatch = Joi.object({
 }).min(1);
 
 const openSessionBody = Joi.object({
-  guestCount: Joi.number().integer().min(1).max(50).default(2),
+  guestCount: Joi.number().integer().min(1).max(50)
+    .default(2),
   customerPhone: Joi.string().max(20).allow('', null),
   customerName: Joi.string().max(255).allow('', null),
   notes: Joi.string().max(500).allow('', null),
@@ -150,8 +152,7 @@ const deleteTable = asyncHandler(async (req, res) => {
 const openSession = [
   validate({ body: openSessionBody }),
   asyncHandler(async (req, res) => {
-    const session = await tables.openSession(
-      req.params.businessId, req.params.tableId, req.body, req.user.id);
+    const session = await tables.openSession(req.params.businessId, req.params.tableId, req.body, req.user.id);
     res.status(201).json({ session });
   }),
 ];
@@ -166,7 +167,8 @@ const closeSession = [
     paymentBreakdown: Joi.array().items(Joi.object({
       method: Joi.string().valid('cash', 'upi', 'card', 'online', 'wallet').required(),
       amountInr: Joi.number().positive().required(),
-    })).min(1).max(3).allow(null),
+    })).min(1).max(3)
+      .allow(null),
     // 2026-08-25 shortfall: customer underpaid this much — booked as a
     // negative wallet movement (debt) on the identified customer.
     shortfallInr: Joi.number().min(0).default(0),
@@ -179,14 +181,20 @@ const closeSession = [
     // Server caps to the customer's balance + loyalty rules; needs an
     // identified customer on the session.
     pointsToRedeem: Joi.number().integer().min(0).allow(null),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     const session = await tables.closeSession(
-      req.params.businessId, req.params.sessionId, req.user.id,
-      req.body.paymentMethod || 'cash', req.body.discountInr || 0,
-      req.body.paymentBreakdown || null, req.body.shortfallInr || 0,
-      req.body.autoWallet === true, req.body.walletCapInr ?? null,
-      req.body.pointsToRedeem || 0);
+      req.params.businessId,
+      req.params.sessionId,
+      req.user.id,
+      req.body.paymentMethod || 'cash',
+      req.body.discountInr || 0,
+      req.body.paymentBreakdown || null,
+      req.body.shortfallInr || 0,
+      req.body.autoWallet === true,
+      req.body.walletCapInr ?? null,
+      req.body.pointsToRedeem || 0,
+    );
     res.json({ session });
   }),
 ];
@@ -198,8 +206,7 @@ const sessionDetail = asyncHandler(async (req, res) => {
 // Release a table whose customer left without ordering. Refuses if any
 // non-cancelled orders are attached — use closeSession (Settle) instead.
 const abandonSession = asyncHandler(async (req, res) => {
-  const session = await tables.abandonSession(
-    req.params.businessId, req.params.sessionId, req.user.id);
+  const session = await tables.abandonSession(req.params.businessId, req.params.sessionId, req.user.id);
   res.json({ session });
 });
 
@@ -224,12 +231,29 @@ const qrRotateToken = asyncHandler(async (req, res) => {
 
 module.exports = {
   // Stations
-  listStations, createStation, updateStation, deleteStation,
-  listTickets, updateTicketStatus, markTicketPrinted,
+  listStations,
+  createStation,
+  updateStation,
+  deleteStation,
+  listTickets,
+  updateTicketStatus,
+  markTicketPrinted,
   // Tables
-  listFloors, createFloor, updateFloor, deleteFloor,
-  listTables, createTable, updateTable, deleteTable,
-  openSession, closeSession, abandonSession, sessionDetail,
+  listFloors,
+  createFloor,
+  updateFloor,
+  deleteFloor,
+  listTables,
+  createTable,
+  updateTable,
+  deleteTable,
+  openSession,
+  closeSession,
+  abandonSession,
+  sessionDetail,
   // QR
-  qrSettings, qrSettingsUpdate, qrTokenForTable, qrRotateToken,
+  qrSettings,
+  qrSettingsUpdate,
+  qrTokenForTable,
+  qrRotateToken,
 };

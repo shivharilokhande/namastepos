@@ -1,0 +1,18 @@
+{
+  "parserOptions": {
+    "sourceType": "module"
+  },
+  "env": {
+    "node": false
+  },
+  "globals": {
+    "__ENV": "readonly",
+    "__VU": "readonly",
+    "__ITER": "readonly",
+    "console": "readonly"
+  },
+  "rules": {
+    "import/no-unresolved": "off",
+    "import/extensions": "off"
+  }
+}

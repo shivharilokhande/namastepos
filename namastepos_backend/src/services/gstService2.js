@@ -12,7 +12,8 @@ function computeGstBreakdown({ orderItems, isInterState = false }) {
     const taxable = (it.price || 0) * (it.qty || 0);
     buckets[pct] = (buckets[pct] || 0) + taxable;
   }
-  let cgst = 0, sgst = 0, igst = 0;
+  let cgst = 0; let sgst = 0; let
+    igst = 0;
   const breakdown = {};
   for (const [pctStr, taxable] of Object.entries(buckets)) {
     const pct = parseFloat(pctStr);

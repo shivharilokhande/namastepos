@@ -53,9 +53,9 @@ function ensureTransporter() {
     pool: true,
     maxConnections: 3,
     maxMessages: 50,
-    connectionTimeout: 10000,   // 10s to establish the TCP/TLS connection
-    greetingTimeout: 10000,     // 10s for the SMTP greeting
-    socketTimeout: 20000,       // 20s of inactivity before giving up
+    connectionTimeout: 10000, // 10s to establish the TCP/TLS connection
+    greetingTimeout: 10000, // 10s for the SMTP greeting
+    socketTimeout: 20000, // 20s of inactivity before giving up
   });
   return transporter;
 }
@@ -97,7 +97,7 @@ async function sendMail({
       `INSERT INTO email_dispatch_log
          (business_id, user_id, template, recipient, subject, status)
        VALUES ($1, $2, $3, $4, $5, 'queued') RETURNING *`,
-      [businessId, userId, template, recipient, subject]
+      [businessId, userId, template, recipient, subject],
     );
     logRow = r.rows[0];
   } catch (err) {
@@ -114,7 +114,7 @@ async function sendMail({
     await query(
       `UPDATE email_dispatch_log SET status = 'suppressed', sent_at = NOW()
         WHERE id = $1`,
-      [logRow.id]
+      [logRow.id],
     );
     logger.info(`[email] suppressed (no SMTP): ${template} → ${recipient}`);
     return { suppressed: true };
@@ -129,14 +129,14 @@ async function sendMail({
     try {
       await _sendViaBrevoApi({ recipient, subject, html, text });
       await query(
-        `UPDATE email_dispatch_log SET status = 'sent', sent_at = NOW() WHERE id = $1`,
-        [logRow.id]
+        'UPDATE email_dispatch_log SET status = \'sent\', sent_at = NOW() WHERE id = $1',
+        [logRow.id],
       );
       return { sent: true, via: 'brevo_api' };
     } catch (err) {
       await query(
-        `UPDATE email_dispatch_log SET status = 'failed', error_message = $2 WHERE id = $1`,
-        [logRow.id, err.message]
+        'UPDATE email_dispatch_log SET status = \'failed\', error_message = $2 WHERE id = $1',
+        [logRow.id, err.message],
       );
       logger.warn(`[email] brevo-api failed ${template} → ${recipient}: ${err.message}`);
       return { failed: true, error: err.message };
@@ -169,7 +169,7 @@ async function sendMail({
       `UPDATE email_dispatch_log
           SET status = 'sent', provider_id = $2, sent_at = NOW()
         WHERE id = $1`,
-      [logRow.id, info.messageId || null]
+      [logRow.id, info.messageId || null],
     );
     return { sent: true, providerId: info.messageId };
   } catch (err) {
@@ -177,7 +177,7 @@ async function sendMail({
       `UPDATE email_dispatch_log
           SET status = 'failed', error_message = $2
         WHERE id = $1`,
-      [logRow.id, err.message]
+      [logRow.id, err.message],
     );
     logger.warn(`[email] failed ${template} → ${recipient}: ${err.message}`);
     return { failed: true, error: err.message };

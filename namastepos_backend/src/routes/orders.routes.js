@@ -21,11 +21,11 @@ const createOrderLimiter = rateLimit({
   message: { error: 'TOO_MANY_ORDERS', message: 'Slow down — too many orders in the last minute' },
 });
 
-router.post  ('/', createOrderLimiter,    sub.enforceLimit('monthly_orders'), ...c.create);
-router.get   ('/',                       ...c.list);
-router.get   ('/:orderId',               c.get);
-router.put   ('/:orderId/status',        ...c.updateStatus);
-router.put   ('/:orderId/customer',      ...c.assignCustomer);
-router.post  ('/:orderId/print',         c.print);
+router.post('/', createOrderLimiter, sub.enforceLimit('monthly_orders'), ...c.create);
+router.get('/', ...c.list);
+router.get('/:orderId', c.get);
+router.put('/:orderId/status', ...c.updateStatus);
+router.put('/:orderId/customer', ...c.assignCustomer);
+router.post('/:orderId/print', c.print);
 
 module.exports = router;

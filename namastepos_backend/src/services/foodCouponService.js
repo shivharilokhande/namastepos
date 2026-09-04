@@ -10,26 +10,26 @@ const { BadRequest, NotFound } = require('../utils/errors');
 async function listForBusiness(businessId, { includeInactive = false } = {}) {
   // Owners see their own coupons + platform-wide ones; never other tenants'.
   const where = [
-    `applies_to IN ('food_order','both')`,
-    `(business_id IS NULL OR business_id = $1)`,
+    'applies_to IN (\'food_order\',\'both\')',
+    '(business_id IS NULL OR business_id = $1)',
   ];
-  if (!includeInactive) where.push(`status = 'active'`);
+  if (!includeInactive) where.push('status = \'active\'');
   const r = await query(
     `SELECT * FROM coupons WHERE ${where.join(' AND ')}
       ORDER BY created_at DESC LIMIT 200`,
-    [businessId]
+    [businessId],
   );
   return r.rows;
 }
 
-async function applyToOrder(businessId, { code, subtotal, customerId }) {
+async function applyToOrder(businessId, { code, subtotal }) {
   // Tenant-scoped lookup — another business's private coupon must behave
   // exactly like a coupon that doesn't exist.
   const c = await query(
     `SELECT * FROM coupons
       WHERE code = $1 AND (business_id IS NULL OR business_id = $2)
       LIMIT 1`,
-    [code.toUpperCase(), businessId]
+    [code.toUpperCase(), businessId],
   );
   if (c.rowCount === 0) throw new NotFound('Coupon not found');
   const coupon = c.rows[0];
@@ -68,7 +68,7 @@ async function createForBusiness(businessId, { code, type, value, maxDiscountInr
       [
         code.toUpperCase(), type, value, businessId,
         maxDiscountInr ?? null, expiresAt ?? null, maxRedemptions ?? null,
-      ]
+      ],
     );
     return r.rows[0];
   } catch (err) {
@@ -95,8 +95,8 @@ async function updateForBusiness(businessId, id, patch) {
   // (flat coupons may legitimately exceed ₹100).
   if (patch.value !== undefined) {
     const t = await query(
-      `SELECT type FROM coupons WHERE id = $1 AND business_id = $2`,
-      [id, businessId]
+      'SELECT type FROM coupons WHERE id = $1 AND business_id = $2',
+      [id, businessId],
     );
     if (t.rowCount === 0) throw new NotFound('Coupon not found');
     if (t.rows[0].type === 'percent' && parseFloat(patch.value) > 100) {
@@ -121,7 +121,7 @@ async function updateForBusiness(businessId, id, patch) {
       `UPDATE coupons SET ${sets.join(', ')}
         WHERE id = $${args.length - 1} AND business_id = $${args.length}
         RETURNING *`,
-      args
+      args,
     );
     if (r.rowCount === 0) throw new NotFound('Coupon not found');
     return r.rows[0];
@@ -138,7 +138,7 @@ async function deactivate(businessId, id) {
     `UPDATE coupons SET status = 'inactive'
       WHERE id = $1 AND business_id = $2
       RETURNING *`,
-    [id, businessId]
+    [id, businessId],
   );
   if (r.rowCount === 0) throw new NotFound('Coupon not found');
   return r.rows[0];
@@ -165,7 +165,7 @@ async function recordUse(couponId, orderId, client = null) {
       WHERE id = $1
         AND (max_redemptions IS NULL OR redemption_count < max_redemptions)
       RETURNING id, redemption_count`,
-    [couponId]
+    [couponId],
   );
   if (r.rowCount === 0) throw new BadRequest('Coupon fully redeemed');
   return r.rows[0];

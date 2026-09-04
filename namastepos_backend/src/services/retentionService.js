@@ -25,9 +25,9 @@ const settings = require('./settingsService');
 
 const KEYS = {
   deletedBusinessDays: 'retention.deleted_business_days',
-  auditLogDays:        'retention.audit_log_days',
-  cookieConsentDays:   'retention.cookie_consent_days',
-  lastRun:             'retention.last_run',
+  auditLogDays: 'retention.audit_log_days',
+  cookieConsentDays: 'retention.cookie_consent_days',
+  lastRun: 'retention.last_run',
 };
 
 function _days(v) {
@@ -41,17 +41,17 @@ async function getConfig() {
   ]);
   return {
     deletedBusinessDays: _days(m[KEYS.deletedBusinessDays]),
-    auditLogDays:        _days(m[KEYS.auditLogDays]),
-    cookieConsentDays:   _days(m[KEYS.cookieConsentDays]),
-    lastRun:             m[KEYS.lastRun] || null,
+    auditLogDays: _days(m[KEYS.auditLogDays]),
+    cookieConsentDays: _days(m[KEYS.cookieConsentDays]),
+    lastRun: m[KEYS.lastRun] || null,
   };
 }
 
 async function saveConfig(input, { adminId } = {}) {
   const patch = {};
   if (input.deletedBusinessDays !== undefined) patch[KEYS.deletedBusinessDays] = _days(input.deletedBusinessDays);
-  if (input.auditLogDays !== undefined)        patch[KEYS.auditLogDays] = _days(input.auditLogDays);
-  if (input.cookieConsentDays !== undefined)   patch[KEYS.cookieConsentDays] = _days(input.cookieConsentDays);
+  if (input.auditLogDays !== undefined) patch[KEYS.auditLogDays] = _days(input.auditLogDays);
+  if (input.cookieConsentDays !== undefined) patch[KEYS.cookieConsentDays] = _days(input.cookieConsentDays);
   for (const [k, v] of Object.entries(patch)) {
     await settings.set(k, v, { adminId, description: 'DPDP data-retention window (days; 0 = disabled)' });
   }
@@ -66,13 +66,13 @@ async function preview() {
   const cfg = await getConfig();
   const [biz, audit, consent] = await Promise.all([
     cfg.deletedBusinessDays
-      ? query(`SELECT COUNT(*)::int AS c FROM businesses WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - make_interval(days => $1::int)`, [cfg.deletedBusinessDays])
+      ? query('SELECT COUNT(*)::int AS c FROM businesses WHERE deleted_at IS NOT NULL AND deleted_at < NOW() - make_interval(days => $1::int)', [cfg.deletedBusinessDays])
       : Promise.resolve({ rows: [{ c: 0 }] }),
     cfg.auditLogDays
-      ? query(`SELECT COUNT(*)::int AS c FROM audit_log WHERE created_at < NOW() - make_interval(days => $1::int)`, [cfg.auditLogDays])
+      ? query('SELECT COUNT(*)::int AS c FROM audit_log WHERE created_at < NOW() - make_interval(days => $1::int)', [cfg.auditLogDays])
       : Promise.resolve({ rows: [{ c: 0 }] }),
     cfg.cookieConsentDays
-      ? query(`SELECT COUNT(*)::int AS c FROM consent_events WHERE user_id IS NULL AND guest_phone IS NULL AND session_id IS NOT NULL AND created_at < NOW() - make_interval(days => $1::int)`, [cfg.cookieConsentDays])
+      ? query('SELECT COUNT(*)::int AS c FROM consent_events WHERE user_id IS NULL AND guest_phone IS NULL AND session_id IS NOT NULL AND created_at < NOW() - make_interval(days => $1::int)', [cfg.cookieConsentDays])
       : Promise.resolve({ rows: [{ c: 0 }] }),
   ]);
   return {
@@ -96,16 +96,16 @@ async function _purgeDeletedBusinesses(days) {
       WHERE deleted_at IS NOT NULL
         AND deleted_at < NOW() - make_interval(days => $1::int)
       LIMIT 200`,
-    [days]
+    [days],
   );
   let purged = 0;
   for (const row of due.rows) {
     try {
       await withTransaction(async (client) => {
         // audit_log.business_id has no ON DELETE rule → clear it first.
-        await client.query(`DELETE FROM audit_log WHERE business_id = $1`, [row.id]);
+        await client.query('DELETE FROM audit_log WHERE business_id = $1', [row.id]);
         // Everything else business-scoped cascades on delete.
-        await client.query(`DELETE FROM businesses WHERE id = $1`, [row.id]);
+        await client.query('DELETE FROM businesses WHERE id = $1', [row.id]);
       });
       purged += 1;
     } catch (e) {
@@ -118,8 +118,8 @@ async function _purgeDeletedBusinesses(days) {
 async function _pruneAuditLog(days) {
   if (!days) return 0;
   const r = await query(
-    `DELETE FROM audit_log WHERE created_at < NOW() - make_interval(days => $1::int)`,
-    [days]
+    'DELETE FROM audit_log WHERE created_at < NOW() - make_interval(days => $1::int)',
+    [days],
   );
   return r.rowCount || 0;
 }
@@ -130,7 +130,7 @@ async function _pruneCookieConsents(days) {
     `DELETE FROM consent_events
       WHERE user_id IS NULL AND guest_phone IS NULL AND session_id IS NOT NULL
         AND created_at < NOW() - make_interval(days => $1::int)`,
-    [days]
+    [days],
   );
   return r.rowCount || 0;
 }
@@ -143,7 +143,7 @@ async function sweep({ adminId = null } = {}) {
   const cfg = await getConfig();
   const result = {
     businessesPurged: await _purgeDeletedBusinesses(cfg.deletedBusinessDays),
-    auditRowsPruned:  await _pruneAuditLog(cfg.auditLogDays),
+    auditRowsPruned: await _pruneAuditLog(cfg.auditLogDays),
     consentRowsPruned: await _pruneCookieConsents(cfg.cookieConsentDays),
     ranAt: new Date().toISOString(),
   };

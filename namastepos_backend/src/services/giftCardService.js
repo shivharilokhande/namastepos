@@ -17,9 +17,9 @@
 //   4. POS records the remaining amount under whatever tender the
 //      customer pays with (cash/UPI/…)
 
+const crypto = require('crypto');
 const { query, withTransaction } = require('../config/db');
 const { BadRequest, NotFound } = require('../utils/errors');
-const crypto = require('crypto');
 
 function genCode() {
   // 16 alphanumeric chars, no confusable 0/O/1/I chars.
@@ -27,7 +27,7 @@ function genCode() {
   const buf = crypto.randomBytes(16);
   let out = '';
   for (let i = 0; i < 16; i++) out += alphabet[buf[i] % alphabet.length];
-  return out.match(/.{1,4}/g).join('-');   // AAAA-BBBB-CCCC-DDDD
+  return out.match(/.{1,4}/g).join('-'); // AAAA-BBBB-CCCC-DDDD
 }
 
 // ── Gift cards ───────────────────────────────────────────────────────
@@ -43,13 +43,13 @@ async function issueGiftCard(businessId, {
           issued_to_phone, issued_by_user_id, expires_at)
        VALUES ($1, $2, $3, $3, $4, $5, $6)
        RETURNING *`,
-      [businessId, genCode(), paise, issuedToPhone || null, issuedByUserId, expiresAt || null]
+      [businessId, genCode(), paise, issuedToPhone || null, issuedByUserId, expiresAt || null],
     );
     await c.query(
       `INSERT INTO wallet_ledger
          (business_id, gift_card_id, kind, amount_paise, note)
        VALUES ($1, $2, 'credit_issued', $3, $4)`,
-      [businessId, r.rows[0].id, paise, `Gift card issued (${issuedToPhone || 'anonymous'})`]
+      [businessId, r.rows[0].id, paise, `Gift card issued (${issuedToPhone || 'anonymous'})`],
     );
     return r.rows[0];
   });
@@ -57,8 +57,8 @@ async function issueGiftCard(businessId, {
 
 async function findGiftCardByCode(businessId, code) {
   const r = await query(
-    `SELECT * FROM gift_cards WHERE business_id = $1 AND code = $2 LIMIT 1`,
-    [businessId, code.trim().toUpperCase()]
+    'SELECT * FROM gift_cards WHERE business_id = $1 AND code = $2 LIMIT 1',
+    [businessId, code.trim().toUpperCase()],
   );
   return r.rows[0] || null;
 }
@@ -73,18 +73,18 @@ async function topUpWallet(businessId, customerId, amountInr, note) {
        ON CONFLICT (business_id, customer_id) DO UPDATE
          SET balance_paise = customer_wallets.balance_paise + EXCLUDED.balance_paise,
              updated_at = NOW()`,
-      [businessId, customerId, paise]
+      [businessId, customerId, paise],
     );
     await c.query(
       `INSERT INTO wallet_ledger
          (business_id, customer_id, kind, amount_paise, note)
        VALUES ($1, $2, 'credit_top_up', $3, $4)`,
-      [businessId, customerId, paise, note || 'Top-up']
+      [businessId, customerId, paise, note || 'Top-up'],
     );
     const r = await c.query(
       `SELECT balance_paise FROM customer_wallets
         WHERE business_id = $1 AND customer_id = $2`,
-      [businessId, customerId]
+      [businessId, customerId],
     );
     return { balance: parseFloat(r.rows[0].balance_paise) / 100 };
   });
@@ -94,7 +94,7 @@ async function getWalletBalance(businessId, customerId) {
   const r = await query(
     `SELECT balance_paise FROM customer_wallets
       WHERE business_id = $1 AND customer_id = $2 LIMIT 1`,
-    [businessId, customerId]
+    [businessId, customerId],
   );
   return parseFloat(r.rows[0]?.balance_paise || 0) / 100;
 }
@@ -136,7 +136,7 @@ async function debitWalletTx(client, businessId, customerId, amountPaise, {
          SET balance_paise = customer_wallets.balance_paise + EXCLUDED.balance_paise,
              updated_at = NOW()
        RETURNING balance_paise`,
-      [businessId, customerId, -paise]
+      [businessId, customerId, -paise],
     );
     balanceAfter = Number(r.rows[0].balance_paise);
   } else {
@@ -146,18 +146,18 @@ async function debitWalletTx(client, businessId, customerId, amountPaise, {
         WHERE business_id = $2 AND customer_id = $3
           AND balance_paise >= $1
         RETURNING balance_paise`,
-      [paise, businessId, customerId]
+      [paise, businessId, customerId],
     );
     if (upd.rowCount === 0) {
       const cur = await client.query(
         `SELECT balance_paise FROM customer_wallets
           WHERE business_id = $1 AND customer_id = $2 LIMIT 1`,
-        [businessId, customerId]
+        [businessId, customerId],
       );
       const bal = parseFloat(cur.rows[0]?.balance_paise || 0) / 100;
       throw new BadRequest(
         `Insufficient wallet balance: ₹${bal.toFixed(2)} available, `
-        + `₹${(paise / 100).toFixed(2)} needed`
+        + `₹${(paise / 100).toFixed(2)} needed`,
       );
     }
     balanceAfter = Number(upd.rows[0].balance_paise);
@@ -166,7 +166,7 @@ async function debitWalletTx(client, businessId, customerId, amountPaise, {
     `INSERT INTO wallet_ledger
        (business_id, customer_id, order_id, kind, amount_paise, note)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [businessId, customerId, orderId, reason || 'manual_adjust', -paise, note]
+    [businessId, customerId, orderId, reason || 'manual_adjust', -paise, note],
   );
   return { balanceAfterInr: balanceAfter / 100 };
 }
@@ -185,13 +185,13 @@ async function creditWalletTx(client, businessId, customerId, amountPaise, {
        SET balance_paise = customer_wallets.balance_paise + EXCLUDED.balance_paise,
            updated_at = NOW()
      RETURNING balance_paise`,
-    [businessId, customerId, paise]
+    [businessId, customerId, paise],
   );
   await client.query(
     `INSERT INTO wallet_ledger
        (business_id, customer_id, order_id, kind, amount_paise, note)
      VALUES ($1, $2, $3, $4, $5, $6)`,
-    [businessId, customerId, orderId, reason || 'manual_adjust', paise, note]
+    [businessId, customerId, orderId, reason || 'manual_adjust', paise, note],
   );
   return { balanceAfterInr: Number(r.rows[0].balance_paise) / 100 };
 }
@@ -207,7 +207,7 @@ async function getWallet(businessId, customerId) {
        FROM wallet_ledger
       WHERE business_id = $1 AND customer_id = $2
       ORDER BY created_at DESC LIMIT 50`,
-    [businessId, customerId]
+    [businessId, customerId],
   );
   return {
     balanceInr,
@@ -254,7 +254,7 @@ async function redeem(businessId, {
         `UPDATE gift_cards SET balance_paise = balance_paise - $1
           WHERE id = $2 AND balance_paise >= $1
           RETURNING balance_paise`,
-        [paise, gc.id]
+        [paise, gc.id],
       );
       if (upd.rowCount === 0) {
         throw new BadRequest(`Only ₹${(gc.balance_paise / 100).toFixed(2)} available on this card`);
@@ -263,7 +263,7 @@ async function redeem(businessId, {
         `INSERT INTO wallet_ledger
            (business_id, gift_card_id, order_id, kind, amount_paise, note)
          VALUES ($1, $2, $3, 'redeem', $4, $5)`,
-        [businessId, gc.id, orderId || null, -paise, 'Gift card redemption']
+        [businessId, gc.id, orderId || null, -paise, 'Gift card redemption'],
       );
       return {
         source: 'gift_card',
@@ -280,7 +280,7 @@ async function redeem(businessId, {
           WHERE business_id = $2 AND customer_id = $3
             AND balance_paise >= $1
           RETURNING balance_paise`,
-        [paise, businessId, customerId]
+        [paise, businessId, customerId],
       );
       if (upd.rowCount === 0) {
         const cur = await getWalletBalance(businessId, customerId);
@@ -290,7 +290,7 @@ async function redeem(businessId, {
         `INSERT INTO wallet_ledger
            (business_id, customer_id, order_id, kind, amount_paise, note)
          VALUES ($1, $2, $3, 'redeem', $4, $5)`,
-        [businessId, customerId, orderId || null, -paise, 'Wallet redemption']
+        [businessId, customerId, orderId || null, -paise, 'Wallet redemption'],
       );
       return { source: 'wallet', remaining: upd.rows[0].balance_paise / 100 };
     });
@@ -334,7 +334,7 @@ async function redeemTx(client, businessId, {
       `UPDATE gift_cards SET balance_paise = balance_paise - $1
         WHERE id = $2 AND balance_paise >= $1
         RETURNING balance_paise`,
-      [paise, gc.id]
+      [paise, gc.id],
     );
     if (upd.rowCount === 0) {
       throw new BadRequest(`Only ₹${(gc.balance_paise / 100).toFixed(2)} available on this card`);
@@ -343,7 +343,7 @@ async function redeemTx(client, businessId, {
       `INSERT INTO wallet_ledger
          (business_id, gift_card_id, order_id, kind, amount_paise, note)
        VALUES ($1, $2, $3, 'redeem', $4, $5)`,
-      [businessId, gc.id, orderId || null, -paise, 'Gift card redemption']
+      [businessId, gc.id, orderId || null, -paise, 'Gift card redemption'],
     );
     return {
       source: 'gift_card',
@@ -358,13 +358,13 @@ async function redeemTx(client, businessId, {
         WHERE business_id = $2 AND customer_id = $3
           AND balance_paise >= $1
         RETURNING balance_paise`,
-      [paise, businessId, customerId]
+      [paise, businessId, customerId],
     );
     if (upd.rowCount === 0) {
       const cur = await client.query(
         `SELECT balance_paise FROM customer_wallets
           WHERE business_id = $1 AND customer_id = $2 LIMIT 1`,
-        [businessId, customerId]
+        [businessId, customerId],
       );
       const bal = parseFloat(cur.rows[0]?.balance_paise || 0) / 100;
       throw new BadRequest(`Only ₹${bal.toFixed(2)} in wallet`);
@@ -373,7 +373,7 @@ async function redeemTx(client, businessId, {
       `INSERT INTO wallet_ledger
          (business_id, customer_id, order_id, kind, amount_paise, note)
        VALUES ($1, $2, $3, 'redeem', $4, $5)`,
-      [businessId, customerId, orderId || null, -paise, 'Wallet redemption']
+      [businessId, customerId, orderId || null, -paise, 'Wallet redemption'],
     );
     return { source: 'wallet', remaining: upd.rows[0].balance_paise / 100 };
   }
@@ -390,7 +390,7 @@ async function listGiftCards(businessId, { active = true } = {}) {
         AND ($2::boolean IS NULL OR ($2 = TRUE AND balance_paise > 0)
                                  OR ($2 = FALSE AND balance_paise = 0))
       ORDER BY issued_at DESC LIMIT 200`,
-    [businessId, active]
+    [businessId, active],
   );
   return r.rows.map((r) => ({
     id: r.id,
@@ -404,8 +404,14 @@ async function listGiftCards(businessId, { active = true } = {}) {
 }
 
 module.exports = {
-  issueGiftCard, findGiftCardByCode,
-  topUpWallet, getWalletBalance, getWallet,
-  debitWalletTx, creditWalletTx,
-  redeem, redeemTx, listGiftCards,
+  issueGiftCard,
+  findGiftCardByCode,
+  topUpWallet,
+  getWalletBalance,
+  getWallet,
+  debitWalletTx,
+  creditWalletTx,
+  redeem,
+  redeemTx,
+  listGiftCards,
 };

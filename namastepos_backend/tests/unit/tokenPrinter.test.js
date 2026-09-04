@@ -18,7 +18,7 @@ describe('formatToken', () => {
     paymentMethod: 'cash',
     items: [
       { name: 'Masala Dosa', price: 80, qty: 2, note: 'extra spice' },
-      { name: 'Chai',        price: 15, qty: 3 },
+      { name: 'Chai', price: 15, qty: 3 },
     ],
     subtotal: 205,
     tax: 0,

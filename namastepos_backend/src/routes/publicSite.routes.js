@@ -22,7 +22,7 @@ router.get('/:slug/menu', asyncHandler(async (req, res) => {
        FROM menu_items
       WHERE business_id = $1 AND is_active = TRUE AND sold_out_until IS NULL
       ORDER BY category, display_order, name`,
-    [s.business_id]
+    [s.business_id],
   );
   res.json({ menu: items.rows });
 }));
@@ -32,7 +32,7 @@ router.get('/order-status/:token', asyncHandler(async (req, res) => {
   const r = await query(
     `SELECT order_no, status, source, total, created_at, ready_at, collected_at
        FROM orders WHERE tracker_token = $1 LIMIT 1`,
-    [req.params.token]
+    [req.params.token],
   );
   if (r.rowCount === 0) return res.status(404).json({ error: 'NOT_FOUND' });
   res.json({ order: r.rows[0] });

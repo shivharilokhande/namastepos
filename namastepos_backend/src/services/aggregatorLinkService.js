@@ -69,7 +69,7 @@ async function startLink({ businessId, provider, phone }) {
        (business_id, provider, phone, otp_request_id, status)
      VALUES ($1, $2, $3, $4, 'awaiting_otp')
      RETURNING *`,
-    [businessId, provider, req.phone, req.requestId]
+    [businessId, provider, req.phone, req.requestId],
   );
   return {
     sessionId: s.rows[0].id,
@@ -88,7 +88,7 @@ async function verifyLink({ businessId, sessionId, code }) {
   const s = await query(
     `SELECT * FROM aggregator_link_sessions
       WHERE id = $1 AND business_id = $2 LIMIT 1`,
-    [sessionId, businessId]
+    [sessionId, businessId],
   );
   if (s.rowCount === 0) throw new NotFound('Link session not found');
   const row = s.rows[0];
@@ -109,7 +109,7 @@ async function verifyLink({ businessId, sessionId, code }) {
     `UPDATE aggregator_link_sessions
         SET status = 'verified'
       WHERE id = $1`,
-    [sessionId]
+    [sessionId],
   );
 
   return {
@@ -131,7 +131,7 @@ async function completeLinkFromWebhook({ provider, outletId, phone }) {
     `SELECT * FROM aggregator_link_sessions
       WHERE provider = $1 AND phone = $2 AND status = 'verified'
       ORDER BY created_at DESC LIMIT 1`,
-    [provider, phone]
+    [provider, phone],
   );
   if (s.rowCount === 0) return null;
   const row = s.rows[0];
@@ -141,13 +141,13 @@ async function completeLinkFromWebhook({ provider, outletId, phone }) {
      VALUES ($1, $2, $3, TRUE)
      ON CONFLICT (business_id, provider) DO UPDATE
        SET outlet_id = EXCLUDED.outlet_id, is_active = TRUE, updated_at = NOW()`,
-    [row.business_id, provider, outletId]
+    [row.business_id, provider, outletId],
   );
   await query(
     `UPDATE aggregator_link_sessions
         SET status = 'linked', linked_at = NOW(), merchant_ref = $2
       WHERE id = $1`,
-    [row.id, outletId]
+    [row.id, outletId],
   );
   return { businessId: row.business_id, provider, outletId };
 }
@@ -161,12 +161,15 @@ async function listSessions(businessId) {
        FROM aggregator_link_sessions
       WHERE business_id = $1
       ORDER BY created_at DESC LIMIT 25`,
-    [businessId]
+    [businessId],
   );
   return r.rows;
 }
 
 module.exports = {
-  startLink, verifyLink, completeLinkFromWebhook, listSessions,
+  startLink,
+  verifyLink,
+  completeLinkFromWebhook,
+  listSessions,
   SUPPORTED_PROVIDERS,
 };

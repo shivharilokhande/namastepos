@@ -26,7 +26,7 @@ async function scan() {
       WHERE o.status = 'pending'
         AND o.source IN ('zomato', 'swiggy')
         AND o.expected_ready_at IS NOT NULL
-        AND o.expected_ready_at < NOW() - INTERVAL '10 minutes'`
+        AND o.expected_ready_at < NOW() - INTERVAL '10 minutes'`,
   );
   for (const row of r.rows) {
     try {
@@ -36,7 +36,7 @@ async function scan() {
          VALUES ($1, 'LATE_AGGREGATOR:' || $2, DATE_TRUNC('hour', NOW()))
          ON CONFLICT (business_id, kind, bucket_hour) DO NOTHING
          RETURNING id`,
-        [row.business_id, row.id]
+        [row.business_id, row.id],
       ).catch(() => ({ rowCount: 0 }));
       if (dedupe.rowCount === 0) continue;
       const msg = `⚠️ ${row.business_name}: ${row.source.toUpperCase()} order #${row.order_no} is late. Kitchen should mark ready NOW or you'll take a rating hit.`;

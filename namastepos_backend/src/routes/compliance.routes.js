@@ -21,8 +21,10 @@ const router = express.Router();
 // banner recording consent. Same express-rate-limit pattern as
 // guest.routes.js / auth.routes.js.
 const publicWriteLimiter = rateLimit({
-  windowMs: 60_000, max: 5,            // 5 writes/min per IP
-  standardHeaders: true, legacyHeaders: false,
+  windowMs: 60_000,
+  max: 5, // 5 writes/min per IP
+  standardHeaders: true,
+  legacyHeaders: false,
   message: { error: 'RATE_LIMITED', message: 'Too many requests. Try again in a minute.' },
 });
 
@@ -54,9 +56,9 @@ function optionalAuth(req, _res, next) {
   return next();
 }
 
-router.get ('/grievance-officer', c.publicGrievanceOfficer);
-router.post('/grievance',         publicWriteLimiter, optionalAuth, ...c.publicFileGrievance);
-router.post('/consent',           publicWriteLimiter, ...c.publicRecordConsent);
-router.post('/guest-consent',     publicWriteLimiter, ...c.guestRecordConsent);
+router.get('/grievance-officer', c.publicGrievanceOfficer);
+router.post('/grievance', publicWriteLimiter, optionalAuth, ...c.publicFileGrievance);
+router.post('/consent', publicWriteLimiter, ...c.publicRecordConsent);
+router.post('/guest-consent', publicWriteLimiter, ...c.guestRecordConsent);
 
 module.exports = router;

@@ -26,7 +26,7 @@ const ALL_STAFF_ROLES = [
 const createPinBody = Joi.object({
   displayName: Joi.string().min(1).max(120).required(),
   role: Joi.string().valid(...ALL_STAFF_ROLES).required(),
-  pin:  Joi.string().length(4).pattern(/^\d{4}$/).required(),
+  pin: Joi.string().length(4).pattern(/^\d{4}$/).required(),
   phone: Joi.string().max(20).allow('', null),
   email: Joi.string().email().allow('', null),
   permissions: Joi.array().items(Joi.string().max(40)),
@@ -34,7 +34,7 @@ const createPinBody = Joi.object({
 const updatePinBody = Joi.object({
   displayName: Joi.string().min(1).max(120),
   role: Joi.string().valid(...ALL_STAFF_ROLES),
-  pin:  Joi.string().length(4).pattern(/^\d{4}$/),
+  pin: Joi.string().length(4).pattern(/^\d{4}$/),
   isActive: Joi.boolean(),
   phone: Joi.string().max(20).allow('', null),
   permissions: Joi.array().items(Joi.string().max(40)),
@@ -121,8 +121,7 @@ module.exports = {
   updatePin: [
     validate({ body: updatePinBody }),
     asyncHandler(async (req, res) => {
-      const member = await staff.updateStaffWithPin(
-        req.params.businessId, req.params.userId, req.body);
+      const member = await staff.updateStaffWithPin(req.params.businessId, req.params.userId, req.body);
       res.json({ staff: member });
     }),
   ],

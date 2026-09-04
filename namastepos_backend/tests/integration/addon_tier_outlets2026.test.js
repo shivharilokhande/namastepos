@@ -26,19 +26,19 @@ beforeAll(async () => {
     `INSERT INTO plans (tier, tier_kind, name, price_inr_paise, is_active, limits, features)
      VALUES ('growth', 'starter', 'Growth', 99900, TRUE, '{}'::jsonb, '{}'::jsonb)
      ON CONFLICT (tier) DO UPDATE
-       SET tier_kind = 'starter', price_inr_paise = 99900, name = 'Growth'`
+       SET tier_kind = 'starter', price_inr_paise = 99900, name = 'Growth'`,
   );
   await query(
     `INSERT INTO plans (tier, tier_kind, name, price_inr_paise, is_active, limits, features)
      VALUES ('pro', 'enterprise', 'Pro', 49900, TRUE, '{}'::jsonb, '{}'::jsonb)
      ON CONFLICT (tier) DO UPDATE
-       SET tier_kind = 'enterprise', price_inr_paise = 49900, name = 'Pro'`
+       SET tier_kind = 'enterprise', price_inr_paise = 49900, name = 'Pro'`,
   );
   // price 0 → activation path is instant (no Razorpay round-trip in tests);
   // eligibility, not payment, is what these cases exercise.
   await query(
     `UPDATE addons SET required_tier_kind = 'pro', is_active = TRUE, price_inr_paise = 0
-      WHERE slug = 'multi-outlet'`
+      WHERE slug = 'multi-outlet'`,
   );
 });
 afterAll(async () => { await closePool(); });
@@ -49,7 +49,7 @@ async function putOnPlan(businessId, tier) {
      VALUES ($1, (SELECT id FROM plans WHERE tier = $2), 'active', NOW() + INTERVAL '30 days')
      ON CONFLICT (business_id) DO UPDATE
        SET plan_id = (SELECT id FROM plans WHERE tier = $2), status = 'active'`,
-    [businessId, tier]
+    [businessId, tier],
   );
   try { require('../../src/services/featureService').clearCache(businessId); } catch (_) {}
 }
@@ -112,7 +112,7 @@ describe('outlets: provisioning + switcher feed + isolation', () => {
       `INSERT INTO business_feature_overrides (business_id, feature_key, enabled)
        VALUES ($1, 'multi_outlet', TRUE)
        ON CONFLICT (business_id, feature_key) DO UPDATE SET enabled = TRUE`,
-      [biz.id]
+      [biz.id],
     );
     require('../../src/services/featureService').clearCache(biz.id);
 
@@ -120,7 +120,7 @@ describe('outlets: provisioning + switcher feed + isolation', () => {
     await query(
       `INSERT INTO menu_items (business_id, name, price, category, is_active)
        VALUES ($1, 'HQ Only Thali', 120, 'main', TRUE)`,
-      [biz.id]
+      [biz.id],
     );
 
     const prov = await request(app)
@@ -136,18 +136,14 @@ describe('outlets: provisioning + switcher feed + isolation', () => {
     expect(outletId).not.toBe(biz.id);
 
     // Same group, own row, zero inherited rows.
-    const grouped = await query(
-      `SELECT outlet_group_id FROM businesses WHERE id IN ($1, $2)`, [biz.id, outletId]
-    );
+    const grouped = await query('SELECT outlet_group_id FROM businesses WHERE id IN ($1, $2)', [biz.id, outletId]);
     const gids = grouped.rows.map((x) => x.outlet_group_id);
     expect(gids[0]).toBe(gids[1]);
     expect(gids[0]).toBeTruthy();
 
     for (const table of ['menu_items', 'orders', 'expenses', 'customers']) {
       // eslint-disable-next-line no-await-in-loop
-      const c = await query(
-        `SELECT COUNT(*)::int AS c FROM ${table} WHERE business_id = $1`, [outletId]
-      );
+      const c = await query(`SELECT COUNT(*)::int AS c FROM ${table} WHERE business_id = $1`, [outletId]);
       expect(c.rows[0].c).toBe(0);
     }
 

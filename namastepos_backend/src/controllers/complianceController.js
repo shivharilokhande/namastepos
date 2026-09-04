@@ -37,11 +37,11 @@ function uaOf(req) {
 
 const consentBodySchema = {
   body: Joi.object({
-    consentKey:    Joi.string().required(),
-    granted:       Joi.boolean().required(),
+    consentKey: Joi.string().required(),
+    granted: Joi.boolean().required(),
     policyVersion: Joi.string().max(64).allow(null, ''),
-    source:        Joi.string().max(64).default('mobile_app'),
-    context:       Joi.object().default({}),
+    source: Joi.string().max(64).default('mobile_app'),
+    context: Joi.object().default({}),
   }),
 };
 
@@ -49,15 +49,15 @@ const meRecordConsent = [
   validate(consentBodySchema),
   asyncHandler(async (req, res) => {
     const out = await svc.recordConsent({
-      userId:     req.user.id,
+      userId: req.user.id,
       businessId: req.user.businessId || null,
       consentKey: req.body.consentKey,
-      granted:    req.body.granted,
+      granted: req.body.granted,
       policyVersion: req.body.policyVersion || null,
-      source:     req.body.source,
-      ipAddress:  ipOf(req),
-      userAgent:  uaOf(req),
-      context:    req.body.context || {},
+      source: req.body.source,
+      ipAddress: ipOf(req),
+      userAgent: uaOf(req),
+      context: req.body.context || {},
     });
     res.status(201).json(out);
   }),
@@ -78,7 +78,7 @@ const dsrBodySchema = {
     requestType: Joi.string()
       .valid('access', 'correction', 'erasure', 'portability', 'withdraw_consent')
       .required(),
-    details:     Joi.object().default({}),
+    details: Joi.object().default({}),
   }),
 };
 
@@ -86,12 +86,12 @@ const meFileDSR = [
   validate(dsrBodySchema),
   asyncHandler(async (req, res) => {
     const out = await svc.fileDataSubjectRequest({
-      userId:      req.user.id,
-      businessId:  req.user.businessId || null,
+      userId: req.user.id,
+      businessId: req.user.businessId || null,
       contactEmail: req.user.email || null,
       requestType: req.body.requestType,
-      details:     req.body.details,
-      source:      'self_service',
+      details: req.body.details,
+      source: 'self_service',
     });
     res.status(201).json(out);
   }),
@@ -106,11 +106,11 @@ const meExport = asyncHandler(async (req, res) => {
   const { dump, hash } = await svc.exportUserData(req.user.id);
   // Also record the access request for audit
   await svc.fileDataSubjectRequest({
-    userId:      req.user.id,
+    userId: req.user.id,
     contactEmail: req.user.email || null,
     requestType: 'portability',
-    details:     { auto_completed: true, hash },
-    source:      'self_service',
+    details: { auto_completed: true, hash },
+    source: 'self_service',
   }).catch(() => null); // best-effort — don't fail the export if logging fails
 
   res.setHeader('Content-Type', 'application/json');
@@ -126,8 +126,8 @@ const meEraseAccount = asyncHandler(async (req, res) => {
       message: 'Account erasure cannot be performed via impersonation' } });
   }
   const out = await svc.eraseUser({
-    userId:      req.user.id,
-    reason:      'self_service_account_deletion',
+    userId: req.user.id,
+    reason: 'self_service_account_deletion',
     actorUserId: req.user.id,
   });
   res.json({ ...out, message: 'Account erased. Some records may be retained for legal compliance.' });
@@ -138,24 +138,24 @@ const meEraseAccount = asyncHandler(async (req, res) => {
 // PATCH endpoint); we just record the DSR so the audit trail exists.
 const meCorrectSchema = {
   body: Joi.object({
-    field:   Joi.string().required(),
+    field: Joi.string().required(),
     newValue: Joi.any().required(),
-    reason:  Joi.string().allow('', null).max(500),
+    reason: Joi.string().allow('', null).max(500),
   }),
 };
 const meFileCorrection = [
   validate(meCorrectSchema),
   asyncHandler(async (req, res) => {
     const out = await svc.fileDataSubjectRequest({
-      userId:       req.user.id,
+      userId: req.user.id,
       contactEmail: req.user.email || null,
-      requestType:  'correction',
-      details:      {
+      requestType: 'correction',
+      details: {
         field: req.body.field,
         newValue: req.body.newValue,
         reason: req.body.reason || null,
       },
-      source:       'self_service',
+      source: 'self_service',
     });
     res.status(201).json(out);
   }),
@@ -170,10 +170,10 @@ const publicGrievanceOfficer = asyncHandler(async (_req, res) => {
     grievanceOfficer: s.grievanceOfficer,
     dataProtectionOfficer: s.dataProtectionOfficer,
     legalEntity: {
-      name:    s.legalEntity?.name,
+      name: s.legalEntity?.name,
       address: s.legalEntity?.address,
     },
-    privacyPolicyVersion:  s.privacyPolicyVersion,
+    privacyPolicyVersion: s.privacyPolicyVersion,
     termsOfServiceVersion: s.termsOfServiceVersion,
   });
 });
@@ -187,15 +187,13 @@ const publicGrievanceOfficer = asyncHandler(async (_req, res) => {
 // the (optionally decoded) principal is visible.
 const grievanceBodySchema = {
   body: Joi.object({
-    businessId:       Joi.string().uuid().allow(null),
-    complainantName:  Joi.string().max(255).allow('', null),
+    businessId: Joi.string().uuid().allow(null),
+    complainantName: Joi.string().max(255).allow('', null),
     complainantEmail: Joi.string().email().allow('', null),
     complainantPhone: Joi.string().max(20).allow('', null),
-    category:         Joi.string().valid(
-      'privacy','data_misuse','consent','security','billing','other'
-    ).default('other'),
+    category: Joi.string().valid('privacy', 'data_misuse', 'consent', 'security', 'billing', 'other').default('other'),
     subject: Joi.string().max(255).required(),
-    body:    Joi.string().max(5000).required(),
+    body: Joi.string().max(5000).required(),
   }),
 };
 
@@ -214,18 +212,18 @@ const publicFileGrievance = [
       // and "Validation failed" alone left the founder guessing.
       throw new BadRequest(
         'Please provide complainantEmail or complainantPhone (or sign in) so the Grievance Officer can reply',
-        ['body.complainantEmail: required when not signed in (or provide body.complainantPhone)']
+        ['body.complainantEmail: required when not signed in (or provide body.complainantPhone)'],
       );
     }
     const out = await svc.fileGrievance({
       userId: req.user?.id || null,
       businessId: req.body.businessId || req.user?.businessId || null,
-      complainantName:  req.body.complainantName || null,
+      complainantName: req.body.complainantName || null,
       complainantEmail,
       complainantPhone,
-      category:         req.body.category,
-      subject:          req.body.subject,
-      body:             req.body.body,
+      category: req.body.category,
+      subject: req.body.subject,
+      body: req.body.body,
     });
     res.status(201).json(out);
   }),
@@ -234,25 +232,25 @@ const publicFileGrievance = [
 // Cookie-banner consent (anonymous) — needs a sessionId from client
 const publicConsentSchema = {
   body: Joi.object({
-    sessionId:     Joi.string().min(8).max(128).required(),
-    consentKey:    Joi.string().required(),
-    granted:       Joi.boolean().required(),
+    sessionId: Joi.string().min(8).max(128).required(),
+    consentKey: Joi.string().required(),
+    granted: Joi.boolean().required(),
     policyVersion: Joi.string().max(64).allow('', null),
-    source:        Joi.string().max(64).default('cookie_banner'),
+    source: Joi.string().max(64).default('cookie_banner'),
   }),
 };
 const publicRecordConsent = [
   validate(publicConsentSchema),
   asyncHandler(async (req, res) => {
     const out = await svc.recordConsent({
-      sessionId:     req.body.sessionId,
-      consentKey:    req.body.consentKey,
-      granted:       req.body.granted,
+      sessionId: req.body.sessionId,
+      consentKey: req.body.consentKey,
+      granted: req.body.granted,
       policyVersion: req.body.policyVersion || null,
-      source:        req.body.source,
-      ipAddress:     ipOf(req),
-      userAgent:     uaOf(req),
-      context:       { anon: true },
+      source: req.body.source,
+      ipAddress: ipOf(req),
+      userAgent: uaOf(req),
+      context: { anon: true },
     });
     res.status(201).json(out);
   }),
@@ -261,25 +259,25 @@ const publicRecordConsent = [
 // Guest QR diner can withdraw marketing consent by phone (no account)
 const guestConsentSchema = {
   body: Joi.object({
-    guestPhone:    Joi.string().min(6).max(20).required(),
-    consentKey:    Joi.string().required(),
-    granted:       Joi.boolean().required(),
+    guestPhone: Joi.string().min(6).max(20).required(),
+    consentKey: Joi.string().required(),
+    granted: Joi.boolean().required(),
     policyVersion: Joi.string().max(64).allow('', null),
-    source:        Joi.string().max(64).default('qr_menu'),
+    source: Joi.string().max(64).default('qr_menu'),
   }),
 };
 const guestRecordConsent = [
   validate(guestConsentSchema),
   asyncHandler(async (req, res) => {
     const out = await svc.recordConsent({
-      guestPhone:    req.body.guestPhone,
-      consentKey:    req.body.consentKey,
-      granted:       req.body.granted,
+      guestPhone: req.body.guestPhone,
+      consentKey: req.body.consentKey,
+      granted: req.body.granted,
       policyVersion: req.body.policyVersion || null,
-      source:        req.body.source,
-      ipAddress:     ipOf(req),
-      userAgent:     uaOf(req),
-      context:       { channel: 'guest_qr' },
+      source: req.body.source,
+      ipAddress: ipOf(req),
+      userAgent: uaOf(req),
+      context: { channel: 'guest_qr' },
     });
     res.status(201).json(out);
   }),
@@ -290,15 +288,15 @@ const guestRecordConsent = [
 const adminListDSRs = asyncHandler(async (req, res) => {
   const requests = await svc.listDataSubjectRequests({
     status: req.query.status || null,
-    limit:  parseInt(req.query.limit || '100', 10),
+    limit: parseInt(req.query.limit || '100', 10),
   });
   res.json({ requests });
 });
 
 const adminUpdateDSRSchema = {
   body: Joi.object({
-    status:    Joi.string().valid('pending','in_review','completed','rejected','partial').required(),
-    note:      Joi.string().max(2000).allow('', null),
+    status: Joi.string().valid('pending', 'in_review', 'completed', 'rejected', 'partial').required(),
+    note: Joi.string().max(2000).allow('', null),
     proofHash: Joi.string().max(128).allow('', null),
   }),
 };
@@ -306,9 +304,9 @@ const adminUpdateDSR = [
   validate(adminUpdateDSRSchema),
   asyncHandler(async (req, res) => {
     const out = await svc.updateDataSubjectRequest({
-      id:        req.params.id,
-      status:    req.body.status,
-      note:      req.body.note || null,
+      id: req.params.id,
+      status: req.body.status,
+      note: req.body.note || null,
       proofHash: req.body.proofHash || null,
       handledBy: req.user.id,
     });
@@ -318,16 +316,16 @@ const adminUpdateDSR = [
 
 const adminListGrievances = asyncHandler(async (req, res) => {
   const grievances = await svc.listGrievances({
-    status:     req.query.status || null,
+    status: req.query.status || null,
     businessId: req.query.businessId || null,
-    limit:      parseInt(req.query.limit || '100', 10),
+    limit: parseInt(req.query.limit || '100', 10),
   });
   res.json({ grievances });
 });
 
 const adminUpdateGrievanceSchema = {
   body: Joi.object({
-    status:         Joi.string().valid('received','acknowledged','resolved','rejected','escalated').required(),
+    status: Joi.string().valid('received', 'acknowledged', 'resolved', 'rejected', 'escalated').required(),
     resolutionNote: Joi.string().max(2000).allow('', null),
   }),
 };
@@ -335,10 +333,10 @@ const adminUpdateGrievance = [
   validate(adminUpdateGrievanceSchema),
   asyncHandler(async (req, res) => {
     const out = await svc.updateGrievance({
-      id:             req.params.id,
-      status:         req.body.status,
+      id: req.params.id,
+      status: req.body.status,
       resolutionNote: req.body.resolutionNote || null,
-      handledBy:      req.user.id,
+      handledBy: req.user.id,
     });
     res.json(out);
   }),
@@ -347,23 +345,23 @@ const adminUpdateGrievance = [
 const adminListBreaches = asyncHandler(async (req, res) => {
   const breaches = await svc.listBreaches({
     status: req.query.status || null,
-    limit:  parseInt(req.query.limit || '100', 10),
+    limit: parseInt(req.query.limit || '100', 10),
   });
   res.json({ breaches });
 });
 
 const adminLogBreachSchema = {
   body: Joi.object({
-    scope:          Joi.string().valid('platform','business').default('platform'),
-    businessId:     Joi.string().uuid().allow(null),
-    occurredAt:     Joi.date().iso().allow(null),
-    category:       Joi.string().required(),
-    severity:       Joi.string().valid('low','medium','high','critical').required(),
-    affectedCount:  Joi.number().integer().min(0).allow(null),
+    scope: Joi.string().valid('platform', 'business').default('platform'),
+    businessId: Joi.string().uuid().allow(null),
+    occurredAt: Joi.date().iso().allow(null),
+    category: Joi.string().required(),
+    severity: Joi.string().valid('low', 'medium', 'high', 'critical').required(),
+    affectedCount: Joi.number().integer().min(0).allow(null),
     dataCategories: Joi.array().items(Joi.string()).default([]),
-    summary:        Joi.string().max(2000).required(),
-    rootCause:      Joi.string().max(2000).allow('', null),
-    remediation:    Joi.string().max(2000).allow('', null),
+    summary: Joi.string().max(2000).required(),
+    rootCause: Joi.string().max(2000).allow('', null),
+    remediation: Joi.string().max(2000).allow('', null),
   }),
 };
 const adminLogBreach = [
@@ -379,7 +377,7 @@ const adminLogBreach = [
 
 const adminUpdateBreachSchema = {
   body: Joi.object({
-    status: Joi.string().valid('detected','triaging','contained','notified','closed'),
+    status: Joi.string().valid('detected', 'triaging', 'contained', 'notified', 'closed'),
     fields: Joi.object().default({}),
   }),
 };
@@ -387,7 +385,7 @@ const adminUpdateBreach = [
   validate(adminUpdateBreachSchema),
   asyncHandler(async (req, res) => {
     const out = await svc.updateBreach({
-      id:     req.params.id,
+      id: req.params.id,
       status: req.body.status,
       fields: req.body.fields || {},
     });
@@ -405,8 +403,8 @@ const adminGetRetention = asyncHandler(async (_req, res) => {
 const adminUpdateRetentionSchema = {
   body: Joi.object({
     deletedBusinessDays: Joi.number().integer().min(0).max(3650),
-    auditLogDays:        Joi.number().integer().min(0).max(3650),
-    cookieConsentDays:   Joi.number().integer().min(0).max(3650),
+    auditLogDays: Joi.number().integer().min(0).max(3650),
+    cookieConsentDays: Joi.number().integer().min(0).max(3650),
   }).min(1),
 };
 const adminUpdateRetention = [
@@ -430,18 +428,18 @@ const adminGetSettings = asyncHandler(async (_req, res) => {
 
 const adminUpdateSettingsSchema = {
   body: Joi.object({
-    grievanceOfficerName:    Joi.string().max(255).allow('', null),
-    grievanceOfficerEmail:   Joi.string().email().allow('', null),
-    grievanceOfficerPhone:   Joi.string().max(40).allow('', null),
+    grievanceOfficerName: Joi.string().max(255).allow('', null),
+    grievanceOfficerEmail: Joi.string().email().allow('', null),
+    grievanceOfficerPhone: Joi.string().max(40).allow('', null),
     grievanceOfficerAddress: Joi.string().max(2000).allow('', null),
-    dpoName:                 Joi.string().max(255).allow('', null),
-    dpoEmail:                Joi.string().email().allow('', null),
-    legalEntityName:         Joi.string().max(255).allow('', null),
-    legalEntityAddress:      Joi.string().max(2000).allow('', null),
-    legalEntityCin:          Joi.string().max(32).allow('', null),
-    legalEntityGstin:        Joi.string().max(15).allow('', null),
-    privacyPolicyVersion:    Joi.string().max(64).allow('', null),
-    termsOfServiceVersion:   Joi.string().max(64).allow('', null),
+    dpoName: Joi.string().max(255).allow('', null),
+    dpoEmail: Joi.string().email().allow('', null),
+    legalEntityName: Joi.string().max(255).allow('', null),
+    legalEntityAddress: Joi.string().max(2000).allow('', null),
+    legalEntityCin: Joi.string().max(32).allow('', null),
+    legalEntityGstin: Joi.string().max(15).allow('', null),
+    privacyPolicyVersion: Joi.string().max(64).allow('', null),
+    termsOfServiceVersion: Joi.string().max(64).allow('', null),
   }).min(1),
 };
 const adminUpdateSettings = [

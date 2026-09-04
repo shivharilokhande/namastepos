@@ -61,7 +61,7 @@ async function importCustomerRow(businessId, row) {
          marketing_optin = COALESCE($7, customers.marketing_optin)
        RETURNING id`,
       [businessId, row.phone, row.name || null, row.email || null,
-       tags && tags.length ? tags : null, row.notes || null, whatsappOptIn],
+        tags && tags.length ? tags : null, row.notes || null, whatsappOptIn],
     );
     const customerId = up.rows[0].id;
 

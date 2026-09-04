@@ -18,8 +18,14 @@ function serializeFloor(f) {
 }
 function serializeTable(t) {
   return {
-    id: t.id, floorId: t.floor_id, label: t.label, seats: t.seats,
-    shape: t.shape, xPos: t.x_pos, yPos: t.y_pos, status: t.status,
+    id: t.id,
+    floorId: t.floor_id,
+    label: t.label,
+    seats: t.seats,
+    shape: t.shape,
+    xPos: t.x_pos,
+    yPos: t.y_pos,
+    status: t.status,
     currentSessionId: t.current_session_id,
     floorName: t.floor_name,
     sessionOpenedAt: t.session_opened_at,
@@ -40,9 +46,9 @@ function serializeTable(t) {
     // occupied table, so "tap any joined table → same running bill" needs
     // no extra lookup.
     isJoinedSecondary: !!(
-      t.current_session_id &&
-      t.session_primary_table_id &&
-      t.session_primary_table_id !== t.id
+      t.current_session_id
+      && t.session_primary_table_id
+      && t.session_primary_table_id !== t.id
     ),
     // On the PRIMARY table this lists the extra tables in the group (so it
     // gets the link icon too); [] everywhere else.
@@ -99,11 +105,17 @@ function serializeSession(s, orders = [], itemsByOrder = new Map(), joinedTables
   const pointsRedeemed = live.reduce((s, o) => s + (parseInt(o.pointsRedeemed, 10) || 0), 0);
 
   return {
-    id: s.id, businessId: s.business_id, tableId: s.table_id,
+    id: s.id,
+    businessId: s.business_id,
+    tableId: s.table_id,
     tableLabel: s.table_label,
-    guestCount: s.guest_count, customerPhone: s.customer_phone,
-    customerName: s.customer_name, customerId: s.customer_id,
-    status: s.status, openedAt: s.opened_at, closedAt: s.closed_at,
+    guestCount: s.guest_count,
+    customerPhone: s.customer_phone,
+    customerName: s.customer_name,
+    customerId: s.customer_id,
+    status: s.status,
+    openedAt: s.opened_at,
+    closedAt: s.closed_at,
     notes: s.notes,
     // Joined tables (2026-08-25) — extra physical tables sharing this
     // session's bill. Ids come off the row; labels are resolved by
@@ -116,11 +128,17 @@ function serializeSession(s, orders = [], itemsByOrder = new Map(), joinedTables
     subtotalInr: subtotal,
     taxInr: tax,
     discountInr: discount,
-    loyaltyInr, serviceChargeInr, roundOffInr,
-    cgstInr, sgstInr, igstInr, pointsRedeemed,
+    loyaltyInr,
+    serviceChargeInr,
+    roundOffInr,
+    cgstInr,
+    sgstInr,
+    igstInr,
+    pointsRedeemed,
     // Per-KOT summary (kept so the timeline view still works)
     orders: orders.map((o) => ({
-      id: o.id, orderNo: o.order_no,
+      id: o.id,
+      orderNo: o.order_no,
       total: parseFloat(o.total),
       status: o.status,
       paymentMethod: o.payment_method,
@@ -135,8 +153,8 @@ function serializeSession(s, orders = [], itemsByOrder = new Map(), joinedTables
 // ── Floors ─────────────────────────────────────────────────────────────
 async function listFloors(businessId) {
   const r = await query(
-    `SELECT * FROM floors WHERE business_id = $1 ORDER BY display_order, name`,
-    [businessId]
+    'SELECT * FROM floors WHERE business_id = $1 ORDER BY display_order, name',
+    [businessId],
   );
   return r.rows.map(serializeFloor);
 }
@@ -147,7 +165,7 @@ async function createFloor(businessId, body) {
     const r = await query(
       `INSERT INTO floors (business_id, name, display_order)
        VALUES ($1, $2, $3) RETURNING *`,
-      [businessId, body.name, body.display_order || 100]
+      [businessId, body.name, body.display_order || 100],
     );
     return serializeFloor(r.rows[0]);
   } catch (err) {
@@ -158,14 +176,14 @@ async function createFloor(businessId, body) {
 
 async function updateFloor(businessId, id, patch) {
   const sets = []; const values = []; let idx = 1;
-  if (patch.name)          { sets.push(`name = $${idx++}`); values.push(patch.name); }
+  if (patch.name) { sets.push(`name = $${idx++}`); values.push(patch.name); }
   if (patch.display_order !== undefined) { sets.push(`display_order = $${idx++}`); values.push(patch.display_order); }
   if (sets.length === 0) return null;
   values.push(businessId, id);
   const r = await query(
     `UPDATE floors SET ${sets.join(', ')}
       WHERE business_id = $${idx++} AND id = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Floor not found');
   return serializeFloor(r.rows[0]);
@@ -173,8 +191,8 @@ async function updateFloor(businessId, id, patch) {
 
 async function deleteFloor(businessId, id) {
   const r = await query(
-    `DELETE FROM floors WHERE business_id = $1 AND id = $2 RETURNING id`,
-    [businessId, id]
+    'DELETE FROM floors WHERE business_id = $1 AND id = $2 RETURNING id',
+    [businessId, id],
   );
   if (r.rowCount === 0) throw new NotFound('Floor not found');
   return { id: r.rows[0].id };
@@ -198,7 +216,7 @@ async function listTables(businessId, { floorId } = {}) {
          ON s.id = t.current_session_id AND s.status = 'open'
       WHERE ${where.join(' AND ')}
       ORDER BY f.display_order, t.label`,
-    values
+    values,
   );
   return r.rows.map(serializeTable);
 }
@@ -210,8 +228,8 @@ async function createTable(businessId, body) {
       `INSERT INTO tables (business_id, floor_id, label, seats, shape, x_pos, y_pos, service_mode)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
       [businessId, body.floorId, body.label, body.seats || 4,
-       body.shape || 'square', body.xPos || 0, body.yPos || 0,
-       body.serviceMode || null]
+        body.shape || 'square', body.xPos || 0, body.yPos || 0,
+        body.serviceMode || null],
     );
     return serializeTable(r.rows[0]);
   } catch (err) {
@@ -237,7 +255,7 @@ async function updateTable(businessId, id, patch) {
     x_pos: 'x_pos',
     y_pos: 'y_pos',
     floor_id: 'floor_id',
-    serviceMode: 'service_mode',    // FF-252 — null = inherit business
+    serviceMode: 'service_mode', // FF-252 — null = inherit business
     service_mode: 'service_mode',
   };
   const sets = []; const values = []; let idx = 1;
@@ -252,7 +270,7 @@ async function updateTable(businessId, id, patch) {
   const r = await query(
     `UPDATE tables SET ${sets.join(', ')}
       WHERE business_id = $${idx++} AND id = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Table not found');
   return serializeTable(r.rows[0]);
@@ -260,8 +278,8 @@ async function updateTable(businessId, id, patch) {
 
 async function deleteTable(businessId, id) {
   const r = await query(
-    `DELETE FROM tables WHERE business_id = $1 AND id = $2 RETURNING id`,
-    [businessId, id]
+    'DELETE FROM tables WHERE business_id = $1 AND id = $2 RETURNING id',
+    [businessId, id],
   );
   if (r.rowCount === 0) throw new NotFound('Table not found');
   return { id: r.rows[0].id };
@@ -280,7 +298,7 @@ async function openSession(businessId, tableId, body, openedByUserId) {
       `SELECT id FROM tables
         WHERE business_id = $1 AND id = $2
         FOR UPDATE`,
-      [businessId, tableId]
+      [businessId, tableId],
     );
     if (own.rowCount === 0) throw new NotFound('Table not found');
 
@@ -289,7 +307,7 @@ async function openSession(businessId, tableId, body, openedByUserId) {
     const dup = await client.query(
       `SELECT id FROM table_sessions
         WHERE business_id = $1 AND table_id = $2 AND status = 'open' LIMIT 1`,
-      [businessId, tableId]
+      [businessId, tableId],
     );
     if (dup.rowCount > 0) throw new Conflict('Table already has an open session');
 
@@ -299,15 +317,15 @@ async function openSession(businessId, tableId, body, openedByUserId) {
           opened_by_user_id, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
       [businessId, tableId, body.guestCount || 2,
-       body.customerPhone || null, body.customerName || null,
-       openedByUserId || null, body.notes || null]
+        body.customerPhone || null, body.customerName || null,
+        openedByUserId || null, body.notes || null],
     );
     const session = ins.rows[0];
 
     await client.query(
       `UPDATE tables SET status = 'occupied'::table_status, current_session_id = $1
         WHERE business_id = $2 AND id = $3`,
-      [session.id, businessId, tableId]
+      [session.id, businessId, tableId],
     );
     return session;
   });
@@ -333,7 +351,7 @@ async function joinTable(businessId, sessionId, tableId) {
       `SELECT * FROM table_sessions
         WHERE business_id = $1 AND id = $2 AND status = 'open'
         FOR UPDATE`,
-      [businessId, sessionId]
+      [businessId, sessionId],
     );
     if (s.rowCount === 0) throw new NotFound('Open session not found');
     const session = s.rows[0];
@@ -349,7 +367,7 @@ async function joinTable(businessId, sessionId, tableId) {
     const t = await client.query(
       `SELECT id, status, current_session_id FROM tables
         WHERE business_id = $1 AND id = $2 FOR UPDATE`,
-      [businessId, tableId]
+      [businessId, tableId],
     );
     if (t.rowCount === 0) throw new NotFound('Table not found');
     if (t.rows[0].status !== 'available' || t.rows[0].current_session_id) {
@@ -360,7 +378,7 @@ async function joinTable(businessId, sessionId, tableId) {
     const dup = await client.query(
       `SELECT id FROM table_sessions
         WHERE table_id = $1 AND status = 'open' LIMIT 1`,
-      [tableId]
+      [tableId],
     );
     if (dup.rowCount > 0) throw new Conflict('Table already has an open session');
 
@@ -369,13 +387,13 @@ async function joinTable(businessId, sessionId, tableId) {
           SET joined_table_ids =
               array_append(COALESCE(joined_table_ids, '{}'::uuid[]), $1)
         WHERE id = $2 RETURNING *`,
-      [tableId, sessionId]
+      [tableId, sessionId],
     );
     await client.query(
       `UPDATE tables
           SET status = 'occupied'::table_status, current_session_id = $1
         WHERE business_id = $2 AND id = $3`,
-      [sessionId, businessId, tableId]
+      [sessionId, businessId, tableId],
     );
     return upd.rows[0];
   });
@@ -389,7 +407,7 @@ async function unjoinTable(businessId, sessionId, tableId) {
       `SELECT * FROM table_sessions
         WHERE business_id = $1 AND id = $2 AND status = 'open'
         FOR UPDATE`,
-      [businessId, sessionId]
+      [businessId, sessionId],
     );
     if (s.rowCount === 0) throw new NotFound('Open session not found');
     if (s.rows[0].table_id === tableId) {
@@ -404,7 +422,7 @@ async function unjoinTable(businessId, sessionId, tableId) {
       `UPDATE table_sessions
           SET joined_table_ids = array_remove(joined_table_ids, $1)
         WHERE id = $2 RETURNING *`,
-      [tableId, sessionId]
+      [tableId, sessionId],
     );
     // `AND current_session_id = $1` keeps this a no-op if the table was
     // somehow re-pointed elsewhere — we only free what we own.
@@ -412,7 +430,7 @@ async function unjoinTable(businessId, sessionId, tableId) {
       `UPDATE tables
           SET status = 'available'::table_status, current_session_id = NULL
         WHERE business_id = $2 AND id = $3 AND current_session_id = $1`,
-      [sessionId, businessId, tableId]
+      [sessionId, businessId, tableId],
     );
     return upd.rows[0];
   });
@@ -451,7 +469,7 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
             AND status <> 'cancelled'
           ORDER BY order_no ASC
           FOR UPDATE`,
-        [sessionId, businessId]
+        [sessionId, businessId],
       );
       if (sessOrders.rowCount > 0) {
         // Money stays in integer paise while we split so the parts always
@@ -471,7 +489,7 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
                   SET discount = discount + $1,
                       total = GREATEST(0, total - $1)
                 WHERE id = $2`,
-              [takePaise / 100, sessOrders.rows[i].id]
+              [takePaise / 100, sessOrders.rows[i].id],
             );
             remainingPaise -= takePaise;
           }
@@ -556,7 +574,7 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
       `SELECT COALESCE(SUM(total), 0) AS total
          FROM orders
         WHERE table_session_id = $1 AND status <> 'cancelled'`,
-      [sessionId]
+      [sessionId],
     );
     const totalPaise = Math.round(parseFloat(totals.rows[0].total) * 100);
 
@@ -566,7 +584,7 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
               closed_by_user_id = $1, total_paise = $2
         WHERE business_id = $3 AND id = $4 AND status = 'open'
         RETURNING *`,
-      [closedByUserId || null, totalPaise, businessId, sessionId]
+      [closedByUserId || null, totalPaise, businessId, sessionId],
     );
     if (upd.rowCount === 0) throw new NotFound('Open session not found');
 
@@ -733,7 +751,7 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
         WHERE table_session_id = $2
           AND status <> 'cancelled'::order_status
           AND payment_method = 'unpaid'::payment_method`,
-      [pm, sessionId]
+      [pm, sessionId],
     );
 
     // (b) Status / collected_at — applies only to orders still in
@@ -746,7 +764,7 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
         WHERE table_session_id = $1
           AND status NOT IN ('cancelled'::order_status, 'collected'::order_status)
         RETURNING id, customer_id, total, points_earned`,
-      [sessionId]
+      [sessionId],
     );
 
     // Free the table
@@ -754,7 +772,7 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
       `UPDATE tables
           SET status = 'available'::table_status, current_session_id = NULL
         WHERE business_id = $1 AND current_session_id = $2`,
-      [businessId, sessionId]
+      [businessId, sessionId],
     );
 
     const closed = upd.rows[0];
@@ -829,11 +847,11 @@ async function abandonSession(businessId, sessionId, closedByUserId) {
     const orders = await client.query(
       `SELECT id FROM orders
         WHERE table_session_id = $1 AND status <> 'cancelled'`,
-      [sessionId]
+      [sessionId],
     );
     if (orders.rowCount > 0) {
       throw new BadRequest(
-        'Cannot release a table with active orders. Settle the bill instead.'
+        'Cannot release a table with active orders. Settle the bill instead.',
       );
     }
     const upd = await client.query(
@@ -842,7 +860,7 @@ async function abandonSession(businessId, sessionId, closedByUserId) {
               closed_by_user_id = $1, total_paise = 0
         WHERE business_id = $2 AND id = $3 AND status = 'open'
         RETURNING *`,
-      [closedByUserId || null, businessId, sessionId]
+      [closedByUserId || null, businessId, sessionId],
     );
     if (upd.rowCount === 0) throw new NotFound('Open session not found');
     // Free the table
@@ -850,7 +868,7 @@ async function abandonSession(businessId, sessionId, closedByUserId) {
       `UPDATE tables
           SET status = 'available', current_session_id = NULL
         WHERE business_id = $1 AND current_session_id = $2`,
-      [businessId, sessionId]
+      [businessId, sessionId],
     );
     return upd.rows[0];
   });
@@ -861,7 +879,7 @@ async function sessionDetail(businessId, sessionId) {
     `SELECT ts.*, t.label AS table_label
        FROM table_sessions ts JOIN tables t ON t.id = ts.table_id
       WHERE ts.business_id = $1 AND ts.id = $2 LIMIT 1`,
-    [businessId, sessionId]
+    [businessId, sessionId],
   );
   if (s.rowCount === 0) throw new NotFound('Session not found');
   const orders = await query(
@@ -881,7 +899,7 @@ async function sessionDetail(businessId, sessionId) {
        FROM orders
       WHERE table_session_id = $1
       ORDER BY created_at ASC`,
-    [sessionId]
+    [sessionId],
   );
   // Bulk-fetch order_items for every KOT in this session — one query.
   const itemsByOrder = new Map();
@@ -890,7 +908,7 @@ async function sessionDetail(businessId, sessionId) {
     const items = await query(
       `SELECT * FROM order_items WHERE order_id = ANY($1::uuid[])
         ORDER BY id`,
-      [orderIds]
+      [orderIds],
     );
     for (const row of items.rows) {
       if (!itemsByOrder.has(row.order_id)) itemsByOrder.set(row.order_id, []);
@@ -906,7 +924,7 @@ async function sessionDetail(businessId, sessionId) {
       `SELECT id, label FROM tables
         WHERE business_id = $1 AND id = ANY($2::uuid[])
         ORDER BY label`,
-      [businessId, joinedIds]
+      [businessId, joinedIds],
     );
     joinedTables = jt.rows.map((r) => ({ id: r.id, label: r.label }));
   }
@@ -914,9 +932,21 @@ async function sessionDetail(businessId, sessionId) {
 }
 
 module.exports = {
-  listFloors, createFloor, updateFloor, deleteFloor,
-  listTables, createTable, updateTable, deleteTable,
-  openSession, closeSession, abandonSession, sessionDetail,
-  joinTable, unjoinTable,
-  serializeFloor, serializeTable, serializeSession,
+  listFloors,
+  createFloor,
+  updateFloor,
+  deleteFloor,
+  listTables,
+  createTable,
+  updateTable,
+  deleteTable,
+  openSession,
+  closeSession,
+  abandonSession,
+  sessionDetail,
+  joinTable,
+  unjoinTable,
+  serializeFloor,
+  serializeTable,
+  serializeSession,
 };

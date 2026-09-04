@@ -18,7 +18,7 @@ const monthlyQuery = Joi.object({
 
 const dateRangeQuery = Joi.object({
   startDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required(),
-  endDate:   Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required(),
+  endDate: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required(),
 });
 
 module.exports = {
@@ -44,7 +44,7 @@ module.exports = {
       try {
         const data = await incomeStmt.incomeStatement(
           req.params.businessId,
-          { startDate: req.query.startDate, endDate: req.query.endDate }
+          { startDate: req.query.startDate, endDate: req.query.endDate },
         );
         res.json({ report: data });
       } catch (e) {
@@ -64,7 +64,7 @@ module.exports = {
     asyncHandler(async (req, res) => {
       const data = await incomeStmt.incomeStatement(
         req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate }
+        { startDate: req.query.startDate, endDate: req.query.endDate },
       );
       exporters.streamIncomeStatementPdf(res, data);
     }),
@@ -74,7 +74,7 @@ module.exports = {
     asyncHandler(async (req, res) => {
       const data = await incomeStmt.incomeStatement(
         req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate }
+        { startDate: req.query.startDate, endDate: req.query.endDate },
       );
       await exporters.streamIncomeStatementXlsx(res, data);
     }),
@@ -84,7 +84,7 @@ module.exports = {
     asyncHandler(async (req, res) => {
       const data = await incomeStmt.incomeStatement(
         req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate }
+        { startDate: req.query.startDate, endDate: req.query.endDate },
       );
       exporters.streamIncomeStatementCsv(res, data);
     }),
@@ -94,32 +94,40 @@ module.exports = {
   incomeRegister: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.incomeRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.incomeRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       res.json({ report: data });
     }),
   ],
   incomeRegisterPdf: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.incomeRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.incomeRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       exporters.streamIncomeRegisterPdf(res, data);
     }),
   ],
   incomeRegisterXlsx: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.incomeRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.incomeRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       await exporters.streamIncomeRegisterXlsx(res, data);
     }),
   ],
   incomeRegisterCsv: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.incomeRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.incomeRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       exporters.streamIncomeRegisterCsv(res, data);
     }),
   ],
@@ -127,32 +135,40 @@ module.exports = {
   expenseRegister: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.expenseRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.expenseRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       res.json({ report: data });
     }),
   ],
   expenseRegisterPdf: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.expenseRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.expenseRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       exporters.streamExpenseRegisterPdf(res, data);
     }),
   ],
   expenseRegisterXlsx: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.expenseRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.expenseRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       await exporters.streamExpenseRegisterXlsx(res, data);
     }),
   ],
   expenseRegisterCsv: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.expenseRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.expenseRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       exporters.streamExpenseRegisterCsv(res, data);
     }),
   ],
@@ -160,32 +176,40 @@ module.exports = {
   invoiceRegister: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.invoiceRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.invoiceRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       res.json({ report: data });
     }),
   ],
   invoiceRegisterPdf: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.invoiceRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.invoiceRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       exporters.streamInvoiceRegisterPdf(res, data);
     }),
   ],
   invoiceRegisterXlsx: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.invoiceRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.invoiceRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       await exporters.streamInvoiceRegisterXlsx(res, data);
     }),
   ],
   invoiceRegisterCsv: [
     validate({ query: dateRangeQuery }),
     asyncHandler(async (req, res) => {
-      const data = await detail.invoiceRegister(req.params.businessId,
-        { startDate: req.query.startDate, endDate: req.query.endDate });
+      const data = await detail.invoiceRegister(
+        req.params.businessId,
+        { startDate: req.query.startDate, endDate: req.query.endDate },
+      );
       exporters.streamInvoiceRegisterCsv(res, data);
     }),
   ],

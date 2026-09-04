@@ -13,7 +13,8 @@ const buildApp = require('../../src/app');
 const { resetDb, makeBusiness, tokenFor, closePool } = require('../setup');
 const { query } = require('../../src/config/db');
 
-let app, business, token;
+let app; let business; let
+  token;
 
 beforeAll(async () => {
   await resetDb();
@@ -42,9 +43,14 @@ async function customerRow() {
 describe('POST /imports/customers', () => {
   it('imports a customer and books opening loyalty + wallet via the ledgers', async () => {
     const r = await post('/imports/customers', [{
-      phone: PHONE, name: 'Asha', email: 'asha@example.com',
-      tags: 'vip, regular', whatsappOptIn: 'yes',
-      loyaltyPoints: 120, walletBalanceInr: 250.5, notes: 'Khata cleared',
+      phone: PHONE,
+      name: 'Asha',
+      email: 'asha@example.com',
+      tags: 'vip, regular',
+      whatsappOptIn: 'yes',
+      loyaltyPoints: 120,
+      walletBalanceInr: 250.5,
+      notes: 'Khata cleared',
     }]);
     expect(r.status).toBe(200);
     expect(r.body.imported).toBe(1);
@@ -72,7 +78,7 @@ describe('POST /imports/customers', () => {
     // Wallet entry shape matches ledger conventions: positive paise credit,
     // customer-scoped, distinct 'import_opening' kind (vs 'credit_top_up').
     const wl = await query(
-      `SELECT * FROM wallet_ledger WHERE business_id = $1 AND customer_id = $2`,
+      'SELECT * FROM wallet_ledger WHERE business_id = $1 AND customer_id = $2',
       [business.id, c.id],
     );
     expect(wl.rowCount).toBe(1);
@@ -91,8 +97,10 @@ describe('POST /imports/customers', () => {
 
   it('re-run updates profile fields but does NOT double-book balances', async () => {
     const r = await post('/imports/customers', [{
-      phone: PHONE, name: 'Asha Sharma',
-      loyaltyPoints: 120, walletBalanceInr: 250.5,
+      phone: PHONE,
+      name: 'Asha Sharma',
+      loyaltyPoints: 120,
+      walletBalanceInr: 250.5,
     }]);
     expect(r.status).toBe(200);
     expect(r.body.imported).toBe(1);
@@ -102,8 +110,8 @@ describe('POST /imports/customers', () => {
     expect(r.body.warnings.map((w) => w.warning).join(' ')).toMatch(/already imported/i);
 
     const c = await customerRow();
-    expect(c.name).toBe('Asha Sharma');       // profile DID update
-    expect(c.points_balance).toBe(120);       // balances did NOT double
+    expect(c.name).toBe('Asha Sharma'); // profile DID update
+    expect(c.points_balance).toBe(120); // balances did NOT double
     const wl = await query(
       `SELECT COUNT(*)::int AS n FROM wallet_ledger
         WHERE business_id = $1 AND customer_id = $2 AND kind = 'import_opening'`,
@@ -153,23 +161,21 @@ describe('POST /imports/sales-history', () => {
     expect(r.body.failed).toHaveLength(0);
 
     const o = await query(
-      `SELECT * FROM orders WHERE business_id = $1 AND channel = 'import'`,
+      'SELECT * FROM orders WHERE business_id = $1 AND channel = \'import\'',
       [business.id],
     );
     expect(o.rowCount).toBe(1);
     const ord = o.rows[0];
     expect(ord.status).toBe('collected');
     expect(ord.source).toBe('other');
-    expect(parseFloat(ord.subtotal)).toBe(10000);      // gross − tax
+    expect(parseFloat(ord.subtotal)).toBe(10000); // gross − tax
     expect(parseFloat(ord.tax)).toBe(500.25);
     expect(parseFloat(ord.discount)).toBe(500);
-    expect(parseFloat(ord.total)).toBe(10000.25);      // gross − discount
+    expect(parseFloat(ord.total)).toBe(10000.25); // gross − discount
     expect(ord.collected_at).not.toBeNull();
     expect(ord.order_no).toBeGreaterThan(0);
 
-    const oi = await query(
-      'SELECT * FROM order_items WHERE order_id = $1', [ord.id],
-    );
+    const oi = await query('SELECT * FROM order_items WHERE order_id = $1', [ord.id]);
     expect(oi.rowCount).toBe(1);
     expect(oi.rows[0].name).toBe('Imported sales (42 orders)');
     expect(parseFloat(oi.rows[0].qty)).toBe(1);
@@ -206,12 +212,12 @@ describe('POST /imports/sales-history', () => {
   it('rejects future/today dates, bad formats and zero orders per-row', async () => {
     const todayIst = new Date(Date.now() + 5.5 * 3600 * 1000).toISOString().slice(0, 10);
     const r = await post('/imports/sales-history', [
-      { date: '2030-01-01', orders: 5, grossInr: 100 },  // future
-      { date: todayIst, orders: 5, grossInr: 100 },      // today — not past
-      { date: '15-01-2026', orders: 5, grossInr: 100 },  // bad format
-      { date: '2026-01-16', orders: 0, grossInr: 100 },  // orders < 1
+      { date: '2030-01-01', orders: 5, grossInr: 100 }, // future
+      { date: todayIst, orders: 5, grossInr: 100 }, // today — not past
+      { date: '15-01-2026', orders: 5, grossInr: 100 }, // bad format
+      { date: '2026-01-16', orders: 0, grossInr: 100 }, // orders < 1
       { date: '2026-01-17', orders: 3, grossInr: 100, discountInr: 200 }, // discount > gross
-      { date: '2026-01-18', orders: 3, grossInr: 250 },  // the one good row
+      { date: '2026-01-18', orders: 3, grossInr: 250 }, // the one good row
     ]);
     expect(r.status).toBe(200);
     expect(r.body.imported).toBe(1);

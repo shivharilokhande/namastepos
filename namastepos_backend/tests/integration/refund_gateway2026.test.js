@@ -42,14 +42,14 @@ async function makeGatewayOrder(biz, {
     `INSERT INTO orders (business_id, order_no, source, status, subtotal, total, payment_method)
      VALUES ($1, $2, 'dineIn', 'collected', $3, $3, $4::payment_method)
      RETURNING id`,
-    [biz.id, orderNo, totalInr, method]
+    [biz.id, orderNo, totalInr, method],
   );
   const orderId = ord.rows[0].id;
   if (rzPaymentId) {
     await query(
       `INSERT INTO payments (business_id, order_id, method, amount_paise, status, razorpay_payment_id)
        VALUES ($1, $2, 'card', $3, 'captured', $4)`,
-      [biz.id, orderId, Math.round(totalInr * 100), rzPaymentId]
+      [biz.id, orderId, Math.round(totalInr * 100), rzPaymentId],
     );
   }
   return orderId;
@@ -66,15 +66,16 @@ describe('NP-111: gateway refund executes inline', () => {
     });
 
     expect(rzMock).toHaveBeenCalledWith(
-      'POST', '/v1/payments/pay_NP111_OK/refund',
-      { amount: 4000, notes: { reason: 'cold food' } }
+      'POST',
+      '/v1/payments/pay_NP111_OK/refund',
+      { amount: 4000, notes: { reason: 'cold food' } },
     );
     expect(refund.status).toBe('processed');
     expect(refund.razorpayRefundId).toBe('rfnd_NP111_OK');
 
     const row = (await query(
-      `SELECT status, razorpay_refund_id, processed_at FROM refunds WHERE id = $1`,
-      [refund.id]
+      'SELECT status, razorpay_refund_id, processed_at FROM refunds WHERE id = $1',
+      [refund.id],
     )).rows[0];
     expect(row.status).toBe('processed');
     expect(row.razorpay_refund_id).toBe('rfnd_NP111_OK');
@@ -90,9 +91,7 @@ describe('NP-111: gateway refund executes inline', () => {
       businessId: biz.id, orderId, amountInr: 25, reason: 'test',
     })).rejects.toThrow(/Razorpay refund failed: insufficient balance/);
 
-    const row = (await query(
-      `SELECT status, raw_payload FROM refunds WHERE order_id = $1`, [orderId]
-    )).rows[0];
+    const row = (await query('SELECT status, raw_payload FROM refunds WHERE order_id = $1', [orderId])).rows[0];
     expect(row.status).toBe('failed'); // never lies as pending/initiated
     expect(row.raw_payload.gatewayError).toMatch(/insufficient balance/);
   });
@@ -109,9 +108,7 @@ describe('NP-111: gateway refund executes inline', () => {
     expect(rzMock).not.toHaveBeenCalled(); // nothing to call — never pretend
     expect(refund.status).toBe('failed');
 
-    const row = (await query(
-      `SELECT status, raw_payload FROM refunds WHERE id = $1`, [refund.id]
-    )).rows[0];
+    const row = (await query('SELECT status, raw_payload FROM refunds WHERE id = $1', [refund.id])).rows[0];
     expect(row.status).toBe('failed');
     expect(row.raw_payload.manualRequired).toBe(true);
     expect(row.raw_payload.manualReason).toMatch(/manually/);
@@ -136,9 +133,7 @@ describe('NP-111: gateway refund executes inline', () => {
       payload: { refund: { entity: { id: 'rfnd_NP111_ASYNC', status: 'processed' } } },
     }, `evt_refund_ok_${Date.now()}`);
 
-    const row = (await query(
-      `SELECT status, processed_at FROM refunds WHERE id = $1`, [refund.id]
-    )).rows[0];
+    const row = (await query('SELECT status, processed_at FROM refunds WHERE id = $1', [refund.id])).rows[0];
     expect(row.status).toBe('processed');
     expect(row.processed_at).not.toBeNull();
   });
@@ -158,23 +153,19 @@ describe('NP-111: gateway refund executes inline', () => {
       payload: { refund: { entity: { id: 'rfnd_NP111_WHF', status: 'failed' } } },
     }, `evt_refund_fail_${Date.now()}`);
 
-    const row = (await query(
-      `SELECT status FROM refunds WHERE id = $1`, [refund.id]
-    )).rows[0];
+    const row = (await query('SELECT status FROM refunds WHERE id = $1', [refund.id])).rows[0];
     expect(row.status).toBe('failed');
 
     // Stale/out-of-order refund.failed after processed must NOT downgrade.
     await query(
-      `UPDATE refunds SET status = 'processed', processed_at = NOW() WHERE id = $1`,
-      [refund.id]
+      'UPDATE refunds SET status = \'processed\', processed_at = NOW() WHERE id = $1',
+      [refund.id],
     );
     await razorpayService.handleWebhook({
       event: 'refund.failed',
       payload: { refund: { entity: { id: 'rfnd_NP111_WHF', status: 'failed' } } },
     }, `evt_refund_stale_${Date.now()}`);
-    const after = (await query(
-      `SELECT status FROM refunds WHERE id = $1`, [refund.id]
-    )).rows[0];
+    const after = (await query('SELECT status FROM refunds WHERE id = $1', [refund.id])).rows[0];
     expect(after.status).toBe('processed');
   });
 });

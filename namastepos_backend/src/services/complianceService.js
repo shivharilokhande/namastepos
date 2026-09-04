@@ -10,9 +10,9 @@
 // `created_at` / `source` / `ip_address` evidence trail is captured
 // the same way every time.
 
+const crypto = require('crypto');
 const { query, withTransaction } = require('../config/db');
 const { BadRequest, NotFound } = require('../utils/errors');
-const crypto = require('crypto');
 
 // Known consent keys. Anything outside this list is rejected so a
 // typo doesn't produce orphan consent records that the dashboard
@@ -45,8 +45,8 @@ const CONSENT_KEYS = new Set([
 async function _businessOwnerEmail(businessId) {
   if (!businessId) return null;
   const r = await query(
-    `SELECT email FROM businesses WHERE id = $1 LIMIT 1`,
-    [businessId]
+    'SELECT email FROM businesses WHERE id = $1 LIMIT 1',
+    [businessId],
   );
   return r.rows[0]?.email || null;
 }
@@ -84,7 +84,7 @@ function _dispatchComplianceEmails(opts) {
 }
 
 async function _sendComplianceEmails({
-  kind,            // 'grievance' | 'request'
+  kind, // 'grievance' | 'request'
   refId,
   businessId = null,
   principalEmail = null,
@@ -108,11 +108,11 @@ async function _sendComplianceEmails({
         businessId,
         userId: null,
         subject: `New ${noun} filed (ref ${refId}) — action required`,
-        html: `<p>A new ${noun} has been filed on NamastePOS (ref <b>${refId}</b>).</p>`
-          + summaryHtml
-          + `<p>Acknowledge by: <b>${_fmtDue(ackDueAt)}</b><br/>`
+        html: `<p>A new ${noun} has been filed on NamastePOS (ref <b>${refId}</b>).</p>${
+          summaryHtml
+        }<p>Acknowledge by: <b>${_fmtDue(ackDueAt)}</b><br/>`
           + `Resolve by: <b>${_fmtDue(resolveDueAt)}</b></p>`
-          + `<p>Please handle it from the compliance section of your dashboard.</p>`,
+          + '<p>Please handle it from the compliance section of your dashboard.</p>',
       });
     }
   } catch (err) {
@@ -129,10 +129,10 @@ async function _sendComplianceEmails({
         userId: null,
         subject: `We received your ${noun} (ref ${refId})`,
         html: `<p>Thank you — we have received your ${noun} (reference <b>${refId}</b>).</p>`
-          + `<p>You will get an acknowledgement by <b>${_fmtDue(ackDueAt)}</b>`
-          + (resolveDueAt
-              ? ` and a resolution by <b>${_fmtDue(resolveDueAt)}</b>.` : '.')
-          + `</p><p>This mailbox records your reference for the DPDP grievance process; `
+          + `<p>You will get an acknowledgement by <b>${_fmtDue(ackDueAt)}</b>${
+            resolveDueAt
+              ? ` and a resolution by <b>${_fmtDue(resolveDueAt)}</b>.` : '.'
+          }</p><p>This mailbox records your reference for the DPDP grievance process; `
           + `please quote ref ${refId} in any follow-up.</p>`,
       });
     }
@@ -141,8 +141,8 @@ async function _sendComplianceEmails({
   }
 }
 
-const REQUEST_TYPES   = new Set(['access', 'correction', 'erasure', 'portability', 'withdraw_consent']);
-const REQUEST_STATUS  = new Set(['pending', 'in_review', 'completed', 'rejected', 'partial']);
+const REQUEST_TYPES = new Set(['access', 'correction', 'erasure', 'portability', 'withdraw_consent']);
+const REQUEST_STATUS = new Set(['pending', 'in_review', 'completed', 'rejected', 'partial']);
 const GRIEVANCE_STATUS = new Set(['received', 'acknowledged', 'resolved', 'rejected', 'escalated']);
 const BREACH_STATUS = new Set(['detected', 'triaging', 'contained', 'notified', 'closed']);
 
@@ -191,8 +191,8 @@ async function recordConsent({
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      RETURNING id, created_at`,
     [userId, businessId, guestPhone, sessionId,
-     consentKey, granted, policyVersion, source,
-     ipAddress, userAgent, JSON.stringify(context || {})]
+      consentKey, granted, policyVersion, source,
+      ipAddress, userAgent, JSON.stringify(context || {})],
   );
   return { id: r.rows[0].id, createdAt: r.rows[0].created_at };
 }
@@ -206,9 +206,9 @@ async function currentConsents({ userId = null, guestPhone = null, sessionId = n
   // the supplied principal.
   const params = [];
   const where = [];
-  if (userId)     { params.push(userId);     where.push(`user_id = $${params.length}`); }
+  if (userId) { params.push(userId); where.push(`user_id = $${params.length}`); }
   if (guestPhone) { params.push(guestPhone); where.push(`guest_phone = $${params.length}`); }
-  if (sessionId)  { params.push(sessionId);  where.push(`session_id = $${params.length}`); }
+  if (sessionId) { params.push(sessionId); where.push(`session_id = $${params.length}`); }
 
   const r = await query(
     `SELECT DISTINCT ON (consent_key)
@@ -216,14 +216,14 @@ async function currentConsents({ userId = null, guestPhone = null, sessionId = n
        FROM consent_events
       WHERE ${where.join(' OR ')}
       ORDER BY consent_key, created_at DESC`,
-    params
+    params,
   );
-  return r.rows.map(row => ({
-    consentKey:    row.consent_key,
-    granted:       row.granted,
+  return r.rows.map((row) => ({
+    consentKey: row.consent_key,
+    granted: row.granted,
     policyVersion: row.policy_version,
-    source:        row.source,
-    recordedAt:    row.created_at,
+    source: row.source,
+    recordedAt: row.created_at,
   }));
 }
 
@@ -234,9 +234,9 @@ async function consentHistory({ userId = null, guestPhone = null, sessionId = nu
   }
   const params = [];
   const where = [];
-  if (userId)     { params.push(userId);     where.push(`user_id = $${params.length}`); }
+  if (userId) { params.push(userId); where.push(`user_id = $${params.length}`); }
   if (guestPhone) { params.push(guestPhone); where.push(`guest_phone = $${params.length}`); }
-  if (sessionId)  { params.push(sessionId);  where.push(`session_id = $${params.length}`); }
+  if (sessionId) { params.push(sessionId); where.push(`session_id = $${params.length}`); }
   params.push(Math.min(Math.max(limit, 1), 5000));
 
   const r = await query(
@@ -246,18 +246,18 @@ async function consentHistory({ userId = null, guestPhone = null, sessionId = nu
       WHERE ${where.join(' OR ')}
       ORDER BY created_at DESC
       LIMIT $${params.length}`,
-    params
+    params,
   );
-  return r.rows.map(row => ({
-    id:            row.id,
-    consentKey:    row.consent_key,
-    granted:       row.granted,
+  return r.rows.map((row) => ({
+    id: row.id,
+    consentKey: row.consent_key,
+    granted: row.granted,
     policyVersion: row.policy_version,
-    source:        row.source,
-    ipAddress:     row.ip_address,
-    userAgent:     row.user_agent,
-    context:       row.context,
-    recordedAt:    row.created_at,
+    source: row.source,
+    ipAddress: row.ip_address,
+    userAgent: row.user_agent,
+    context: row.context,
+    recordedAt: row.created_at,
   }));
 }
 
@@ -287,12 +287,12 @@ async function fileDataSubjectRequest({
      VALUES ($1,$2,$3,$4,$5,$6,$7)
      RETURNING id, status, sla_due_at, created_at`,
     [userId, businessId, guestPhone, contactEmail,
-     requestType, JSON.stringify(details || {}), source]
+      requestType, JSON.stringify(details || {}), source],
   );
   await query(
     `INSERT INTO data_subject_request_events (request_id, to_status, note)
      VALUES ($1, 'pending', 'Request filed')`,
-    [r.rows[0].id]
+    [r.rows[0].id],
   );
   // Founder bug #15 (2026-08-25): DPDP acknowledgement duty — notify the
   // owner + ack the requester. Best-effort, never fails the insert above.
@@ -306,9 +306,9 @@ async function fileDataSubjectRequest({
     resolveDueAt: r.rows[0].sla_due_at,
   });
   return {
-    id:        r.rows[0].id,
-    status:    r.rows[0].status,
-    slaDueAt:  r.rows[0].sla_due_at,
+    id: r.rows[0].id,
+    status: r.rows[0].status,
+    slaDueAt: r.rows[0].sla_due_at,
     createdAt: r.rows[0].created_at,
   };
 }
@@ -330,10 +330,10 @@ async function listDataSubjectRequests({ userId = null, status = null, limit = 1
             sla_due_at, responded_at, closed_at,
             handled_by, proof_hash, created_at, updated_at
        FROM data_subject_requests
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
       ORDER BY created_at DESC
       LIMIT $${params.length}`,
-    params
+    params,
   );
   return r.rows.map(serializeDSR);
 }
@@ -343,14 +343,14 @@ async function updateDataSubjectRequest({ id, status, note = null, handledBy = n
 
   return withTransaction(async (client) => {
     const existing = await client.query(
-      `SELECT status FROM data_subject_requests WHERE id = $1 FOR UPDATE`,
-      [id]
+      'SELECT status FROM data_subject_requests WHERE id = $1 FOR UPDATE',
+      [id],
     );
     if (!existing.rows[0]) throw new NotFound('Data subject request not found');
     const fromStatus = existing.rows[0].status;
 
-    const respondedAt = ['in_review','completed','rejected','partial'].includes(status) ? 'now()' : 'responded_at';
-    const closedAt    = ['completed','rejected'].includes(status) ? 'now()' : 'closed_at';
+    const respondedAt = ['in_review', 'completed', 'rejected', 'partial'].includes(status) ? 'now()' : 'responded_at';
+    const closedAt = ['completed', 'rejected'].includes(status) ? 'now()' : 'closed_at';
 
     const r = await client.query(
       `UPDATE data_subject_requests
@@ -362,13 +362,13 @@ async function updateDataSubjectRequest({ id, status, note = null, handledBy = n
               updated_at   = now()
         WHERE id = $1
         RETURNING *`,
-      [id, status, handledBy, proofHash]
+      [id, status, handledBy, proofHash],
     );
     await client.query(
       `INSERT INTO data_subject_request_events
          (request_id, from_status, to_status, note, actor_user_id)
        VALUES ($1, $2, $3, $4, $5)`,
-      [id, fromStatus, status, note, handledBy]
+      [id, fromStatus, status, note, handledBy],
     );
     return serializeDSR(r.rows[0]);
   });
@@ -376,22 +376,22 @@ async function updateDataSubjectRequest({ id, status, note = null, handledBy = n
 
 function serializeDSR(row) {
   return {
-    id:           row.id,
-    userId:       row.user_id,
-    businessId:   row.business_id,
-    guestPhone:   row.guest_phone,
+    id: row.id,
+    userId: row.user_id,
+    businessId: row.business_id,
+    guestPhone: row.guest_phone,
     contactEmail: row.contact_email,
-    requestType:  row.request_type,
-    status:       row.status,
-    details:      row.details,
-    source:       row.source,
-    slaDueAt:     row.sla_due_at,
-    respondedAt:  row.responded_at,
-    closedAt:     row.closed_at,
-    handledBy:    row.handled_by,
-    proofHash:    row.proof_hash,
-    createdAt:    row.created_at,
-    updatedAt:    row.updated_at,
+    requestType: row.request_type,
+    status: row.status,
+    details: row.details,
+    source: row.source,
+    slaDueAt: row.sla_due_at,
+    respondedAt: row.responded_at,
+    closedAt: row.closed_at,
+    handledBy: row.handled_by,
+    proofHash: row.proof_hash,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -420,7 +420,7 @@ async function fileGrievance({
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      RETURNING id, status, ack_due_at, resolve_due_at, created_at`,
     [businessId, userId, complainantName, complainantEmail, complainantPhone,
-     category, subject, body]
+      category, subject, body],
   );
   // Founder bug #15 (2026-08-25): DPDP acknowledgement duty — notify the
   // owner + ack the complainant. Best-effort, never fails the insert above.
@@ -434,11 +434,11 @@ async function fileGrievance({
     resolveDueAt: r.rows[0].resolve_due_at,
   });
   return {
-    id:           r.rows[0].id,
-    status:       r.rows[0].status,
-    ackDueAt:     r.rows[0].ack_due_at,
+    id: r.rows[0].id,
+    status: r.rows[0].status,
+    ackDueAt: r.rows[0].ack_due_at,
     resolveDueAt: r.rows[0].resolve_due_at,
-    createdAt:    r.rows[0].created_at,
+    createdAt: r.rows[0].created_at,
   };
 }
 
@@ -458,30 +458,30 @@ async function listGrievances({ status = null, businessId = null, limit = 100 } 
             acknowledged_at, resolved_at, resolution_note, handled_by,
             ack_due_at, resolve_due_at, created_at, updated_at
        FROM grievance_complaints
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
       ORDER BY created_at DESC
       LIMIT $${params.length}`,
-    params
+    params,
   );
-  return r.rows.map(g => ({
-    id:               g.id,
-    businessId:       g.business_id,
-    userId:           g.user_id,
-    complainantName:  g.complainant_name,
+  return r.rows.map((g) => ({
+    id: g.id,
+    businessId: g.business_id,
+    userId: g.user_id,
+    complainantName: g.complainant_name,
     complainantEmail: g.complainant_email,
     complainantPhone: g.complainant_phone,
-    category:         g.category,
-    subject:          g.subject,
-    body:             g.body,
-    status:           g.status,
-    acknowledgedAt:   g.acknowledged_at,
-    resolvedAt:       g.resolved_at,
-    resolutionNote:   g.resolution_note,
-    handledBy:        g.handled_by,
-    ackDueAt:         g.ack_due_at,
-    resolveDueAt:     g.resolve_due_at,
-    createdAt:        g.created_at,
-    updatedAt:        g.updated_at,
+    category: g.category,
+    subject: g.subject,
+    body: g.body,
+    status: g.status,
+    acknowledgedAt: g.acknowledged_at,
+    resolvedAt: g.resolved_at,
+    resolutionNote: g.resolution_note,
+    handledBy: g.handled_by,
+    ackDueAt: g.ack_due_at,
+    resolveDueAt: g.resolve_due_at,
+    createdAt: g.created_at,
+    updatedAt: g.updated_at,
   }));
 }
 
@@ -500,7 +500,7 @@ async function updateGrievance({ id, status, resolutionNote = null, handledBy = 
             updated_at      = now()
       WHERE id = $1
       RETURNING id`,
-    [id, status, resolutionNote, handledBy]
+    [id, status, resolutionNote, handledBy],
   );
   if (!r.rows[0]) throw new NotFound('Grievance not found');
   return { id: r.rows[0].id, status };
@@ -524,7 +524,7 @@ async function logBreach({
   createdBy = null,
 }) {
   if (!category) throw new BadRequest('category is required');
-  if (!['low','medium','high','critical'].includes(severity)) {
+  if (!['low', 'medium', 'high', 'critical'].includes(severity)) {
     throw new BadRequest('severity must be low|medium|high|critical');
   }
   if (!summary) throw new BadRequest('summary is required');
@@ -537,7 +537,7 @@ async function logBreach({
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
      RETURNING id, status, detected_at, created_at`,
     [scope, businessId, occurredAt, category, severity,
-     affectedCount, dataCategories, summary, rootCause, remediation, createdBy]
+      affectedCount, dataCategories, summary, rootCause, remediation, createdBy],
   );
   return { id: r.rows[0].id, status: r.rows[0].status, detectedAt: r.rows[0].detected_at };
 }
@@ -546,8 +546,8 @@ async function updateBreach({ id, status, fields = {} }) {
   if (status && !BREACH_STATUS.has(status)) throw new BadRequest(`Unknown status "${status}"`);
   // Allowed mutable fields (notification timestamps + remediation).
   const allowed = ['root_cause', 'remediation', 'dpb_notified_at',
-                   'cert_in_notified_at', 'users_notified_at', 'ack_ref',
-                   'affected_count'];
+    'cert_in_notified_at', 'users_notified_at', 'ack_ref',
+    'affected_count'];
   const sets = [];
   const params = [id];
   if (status) { params.push(status); sets.push(`status = $${params.length}`); }
@@ -561,7 +561,7 @@ async function updateBreach({ id, status, fields = {} }) {
   sets.push('updated_at = now()');
   const r = await query(
     `UPDATE breach_incidents SET ${sets.join(', ')} WHERE id = $1 RETURNING id`,
-    params
+    params,
   );
   if (!r.rows[0]) throw new NotFound('Breach incident not found');
   return { id: r.rows[0].id };
@@ -574,10 +574,10 @@ async function listBreaches({ status = null, limit = 100 } = {}) {
   params.push(Math.min(Math.max(limit, 1), 500));
   const r = await query(
     `SELECT * FROM breach_incidents
-      ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
       ORDER BY detected_at DESC
       LIMIT $${params.length}`,
-    params
+    params,
   );
   return r.rows;
 }
@@ -587,45 +587,45 @@ async function listBreaches({ status = null, limit = 100 } = {}) {
 // ────────────────────────────────────────────────────────────────────
 
 async function getSettings() {
-  const r = await query(`SELECT * FROM compliance_settings WHERE id = 1`);
+  const r = await query('SELECT * FROM compliance_settings WHERE id = 1');
   const s = r.rows[0] || {};
   return {
     grievanceOfficer: {
-      name:    s.grievance_officer_name,
-      email:   s.grievance_officer_email,
-      phone:   s.grievance_officer_phone,
+      name: s.grievance_officer_name,
+      email: s.grievance_officer_email,
+      phone: s.grievance_officer_phone,
       address: s.grievance_officer_address,
     },
     dataProtectionOfficer: {
-      name:  s.dpo_name,
+      name: s.dpo_name,
       email: s.dpo_email,
     },
     legalEntity: {
-      name:    s.legal_entity_name,
+      name: s.legal_entity_name,
       address: s.legal_entity_address,
-      cin:     s.legal_entity_cin,
-      gstin:   s.legal_entity_gstin,
+      cin: s.legal_entity_cin,
+      gstin: s.legal_entity_gstin,
     },
-    privacyPolicyVersion:   s.privacy_policy_version,
-    termsOfServiceVersion:  s.terms_of_service_version,
+    privacyPolicyVersion: s.privacy_policy_version,
+    termsOfServiceVersion: s.terms_of_service_version,
     updatedAt: s.updated_at,
   };
 }
 
 async function updateSettings(input) {
   const map = {
-    grievanceOfficerName:    'grievance_officer_name',
-    grievanceOfficerEmail:   'grievance_officer_email',
-    grievanceOfficerPhone:   'grievance_officer_phone',
+    grievanceOfficerName: 'grievance_officer_name',
+    grievanceOfficerEmail: 'grievance_officer_email',
+    grievanceOfficerPhone: 'grievance_officer_phone',
     grievanceOfficerAddress: 'grievance_officer_address',
-    dpoName:                 'dpo_name',
-    dpoEmail:                'dpo_email',
-    legalEntityName:         'legal_entity_name',
-    legalEntityAddress:      'legal_entity_address',
-    legalEntityCin:          'legal_entity_cin',
-    legalEntityGstin:        'legal_entity_gstin',
-    privacyPolicyVersion:    'privacy_policy_version',
-    termsOfServiceVersion:   'terms_of_service_version',
+    dpoName: 'dpo_name',
+    dpoEmail: 'dpo_email',
+    legalEntityName: 'legal_entity_name',
+    legalEntityAddress: 'legal_entity_address',
+    legalEntityCin: 'legal_entity_cin',
+    legalEntityGstin: 'legal_entity_gstin',
+    privacyPolicyVersion: 'privacy_policy_version',
+    termsOfServiceVersion: 'terms_of_service_version',
   };
   const sets = [];
   const params = [];
@@ -662,7 +662,7 @@ async function exportUserData(userId) {
     `SELECT id, email, display_name, phone, photo_url,
             created_at, last_seen_at, locale
        FROM users WHERE id = $1`,
-    [userId]
+    [userId],
   );
   dump.sections.profile = u.rows[0] || null;
 
@@ -674,7 +674,7 @@ async function exportUserData(userId) {
        FROM business_users bu
        LEFT JOIN businesses b ON b.id = bu.business_id
       WHERE bu.user_id = $1`,
-    [userId]
+    [userId],
   );
   dump.sections.businessMemberships = m.rows;
 
@@ -689,7 +689,7 @@ async function exportUserData(userId) {
     `SELECT id, business_id, category, subject, body, status,
             acknowledged_at, resolved_at, created_at
        FROM grievance_complaints WHERE user_id = $1`,
-    [userId]
+    [userId],
   );
   dump.sections.grievances = g.rows;
 
@@ -716,8 +716,8 @@ async function eraseUser({ userId, reason = 'self_service_erasure', actorUserId 
   if (!userId) throw new BadRequest('userId required');
   return withTransaction(async (client) => {
     const u = await client.query(
-      `SELECT id, email FROM users WHERE id = $1 FOR UPDATE`,
-      [userId]
+      'SELECT id, email FROM users WHERE id = $1 FOR UPDATE',
+      [userId],
     );
     if (!u.rows[0]) throw new NotFound('User not found');
 
@@ -735,17 +735,17 @@ async function eraseUser({ userId, reason = 'self_service_erasure', actorUserId 
               is_active     = FALSE,
               updated_at    = now()
         WHERE id = $1`,
-      [userId, erasedEmail]
+      [userId, erasedEmail],
     );
 
     // Withdrawal entries — leaves an audit trail that we received
     // the erasure request even after profile fields are nuked.
-    for (const key of ['marketing_email','marketing_whatsapp','marketing_sms']) {
+    for (const key of ['marketing_email', 'marketing_whatsapp', 'marketing_sms']) {
       await client.query(
         `INSERT INTO consent_events
            (user_id, consent_key, granted, source, context)
          VALUES ($1, $2, FALSE, 'erasure_request', $3)`,
-        [userId, key, JSON.stringify({ reason })]
+        [userId, key, JSON.stringify({ reason })],
       );
     }
 
@@ -756,7 +756,7 @@ async function eraseUser({ userId, reason = 'self_service_erasure', actorUserId 
        VALUES ($1, 'erasure', 'completed', 'self_service',
                $2, now(), now(), $3)
        RETURNING id`,
-      [userId, JSON.stringify({ reason }), actorUserId]
+      [userId, JSON.stringify({ reason }), actorUserId],
     );
     return { userId, requestId: dsr.rows[0].id };
   });

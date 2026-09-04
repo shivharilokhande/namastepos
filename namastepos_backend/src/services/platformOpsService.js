@@ -414,7 +414,7 @@ async function platformUsage({ overLimitOnly = false, limit = 100, offset = 0 } 
     || (b.maxUtilisationPct - a.maxUtilisationPct));
 
   const t = await query(
-    `SELECT COUNT(*)::int AS c FROM businesses WHERE deleted_at IS NULL`
+    'SELECT COUNT(*)::int AS c FROM businesses WHERE deleted_at IS NULL',
   );
   return { rows, total: t.rows[0].c, limit: lim, offset: off };
 }
@@ -448,9 +448,7 @@ function _shapeUsage(row) {
     metrics,
     overLimitCount: metrics.filter((m) => m.over).length,
     nearLimitCount: metrics.filter((m) => m.near).length,
-    maxUtilisationPct: metrics.reduce(
-      (mx, m) => (m.utilisationPct !== null && m.utilisationPct > mx ? m.utilisationPct : mx), 0
-    ),
+    maxUtilisationPct: metrics.reduce((mx, m) => (m.utilisationPct !== null && m.utilisationPct > mx ? m.utilisationPct : mx), 0),
   };
 }
 
@@ -463,8 +461,8 @@ function _shapeUsage(row) {
 async function dunningQueue({ includeRecovered = false, limit = 100 } = {}) {
   const lim = Math.min(Math.max(parseInt(limit, 10) || 100, 1), 300);
   const statusFilter = includeRecovered
-    ? `s.status IN ('past_due', 'active') AND (s.dunning_attempts > 0 OR s.status = 'past_due')`
-    : `s.status = 'past_due'`;
+    ? 's.status IN (\'past_due\', \'active\') AND (s.dunning_attempts > 0 OR s.status = \'past_due\')'
+    : 's.status = \'past_due\'';
   const r = await query(`
     SELECT s.id AS subscription_id, s.business_id, b.name AS business_name,
            b.email AS business_email, b.account_owner_email,
@@ -571,15 +569,15 @@ async function dunningRetry(businessId, { adminId = null } = {}) {
         recipient: s.email,
         subject: 'Action needed: update your NamastePOS payment method',
         text: `Hi ${s.business_name || 'there'},\n\n`
-          + `We still haven't been able to collect your NamastePOS subscription payment`
+          + 'We still haven\'t been able to collect your NamastePOS subscription payment'
           + `${s.plan_name ? ` (${s.plan_name} plan)` : ''}.\n\n`
-          + `Please update your payment method here so your reports and features stay active:\n`
-          + `https://app.namastepos.in/billing\n\n— Team NamastePOS`,
+          + 'Please update your payment method here so your reports and features stay active:\n'
+          + 'https://app.namastepos.in/billing\n\n— Team NamastePOS',
         html: `<p>Hi ${s.business_name || 'there'},</p>`
-          + `<p>We still haven't been able to collect your NamastePOS subscription payment`
+          + '<p>We still haven\'t been able to collect your NamastePOS subscription payment'
           + `${s.plan_name ? ` (${s.plan_name} plan)` : ''}.</p>`
-          + `<p><a href="https://app.namastepos.in/billing">Update payment method</a></p>`
-          + `<p>— Team NamastePOS</p>`,
+          + '<p><a href="https://app.namastepos.in/billing">Update payment method</a></p>'
+          + '<p>— Team NamastePOS</p>',
         businessId,
       });
       emailed = true;
@@ -589,13 +587,13 @@ async function dunningRetry(businessId, { adminId = null } = {}) {
   }
 
   await query(
-    `UPDATE subscriptions SET dunning_attempts = $2, last_dunning_at = NOW() WHERE id = $1`,
-    [s.id, attemptNo]
+    'UPDATE subscriptions SET dunning_attempts = $2, last_dunning_at = NOW() WHERE id = $1',
+    [s.id, attemptNo],
   );
   await query(
     `INSERT INTO dunning_events (business_id, subscription_id, event, attempt_no, reason, emailed)
      VALUES ($1, $2, 'manual_retry', $3, $4, $5)`,
-    [businessId, s.id, attemptNo, `manual nudge by admin ${adminId || 'unknown'}`, emailed]
+    [businessId, s.id, attemptNo, `manual nudge by admin ${adminId || 'unknown'}`, emailed],
   );
   return { emailed, attemptNo, recipient: emailed ? s.email : null };
 }
@@ -626,7 +624,7 @@ async function dunningWaive(businessId, { reason, adminId = null } = {}) {
   await query(
     `INSERT INTO dunning_events (business_id, subscription_id, event, attempt_no, reason)
      VALUES ($1, $2, 'waived', 0, $3)`,
-    [businessId, s.id, `${String(reason).trim()} (admin ${adminId || 'unknown'})`]
+    [businessId, s.id, `${String(reason).trim()} (admin ${adminId || 'unknown'})`],
   );
   _logCrm(businessId, 'billing', 'Cycle waived by admin', reason);
   return r.rows[0];
@@ -645,14 +643,15 @@ async function dunningMarkPaid(businessId, { amountPaise, reference, adminId = n
     // so defaulting to the monthly price would book a year of service for a
     // month's money.
     ? ((s.billing_period === 'yearly'
-        ? (s.price_yearly_paise || s.price_inr_paise)
-        : s.price_inr_paise) || 0)
+      ? (s.price_yearly_paise || s.price_inr_paise)
+      : s.price_inr_paise) || 0)
     : parseInt(amountPaise, 10);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new BadRequest('amountPaise must be a positive integer (or omit it to use the plan price)');
   }
 
-  const inv = await query(`
+  const inv = await query(
+    `
     INSERT INTO invoices
       (business_id, subscription_id, status, amount_paise, currency,
        period_start, period_end, paid_at)
@@ -660,7 +659,8 @@ async function dunningMarkPaid(businessId, { amountPaise, reference, adminId = n
             NOW() + CASE WHEN $4 = 'yearly' THEN INTERVAL '1 year' ELSE INTERVAL '1 month' END,
             NOW())
     RETURNING *`,
-  [businessId, s.id, amount, s.billing_period || 'monthly']);
+    [businessId, s.id, amount, s.billing_period || 'monthly'],
+  );
 
   await query(`
     UPDATE subscriptions
@@ -678,10 +678,14 @@ async function dunningMarkPaid(businessId, { amountPaise, reference, adminId = n
     `INSERT INTO dunning_events (business_id, subscription_id, event, attempt_no, reason)
      VALUES ($1, $2, 'recovered', 0, $3)`,
     [businessId, s.id,
-      `marked paid offline${reference ? ` · ref ${String(reference).slice(0, 120)}` : ''} (admin ${adminId || 'unknown'})`]
+      `marked paid offline${reference ? ` · ref ${String(reference).slice(0, 120)}` : ''} (admin ${adminId || 'unknown'})`],
   );
-  _logCrm(businessId, 'billing', 'Marked paid offline',
-    `₹${(amount / PAISE).toFixed(2)}${reference ? ` · ref ${reference}` : ''}`);
+  _logCrm(
+    businessId,
+    'billing',
+    'Marked paid offline',
+    `₹${(amount / PAISE).toFixed(2)}${reference ? ` · ref ${reference}` : ''}`,
+  );
   return { invoice: inv.rows[0] };
 }
 
@@ -719,8 +723,10 @@ async function notificationLog(businessId, { limit = 100, offset = 0, status } =
        WHERE l.business_id = $1${statusSql}
        ORDER BY l.created_at DESC
        LIMIT $2 OFFSET $3`, params),
-    query(`SELECT COUNT(*)::int AS c FROM email_dispatch_log WHERE business_id = $1`,
-      [businessId]),
+    query(
+      'SELECT COUNT(*)::int AS c FROM email_dispatch_log WHERE business_id = $1',
+      [businessId],
+    ),
   ]);
   return {
     channel: 'email',
@@ -761,7 +767,7 @@ async function platformHealth() {
   }
 
   const [migrations, webhooks, poolRow] = await Promise.all([
-    query(`SELECT COUNT(*)::int AS c, MAX(applied_at) AS last_at FROM _migrations`)
+    query('SELECT COUNT(*)::int AS c, MAX(applied_at) AS last_at FROM _migrations')
       .catch(() => ({ rows: [{ c: null, last_at: null }] })),
     query(`
       SELECT
@@ -775,7 +781,7 @@ async function platformHealth() {
             AND processed_at IS NULL)                                AS unprocessed_24h,
         (SELECT MAX(created_at) FROM webhook_events)                 AS last_event_at
     `).catch(() => ({ rows: [{}] })),
-    query(`SELECT numbackends::int AS conns FROM pg_stat_database WHERE datname = current_database()`)
+    query('SELECT numbackends::int AS conns FROM pg_stat_database WHERE datname = current_database()')
       .catch(() => ({ rows: [{}] })),
   ]);
 
@@ -812,9 +818,16 @@ function _redisStatus() {
 }
 
 module.exports = {
-  overview, needsAttention,
-  usageForBusiness, platformUsage, USAGE_METRICS,
-  dunningQueue, dunningTimeline, dunningRetry, dunningWaive, dunningMarkPaid,
+  overview,
+  needsAttention,
+  usageForBusiness,
+  platformUsage,
+  USAGE_METRICS,
+  dunningQueue,
+  dunningTimeline,
+  dunningRetry,
+  dunningWaive,
+  dunningMarkPaid,
   notificationLog,
   platformHealth,
 };

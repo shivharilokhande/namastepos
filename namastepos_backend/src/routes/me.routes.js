@@ -17,17 +17,17 @@ const router = express.Router();
 router.use(requireAuth);
 
 // Consents
-router.get  ('/consents',          c.meCurrentConsents);
-router.get  ('/consents/history',  c.meConsentHistory);
-router.post ('/consents',          ...c.meRecordConsent);
+router.get('/consents', c.meCurrentConsents);
+router.get('/consents/history', c.meConsentHistory);
+router.post('/consents', ...c.meRecordConsent);
 
 // Data subject requests
-router.get  ('/dsr',               c.meListDSRs);
-router.post ('/dsr',               ...c.meFileDSR);
-router.post ('/correct',           ...c.meFileCorrection);
+router.get('/dsr', c.meListDSRs);
+router.post('/dsr', ...c.meFileDSR);
+router.post('/correct', ...c.meFileCorrection);
 
 // Portability + erasure (the big two)
-router.get   ('/export',           c.meExport);
-router.delete('/account',          c.meEraseAccount);
+router.get('/export', c.meExport);
+router.delete('/account', c.meEraseAccount);
 
 module.exports = router;

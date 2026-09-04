@@ -47,7 +47,7 @@ describe('POST /v1/auth/staff-picker (FB-17)', () => {
     const r = await request(app)
       .post('/v1/auth/staff-picker')
       .set('Authorization', `Bearer ${token}`) // tenant A's token
-      .send({ businessId: other.id });         // tenant B's roster
+      .send({ businessId: other.id }); // tenant B's roster
     expect(r.status).toBe(403);
     expect(r.body.staff).toBeUndefined();
   });
@@ -57,8 +57,10 @@ describe('POST /v1/auth/staff-picker (FB-17)', () => {
     const { issueAccessToken } = require('../../src/utils/jwt');
     // Staff tokens carry the same bid claim as owner tokens (single issuance path).
     const staffToken = issueAccessToken({
-      sub: owner._owner?.id || owner.id, bid: owner.id,
-      email: `staff-${Date.now()}@example.com`, role: 'staff',
+      sub: owner._owner?.id || owner.id,
+      bid: owner.id,
+      email: `staff-${Date.now()}@example.com`,
+      role: 'staff',
     });
     const r = await request(app)
       .post('/v1/auth/staff-picker')
@@ -72,7 +74,8 @@ describe('POST /v1/auth/staff-picker (FB-17)', () => {
     const { issueAccessToken } = require('../../src/utils/jwt');
     const noBidToken = issueAccessToken({
       sub: owner._owner?.id || owner.id,
-      email: `nobid-${Date.now()}@example.com`, role: 'super_admin',
+      email: `nobid-${Date.now()}@example.com`,
+      role: 'super_admin',
     });
     const r = await request(app)
       .post('/v1/auth/staff-picker')

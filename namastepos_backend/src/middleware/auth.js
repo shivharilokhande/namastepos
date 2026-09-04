@@ -63,8 +63,8 @@ async function _adminActive(adminId) {
   if (cached && cached.expiresAt > Date.now()) return cached.active;
   const { query } = require('../config/db');
   const r = await query(
-    `SELECT 1 FROM admin_users WHERE id = $1 AND is_active = TRUE LIMIT 1`,
-    [adminId]
+    'SELECT 1 FROM admin_users WHERE id = $1 AND is_active = TRUE LIMIT 1',
+    [adminId],
   );
   const active = r.rowCount > 0;
   _adminActiveCache.set(adminId, { active, expiresAt: Date.now() + ADMIN_CACHE_TTL_MS });
@@ -115,7 +115,7 @@ async function requireBusinessOwnership(req, _res, next) {
       // /admin routes (RBAC-gated) or an explicit impersonation session.
       if (!READ_ONLY.includes(req.method)) {
         return next(new Forbidden(
-          'Admin access to a business is read-only. Use the admin console or an impersonation session to make changes.'
+          'Admin access to a business is read-only. Use the admin console or an impersonation session to make changes.',
         ));
       }
       // S3: even for reads, reject a deactivated admin's lingering token.
@@ -148,15 +148,15 @@ async function requireBusinessOwnership(req, _res, next) {
       // ALLOW_PLATFORM_READ is a tiny allow-list for genuinely operational,
       // non-commercial reads. Add to it only with a written reason.
       const ALLOW_PLATFORM_READ = [
-        /\/health$/,          // liveness probes
-        /\/billing$/,         // tier + status only (no invoice data)
+        /\/health$/, // liveness probes
+        /\/billing$/, // tier + status only (no invoice data)
       ];
       const path = req.originalUrl.split('?')[0];
       if (!ALLOW_PLATFORM_READ.some((rx) => rx.test(path))) {
         return next(new Forbidden(
           'Platform staff cannot read tenant business data directly. '
           + 'Use the admin console (aggregated + audited) or start an '
-          + 'impersonation session for this customer.'
+          + 'impersonation session for this customer.',
         ));
       }
       return next();
@@ -169,7 +169,7 @@ async function requireBusinessOwnership(req, _res, next) {
     // Impersonation = read-only.
     if (req.user.impersonator && !READ_ONLY.includes(req.method)) {
       return next(new Forbidden(
-        'Impersonation is read-only. Exit impersonation to make changes.'
+        'Impersonation is read-only. Exit impersonation to make changes.',
       ));
     }
     return next();
@@ -213,7 +213,7 @@ async function _currentMembership(userId, businessId) {
     `SELECT role, permissions FROM business_users
       WHERE user_id = $1 AND business_id = $2 AND is_active = TRUE
       LIMIT 1`,
-    [userId, businessId]
+    [userId, businessId],
   );
   const membership = r.rowCount > 0
     ? { role: r.rows[0].role, permissions: r.rows[0].permissions }
@@ -358,7 +358,7 @@ function requireStaffPerm(perm) {
 function requireNotImpersonating(req, _res, next) {
   if (req.user?.impersonator) {
     return next(new Forbidden(
-      'This is a read-only impersonation session. Exit impersonation to make changes.'
+      'This is a read-only impersonation session. Exit impersonation to make changes.',
     ));
   }
   return next();

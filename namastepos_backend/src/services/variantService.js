@@ -23,12 +23,18 @@ function serializeVariant(r) {
   };
 }
 
-async function listVariants(businessId, menuItemId) {
-  const r = await query(
+/**
+ * @param {object} [client] run on an open transaction's client instead of the
+ *   pool. REQUIRED when called from inside withTransaction — a pool read
+ *   cannot see that transaction's uncommitted rows (see setVariants below).
+ */
+async function listVariants(businessId, menuItemId, client = null) {
+  const run = client ? client.query.bind(client) : query;
+  const r = await run(
     `SELECT * FROM menu_item_variants
       WHERE business_id = $1 AND menu_item_id = $2
       ORDER BY display_order, label`,
-    [businessId, menuItemId]
+    [businessId, menuItemId],
   );
   return r.rows.map(serializeVariant);
 }
@@ -42,13 +48,13 @@ async function setVariants(businessId, menuItemId, variants) {
     // passed straight through, so tenant A could deactivate tenant B's variants
     // by posting an empty list against B's item id.
     const own = await client.query(
-      `SELECT 1 FROM menu_items WHERE id = $1 AND business_id = $2`,
-      [menuItemId, businessId]
+      'SELECT 1 FROM menu_items WHERE id = $1 AND business_id = $2',
+      [menuItemId, businessId],
     );
     if (own.rowCount === 0) throw new NotFound('Menu item not found');
     const existing = await client.query(
-      `SELECT id FROM menu_item_variants WHERE menu_item_id = $1 AND business_id = $2`,
-      [menuItemId, businessId]
+      'SELECT id FROM menu_item_variants WHERE menu_item_id = $1 AND business_id = $2',
+      [menuItemId, businessId],
     );
     const keepIds = new Set();
     for (const v of variants || []) {
@@ -63,7 +69,7 @@ async function setVariants(businessId, menuItemId, variants) {
                   display_order = COALESCE($7, display_order)
             WHERE id = $8 AND business_id = $9`,
           [v.label, v.price, v.costPrice ?? null, v.sku ?? null,
-           v.stock ?? null, v.isActive, v.displayOrder, v.id, businessId]
+            v.stock ?? null, v.isActive, v.displayOrder, v.id, businessId],
         );
         keepIds.add(v.id);
       } else {
@@ -73,7 +79,7 @@ async function setVariants(businessId, menuItemId, variants) {
            VALUES ($1, $2, $3, $4, $5, $6, $7, COALESCE($8, 100), COALESCE($9, TRUE))
            RETURNING id`,
           [businessId, menuItemId, v.label, v.price, v.costPrice ?? null,
-           v.sku ?? null, v.stock ?? null, v.displayOrder, v.isActive]
+            v.sku ?? null, v.stock ?? null, v.displayOrder, v.isActive],
         );
         keepIds.add(ins.rows[0].id);
       }
@@ -83,19 +89,24 @@ async function setVariants(businessId, menuItemId, variants) {
     for (const row of existing.rows) {
       if (!keepIds.has(row.id)) {
         await client.query(
-          `UPDATE menu_item_variants SET is_active = FALSE WHERE id = $1 AND business_id = $2`,
-          [row.id, businessId]
+          'UPDATE menu_item_variants SET is_active = FALSE WHERE id = $1 AND business_id = $2',
+          [row.id, businessId],
         );
       }
     }
-    return listVariants(businessId, menuItemId);
+    // BUG FIX (2026-09-04, surfaced by the NP-201 pricing tests): this read
+    // used the POOL while the inserts above were still uncommitted on
+    // `client`, so setVariants returned an EMPTY list (or the pre-edit rows)
+    // on every call — the menu editor only ever saw the new variants after a
+    // separate refetch. Read on the transaction's own client.
+    return listVariants(businessId, menuItemId, client);
   });
 }
 
 async function variantById(businessId, variantId) {
   const r = await query(
-    `SELECT * FROM menu_item_variants WHERE business_id = $1 AND id = $2`,
-    [businessId, variantId]
+    'SELECT * FROM menu_item_variants WHERE business_id = $1 AND id = $2',
+    [businessId, variantId],
   );
   if (r.rowCount === 0) throw new NotFound('Variant not found');
   return serializeVariant(r.rows[0]);
@@ -126,14 +137,14 @@ async function listGroups(businessId) {
     `SELECT * FROM modifier_groups
       WHERE business_id = $1 AND is_active = TRUE
       ORDER BY display_order, name`,
-    [businessId]
+    [businessId],
   );
   if (groups.rowCount === 0) return [];
   const mods = await query(
     `SELECT * FROM modifiers
       WHERE business_id = $1 AND is_active = TRUE
       ORDER BY display_order, name`,
-    [businessId]
+    [businessId],
   );
   const byGroup = new Map();
   for (const m of mods.rows) {
@@ -154,7 +165,7 @@ async function upsertGroup(businessId, body) {
                 is_active = COALESCE($6, is_active)
           WHERE id = $7 AND business_id = $8`,
         [body.name, body.kind || 'single_select', body.minSelect ?? 0,
-         body.maxSelect ?? 1, body.displayOrder, body.isActive, groupId, businessId]
+          body.maxSelect ?? 1, body.displayOrder, body.isActive, groupId, businessId],
       );
     } else {
       const ins = await client.query(
@@ -162,16 +173,14 @@ async function upsertGroup(businessId, body) {
            (business_id, name, kind, min_select, max_select, display_order)
          VALUES ($1, $2, $3, $4, $5, COALESCE($6, 100)) RETURNING id`,
         [businessId, body.name, body.kind || 'single_select',
-         body.minSelect ?? 0, body.maxSelect ?? 1, body.displayOrder]
+          body.minSelect ?? 0, body.maxSelect ?? 1, body.displayOrder],
       );
       groupId = ins.rows[0].id;
     }
 
     // Replace modifiers for this group
     if (Array.isArray(body.modifiers)) {
-      const existing = await client.query(
-        `SELECT id FROM modifiers WHERE group_id = $1`, [groupId]
-      );
+      const existing = await client.query('SELECT id FROM modifiers WHERE group_id = $1', [groupId]);
       const keepIds = new Set();
       for (const m of body.modifiers) {
         if (!m.name) throw new BadRequest('Modifier needs a name');
@@ -180,7 +189,7 @@ async function upsertGroup(businessId, body) {
             `UPDATE modifiers SET name = $1, price_delta_inr = $2,
                                    display_order = COALESCE($3, display_order)
               WHERE id = $4 AND business_id = $5`,
-            [m.name, m.priceDeltaInr || 0, m.displayOrder, m.id, businessId]
+            [m.name, m.priceDeltaInr || 0, m.displayOrder, m.id, businessId],
           );
           keepIds.add(m.id);
         } else {
@@ -188,14 +197,14 @@ async function upsertGroup(businessId, body) {
             `INSERT INTO modifiers
                (business_id, group_id, name, price_delta_inr, display_order)
              VALUES ($1, $2, $3, $4, COALESCE($5, 100)) RETURNING id`,
-            [businessId, groupId, m.name, m.priceDeltaInr || 0, m.displayOrder]
+            [businessId, groupId, m.name, m.priceDeltaInr || 0, m.displayOrder],
           );
           keepIds.add(ins.rows[0].id);
         }
       }
       for (const r of existing.rows) {
         if (!keepIds.has(r.id)) {
-          await client.query(`UPDATE modifiers SET is_active = FALSE WHERE id = $1`, [r.id]);
+          await client.query('UPDATE modifiers SET is_active = FALSE WHERE id = $1', [r.id]);
         }
       }
     }
@@ -209,28 +218,26 @@ async function setItemModifierGroups(businessId, menuItemId, groupIds) {
   // item→modifier-group links by passing B's item id (with an empty list the
   // group-ownership check is skipped entirely).
   const own = await query(
-    `SELECT 1 FROM menu_items WHERE id = $1 AND business_id = $2`,
-    [menuItemId, businessId]
+    'SELECT 1 FROM menu_items WHERE id = $1 AND business_id = $2',
+    [menuItemId, businessId],
   );
   if (own.rowCount === 0) throw new NotFound('Menu item not found');
   // Validate ownership
   if (groupIds && groupIds.length > 0) {
     const owned = await query(
-      `SELECT id FROM modifier_groups WHERE business_id = $1 AND id = ANY($2::uuid[])`,
-      [businessId, groupIds]
+      'SELECT id FROM modifier_groups WHERE business_id = $1 AND id = ANY($2::uuid[])',
+      [businessId, groupIds],
     );
     if (owned.rowCount !== groupIds.length) throw new BadRequest('Unknown modifier group');
   }
   return withTransaction(async (client) => {
-    await client.query(
-      `DELETE FROM item_modifier_groups WHERE menu_item_id = $1`, [menuItemId]
-    );
+    await client.query('DELETE FROM item_modifier_groups WHERE menu_item_id = $1', [menuItemId]);
     if (groupIds && groupIds.length > 0) {
       for (let i = 0; i < groupIds.length; i += 1) {
         await client.query(
           `INSERT INTO item_modifier_groups (menu_item_id, group_id, display_order)
            VALUES ($1, $2, $3)`,
-          [menuItemId, groupIds[i], i * 10]
+          [menuItemId, groupIds[i], i * 10],
         );
       }
     }
@@ -243,7 +250,7 @@ async function getItemModifierGroups(businessId, menuItemId) {
        JOIN modifier_groups g ON g.id = img.group_id
       WHERE img.menu_item_id = $1 AND g.business_id = $2 AND g.is_active = TRUE
       ORDER BY img.display_order`,
-    [menuItemId, businessId]
+    [menuItemId, businessId],
   );
   return r.rows.map((x) => x.id);
 }
@@ -265,7 +272,7 @@ async function setSoldOut(businessId, menuItemId, until) {
   const r = await query(
     `UPDATE menu_items SET sold_out_until = $1
       WHERE business_id = $2 AND id = $3 RETURNING *`,
-    [resolved, businessId, menuItemId]
+    [resolved, businessId, menuItemId],
   );
   if (r.rowCount === 0) throw new NotFound('Menu item not found');
   // FF-247: fan out to Zomato/Swiggy/etc. Fire-and-forget so the
@@ -281,8 +288,14 @@ async function setSoldOut(businessId, menuItemId, until) {
 }
 
 module.exports = {
-  listVariants, setVariants, variantById,
-  listGroups, upsertGroup, setItemModifierGroups, getItemModifierGroups,
+  listVariants,
+  setVariants,
+  variantById,
+  listGroups,
+  upsertGroup,
+  setItemModifierGroups,
+  getItemModifierGroups,
   setSoldOut,
-  serializeVariant, serializeGroup,
+  serializeVariant,
+  serializeGroup,
 };

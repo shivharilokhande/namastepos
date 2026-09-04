@@ -4,8 +4,8 @@ const { query } = require('../config/db');
 
 async function listRules(businessId) {
   const r = await query(
-    `SELECT * FROM tds_tcs_rules WHERE business_id = $1 AND is_active = TRUE`,
-    [businessId]
+    'SELECT * FROM tds_tcs_rules WHERE business_id = $1 AND is_active = TRUE',
+    [businessId],
   );
   return r.rows;
 }
@@ -16,8 +16,8 @@ async function upsertRule(businessId, body) {
        (business_id, kind, code, rate_pct, threshold_paise, description)
      VALUES ($1, $2, $3, $4, $5, $6)`,
     [businessId, body.kind, body.code, body.ratePct,
-     body.thresholdInr ? Math.round(body.thresholdInr * 100) : null,
-     body.description]
+      body.thresholdInr ? Math.round(body.thresholdInr * 100) : null,
+      body.description],
   );
 }
 

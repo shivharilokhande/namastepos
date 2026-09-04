@@ -9,7 +9,7 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const { query } = require('../config/db');
-const { NotFound, BadRequest, Unauthorized } = require('../utils/errors');
+const { NotFound, Unauthorized } = require('../utils/errors');
 
 const TOKEN_KIND = 'qr-menu';
 
@@ -32,13 +32,13 @@ function serializeSettings(s) {
 
 async function getSettings(businessId) {
   const r = await query(
-    `SELECT * FROM qr_settings WHERE business_id = $1 LIMIT 1`,
-    [businessId]
+    'SELECT * FROM qr_settings WHERE business_id = $1 LIMIT 1',
+    [businessId],
   );
   if (r.rowCount === 0) {
     const ins = await query(
-      `INSERT INTO qr_settings (business_id) VALUES ($1) RETURNING *`,
-      [businessId]
+      'INSERT INTO qr_settings (business_id) VALUES ($1) RETURNING *',
+      [businessId],
     );
     return serializeSettings(ins.rows[0]);
   }
@@ -47,8 +47,8 @@ async function getSettings(businessId) {
 
 async function updateSettings(businessId, patch) {
   const fields = ['is_enabled', 'welcome_title', 'welcome_subtitle',
-                  'brand_color', 'require_phone', 'require_name',
-                  'show_prices', 'show_veg_badge', 'auto_accept'];
+    'brand_color', 'require_phone', 'require_name',
+    'show_prices', 'show_veg_badge', 'auto_accept'];
   const sets = []; const values = []; let idx = 1;
   for (const f of fields) {
     if (patch[f] !== undefined) { sets.push(`${f} = $${idx++}`); values.push(patch[f]); }
@@ -59,7 +59,7 @@ async function updateSettings(businessId, patch) {
   const r = await query(
     `UPDATE qr_settings SET ${sets.join(', ')}
       WHERE business_id = $${idx} RETURNING *`,
-    values
+    values,
   );
   return serializeSettings(r.rows[0]);
 }
@@ -79,13 +79,13 @@ async function _ensureQrColumns() {
     `SELECT column_name, data_type, character_maximum_length
        FROM information_schema.columns
       WHERE table_name = 'tables'
-        AND column_name IN ('qr_token', 'qr_enabled')`
+        AND column_name IN ('qr_token', 'qr_enabled')`,
   );
   const have = new Map(r.rows.map((x) => [x.column_name, x]));
 
   if (!have.has('qr_token')) {
-    await query(`ALTER TABLE tables ADD COLUMN IF NOT EXISTS qr_token TEXT UNIQUE`);
-    await query(`CREATE INDEX IF NOT EXISTS idx_tables_qr_token ON tables(qr_token)`);
+    await query('ALTER TABLE tables ADD COLUMN IF NOT EXISTS qr_token TEXT UNIQUE');
+    await query('CREATE INDEX IF NOT EXISTS idx_tables_qr_token ON tables(qr_token)');
     // eslint-disable-next-line no-console
     console.warn('[qrService] auto-added missing column tables.qr_token');
   } else if (have.get('qr_token').data_type === 'character varying') {
@@ -94,14 +94,14 @@ async function _ensureQrColumns() {
     // only change on Postgres for varchar→text; safe + instant.
     const len = have.get('qr_token').character_maximum_length;
     if (len !== null && len < 1024) {
-      await query(`ALTER TABLE tables ALTER COLUMN qr_token TYPE TEXT`);
+      await query('ALTER TABLE tables ALTER COLUMN qr_token TYPE TEXT');
       // eslint-disable-next-line no-console
       console.warn(`[qrService] widened tables.qr_token from VARCHAR(${len}) to TEXT — JWTs > 255 chars`);
     }
   }
 
   if (!have.has('qr_enabled')) {
-    await query(`ALTER TABLE tables ADD COLUMN IF NOT EXISTS qr_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
+    await query('ALTER TABLE tables ADD COLUMN IF NOT EXISTS qr_enabled BOOLEAN NOT NULL DEFAULT TRUE');
     // eslint-disable-next-line no-console
     console.warn('[qrService] auto-added missing column tables.qr_enabled');
   }
@@ -114,7 +114,7 @@ async function issueTokenForTable(businessId, tableId) {
     const r = await query(
       `SELECT id, qr_token, qr_enabled FROM tables
         WHERE business_id = $1 AND id = $2 LIMIT 1`,
-      [businessId, tableId]
+      [businessId, tableId],
     );
     if (r.rowCount === 0) throw new NotFound('Table not found for this business');
     if (r.rows[0].qr_token) return r.rows[0].qr_token;
@@ -123,17 +123,20 @@ async function issueTokenForTable(businessId, tableId) {
     // Salt randomises every regeneration so old QRs are invalidated on
     // rotate even when the JWT_SECRET is unchanged.
     const token = jwt.sign(
-      { bid: businessId, tid: tableId, kind: TOKEN_KIND,
+      { bid: businessId,
+        tid: tableId,
+        kind: TOKEN_KIND,
         salt: crypto.randomBytes(8).toString('hex') },
       env.JWT_SECRET,
-      { issuer: 'namastepos-qr' }
+      { issuer: 'namastepos-qr' },
     );
-    await query(`UPDATE tables SET qr_token = $1 WHERE id = $2`, [token, tableId]);
+    await query('UPDATE tables SET qr_token = $1 WHERE id = $2', [token, tableId]);
     return token;
   } catch (e) {
     // eslint-disable-next-line no-console
     console.error('[qrService.issueTokenForTable] failed:', {
-      businessId, tableId,
+      businessId,
+      tableId,
       message: e?.message,
       code: e?.code,
       detail: e?.detail,
@@ -144,8 +147,10 @@ async function issueTokenForTable(businessId, tableId) {
 
 /** Rotate the token (invalidates the printed QR). */
 async function rotateToken(businessId, tableId) {
-  await query(`UPDATE tables SET qr_token = NULL WHERE business_id = $1 AND id = $2`,
-              [businessId, tableId]);
+  await query(
+    'UPDATE tables SET qr_token = NULL WHERE business_id = $1 AND id = $2',
+    [businessId, tableId],
+  );
   return issueTokenForTable(businessId, tableId);
 }
 
@@ -171,7 +176,7 @@ async function verifyToken(token) {
        JOIN floors f ON f.id = t.floor_id
       WHERE t.business_id = $1 AND t.id = $2
       LIMIT 1`,
-    [payload.bid, payload.tid]
+    [payload.bid, payload.tid],
   );
   if (r.rowCount === 0) throw new Unauthorized('Table removed or wrong business');
   const row = r.rows[0];
@@ -184,7 +189,7 @@ async function verifyToken(token) {
   if (!row.qr_token) {
     // eslint-disable-next-line no-console
     console.warn('[verifyToken] adopting JWT — qr_token was NULL for table', payload.tid);
-    await query(`UPDATE tables SET qr_token = $1 WHERE id = $2`, [token, payload.tid]);
+    await query('UPDATE tables SET qr_token = $1 WHERE id = $2', [token, payload.tid]);
   } else if (row.qr_token !== token) {
     // qr_token IS set, and it's different → real rotation. Reject.
     throw new Unauthorized('QR token has been rotated. Please rescan the QR.');
@@ -198,8 +203,11 @@ async function verifyToken(token) {
       id: t.id, label: t.label, seats: t.seats, floorName: t.floor_name,
     },
     business: {
-      id: t.business_id, name: t.business_name, logoUrl: t.logo_url,
-      upiId: t.upi_id, phone: t.business_phone,
+      id: t.business_id,
+      name: t.business_name,
+      logoUrl: t.logo_url,
+      upiId: t.upi_id,
+      phone: t.business_phone,
     },
   };
 }
@@ -217,7 +225,7 @@ async function guestMenu(businessId) {
         AND is_active = TRUE
         AND (stock IS NULL OR stock > 0)
       ORDER BY category ASC, name ASC`,
-    [businessId]
+    [businessId],
   );
   return r.rows.map((m) => ({
     id: m.id,
@@ -228,7 +236,7 @@ async function guestMenu(businessId) {
     unit: m.unit,
     isVeg: m.is_veg,
     imageUrl: m.image_url,
-    inStock: true,    // by construction — query already filtered
+    inStock: true, // by construction — query already filtered
   }));
 }
 
@@ -241,7 +249,7 @@ async function ensureGuestSession({
   const existing = await query(
     `SELECT id FROM table_sessions
       WHERE table_id = $1 AND status = 'open' LIMIT 1`,
-    [tableId]
+    [tableId],
   );
   let tableSessionId = existing.rows[0]?.id || null;
 
@@ -250,13 +258,13 @@ async function ensureGuestSession({
       `INSERT INTO table_sessions
          (business_id, table_id, guest_count, customer_phone, customer_name)
        VALUES ($1, $2, 1, $3, $4) RETURNING id`,
-      [businessId, tableId, customerPhone || null, customerName || null]
+      [businessId, tableId, customerPhone || null, customerName || null],
     );
     tableSessionId = ins.rows[0].id;
     await query(
       `UPDATE tables SET status = 'occupied'::table_status, current_session_id = $1
         WHERE id = $2`,
-      [tableSessionId, tableId]
+      [tableSessionId, tableId],
     );
   }
 
@@ -266,7 +274,7 @@ async function ensureGuestSession({
         ip_address, user_agent)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
     [businessId, tableId, tableSessionId, customerPhone || null, customerName || null,
-     ipAddress || null, userAgent || null]
+      ipAddress || null, userAgent || null],
   );
 
   return { tableSessionId, guestSessionId: gs.rows[0].id };
@@ -280,7 +288,7 @@ async function recordGuestSessionOrder({ guestSessionId, totalInr }) {
             total_inr = total_inr + $1,
             last_activity_at = NOW()
       WHERE id = $2`,
-    [totalInr, guestSessionId]
+    [totalInr, guestSessionId],
   );
 }
 
@@ -298,7 +306,7 @@ async function guestOrderStatus(orderId, businessId) {
        LEFT JOIN tables     t ON t.id = o.table_id
        JOIN businesses b ON b.id = o.business_id
       WHERE o.id = $1 AND o.business_id = $2 LIMIT 1`,
-    [orderId, businessId]
+    [orderId, businessId],
   );
   if (r.rowCount === 0) throw new NotFound('Order not found');
   const row = r.rows[0];
@@ -316,8 +324,13 @@ async function guestOrderStatus(orderId, businessId) {
 }
 
 module.exports = {
-  getSettings, updateSettings,
-  issueTokenForTable, rotateToken, verifyToken,
-  guestMenu, ensureGuestSession, recordGuestSessionOrder,
+  getSettings,
+  updateSettings,
+  issueTokenForTable,
+  rotateToken,
+  verifyToken,
+  guestMenu,
+  ensureGuestSession,
+  recordGuestSessionOrder,
   guestOrderStatus,
 };

@@ -54,5 +54,8 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.4.5",
     "vite": "^7.0.0"
+  },
+  "engines": {
+    "node": ">=20.19"
   }
 }

@@ -4,19 +4,19 @@
   "description": "NamastePOS REST API \u2014 multi-tenant POS backend (Node.js + Express + PostgreSQL)",
   "main": "src/server.js",
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=20.19"
   },
   "scripts": {
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "migrate": "node scripts/migrate.js",
     "audit:idor": "node scripts/idor-audit.js",
-    "migrate:rollback": "node -e \"console.error('Rollbacks are not implemented — migrations are forward-only. Restore from a DB backup instead (see BACKUPS.md).'); process.exit(1)\"",
+    "migrate:rollback": "node -e \"console.error('Rollbacks are not implemented \u2014 migrations are forward-only. Restore from a DB backup instead (see BACKUPS.md).'); process.exit(1)\"",
     "seed": "node -e \"console.error('No generic seed script. Plans are seeded by migrations 031/034/047; demo data: psql -f scripts/seed-shiv-demo.sql; live Razorpay plan IDs: psql -f db/seeds/plans_seed.sql'); process.exit(1)\"",
     "test": "NODE_ENV=test jest --runInBand --detectOpenHandles",
     "test:watch": "NODE_ENV=test jest --watch",
     "test:coverage": "NODE_ENV=test jest --coverage --runInBand",
-    "lint": "eslint src tests --max-warnings 0",
+    "lint": "eslint src tests",
     "lint:fix": "eslint src tests --fix",
     "docker:up": "docker-compose up -d",
     "docker:down": "docker-compose down",

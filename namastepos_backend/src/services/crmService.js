@@ -31,7 +31,7 @@ async function logActivity({
        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7)
        RETURNING id`,
       [businessId, kind, title, body || null, JSON.stringify(meta),
-       actorType, actorEmail]
+        actorType, actorEmail],
     );
     return r.rows[0].id;
   } catch (e) {
@@ -51,15 +51,20 @@ async function listActivities(businessId, { limit = 100, kind = null } = {}) {
       WHERE ${where.join(' AND ')}
       ORDER BY created_at DESC
       LIMIT $${idx}`,
-    values
+    values,
   );
   return r.rows.map(serializeActivity);
 }
 
 function serializeActivity(a) {
   return {
-    id: a.id, kind: a.kind, title: a.title, body: a.body,
-    meta: a.meta, actorType: a.actor_type, actorEmail: a.actor_email,
+    id: a.id,
+    kind: a.kind,
+    title: a.title,
+    body: a.body,
+    meta: a.meta,
+    actorType: a.actor_type,
+    actorEmail: a.actor_email,
     createdAt: a.created_at,
   };
 }
@@ -70,7 +75,7 @@ async function listTasks({ businessId = null, ownerEmail = null, openOnly = true
   const where = []; const values = []; let idx = 1;
   if (businessId) { where.push(`business_id = $${idx++}`); values.push(businessId); }
   if (ownerEmail) { where.push(`owner_email = $${idx++}`); values.push(ownerEmail); }
-  if (openOnly)   { where.push(`done_at IS NULL`); }
+  if (openOnly) { where.push('done_at IS NULL'); }
   const w = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const r = await query(
     `SELECT t.*, b.name AS business_name
@@ -78,7 +83,7 @@ async function listTasks({ businessId = null, ownerEmail = null, openOnly = true
   LEFT JOIN businesses b ON b.id = t.business_id
       ${w}
       ORDER BY (t.due_at IS NULL), t.due_at ASC, t.created_at DESC`,
-    values
+    values,
   );
   return r.rows.map(serializeTask);
 }
@@ -89,17 +94,19 @@ async function createTask({ businessId, title, notes, ownerEmail, dueAt, created
      VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
     [businessId || null, title, notes || null, ownerEmail || null,
-     dueAt || null, createdBy || null]
+      dueAt || null, createdBy || null],
   );
   const task = serializeTask(r.rows[0]);
   // Fan out to the tenant's activity feed so support sees "task created"
   // on the same timeline they read history from.
   if (businessId) {
     await logActivity({
-      businessId, kind: 'task_created',
+      businessId,
+      kind: 'task_created',
       title: `Task: ${title}`,
       meta: { taskId: task.id, ownerEmail, dueAt },
-      actorType: 'admin', actorEmail: createdBy,
+      actorType: 'admin',
+      actorEmail: createdBy,
     });
   }
   return task;
@@ -116,11 +123,14 @@ async function ensureUpsellTask(businessId, metric, { limit, current, planTier }
     `SELECT id FROM admin_tasks
       WHERE business_id = $1 AND done_at IS NULL AND title LIKE $2
       LIMIT 1`,
-    [businessId, `%${marker}%`]
+    [businessId, `%${marker}%`],
   );
   if (dup.rowCount > 0) return dup.rows[0];
-  const nice = { menu_items: 'menu items', staff: 'staff logins', tables: 'tables',
-    floors: 'floors', monthly_orders: 'monthly orders' }[metric] || metric;
+  const nice = { menu_items: 'menu items',
+    staff: 'staff logins',
+    tables: 'tables',
+    floors: 'floors',
+    monthly_orders: 'monthly orders' }[metric] || metric;
   return createTask({
     businessId,
     title: `Upsell: hit ${nice} limit ${marker}`,
@@ -135,16 +145,18 @@ async function completeTask(taskId, actorEmail) {
         SET done_at = NOW()
       WHERE id = $1 AND done_at IS NULL
       RETURNING *`,
-    [taskId]
+    [taskId],
   );
   if (r.rowCount === 0) return null;
   const t = r.rows[0];
   if (t.business_id) {
     await logActivity({
-      businessId: t.business_id, kind: 'task_done',
+      businessId: t.business_id,
+      kind: 'task_done',
       title: `Task done: ${t.title}`,
       meta: { taskId: t.id },
-      actorType: 'admin', actorEmail,
+      actorType: 'admin',
+      actorEmail,
     });
   }
   return serializeTask(t);
@@ -152,9 +164,15 @@ async function completeTask(taskId, actorEmail) {
 
 function serializeTask(t) {
   return {
-    id: t.id, businessId: t.business_id, businessName: t.business_name || null,
-    title: t.title, notes: t.notes, ownerEmail: t.owner_email,
-    dueAt: t.due_at, doneAt: t.done_at, createdBy: t.created_by,
+    id: t.id,
+    businessId: t.business_id,
+    businessName: t.business_name || null,
+    title: t.title,
+    notes: t.notes,
+    ownerEmail: t.owner_email,
+    dueAt: t.due_at,
+    doneAt: t.done_at,
+    createdBy: t.created_by,
     createdAt: t.created_at,
   };
 }
@@ -212,10 +230,10 @@ async function computeHealth(businessId) {
        (SELECT status FROM sub)      AS sub_status,
        COALESCE((SELECT down_count FROM agg), 0) AS agg_down,
        (SELECT onboarded FROM businesses WHERE id = $1) AS onboarded`,
-    [businessId]
+    [businessId],
   );
   const row = q.rows[0] || {};
-  const daysSince = (ts) => ts ? (Date.now() - new Date(ts).getTime()) / 86400000 : 999;
+  const daysSince = (ts) => (ts ? (Date.now() - new Date(ts).getTime()) / 86400000 : 999);
   const lastOrderDays = daysSince(row.last_order_at);
   const lastLoginDays = daysSince(row.last_login_at);
 
@@ -230,8 +248,7 @@ async function computeHealth(businessId) {
   // Recent anomaly / critical ticket penalties are best-effort — if
   // those tables aren't yet populated (fresh DB), skip silently.
   try {
-    const a = await query(
-      `SELECT 1 FROM anomaly_alerts
+    const a = await query(`SELECT 1 FROM anomaly_alerts
         WHERE business_id = $1 AND created_at > NOW() - INTERVAL '24 hours'
         LIMIT 1`, [businessId]);
     if (a.rowCount > 0) score -= 10;
@@ -239,8 +256,7 @@ async function computeHealth(businessId) {
 
   // X7 — open critical/high support ticket is a churn-risk signal.
   try {
-    const t = await query(
-      `SELECT 1 FROM support_tickets
+    const t = await query(`SELECT 1 FROM support_tickets
         WHERE business_id = $1 AND status IN ('open','pending')
           AND priority IN ('high','critical') LIMIT 1`, [businessId]);
     if (t.rowCount > 0) score -= 15;
@@ -249,26 +265,28 @@ async function computeHealth(businessId) {
   score = Math.max(0, Math.min(100, Math.round(score)));
 
   let stage;
-  if (row.sub_status === 'trialing')       stage = 'trial';
+  if (row.sub_status === 'trialing') stage = 'trial';
   else if (score < 30 && lastOrderDays > 30) stage = 'churned';
-  else if (score < 60)                     stage = 'at_risk';
-  else                                     stage = 'active';
+  else if (score < 60) stage = 'at_risk';
+  else stage = 'active';
 
   await query(
     `UPDATE businesses
         SET health_score = $1, lifecycle_stage = $2, health_computed_at = NOW()
       WHERE id = $3`,
-    [score, stage, businessId]
+    [score, stage, businessId],
   );
-  return { score, stage, lastOrderDays: Math.round(lastOrderDays),
-           lastLoginDays: Math.round(lastLoginDays) };
+  return { score,
+    stage,
+    lastOrderDays: Math.round(lastOrderDays),
+    lastLoginDays: Math.round(lastLoginDays) };
 }
 
 // Iterates every business — cheap enough at any scale we care about
 // (10-10k tenants). Used by the nightly cron and by the admin refresh
 // button.
 async function recomputeAllHealth() {
-  const r = await query(`SELECT id FROM businesses`);
+  const r = await query('SELECT id FROM businesses');
   const results = [];
   for (const row of r.rows) {
     // Sequential on purpose — health computation is small but the
@@ -309,11 +327,13 @@ async function upcomingRenewals({ days = 7 } = {}) {
           OR (s.status = 'active'   AND s.current_period_end BETWEEN NOW() AND NOW() + ($1 || ' days')::INTERVAL)
         )
       ORDER BY COALESCE(s.trial_ends_at, s.current_period_end) ASC`,
-    [days]
+    [days],
   );
   return r.rows.map((row) => ({
-    businessId: row.business_id, businessName: row.business_name,
-    businessEmail: row.business_email, phone: row.phone,
+    businessId: row.business_id,
+    businessName: row.business_name,
+    businessEmail: row.business_email,
+    phone: row.phone,
     lifecycleStage: row.lifecycle_stage,
     plan: { tier: row.tier, name: row.plan_name, billingPeriod: row.billing_period },
     subscriptionStatus: row.status,
@@ -323,8 +343,13 @@ async function upcomingRenewals({ days = 7 } = {}) {
 }
 
 module.exports = {
-  logActivity, listActivities,
-  listTasks, createTask, completeTask, ensureUpsellTask,
-  computeHealth, recomputeAllHealth,
+  logActivity,
+  listActivities,
+  listTasks,
+  createTask,
+  completeTask,
+  ensureUpsellTask,
+  computeHealth,
+  recomputeAllHealth,
   upcomingRenewals,
 };

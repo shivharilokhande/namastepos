@@ -31,7 +31,7 @@ async function override(businessId, featureKey, enabled, { reason, adminId } = {
            reason  = EXCLUDED.reason,
            set_by_admin = EXCLUDED.set_by_admin,
            set_at = NOW()`,
-    [businessId, featureKey, enabled, reason || null, adminId || null]
+    [businessId, featureKey, enabled, reason || null, adminId || null],
   );
   featureService.clearCache(businessId);
 }
@@ -44,8 +44,8 @@ async function replaceAll(businessId, overrides, { adminId } = {}) {
   const rows = (overrides || []).filter((o) => o && o.featureKey);
   await withTransaction(async (client) => {
     await client.query(
-      `DELETE FROM business_feature_overrides WHERE business_id = $1`,
-      [businessId]
+      'DELETE FROM business_feature_overrides WHERE business_id = $1',
+      [businessId],
     );
     for (const o of rows) {
       await client.query(
@@ -58,7 +58,7 @@ async function replaceAll(businessId, overrides, { adminId } = {}) {
                set_by_admin = EXCLUDED.set_by_admin,
                set_at = NOW()`,
         [businessId, o.featureKey, o.mode === 'enable',
-         o.reason || null, adminId || null]
+          o.reason || null, adminId || null],
       );
     }
   });
@@ -72,7 +72,7 @@ async function list(businessId) {
        FROM business_feature_overrides
       WHERE business_id = $1
       ORDER BY set_at DESC`,
-    [businessId]
+    [businessId],
   );
   return r.rows.map((row) => ({
     featureKey: row.feature_key,
@@ -89,7 +89,7 @@ async function remove(businessId, featureKey) {
   await query(
     `DELETE FROM business_feature_overrides
       WHERE business_id = $1 AND feature_key = $2`,
-    [businessId, featureKey]
+    [businessId, featureKey],
   );
   featureService.clearCache(businessId);
 }

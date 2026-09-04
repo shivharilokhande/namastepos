@@ -34,7 +34,7 @@ async function makeAdminToken() {
   const r = await query(
     `INSERT INTO admin_users (email, password_hash, role, is_active)
      VALUES ('plans-audit-admin@namastepos.in', 'x-not-a-real-hash', 'super_admin', TRUE)
-     RETURNING id, email`
+     RETURNING id, email`,
   );
   return issueAccessToken({
     sid: r.rows[0].id,
@@ -50,7 +50,7 @@ async function giveFreeSubscription(businessId) {
      VALUES ($1, (SELECT id FROM plans WHERE tier = 'free'), 'active',
              NOW() + INTERVAL '30 days')
      ON CONFLICT (business_id) DO NOTHING`,
-    [businessId]
+    [businessId],
   );
 }
 
@@ -240,19 +240,19 @@ describe('changePlan rejects unavailable plans with 400 PLAN_NOT_AVAILABLE', () 
     await query(
       `INSERT INTO plans (tier, tier_kind, name, price_inr_paise, is_active, is_public)
        VALUES ('hidden_internal', 'pro', 'Hidden Internal', 9900, TRUE, FALSE)
-       ON CONFLICT (tier) DO NOTHING`
+       ON CONFLICT (tier) DO NOTHING`,
     );
     await query(
       `INSERT INTO plans (tier, tier_kind, name, price_inr_paise, is_active, is_public)
        VALUES ('retired_x', 'pro', 'Retired', 9900, FALSE, TRUE)
-       ON CONFLICT (tier) DO NOTHING`
+       ON CONFLICT (tier) DO NOTHING`,
     );
     await query(
       `INSERT INTO plans (tier, tier_kind, name, price_inr_paise, is_active,
                           is_public, business_id)
        VALUES ('custom-ofbizb00', 'pro', 'B Only', 9900, TRUE, FALSE, $1)
        ON CONFLICT (tier) DO NOTHING`,
-      [bizB.id]
+      [bizB.id],
     );
   });
 
@@ -287,7 +287,7 @@ describe('changePlan rejects unavailable plans with 400 PLAN_NOT_AVAILABLE', () 
   });
 
   afterAll(async () => {
-    await query(`DELETE FROM plans WHERE tier IN ('hidden_internal','retired_x','custom-ofbizb00')`);
+    await query('DELETE FROM plans WHERE tier IN (\'hidden_internal\',\'retired_x\',\'custom-ofbizb00\')');
     featureService.clearAllCaches();
   });
 });
@@ -388,7 +388,7 @@ describe('addon renewal stacks the new period onto the remaining one', () => {
   let addonPrice;
 
   beforeAll(async () => {
-    const a = await query(`SELECT id, price_inr_paise FROM addons WHERE slug = 'whatsapp-marketing'`);
+    const a = await query('SELECT id, price_inr_paise FROM addons WHERE slug = \'whatsapp-marketing\'');
     addonPrice = a.rows[0].price_inr_paise;
     await query(
       `INSERT INTO business_addons
@@ -398,7 +398,7 @@ describe('addon renewal stacks the new period onto the remaining one', () => {
          SET status = 'active', cancelled_at = NULL, cancel_at_period_end = FALSE,
              current_period_end = NOW() + INTERVAL '10 days',
              notified_expiry_at = NOW()`,
-      [bizA.id, a.rows[0].id]
+      [bizA.id, a.rows[0].id],
     );
     featureService.clearCache(bizA.id);
   });
@@ -428,7 +428,7 @@ describe('addon renewal stacks the new period onto the remaining one', () => {
       `SELECT ba.current_period_end, ba.notified_expiry_at
          FROM business_addons ba JOIN addons a ON a.id = ba.addon_id
         WHERE ba.business_id = $1 AND a.slug = 'whatsapp-marketing'`,
-      [bizA.id]
+      [bizA.id],
     );
     const days = (new Date(row.rows[0].current_period_end) - Date.now()) / 86400000;
     expect(days).toBeGreaterThan(38); // 10 remaining + 30 renewed (was 30 pre-fix)
@@ -444,14 +444,14 @@ describe('addon renewal stacks the new period onto the remaining one', () => {
     env.RAZORPAY_KEY_SECRET = 'mock-secret';
     try {
       // online-orders has no required_plan_tier; give A an active activation.
-      const a = await query(`SELECT id, price_inr_paise FROM addons WHERE slug = 'online-orders'`);
+      const a = await query('SELECT id, price_inr_paise FROM addons WHERE slug = \'online-orders\'');
       await query(
         `INSERT INTO business_addons (business_id, addon_id, status, current_period_end)
          VALUES ($1, $2, 'active', NOW() + INTERVAL '10 days')
          ON CONFLICT (business_id, addon_id) DO UPDATE
            SET status = 'active', cancelled_at = NULL, cancel_at_period_end = FALSE,
                current_period_end = NOW() + INTERVAL '10 days'`,
-        [bizA.id, a.rows[0].id]
+        [bizA.id, a.rows[0].id],
       );
       jest.spyOn(rz, 'createOneTimeOrder').mockResolvedValue({
         id: 'order_renew_2', amount: a.rows[0].price_inr_paise, currency: 'INR',
@@ -483,7 +483,7 @@ describe('addon renewal stacks the new period onto the remaining one', () => {
           SET current_period_end = NOW() + INTERVAL '2 days', notified_expiry_at = NULL
          FROM addons a
         WHERE a.id = ba.addon_id AND ba.business_id = $1 AND a.slug = 'whatsapp-marketing'`,
-      [bizA.id]
+      [bizA.id],
     );
     const first = await addonService.notifyExpiringActivations();
     expect(first.notified).toBeGreaterThanOrEqual(1);

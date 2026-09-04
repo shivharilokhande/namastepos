@@ -3,6 +3,7 @@
 // replies to its own tickets; support answers from the admin console.
 
 const express = require('express');
+
 const router = express.Router({ mergeParams: true });
 const { requireAuth, requireBusinessOwnership } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
@@ -50,8 +51,10 @@ router.post('/:ticketId/messages', asyncHandler(async (req, res) => {
   const existing = await support.getTicket(req.params.ticketId);
   if (existing.businessId !== req.params.businessId) throw new Forbidden('Not your ticket');
   const ticket = await support.addMessage(req.params.ticketId, {
-    body: req.body.body, authorType: 'tenant',
-    authorId: req.user?.id, authorEmail: req.user?.email,
+    body: req.body.body,
+    authorType: 'tenant',
+    authorId: req.user?.id,
+    authorEmail: req.user?.email,
   });
   res.json({ ticket });
 }));

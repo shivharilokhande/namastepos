@@ -48,26 +48,26 @@ async function list(businessId, { search, category, onlyActive = true, onlyLow =
   const where = ['business_id = $1'];
   const values = [businessId];
   let idx = 2;
-  if (onlyActive) where.push(`is_active = TRUE`);
+  if (onlyActive) where.push('is_active = TRUE');
   if (search) {
     where.push(`name ILIKE $${idx++}`);
     values.push(`%${search}%`);
   }
   if (category) { where.push(`category = $${idx++}`); values.push(category); }
-  if (onlyLow) where.push(`stock <= reorder_level AND reorder_level > 0`);
+  if (onlyLow) where.push('stock <= reorder_level AND reorder_level > 0');
 
   const r = await query(
     `SELECT * FROM ingredients WHERE ${where.join(' AND ')}
      ORDER BY category NULLS LAST, name ASC`,
-    values
+    values,
   );
   return r.rows.map(serialize);
 }
 
 async function byId(businessId, id) {
   const r = await query(
-    `SELECT * FROM ingredients WHERE business_id = $1 AND id = $2 LIMIT 1`,
-    [businessId, id]
+    'SELECT * FROM ingredients WHERE business_id = $1 AND id = $2 LIMIT 1',
+    [businessId, id],
   );
   if (r.rowCount === 0) throw new NotFound('Ingredient not found');
   return serialize(r.rows[0]);
@@ -82,10 +82,10 @@ async function create(businessId, body) {
           cost_per_unit_paise, vendor, vendor_phone, notes, is_active)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
       [businessId, body.name, body.category || null, body.unit || 'g',
-       body.stock || 0, body.reorderLevel || 0,
-       Math.round((body.costPerUnitInr || 0) * 100),
-       body.vendor || null, body.vendorPhone || null,
-       body.notes || null, body.isActive !== false]
+        body.stock || 0, body.reorderLevel || 0,
+        Math.round((body.costPerUnitInr || 0) * 100),
+        body.vendor || null, body.vendorPhone || null,
+        body.notes || null, body.isActive !== false],
     );
     return serialize(r.rows[0]);
   } catch (err) {
@@ -96,9 +96,14 @@ async function create(businessId, body) {
 
 async function update(businessId, id, patch) {
   const allowed = {
-    name: 'name', category: 'category', unit: 'unit',
-    reorderLevel: 'reorder_level', vendor: 'vendor',
-    vendorPhone: 'vendor_phone', notes: 'notes', isActive: 'is_active',
+    name: 'name',
+    category: 'category',
+    unit: 'unit',
+    reorderLevel: 'reorder_level',
+    vendor: 'vendor',
+    vendorPhone: 'vendor_phone',
+    notes: 'notes',
+    isActive: 'is_active',
   };
   const sets = []; const values = []; let idx = 1;
   for (const [k, col] of Object.entries(allowed)) {
@@ -113,7 +118,7 @@ async function update(businessId, id, patch) {
   const r = await query(
     `UPDATE ingredients SET ${sets.join(', ')}
       WHERE business_id = $${idx++} AND id = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Ingredient not found');
   return serialize(r.rows[0]);
@@ -123,7 +128,7 @@ async function softDelete(businessId, id) {
   await query(
     `UPDATE ingredients SET is_active = FALSE
       WHERE business_id = $1 AND id = $2`,
-    [businessId, id]
+    [businessId, id],
   );
   return { id };
 }
@@ -143,7 +148,7 @@ async function recordPurchase(businessId, id, { qty, unitCostInr, totalCostInr, 
     const cur = await client.query(
       `SELECT stock, cost_per_unit_paise FROM ingredients
         WHERE business_id = $1 AND id = $2 FOR UPDATE`,
-      [businessId, id]
+      [businessId, id],
     );
     if (cur.rowCount === 0) throw new NotFound('Ingredient not found');
     const oldStock = parseFloat(cur.rows[0].stock);
@@ -159,7 +164,7 @@ async function recordPurchase(businessId, id, { qty, unitCostInr, totalCostInr, 
           SET stock = $1, cost_per_unit_paise = $2,
               vendor = COALESCE($3, vendor)
         WHERE id = $4`,
-      [newStock, newCost, vendor || null, id]
+      [newStock, newCost, vendor || null, id],
     );
 
     await client.query(
@@ -167,7 +172,7 @@ async function recordPurchase(businessId, id, { qty, unitCostInr, totalCostInr, 
          (business_id, ingredient_id, qty_change, balance_after,
           unit_cost_paise, kind, note)
        VALUES ($1, $2, $3, $4, $5, 'purchase', $6)`,
-      [businessId, id, qty, newStock, unitCostPaise, note || null]
+      [businessId, id, qty, newStock, unitCostPaise, note || null],
     );
 
     return byId(businessId, id);
@@ -180,17 +185,17 @@ async function adjustStock(businessId, id, { delta, kind = 'adjustment', note })
     const cur = await client.query(
       `SELECT stock, cost_per_unit_paise FROM ingredients
         WHERE business_id = $1 AND id = $2 FOR UPDATE`,
-      [businessId, id]
+      [businessId, id],
     );
     if (cur.rowCount === 0) throw new NotFound('Ingredient not found');
     const newStock = parseFloat(cur.rows[0].stock) + Number(delta);
-    await client.query(`UPDATE ingredients SET stock = $1 WHERE id = $2`, [newStock, id]);
+    await client.query('UPDATE ingredients SET stock = $1 WHERE id = $2', [newStock, id]);
     await client.query(
       `INSERT INTO ingredient_transactions
          (business_id, ingredient_id, qty_change, balance_after,
           unit_cost_paise, kind, note)
        VALUES ($1, $2, $3, $4, $5, $6::ingredient_txn_kind, $7)`,
-      [businessId, id, delta, newStock, cur.rows[0].cost_per_unit_paise, kind, note || null]
+      [businessId, id, delta, newStock, cur.rows[0].cost_per_unit_paise, kind, note || null],
     );
     return byId(businessId, id);
   });
@@ -201,13 +206,19 @@ async function transactions(businessId, id, { limit = 50 } = {}) {
     `SELECT * FROM ingredient_transactions
       WHERE business_id = $1 AND ingredient_id = $2
       ORDER BY created_at DESC LIMIT $3`,
-    [businessId, id, limit]
+    [businessId, id, limit],
   );
   return r.rows.map(serializeTxn);
 }
 
 module.exports = {
-  list, byId, create, update, softDelete,
-  recordPurchase, adjustStock, transactions,
+  list,
+  byId,
+  create,
+  update,
+  softDelete,
+  recordPurchase,
+  adjustStock,
+  transactions,
   serialize,
 };

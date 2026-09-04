@@ -15,10 +15,10 @@
 // integration replaces this function's body once the customer has
 // their GSP account activated.
 
+const crypto = require('crypto');
 const { query } = require('../config/db');
 const env = require('../config/env');
 const { BadRequest, NotFound } = require('../utils/errors');
-const crypto = require('crypto');
 
 async function generate(businessId, {
   taxInvoiceId, fromPincode, toPincode, fromState, toState,
@@ -27,8 +27,8 @@ async function generate(businessId, {
   // Sanity check the invoice belongs to this business.
   if (taxInvoiceId) {
     const inv = await query(
-      `SELECT id FROM tax_invoices WHERE id = $1 AND business_id = $2`,
-      [taxInvoiceId, businessId]
+      'SELECT id FROM tax_invoices WHERE id = $1 AND business_id = $2',
+      [taxInvoiceId, businessId],
     );
     if (inv.rowCount === 0) throw new NotFound('Tax invoice not found');
   }
@@ -45,12 +45,13 @@ async function generate(businessId, {
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'draft')
      RETURNING *`,
     [businessId, taxInvoiceId || null, fromPincode, toPincode,
-     fromState, toState, distanceKm || null, vehicleNo || null, transporterId || null]
+      fromState, toState, distanceKm || null, vehicleNo || null, transporterId || null],
   );
   const row = ins.rows[0];
 
   const usingRealApi = env.IRP_BASE_URL && env.IRP_USERNAME && env.IRP_PASSWORD;
-  let ewbNo, ewbDate, rawPayload;
+  let ewbNo; let ewbDate; let
+    rawPayload;
 
   if (usingRealApi) {
     // Live NIC EWB API. Left as a scaffold — sign the exact schema
@@ -71,7 +72,7 @@ async function generate(businessId, {
     `UPDATE eway_bills
         SET ewb_no = $1, ewb_date = $2, status = 'generated', raw_payload = $3
       WHERE id = $4 RETURNING *`,
-    [ewbNo, ewbDate, rawPayload, row.id]
+    [ewbNo, ewbDate, rawPayload, row.id],
   );
   return upd.rows[0];
 }
@@ -81,7 +82,7 @@ async function list(businessId, { limit = 50 } = {}) {
     `SELECT * FROM eway_bills
       WHERE business_id = $1
       ORDER BY created_at DESC LIMIT $2`,
-    [businessId, limit]
+    [businessId, limit],
   );
   return r.rows;
 }
@@ -92,7 +93,7 @@ async function cancel(businessId, id, reason) {
         SET status = 'cancelled', raw_payload = COALESCE(raw_payload, '{}'::jsonb) || $1::jsonb
       WHERE business_id = $2 AND id = $3 AND status = 'generated'
       RETURNING *`,
-    [{ cancellationReason: reason || 'owner request' }, businessId, id]
+    [{ cancellationReason: reason || 'owner request' }, businessId, id],
   );
   if (r.rowCount === 0) throw new BadRequest('E-way bill not found or not cancellable');
   return r.rows[0];

@@ -33,92 +33,111 @@ const canReports = requireStaffPerm('reports');
 const canTax = requireStaffPerm('tax_invoices');
 
 // ── Action Center (FF-244) ─────────────────────────────────────────────
-router.get('/action-center',
+router.get(
+  '/action-center',
   canReports,
-  asyncHandler(async (req, res) =>
-    res.json(await actionCenter.fetch(req.params.businessId))));
+  asyncHandler(async (req, res) => res.json(await actionCenter.fetch(req.params.businessId))),
+);
 
 // ── FF-1002 NPS ─────────────────────────────────────────────────────────
-router.get('/reports/nps',
+router.get(
+  '/reports/nps',
   canReports,
-  asyncHandler(async (req, res) =>
-    res.json(await nps.summary(req.params.businessId,
-      parseInt(req.query.days, 10) || 30))));
+  asyncHandler(async (req, res) => res.json(await nps.summary(
+    req.params.businessId,
+    parseInt(req.query.days, 10) || 30,
+  ))),
+);
 
 // ── FF-1106 Menu engineering ────────────────────────────────────────────
-router.get('/reports/menu-engineering',
+router.get(
+  '/reports/menu-engineering',
   canReports,
-  asyncHandler(async (req, res) =>
-    res.json(await menuEng.classify(req.params.businessId,
-      req.query.from, req.query.to))));
+  asyncHandler(async (req, res) => res.json(await menuEng.classify(
+    req.params.businessId,
+    req.query.from,
+    req.query.to,
+  ))),
+);
 
 // ── FF-1103 E-way bill ──────────────────────────────────────────────────
-router.get('/eway-bills',
+router.get(
+  '/eway-bills',
   canTax,
-  asyncHandler(async (req, res) =>
-    res.json({ bills: await eway.list(req.params.businessId) })));
-router.post('/eway-bills',
+  asyncHandler(async (req, res) => res.json({ bills: await eway.list(req.params.businessId) })),
+);
+router.post(
+  '/eway-bills',
   requireRole(['business_owner']),
   validate({ body: Joi.object({
     taxInvoiceId: Joi.string().uuid().allow(null),
     fromPincode: Joi.string().length(6).required(),
-    toPincode:   Joi.string().length(6).required(),
+    toPincode: Joi.string().length(6).required(),
     fromState: Joi.string().max(50).required(),
-    toState:   Joi.string().max(50).required(),
-    distanceKm: Joi.number().integer().min(1).max(4000).allow(null),
+    toState: Joi.string().max(50).required(),
+    distanceKm: Joi.number().integer().min(1).max(4000)
+      .allow(null),
     vehicleNo: Joi.string().max(20).allow('', null),
     transporterId: Joi.string().max(30).allow('', null),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.status(201).json(await eway.generate(req.params.businessId, req.body))));
-router.post('/eway-bills/:id/cancel',
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json(await eway.generate(req.params.businessId, req.body))),
+);
+router.post(
+  '/eway-bills/:id/cancel',
   requireRole(['business_owner']),
-  asyncHandler(async (req, res) =>
-    res.json(await eway.cancel(req.params.businessId, req.params.id, req.body.reason))));
+  asyncHandler(async (req, res) => res.json(await eway.cancel(req.params.businessId, req.params.id, req.body.reason))),
+);
 
 // ── FF-314 GSTR-1 / GSTR-3B CSV ─────────────────────────────────────────
-router.get('/reports/gstr1.csv',
+router.get(
+  '/reports/gstr1.csv',
   canTax,
   asyncHandler(async (req, res) => {
     const csv = await gstr.gstr1(req.params.businessId, req.query.from, req.query.to);
     res.type('text/csv').attachment(`gstr1-${req.query.from}-to-${req.query.to}.csv`).send(csv);
-  }));
-router.get('/reports/gstr3b.csv',
+  }),
+);
+router.get(
+  '/reports/gstr3b.csv',
   canTax,
   asyncHandler(async (req, res) => {
     const csv = await gstr.gstr3b(req.params.businessId, req.query.from, req.query.to);
     res.type('text/csv').attachment(`gstr3b-${req.query.from}-to-${req.query.to}.csv`).send(csv);
-  }));
+  }),
+);
 
 // ── Revenue leakage (FF-246) ───────────────────────────────────────────
-router.get('/reports/leakage',
+router.get(
+  '/reports/leakage',
   requireRole(['business_owner', 'staff_manager']),
-  asyncHandler(async (req, res) =>
-    res.json(await leakage.summary(
-      req.params.businessId,
-      req.query.from, req.query.to,
-    ))));
+  asyncHandler(async (req, res) => res.json(await leakage.summary(
+    req.params.businessId,
+    req.query.from,
+    req.query.to,
+  ))),
+);
 
 // ── Accounting export + e-invoice ────────────────────────────────────────
 // Ledger exports dump every voucher in the window — owner/manager only.
-router.post('/exports/tally',
+router.post(
+  '/exports/tally',
   requireRole(['business_owner', 'staff_manager']),
-  validate({ body: Joi.object({ startDate: Joi.date().iso().required(), endDate: Joi.date().iso().required() })}),
+  validate({ body: Joi.object({ startDate: Joi.date().iso().required(), endDate: Joi.date().iso().required() }) }),
   asyncHandler(async (req, res) => {
     const r = await accountingExport.tallyExport(req.params.businessId, req.body);
     res.set('Content-Type', 'application/xml').send(r.xml);
-  })
+  }),
 );
-router.post('/exports/zoho',
+router.post(
+  '/exports/zoho',
   requireRole(['business_owner', 'staff_manager']),
-  validate({ body: Joi.object({ startDate: Joi.date().iso().required(), endDate: Joi.date().iso().required() })}),
+  validate({ body: Joi.object({ startDate: Joi.date().iso().required(), endDate: Joi.date().iso().required() }) }),
   asyncHandler(async (req, res) => {
     const csv = await accountingExport.zohoCsv(req.params.businessId, req.body);
     res.set('Content-Type', 'text/csv').send(csv);
-  })
+  }),
 );
-router.get ('/exports', canTax, asyncHandler(async (req, res) =>
-  res.json({ exports: await accountingExport.listExports(req.params.businessId) })));
+router.get('/exports', canTax, asyncHandler(async (req, res) => res.json({ exports: await accountingExport.listExports(req.params.businessId) })));
 // WHY (2026-08-25): the POST below stores the IRN in einvoice_irns but
 // nothing ever read it back — the founder saw "IRN generated · 580ce2…"
 // and the IRN then vanished. Read-only list (same ungated GET shape as
@@ -127,29 +146,29 @@ router.get ('/exports', canTax, asyncHandler(async (req, res) =>
 // already visible on the Orders / Tax Invoices pages, so gating it on
 // tax_invoices alone would blank the badges for a captain who can legitimately
 // see the orders. Kitchen (neither permission) is now refused.
-router.get ('/einvoice', requireStaffPerm(['tax_invoices', 'orders']),
-  asyncHandler(async (req, res) =>
-    res.json({ irns: await accountingExport.listIrns(req.params.businessId) })));
-router.post('/einvoice/:orderId',
-  requireRole(['business_owner','staff_manager']),
-  asyncHandler(async (req, res) =>
-    res.status(201).json({ irn: await accountingExport.generateIrn(req.params.businessId, req.params.orderId) })
-  )
+router.get(
+  '/einvoice',
+  requireStaffPerm(['tax_invoices', 'orders']),
+  asyncHandler(async (req, res) => res.json({ irns: await accountingExport.listIrns(req.params.businessId) })),
+);
+router.post(
+  '/einvoice/:orderId',
+  requireRole(['business_owner', 'staff_manager']),
+  asyncHandler(async (req, res) => res.status(201).json({ irn: await accountingExport.generateIrn(req.params.businessId, req.params.orderId) })),
 );
 // FF-402 code-review pass — namespaced under `/accounting/` to avoid
 // colliding with FF-1103 `/eway-bills` above (which uses the dedicated
 // `eway` service with a different validator). This variant is the
 // accounting-export flavour used by the Tally / GSTR pipeline.
-router.post('/accounting/eway-bills',
+router.post(
+  '/accounting/eway-bills',
   requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({
     invoiceId: Joi.string().uuid().required(),
     vehicleNo: Joi.string().required(),
     distanceKm: Joi.number().integer().min(0).required(),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.status(201).json({ ewayBill: await accountingExport.generateEwayBill(req.params.businessId, req.body.invoiceId, req.body) })
-  )
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json({ ewayBill: await accountingExport.generateEwayBill(req.params.businessId, req.body.invoiceId, req.body) })),
 );
 
 module.exports = router;

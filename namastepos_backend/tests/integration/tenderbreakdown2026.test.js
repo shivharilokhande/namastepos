@@ -17,16 +17,13 @@ beforeAll(async () => {
   biz = await makeBusiness({ email: `tender-${Date.now()}@example.com` });
 
   // a) single-tender cash ₹100 (no payments row — falls back to payment_method)
-  await query(
-    `INSERT INTO orders (business_id, order_no, source, status, subtotal, total, payment_method, created_at)
+  await query(`INSERT INTO orders (business_id, order_no, source, status, subtotal, total, payment_method, created_at)
      VALUES ($1, 1, 'takeaway', 'collected', 100, 100, 'cash', NOW())`, [biz.id]);
   // b) single-tender upi ₹60
-  await query(
-    `INSERT INTO orders (business_id, order_no, source, status, subtotal, total, payment_method, created_at)
+  await query(`INSERT INTO orders (business_id, order_no, source, status, subtotal, total, payment_method, created_at)
      VALUES ($1, 2, 'takeaway', 'collected', 60, 60, 'upi', NOW())`, [biz.id]);
   // c) split ₹105 (₹150 gross − ₹45 points), legs wallet ₹50 + cash ₹55
-  const c = await query(
-    `INSERT INTO orders (business_id, order_no, source, status, subtotal, total,
+  const c = await query(`INSERT INTO orders (business_id, order_no, source, status, subtotal, total,
                          payment_method, is_split_tender, points_redeemed, loyalty_discount_paise, created_at)
      VALUES ($1, 3, 'takeaway', 'collected', 150, 105, 'cash', true, 45, 4500, NOW()) RETURNING id`, [biz.id]);
   const cid = c.rows[0].id;

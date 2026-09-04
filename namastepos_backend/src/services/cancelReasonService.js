@@ -5,8 +5,11 @@ const { BadRequest, Conflict } = require('../utils/errors');
 
 function serialize(r) {
   return {
-    id: r.id, code: r.code, label: r.label,
-    displayOrder: r.display_order, isActive: r.is_active,
+    id: r.id,
+    code: r.code,
+    label: r.label,
+    displayOrder: r.display_order,
+    isActive: r.is_active,
   };
 }
 
@@ -17,7 +20,7 @@ async function list(businessId, { includeInactive = false } = {}) {
   const r = await query(
     `SELECT * FROM cancel_reasons WHERE ${where.join(' AND ')}
       ORDER BY display_order, label`,
-    values
+    values,
   );
   return r.rows.map(serialize);
 }
@@ -28,7 +31,7 @@ async function create(businessId, body) {
     const r = await query(
       `INSERT INTO cancel_reasons (business_id, code, label, display_order)
        VALUES ($1, $2, $3, COALESCE($4, 100)) RETURNING *`,
-      [businessId, body.code.toLowerCase(), body.label, body.displayOrder]
+      [businessId, body.code.toLowerCase(), body.label, body.displayOrder],
     );
     return serialize(r.rows[0]);
   } catch (err) {
@@ -50,7 +53,7 @@ async function update(businessId, id, body) {
   await query(
     `UPDATE cancel_reasons SET ${sets.join(', ')}
       WHERE business_id = $${idx++} AND id = $${idx}`,
-    values
+    values,
   );
   return list(businessId);
 }
@@ -59,7 +62,7 @@ async function validateCode(businessId, code) {
   const r = await query(
     `SELECT 1 FROM cancel_reasons
       WHERE business_id = $1 AND code = $2 AND is_active = TRUE LIMIT 1`,
-    [businessId, code]
+    [businessId, code],
   );
   return r.rowCount > 0;
 }

@@ -13,58 +13,58 @@ const features = require('../services/featureService');
 
 const FEATURE_RULES = [
   // Pro features
-  { match: '/kds/',             key: 'kds' },
+  { match: '/kds/', key: 'kds' },
   { match: '/ops/kot/stations', key: 'kds' },
   // 2026-09-03 (plans/addons audit #3b): the whole KOT surface (tickets,
   // status flips, printed marks) is a KDS-tier feature, not just stations.
   // Same key as the stations rule above, so rule order is irrelevant here.
-  { match: '/ops/kot/',         key: 'kds' },
-  { match: '/captain/',         key: 'captain_mode' },
-  { match: '/drivers',          key: 'driver_mode' },
+  { match: '/ops/kot/', key: 'kds' },
+  { match: '/captain/', key: 'captain_mode' },
+  { match: '/drivers', key: 'driver_mode' },
   { match: '/delivery-assignments', key: 'driver_mode' },
-  { match: '/loyalty',          key: 'loyalty' },
-  { match: '/aggregator',       key: 'aggregators' },
-  { match: '/memberships',      key: 'memberships' },
-  { match: '/reservations',     key: 'reservations' },
-  { match: '/wait-list',        key: 'reservations' },
-  { match: '/wastage',          key: 'wastage' },
-  { match: '/daily-closing',    key: 'daily_closing' },
-  { match: '/qr-codes',         key: 'qr_ordering' },
-  { match: '/reviews',          key: 'reviews' },
-  { match: '/whatsapp',         key: 'whatsapp_marketing' },
-  { match: '/ingredients',      key: 'recipe_costing' },
-  { match: '/recipes',          key: 'recipe_costing' },
-  { match: '/bill-split',       key: 'bill_split' },
+  { match: '/loyalty', key: 'loyalty' },
+  { match: '/aggregator', key: 'aggregators' },
+  { match: '/memberships', key: 'memberships' },
+  { match: '/reservations', key: 'reservations' },
+  { match: '/wait-list', key: 'reservations' },
+  { match: '/wastage', key: 'wastage' },
+  { match: '/daily-closing', key: 'daily_closing' },
+  { match: '/qr-codes', key: 'qr_ordering' },
+  { match: '/reviews', key: 'reviews' },
+  { match: '/whatsapp', key: 'whatsapp_marketing' },
+  { match: '/ingredients', key: 'recipe_costing' },
+  { match: '/recipes', key: 'recipe_costing' },
+  { match: '/bill-split', key: 'bill_split' },
   // Push 13.7: table sessions ungated. Captain moved to Starter in
   // migration 034, so the running-bill / settle / split APIs need to be
   // reachable on Starter too. Without this, mobile's "tap occupied
   // table → load running bill" 402s with FEATURE_LOCKED.
   // { match: '/sessions/',     key: 'tables_multi_floor' },  // removed
-  { match: '/variants',         key: 'menu_variants_modifiers' },
-  { match: '/modifier-groups',  key: 'menu_variants_modifiers' },
+  { match: '/variants', key: 'menu_variants_modifiers' },
+  { match: '/modifier-groups', key: 'menu_variants_modifiers' },
   // Enterprise features
-  { match: '/accounting/',      key: 'accounting_pnl_bs' },
-  { match: '/einvoice',         key: 'einvoice_gst' },
-  { match: '/recurring-invoice',key: 'recurring_invoices' },
-  { match: '/bank/',            key: 'bank_reconcile' },
-  { match: '/surge/',           key: 'surge_pricing' },
-  { match: '/outlets',          key: 'multi_outlet' },
-  { match: '/multi-outlet',     key: 'multi_outlet' },
-  { match: '/heat-map',         key: 'heat_map' },
-  { match: '/forecast',         key: 'forecast' },
-  { match: '/upsell',           key: 'forecast' },
-  { match: '/dead-stock',       key: 'dead_stock' },
-  { match: '/orders-by-hour',   key: 'heat_map' },
-  { match: '/bulk-import',      key: 'bulk_import' },
+  { match: '/accounting/', key: 'accounting_pnl_bs' },
+  { match: '/einvoice', key: 'einvoice_gst' },
+  { match: '/recurring-invoice', key: 'recurring_invoices' },
+  { match: '/bank/', key: 'bank_reconcile' },
+  { match: '/surge/', key: 'surge_pricing' },
+  { match: '/outlets', key: 'multi_outlet' },
+  { match: '/multi-outlet', key: 'multi_outlet' },
+  { match: '/heat-map', key: 'heat_map' },
+  { match: '/forecast', key: 'forecast' },
+  { match: '/upsell', key: 'forecast' },
+  { match: '/dead-stock', key: 'dead_stock' },
+  { match: '/orders-by-hour', key: 'heat_map' },
+  { match: '/bulk-import', key: 'bulk_import' },
   // 2026-09-03 (plans/addons audit #3b): retail (SKUs, vendors, POs, party
   // ledger, cheques, warehouses) is an enterprise surface. MUST stay BELOW
   // the '/bulk-import' rule: requiredFeature() returns the FIRST substring
   // match, so '/retail/bulk-import' keeps its existing 'bulk_import' key
   // while every other /retail/* route needs 'multi_outlet'.
-  { match: '/retail/',          key: 'multi_outlet' },
-  { match: '/marketplace',      key: 'marketplace_addons' },
-  { match: '/tds-tcs',          key: 'tds_tcs' },
-  { match: '/fx-rates',         key: 'multi_currency_fx' },
+  { match: '/retail/', key: 'multi_outlet' },
+  { match: '/marketplace', key: 'marketplace_addons' },
+  { match: '/tds-tcs', key: 'tds_tcs' },
+  { match: '/fx-rates', key: 'multi_currency_fx' },
 ];
 
 /** Returns the feature key required for `req.path`, or null if open. */

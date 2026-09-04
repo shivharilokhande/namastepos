@@ -37,7 +37,7 @@ function rzCall(method, path, body) {
       path,
       method,
       headers: {
-        'Authorization': `Basic ${auth}`,
+        Authorization: `Basic ${auth}`,
         'Content-Type': 'application/json',
         ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
       },
@@ -101,7 +101,7 @@ async function syncPlans() {
   // via syncOnePlan() below.
   const r = await query(
     `SELECT * FROM plans
-      WHERE tier <> 'free' AND price_inr_paise > 0 AND is_public = TRUE`
+      WHERE tier <> 'free' AND price_inr_paise > 0 AND is_public = TRUE`,
   );
 
   for (const p of r.rows) {
@@ -111,38 +111,44 @@ async function syncPlans() {
 
 /** Ensure one cadence (monthly|yearly) of one plan row matches Razorpay. */
 async function ensureCadence(p, { column, period, label, wantPaise }) {
-    const currentId = p[column];
-    if (currentId) {
-      try {
-        const remote = await rzCall('GET', `/v1/plans/${currentId}`);
-        if (remote?.item?.amount === wantPaise) return; // in sync — nothing to do
-        logger.info(`Plan ${p.tier} ${period}: Razorpay has ₹${remote?.item?.amount / 100}, `
+  const currentId = p[column];
+  if (currentId) {
+    try {
+      const remote = await rzCall('GET', `/v1/plans/${currentId}`);
+      const remoteAmount = remote?.item?.amount;
+      if (remoteAmount === wantPaise) return; // in sync — nothing to do
+      logger.info(`Plan ${p.tier} ${period}: Razorpay has ₹${remoteAmount / 100}, `
           + `DB wants ₹${wantPaise / 100} — creating replacement (plans are immutable)`);
-      } catch (err) {
-        logger.warn(`Plan ${p.tier} ${period}: could not fetch ${currentId} `
+    } catch (err) {
+      logger.warn(`Plan ${p.tier} ${period}: could not fetch ${currentId} `
           + `(${err.message}) — creating replacement`);
-      }
     }
-    const created = await rzCall('POST', '/v1/plans', {
-      period, interval: 1,
-      item: { name: label, amount: wantPaise,
-              currency: 'INR', description: `${p.name}, ${period}` },
-    });
+  }
+  const created = await rzCall('POST', '/v1/plans', {
+    period,
+    interval: 1,
+    item: { name: label,
+      amount: wantPaise,
+      currency: 'INR',
+      description: `${p.name}, ${period}` },
+  });
     // Defensive: Razorpay must echo back the amount we asked for. If it
     // ever doesn't, refuse to link the plan rather than mischarge.
-    if (created?.item?.amount !== wantPaise) {
-      throw new Error(`Razorpay returned amount ${created?.item?.amount}, expected ${wantPaise}`);
-    }
-    await query(`UPDATE plans SET ${column} = $1 WHERE id = $2`, [created.id, p.id]);
-    logger.info(`Synced ${period} plan ${p.tier} → ${created.id} (₹${wantPaise / 100})`);
+  if (created?.item?.amount !== wantPaise) {
+    throw new Error(`Razorpay returned amount ${created?.item?.amount}, expected ${wantPaise}`);
+  }
+  await query(`UPDATE plans SET ${column} = $1 WHERE id = $2`, [created.id, p.id]);
+  logger.info(`Synced ${period} plan ${p.tier} → ${created.id} (₹${wantPaise / 100})`);
 }
 
 /** Both cadences for one plan row (shared by syncPlans + syncOnePlan). */
 async function _syncPlanRowCadences(p) {
   try {
     await ensureCadence(p, {
-      column: 'razorpay_plan_id', period: 'monthly',
-      label: `NamastePOS ${p.name}`, wantPaise: p.price_inr_paise,
+      column: 'razorpay_plan_id',
+      period: 'monthly',
+      label: `NamastePOS ${p.name}`,
+      wantPaise: p.price_inr_paise,
     });
   } catch (err) {
     logger.warn(`Razorpay monthly sync failed for ${p.tier}: ${err.message}`);
@@ -154,8 +160,10 @@ async function _syncPlanRowCadences(p) {
       || (p.is_public === false ? 0 : Math.round(p.price_inr_paise * 10));
     if (yearlyPaise > 0) {
       await ensureCadence(p, {
-        column: 'razorpay_plan_id_yearly', period: 'yearly',
-        label: `NamastePOS ${p.name} (yearly)`, wantPaise: yearlyPaise,
+        column: 'razorpay_plan_id_yearly',
+        period: 'yearly',
+        label: `NamastePOS ${p.name} (yearly)`,
+        wantPaise: yearlyPaise,
       });
     }
   } catch (err) {
@@ -171,7 +179,7 @@ async function _syncPlanRowCadences(p) {
  */
 async function syncOnePlan(planId) {
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) return { synced: false, reason: 'not_configured' };
-  const r = await query(`SELECT * FROM plans WHERE id = $1 LIMIT 1`, [planId]);
+  const r = await query('SELECT * FROM plans WHERE id = $1 LIMIT 1', [planId]);
   if (r.rowCount === 0) return { synced: false, reason: 'not_found' };
   const p = r.rows[0];
   if (!p.price_inr_paise || p.price_inr_paise <= 0) return { synced: false, reason: 'free_plan' };
@@ -182,7 +190,7 @@ async function syncOnePlan(planId) {
 // ── Create subscription for a business ───────────────────────────────────
 
 async function createSubscription(businessId, tier, { billingPeriod = 'monthly' } = {}) {
-  const plan = (await query(`SELECT * FROM plans WHERE tier = $1`, [tier])).rows[0];
+  const plan = (await query('SELECT * FROM plans WHERE tier = $1', [tier])).rows[0];
   if (!plan) throw new NotFound('Plan not found');
   // FF-402c — pick the right Razorpay plan id + price for the cadence.
   // If yearly was requested but the plan doesn't have a yearly Razorpay
@@ -192,12 +200,10 @@ async function createSubscription(businessId, tier, { billingPeriod = 'monthly' 
   if (!razorpayPlanId) {
     throw new BadRequest('Razorpay plan not synced. Run /v1/admin/razorpay/sync first.');
   }
-  const totalCount = useYearly ? 10 : 120;   // 10 years cap either cadence
+  const totalCount = useYearly ? 10 : 120; // 10 years cap either cadence
 
   // Reuse existing razorpay_customer_id if present
-  const sub = (await query(
-    `SELECT * FROM subscriptions WHERE business_id = $1`, [businessId]
-  )).rows[0];
+  const sub = (await query('SELECT * FROM subscriptions WHERE business_id = $1', [businessId])).rows[0];
 
   const created = await rzCall('POST', '/v1/subscriptions', {
     plan_id: razorpayPlanId,
@@ -216,8 +222,11 @@ async function createSubscription(businessId, tier, { billingPeriod = 'monthly' 
   // reactivation guard in _onChargeSuccess.
   if (sub?.razorpay_subscription_id && sub.razorpay_subscription_id !== created.id) {
     try {
-      await rzCall('POST', `/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
-        { cancel_at_cycle_end: 0 });
+      await rzCall(
+        'POST',
+        `/v1/subscriptions/${sub.razorpay_subscription_id}/cancel`,
+        { cancel_at_cycle_end: 0 },
+      );
     } catch (e) {
       logger.warn(`Could not cancel prior Razorpay subscription ${sub.razorpay_subscription_id}: ${e.message}`);
     }
@@ -226,8 +235,8 @@ async function createSubscription(businessId, tier, { billingPeriod = 'monthly' 
   // Persist the cadence up-front so subsequent UI reads reflect it
   // even before the webhook fires.
   await query(
-    `UPDATE subscriptions SET billing_period = $1 WHERE business_id = $2`,
-    [useYearly ? 'yearly' : 'monthly', businessId]
+    'UPDATE subscriptions SET billing_period = $1 WHERE business_id = $2',
+    [useYearly ? 'yearly' : 'monthly', businessId],
   );
 
   // SECURITY FIX (Push 13.1): the previous version flipped plan_id and
@@ -240,7 +249,7 @@ async function createSubscription(businessId, tier, { billingPeriod = 'monthly' 
     `UPDATE subscriptions
         SET razorpay_subscription_id = $1
       WHERE business_id = $2`,
-    [created.id, businessId]
+    [created.id, businessId],
   );
 
   const chargedPaise = useYearly
@@ -309,7 +318,7 @@ async function handleWebhook(payload, headerEventId) {
     eventId = `evt-${Date.now()}`;
     logger.warn(`Razorpay webhook carries no x-razorpay-event-id header and no payload.id — using synthetic ${eventId}; this delivery CANNOT be deduplicated`);
   }
-  const event = payload.event;
+  const { event } = payload;
   const isAddon = payload.payload?.subscription?.entity?.notes?.kind === 'addon';
 
   // P1 (Arvind #8) — Idempotency: skip if we've already processed this
@@ -329,12 +338,10 @@ async function handleWebhook(payload, headerEventId) {
      VALUES ('razorpay', $1, $2, $3)
      ON CONFLICT (external_id) DO NOTHING
      RETURNING id`,
-    [eventId, event, payload]
+    [eventId, event, payload],
   );
   if (claim.rowCount === 0) {
-    const dup = await query(
-      `SELECT response_body FROM webhook_events WHERE external_id = $1`, [eventId]
-    );
+    const dup = await query('SELECT response_body FROM webhook_events WHERE external_id = $1', [eventId]);
     logger.info(`Razorpay event ${eventId} already processed; replaying response`);
     // NP-110 follow-up: if the winner is still in flight (no stored response yet),
     // do NOT ack with a 2xx — a 2xx here could stop Razorpay's retries while the
@@ -352,8 +359,8 @@ async function handleWebhook(payload, headerEventId) {
       await addons.handleRazorpayEvent(event, payload.payload);
       const responseBody = { received: true, event, eventId, addon: true };
       await query(
-        `UPDATE webhook_events SET processed_at = NOW(), response_body = $1 WHERE external_id = $2`,
-        [responseBody, eventId]
+        'UPDATE webhook_events SET processed_at = NOW(), response_body = $1 WHERE external_id = $2',
+        [responseBody, eventId],
       );
       return responseBody;
     }
@@ -369,8 +376,8 @@ async function handleWebhook(payload, headerEventId) {
       case 'subscription.activated': {
         const sub = payload.payload.subscription.entity;
         await query(
-          `UPDATE subscriptions SET status = 'active' WHERE razorpay_subscription_id = $1`,
-          [sub.id]
+          'UPDATE subscriptions SET status = \'active\' WHERE razorpay_subscription_id = $1',
+          [sub.id],
         );
         await require('./dunningService').onRecovered(sub.id);
         break;
@@ -382,7 +389,7 @@ async function handleWebhook(payload, headerEventId) {
           `UPDATE subscriptions
               SET status = 'cancelled', cancelled_at = NOW()
             WHERE razorpay_subscription_id = $1`,
-          [sub.id]
+          [sub.id],
         );
         break;
       }
@@ -390,8 +397,8 @@ async function handleWebhook(payload, headerEventId) {
         // A deliberate pause (owner/admin action) — not a payment failure.
         const sub = payload.payload.subscription.entity;
         await query(
-          `UPDATE subscriptions SET status = 'paused' WHERE razorpay_subscription_id = $1`,
-          [sub.id]
+          'UPDATE subscriptions SET status = \'paused\' WHERE razorpay_subscription_id = $1',
+          [sub.id],
         );
         break;
       }
@@ -413,8 +420,8 @@ async function handleWebhook(payload, headerEventId) {
             WHERE s.razorpay_subscription_id = $6
            ON CONFLICT (razorpay_payment_id) DO NOTHING`,
           [pay.amount, pay.method, pay.id,
-           pay.error_description || pay.error_reason, pay,
-           pay.subscription_id]
+            pay.error_description || pay.error_reason, pay,
+            pay.subscription_id],
         );
         // N1 dunning: mark past_due + email the owner a recovery nudge.
         if (pay.subscription_id) {
@@ -437,7 +444,7 @@ async function handleWebhook(payload, headerEventId) {
                   raw_payload = COALESCE(raw_payload, '{}'::jsonb)
                                 || jsonb_build_object('webhook_refund', $2::jsonb)
             WHERE razorpay_refund_id = $1 AND status <> 'processed'`,
-          [rf.id, rf]
+          [rf.id, rf],
         );
         if (r.rowCount === 0) {
           logger.info(`refund.processed for unknown/already-settled refund ${rf.id}`);
@@ -454,7 +461,7 @@ async function handleWebhook(payload, headerEventId) {
                   raw_payload = COALESCE(raw_payload, '{}'::jsonb)
                                 || jsonb_build_object('webhook_refund', $2::jsonb)
             WHERE razorpay_refund_id = $1 AND status = 'pending'`,
-          [rf.id, rf]
+          [rf.id, rf],
         );
         break;
       }
@@ -466,7 +473,7 @@ async function handleWebhook(payload, headerEventId) {
       `UPDATE webhook_events
           SET processed_at = NOW(), response_body = $1
         WHERE external_id = $2`,
-      [responseBody, eventId]
+      [responseBody, eventId],
     );
     return responseBody;
   } catch (err) {
@@ -478,8 +485,8 @@ async function handleWebhook(payload, headerEventId) {
     // app logger for observability since the row itself is going away.)
     logger.error(`Razorpay webhook ${eventId} (${event}) failed, clearing dedup for retry: ${err.message}`);
     await query(
-      `DELETE FROM webhook_events WHERE external_id = $1`,
-      [eventId]
+      'DELETE FROM webhook_events WHERE external_id = $1',
+      [eventId],
     ).catch((e) => logger.error(`Failed to clear webhook dedup ${eventId}: ${e.message}`));
     throw err;
   }
@@ -490,26 +497,35 @@ async function handleWebhook(payload, headerEventId) {
 // the paid period ends (the owner-facing "cancel at period end"); false
 // cancels immediately. Best-effort by design — callers update local state
 // regardless so a gateway hiccup never traps an owner in a paid plan.
+// BUG FIX (2026-09-04, surfaced by making lint blocking): this function was
+// never added to module.exports, so subscriptionService's
+// `rzp.cancelSubscription(...)` threw TypeError into its own try/catch and
+// logged "Gateway cancel failed" — meaning a cancelled subscription left the
+// Razorpay MANDATE LIVE. The customer's next cycle could still be charged
+// while our DB said cancelled. Exported at the bottom of this file.
 async function cancelSubscription(businessId, { atCycleEnd = true } = {}) {
   const row = (await query(
-    `SELECT razorpay_subscription_id FROM subscriptions WHERE business_id = $1`,
-    [businessId]
+    'SELECT razorpay_subscription_id FROM subscriptions WHERE business_id = $1',
+    [businessId],
   )).rows[0];
   const rzId = row?.razorpay_subscription_id;
   if (!rzId) return { cancelled: false, reason: 'no_gateway_subscription' };
   if (!env.RAZORPAY_KEY_ID || !env.RAZORPAY_KEY_SECRET) {
     return { cancelled: false, reason: 'razorpay_not_configured' };
   }
-  await rzCall('POST', `/v1/subscriptions/${rzId}/cancel`,
-    { cancel_at_cycle_end: atCycleEnd ? 1 : 0 });
+  await rzCall(
+    'POST',
+    `/v1/subscriptions/${rzId}/cancel`,
+    { cancel_at_cycle_end: atCycleEnd ? 1 : 0 },
+  );
   return { cancelled: true, razorpaySubscriptionId: rzId };
 }
 
 async function _onChargeSuccess(sub, pay) {
   // Find our subscription row
   const r = await query(
-    `SELECT * FROM subscriptions WHERE razorpay_subscription_id = $1 LIMIT 1`,
-    [sub.id]
+    'SELECT * FROM subscriptions WHERE razorpay_subscription_id = $1 LIMIT 1',
+    [sub.id],
   );
   if (r.rowCount === 0) {
     logger.warn(`Charge for unknown subscription ${sub.id}`);
@@ -542,7 +558,7 @@ async function _onChargeSuccess(sub, pay) {
     `SELECT id FROM plans
       WHERE razorpay_plan_id = $1 OR razorpay_plan_id_yearly = $1
       LIMIT 1`,
-    [sub.plan_id]
+    [sub.plan_id],
   );
   const newPlanId = planLookup.rowCount > 0 ? planLookup.rows[0].id : sr.plan_id;
 
@@ -563,9 +579,7 @@ async function _onChargeSuccess(sub, pay) {
     // retry that re-enters here; without this guard the invoice INSERT (which
     // draws a fresh sequence number and has no unique key on the charge) would
     // create a second, orphaned invoice for the same payment.
-    const already = await client.query(
-      `SELECT 1 FROM payments WHERE razorpay_payment_id = $1 LIMIT 1`, [pay.id]
-    );
+    const already = await client.query('SELECT 1 FROM payments WHERE razorpay_payment_id = $1 LIMIT 1', [pay.id]);
     if (already.rowCount > 0) {
       logger.info(`Charge ${pay.id} already recorded; skipping invoice/payment`);
       return;
@@ -579,7 +593,7 @@ async function _onChargeSuccess(sub, pay) {
                 current_period_end = $2,
                 updated_at = NOW()
           WHERE id = $3`,
-        [newPlanId, periodEnd, sr.id]
+        [newPlanId, periodEnd, sr.id],
       );
     } else {
       logger.warn(`Charge on cancelled subscription ${sr.id} (rzp ${sub.id}); recording payment but NOT reactivating`);
@@ -588,7 +602,7 @@ async function _onChargeSuccess(sub, pay) {
     // Collision-safe invoice number: a per-year DB sequence guarantees
     // uniqueness under concurrency (the old Math.random() 6-digit value
     // collided at volume → 23505 → lost payment record).
-    const seq = await client.query(`SELECT nextval('subscription_invoice_seq') AS n`);
+    const seq = await client.query('SELECT nextval(\'subscription_invoice_seq\') AS n');
     const invoiceNumber = `INV-${new Date().getFullYear()}-${String(seq.rows[0].n).padStart(6, '0')}`;
     const inv = await client.query(
       `INSERT INTO invoices
@@ -596,7 +610,7 @@ async function _onChargeSuccess(sub, pay) {
           amount_paise, currency, period_start, period_end, paid_at)
        VALUES ($1, $2, $3, 'paid', $4, 'INR', NOW(), $5, NOW())
        RETURNING id`,
-      [sr.business_id, sr.id, invoiceNumber, pay.amount, periodEnd]
+      [sr.business_id, sr.id, invoiceNumber, pay.amount, periodEnd],
     );
     await client.query(
       `INSERT INTO payments
@@ -604,7 +618,7 @@ async function _onChargeSuccess(sub, pay) {
           razorpay_payment_id, status, raw_payload)
        VALUES ($1, $2, $3, 'INR', $4, $5, 'captured', $6)
        ON CONFLICT (razorpay_payment_id) DO NOTHING`,
-      [sr.business_id, inv.rows[0].id, pay.amount, pay.method, pay.id, pay]
+      [sr.business_id, inv.rows[0].id, pay.amount, pay.method, pay.id, pay],
     );
   });
   // 2026-09-03 (plans/addons audit #5): the charge may have flipped the
@@ -657,12 +671,12 @@ function verifyCheckoutSignature({ orderId, paymentId, signature }) {
 
 module.exports = {
   syncPlans,
-  syncOnePlan,               // 2026-09-03 custom plans
+  syncOnePlan, // 2026-09-03 custom plans
   createSubscription,
   verifyWebhookSignature,
   handleWebhook,
-  createCheckoutOrder,       // FF-250
-  verifyCheckoutSignature,   // FF-250
+  createCheckoutOrder, // FF-250
+  verifyCheckoutSignature, // FF-250
 };
 
 // ── Addon marketplace one-time orders (2026-08-25) ──────────────────────
@@ -706,3 +720,6 @@ async function getOrder(razorpayOrderId) {
   return rzCall('GET', `/v1/orders/${encodeURIComponent(razorpayOrderId)}`);
 }
 module.exports.getOrder = getOrder;
+// See the BUG FIX note on cancelSubscription above — this export is what
+// actually cancels the gateway mandate when an owner cancels their plan.
+module.exports.cancelSubscription = cancelSubscription;

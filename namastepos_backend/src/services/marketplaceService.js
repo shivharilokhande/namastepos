@@ -5,7 +5,7 @@
 // new orders nightly and create matching `orders` rows. Otherwise we no-op
 // (the schema is in place so we can flip the switch per-tenant later).
 
-const { query, withTransaction } = require('../config/db');
+const { query } = require('../config/db');
 const logger = require('../config/logger');
 
 async function listCredentials(businessId) {
@@ -13,7 +13,7 @@ async function listCredentials(businessId) {
     `SELECT marketplace, seller_id, is_active
        FROM marketplace_credentials
       WHERE business_id = $1`,
-    [businessId]
+    [businessId],
   );
   return r.rows;
 }
@@ -28,7 +28,7 @@ async function upsertCredentials(businessId, body) {
        api_key = EXCLUDED.api_key,
        api_secret = EXCLUDED.api_secret,
        is_active = TRUE`,
-    [businessId, body.marketplace, body.sellerId, body.apiKey, body.apiSecret]
+    [businessId, body.marketplace, body.sellerId, body.apiKey, body.apiSecret],
   );
 }
 
@@ -42,7 +42,7 @@ async function pullAmazonOrders(businessId, sinceIso) {
     `SELECT seller_id, api_key, api_secret FROM marketplace_credentials
       WHERE business_id = $1 AND marketplace = 'amazon' AND is_active = TRUE
       LIMIT 1`,
-    [businessId]
+    [businessId],
   );
   if (r.rowCount === 0) {
     return { pulled: 0, reason: 'not_configured' };
@@ -63,12 +63,12 @@ async function pullAmazonOrders(businessId, sinceIso) {
 }
 
 // ── Flipkart Seller API ──────────────────────────────────────────────────
-async function pullFlipkartOrders(businessId, sinceIso) {
+async function pullFlipkartOrders(businessId, _sinceIso) {
   const r = await query(
     `SELECT api_key, api_secret FROM marketplace_credentials
       WHERE business_id = $1 AND marketplace = 'flipkart' AND is_active = TRUE
       LIMIT 1`,
-    [businessId]
+    [businessId],
   );
   if (r.rowCount === 0) return { pulled: 0, reason: 'not_configured' };
 

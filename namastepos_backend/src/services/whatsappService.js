@@ -18,13 +18,13 @@ async function _appendInbound(businessId, phone, body, providerMsgId, name) {
          SET customer_name = COALESCE(wa_threads.customer_name, EXCLUDED.customer_name),
              last_message_at = NOW()
        RETURNING *`,
-      [businessId, phone, name || null]
+      [businessId, phone, name || null],
     );
     await client.query(
       `INSERT INTO wa_messages
          (business_id, thread_id, direction, body, provider_msg_id)
        VALUES ($1, $2, 'in', $3, $4)`,
-      [businessId, t.rows[0].id, body, providerMsgId || null]
+      [businessId, t.rows[0].id, body, providerMsgId || null],
     );
     return t.rows[0];
   });
@@ -53,6 +53,9 @@ function _metaTo(phone) {
 
 async function _metaPost(payload) {
   const url = `https://graph.facebook.com/${env.META_WA_API_VERSION}/${env.META_WA_PHONE_NUMBER_ID}/messages`;
+  // Dead fallback: package.json engines require node >=20.19, which always has a
+  // global fetch, so this require is never reached and node-fetch is not installed.
+  // eslint-disable-next-line import/no-extraneous-dependencies -- unreachable fallback on node >=20.19; node-fetch is intentionally not a dependency.
   const fetch = global.fetch || require('node-fetch');
   const r = await fetch(url, {
     method: 'POST',
@@ -112,6 +115,8 @@ async function _sendOutbound(businessId, phone, body) {
       Body: body,
     });
     const auth = Buffer.from(`${env.TWILIO_ACCOUNT_SID}:${env.TWILIO_AUTH_TOKEN}`).toString('base64');
+    // Dead fallback: see _metaPost above (node >=20.19 always has a global fetch).
+    // eslint-disable-next-line import/no-extraneous-dependencies -- unreachable fallback on node >=20.19; node-fetch is intentionally not a dependency.
     const fetch = global.fetch || require('node-fetch');
     const r = await fetch(url, {
       method: 'POST',
@@ -140,7 +145,7 @@ async function handleInbound(businessId, { phone, body, providerMsgId, name }) {
       `INSERT INTO wa_messages
          (business_id, thread_id, direction, body, provider_msg_id)
        VALUES ($1, $2, 'out', $3, $4)`,
-      [businessId, thread.id, reply, sid]
+      [businessId, thread.id, reply, sid],
     );
   }
   return { acknowledged: true };
@@ -167,26 +172,26 @@ async function _drive(businessId, thread, message) {
       `SELECT name, price, category FROM menu_items
         WHERE business_id = $1 AND is_active = TRUE
         ORDER BY display_order, name LIMIT 12`,
-      [businessId]
+      [businessId],
     );
-    await query(`UPDATE wa_threads SET state = 'menu' WHERE id = $1`, [thread.id]);
+    await query('UPDATE wa_threads SET state = \'menu\' WHERE id = $1', [thread.id]);
     const lines = items.rows.map((i, idx) => `${idx + 1}. ${i.name} — ₹${i.price}`);
     return `Welcome! Here's our menu — reply with item numbers:\n\n${lines.join('\n')}\n\nReply "done" when finished.`;
   }
   if (thread.state === 'menu') {
     if (lower === 'done') {
-      await query(`UPDATE wa_threads SET state = 'confirming' WHERE id = $1`, [thread.id]);
-      return `Got it! Please confirm by replying "yes" — or "cancel" to start over.`;
+      await query('UPDATE wa_threads SET state = \'confirming\' WHERE id = $1', [thread.id]);
+      return 'Got it! Please confirm by replying "yes" — or "cancel" to start over.';
     }
-    return `Add items by number — e.g. "1, 3, 5". Or "done" to finish.`;
+    return 'Add items by number — e.g. "1, 3, 5". Or "done" to finish.';
   }
   if (thread.state === 'confirming') {
     if (lower === 'yes') {
-      await query(`UPDATE wa_threads SET state = 'idle', draft_cart = NULL WHERE id = $1`, [thread.id]);
-      return `Your order has been placed. We'll WhatsApp you when it's ready.`;
+      await query('UPDATE wa_threads SET state = \'idle\', draft_cart = NULL WHERE id = $1', [thread.id]);
+      return 'Your order has been placed. We\'ll WhatsApp you when it\'s ready.';
     }
-    await query(`UPDATE wa_threads SET state = 'idle' WHERE id = $1`, [thread.id]);
-    return `Cancelled. Reply "menu" to start over.`;
+    await query('UPDATE wa_threads SET state = \'idle\' WHERE id = $1', [thread.id]);
+    return 'Cancelled. Reply "menu" to start over.';
   }
   return null;
 }
@@ -198,7 +203,7 @@ async function createCampaign(businessId, body, createdBy) {
   const cnt = await query(
     `SELECT COUNT(*)::int AS n FROM customers
       WHERE business_id = $1 AND marketing_optin = TRUE`,
-    [businessId]
+    [businessId],
   );
   const r = await query(
     `INSERT INTO wa_campaigns
@@ -206,8 +211,8 @@ async function createCampaign(businessId, body, createdBy) {
         recipient_count, created_by_user_id, status)
      VALUES ($1, $2, $3, $4, $5, $6, $7, 'scheduled') RETURNING *`,
     [businessId, name, templateBody,
-     audienceFilter ? JSON.stringify(audienceFilter) : null,
-     scheduledAt || new Date(), cnt.rows[0].n, createdBy || null]
+      audienceFilter ? JSON.stringify(audienceFilter) : null,
+      scheduledAt || new Date(), cnt.rows[0].n, createdBy || null],
   );
   return r.rows[0];
 }
@@ -216,7 +221,7 @@ async function listCampaigns(businessId) {
   const r = await query(
     `SELECT * FROM wa_campaigns WHERE business_id = $1
       ORDER BY created_at DESC LIMIT 50`,
-    [businessId]
+    [businessId],
   );
   // WHY (2026-08-25): the route wraps this array as {campaigns: [...]} and
   // JSON.stringify drops extra properties on arrays, so the provider status
@@ -238,7 +243,7 @@ async function runCampaign(businessId, campaignId) {
     const existing = await query(
       `SELECT recipient_count FROM wa_campaigns
         WHERE business_id = $1 AND id = $2`,
-      [businessId, campaignId]
+      [businessId, campaignId],
     );
     if (existing.rowCount === 0) return null;
     return {
@@ -250,14 +255,14 @@ async function runCampaign(businessId, campaignId) {
   const c = await query(
     `UPDATE wa_campaigns SET status = 'running'
       WHERE business_id = $1 AND id = $2 RETURNING *`,
-    [businessId, campaignId]
+    [businessId, campaignId],
   );
   if (c.rowCount === 0) return null;
   const audience = await query(
     `SELECT phone, name FROM customers
       WHERE business_id = $1 AND marketing_optin = TRUE
       LIMIT 1000`,
-    [businessId]
+    [businessId],
   );
   let sent = 0;
   for (const cust of audience.rows) {
@@ -268,7 +273,7 @@ async function runCampaign(businessId, campaignId) {
   await query(
     `UPDATE wa_campaigns SET status = 'done', sent_count = $1
       WHERE id = $2`,
-    [sent, campaignId]
+    [sent, campaignId],
   );
   // queued = provider accepted nothing for these (per-message failures);
   // surfaced so the UI never conflates "attempted" with "delivered to Twilio".
@@ -288,7 +293,14 @@ async function sendRaw({ to, body }) {
 }
 
 module.exports = {
-  handleInbound, _sendOutbound, sendRaw, sendTemplate,
-  isProviderConfigured, isMetaConfigured, isTwilioConfigured,
-  createCampaign, listCampaigns, runCampaign,
+  handleInbound,
+  _sendOutbound,
+  sendRaw,
+  sendTemplate,
+  isProviderConfigured,
+  isMetaConfigured,
+  isTwilioConfigured,
+  createCampaign,
+  listCampaigns,
+  runCampaign,
 };

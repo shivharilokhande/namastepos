@@ -4,7 +4,8 @@ const request = require('supertest');
 const buildApp = require('../../src/app');
 const { resetDb, makeBusiness, tokenFor, closePool } = require('../setup');
 
-let app, business, token, dosaId, chaiId;
+let app; let business; let token; let dosaId; let
+  chaiId;
 
 beforeAll(async () => {
   await resetDb();
@@ -40,7 +41,7 @@ describe('Orders', () => {
         tableNo: '3',
         items: [
           { menuItemId: dosaId, name: 'Masala Dosa', price: 80, qty: 2 },
-          { menuItemId: chaiId, name: 'Chai',        price: 15, qty: 3 },
+          { menuItemId: chaiId, name: 'Chai', price: 15, qty: 3 },
         ],
         paymentMethod: 'upi',
       });

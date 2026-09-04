@@ -25,7 +25,8 @@ const router = express.Router();
 function esc(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 /** Only allow #rrggbb colours through to the stylesheet. */
@@ -49,7 +50,8 @@ router.get('/:slug', asyncHandler(async (req, res) => {
     return res.status(404).send(
       '<!doctype html><meta charset="utf-8"><title>Not found</title>'
       + '<body style="font-family:sans-serif;text-align:center;padding:4rem">'
-      + '<h1>404</h1><p>This restaurant page does not exist or is not published.</p>');
+      + '<h1>404</h1><p>This restaurant page does not exist or is not published.</p>',
+    );
   }
 
   const menuRes = await query(
@@ -57,7 +59,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
        FROM menu_items
       WHERE business_id = $1 AND is_active = TRUE AND sold_out_until IS NULL
       ORDER BY category, display_order, name`,
-    [s.business_id]
+    [s.business_id],
   );
 
   const color = safeColor(s.primary_color, '#FF6B35');
@@ -134,7 +136,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
   <header class="hero">
     <h1>${name}</h1>
     ${s.brand_story ? `<p>${esc(s.brand_story)}</p>` : ''}
-    ${waPhone ? `<a class="cta" href="https://wa.me/${waPhone.length === 10 ? '91' + waPhone : waPhone}?text=${encodeURIComponent('Hi! I\'d like to order from ' + s.biz_name)}">Order on WhatsApp</a>` : ''}
+    ${waPhone ? `<a class="cta" href="https://wa.me/${waPhone.length === 10 ? `91${waPhone}` : waPhone}?text=${encodeURIComponent(`Hi! I'd like to order from ${s.biz_name}`)}">Order on WhatsApp</a>` : ''}
   </header>
   <main>
     ${menuHtml || '<p style="text-align:center;color:#999;padding:2rem">Menu coming soon.</p>'}

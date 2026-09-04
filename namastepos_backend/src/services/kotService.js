@@ -165,12 +165,33 @@ async function generateTickets(client, { businessId, orderId, orderItems }) {
     if (existing.rowCount > 0) {
       fallbackStationId = existing.rows[0].id;
     } else {
+      // NP-301 (2026-09-04): `ON CONFLICT DO NOTHING` + re-read. Two
+      // concurrent FIRST orders for a brand-new business used to race here and
+      // one hit `uq_station (business_id, name)` — harmless while the caller
+      // swallowed every KOT error, but now that a KOT failure correctly rolls
+      // the order back, a 23505 on the auto-created fallback station would
+      // reject a perfectly good sale. So the insert is made idempotent.
       const created = await client.query(
         `INSERT INTO kot_stations (business_id, name, is_active)
-         VALUES ($1, 'Kitchen', TRUE) RETURNING id`,
+         VALUES ($1, 'Kitchen', TRUE)
+         ON CONFLICT (business_id, name) DO NOTHING
+         RETURNING id`,
         [businessId],
       );
-      fallbackStationId = created.rows[0].id;
+      if (created.rowCount > 0) {
+        fallbackStationId = created.rows[0].id;
+      } else {
+        const raced = await client.query(
+          `SELECT id FROM kot_stations
+            WHERE business_id = $1 AND name = 'Kitchen' LIMIT 1`,
+          [businessId],
+        );
+        // If the racer's transaction has not committed yet its row is
+        // invisible to us; fall back to any active station, and if there is
+        // genuinely none, leave the items unroutable (returns [] as before)
+        // rather than failing the sale on a naming collision.
+        fallbackStationId = raced.rows[0]?.id || null;
+      }
     }
   }
 
@@ -199,9 +220,96 @@ async function generateTickets(client, { businessId, orderId, orderItems }) {
         [ins.rows[0].id, it.orderItemId || null, it.name, it.qty, it.note || null],
       );
     }
-    tickets.push(ins.rows[0]);
+    // NP-301: carry the grouped lines back out so the caller can enqueue the
+    // print job for this ticket in the SAME transaction without re-reading
+    // kot_ticket_items. Pure addition to the return shape.
+    tickets.push({ ...ins.rows[0], items });
   }
   return tickets;
+}
+
+/**
+ * NP-301 (2026-09-04) — enqueue ONE print job per kitchen ticket, in the
+ * caller's transaction.
+ *
+ * Why this is split from `generateTickets`: the tickets are the RECORD of what
+ * the kitchen must cook and must commit with the order; the paper is I/O and
+ * must not be able to fail the sale. So rows go in-txn (both the ticket rows
+ * and the print_jobs rows — a queue row is still just a row), and the actual
+ * ESC/POS write happens later in the print agent, which claims jobs via
+ * printerService.dequeueNext and reports back with markJobDone. A printer that
+ * is offline now retries with a backoff instead of dead-lettering (see
+ * printerService.markJobDone).
+ *
+ * Routing: the station's own printer if one is configured, else the business's
+ * default KOT printer, else NULL — a NULL printer_id job is still claimable by
+ * the business's agent, which is strictly better than not queueing the ticket.
+ */
+async function enqueueTicketPrints(client, { businessId, orderId, tickets, order = {} }) {
+  if (!tickets || tickets.length === 0) return [];
+  const printer = require('./printerService');
+
+  // ONE round-trip: station names/paper + each station's bound KOT printer +
+  // the business-wide fallback KOT printer. This runs inside the order
+  // transaction (the hottest path in the codebase), so it is deliberately not
+  // three queries.
+  const stationIds = [...new Set(tickets.map((t) => t.station_id).filter(Boolean))];
+  const meta = await client.query(
+    `WITH st AS (
+        SELECT ks.id, ks.name, ks.printer_paper_mm,
+               p.id AS printer_id, p.paper_width_mm
+          FROM kot_stations ks
+     LEFT JOIN printers p
+            ON p.station_id = ks.id AND p.business_id = ks.business_id
+           AND p.is_active = TRUE AND p.kind = 'kot'
+         WHERE ks.business_id = $1 AND ks.id = ANY($2::uuid[])
+     ), fb AS (
+        SELECT id AS printer_id, paper_width_mm
+          FROM printers
+         WHERE business_id = $1 AND is_active = TRUE AND kind = 'kot'
+           AND station_id IS NULL
+         ORDER BY is_default DESC, created_at ASC
+         LIMIT 1
+     )
+     SELECT st.id, st.name, st.printer_paper_mm, st.printer_id, st.paper_width_mm,
+            fb.printer_id AS fb_printer_id, fb.paper_width_mm AS fb_paper_width_mm
+       FROM st LEFT JOIN fb ON TRUE`,
+    [businessId, stationIds],
+  );
+  const byStation = new Map(meta.rows.map((r) => [r.id, r]));
+  const fallbackPrinter = meta.rows.find((r) => r.fb_printer_id)
+    ? { id: meta.rows[0].fb_printer_id, paper_width_mm: meta.rows[0].fb_paper_width_mm }
+    : null;
+
+  const jobIds = [];
+  for (const t of tickets) {
+    const st = byStation.get(t.station_id) || {};
+    const printerId = st.printer_id || fallbackPrinter?.id || null;
+    const paperWidthMm = st.paper_width_mm || st.printer_paper_mm
+      || fallbackPrinter?.paper_width_mm || 58;
+    const payloadText = printer.renderKotText({
+      stationName: st.name,
+      ticketNo: t.ticket_no,
+      orderNo: order.orderNo ?? order.order_no,
+      source: order.source,
+      tableLabel: order.tableLabel ?? order.table_no,
+      tokenNo: order.tokenNo ?? order.token_no,
+      items: (t.items || []).map((i) => ({ qty: i.qty, name: i.name, note: i.note })),
+      paperWidthMm,
+      createdAt: t.created_at,
+    });
+    // eslint-disable-next-line no-await-in-loop
+    jobIds.push(await printer.queuePrintJob({
+      businessId,
+      printerId,
+      orderId,
+      kotTicketId: t.id,
+      kind: 'kot',
+      payloadText,
+      client, // ← in-txn: no order without its queued ticket
+    }));
+  }
+  return jobIds;
 }
 
 // ── Live queue / status updates ─────────────────────────────────────────
@@ -297,6 +405,7 @@ module.exports = {
   updateStation,
   deleteStation,
   generateTickets,
+  enqueueTicketPrints,
   listTickets,
   updateTicketStatus,
   markPrinted,

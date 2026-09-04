@@ -2,8 +2,6 @@
 
 const crypto = require('crypto');
 const { query } = require('../config/db');
-const env = require('../config/env');
-const logger = require('../config/logger');
 const { BadRequest } = require('../utils/errors');
 
 // ── Tally XML export ─────────────────────────────────────────────────────
@@ -21,7 +19,7 @@ async function tallyExport(businessId, { startDate, endDate }) {
         AND o.created_at < ($3::date + INTERVAL '1 day')
         AND o.status <> 'cancelled'
       ORDER BY o.created_at`,
-    [businessId, startDate, endDate]
+    [businessId, startDate, endDate],
   );
   // Generate Tally <ENVELOPE><VOUCHER> XML
   let xml = '<?xml version="1.0" encoding="UTF-8"?>\n<ENVELOPE>\n';
@@ -30,13 +28,13 @@ async function tallyExport(businessId, { startDate, endDate }) {
   xml += '<REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME></REQUESTDESC>\n';
   xml += '<REQUESTDATA>\n';
   for (const o of orders.rows) {
-    xml += `<TALLYMESSAGE>\n  <VOUCHER VCHTYPE="Sales" ACTION="Create">\n`;
-    xml += `    <DATE>${new Date(o.created_at).toISOString().slice(0,10).replace(/-/g,'')}</DATE>\n`;
+    xml += '<TALLYMESSAGE>\n  <VOUCHER VCHTYPE="Sales" ACTION="Create">\n';
+    xml += `    <DATE>${new Date(o.created_at).toISOString().slice(0, 10).replace(/-/g, '')}</DATE>\n`;
     xml += `    <VOUCHERNUMBER>${o.order_no}</VOUCHERNUMBER>\n`;
     xml += `    <PARTYLEDGERNAME>${_tallyXmlEscape(o.customer_name || 'Walk-in')}</PARTYLEDGERNAME>\n`;
     xml += `    <AMOUNT>${o.total}</AMOUNT>\n`;
     xml += `    <NARRATION>NamastePOS order #${o.order_no}</NARRATION>\n`;
-    xml += `  </VOUCHER>\n</TALLYMESSAGE>\n`;
+    xml += '  </VOUCHER>\n</TALLYMESSAGE>\n';
   }
   xml += '</REQUESTDATA></IMPORTDATA></BODY>\n</ENVELOPE>';
 
@@ -44,7 +42,7 @@ async function tallyExport(businessId, { startDate, endDate }) {
     `INSERT INTO accounting_exports
        (business_id, format, date_from, date_to, row_count, status, exported_at)
      VALUES ($1, 'tally_xml', $2, $3, $4, 'done', NOW())`,
-    [businessId, startDate, endDate, orders.rowCount]
+    [businessId, startDate, endDate, orders.rowCount],
   );
   return { xml, count: orders.rowCount };
 }
@@ -59,11 +57,11 @@ async function zohoCsv(businessId, { startDate, endDate }) {
         AND o.created_at >= $2::date
         AND o.created_at < ($3::date + INTERVAL '1 day')
         AND o.status <> 'cancelled'`,
-    [businessId, startDate, endDate]
+    [businessId, startDate, endDate],
   );
   const header = 'Date,Invoice No,Customer,Subtotal,Tax,Total,Payment\n';
   const rows = orders.rows.map((o) => [
-    new Date(o.created_at).toISOString().slice(0,10),
+    new Date(o.created_at).toISOString().slice(0, 10),
     o.order_no, (o.name || 'Walk-in').replace(/,/g, ' '),
     o.subtotal, o.tax, o.total, o.payment_method,
   ].join(',')).join('\n');
@@ -71,7 +69,7 @@ async function zohoCsv(businessId, { startDate, endDate }) {
     `INSERT INTO accounting_exports
        (business_id, format, date_from, date_to, row_count, status, exported_at)
      VALUES ($1, 'zoho_csv', $2, $3, $4, 'done', NOW())`,
-    [businessId, startDate, endDate, orders.rowCount]
+    [businessId, startDate, endDate, orders.rowCount],
   );
   return header + rows;
 }
@@ -83,18 +81,16 @@ async function zohoCsv(businessId, { startDate, endDate }) {
 // in place — flip env.IRP_BASE_URL + creds to go live.
 async function generateIrn(businessId, orderId) {
   const o = await query(
-    `SELECT * FROM orders WHERE business_id = $1 AND id = $2`,
-    [businessId, orderId]
+    'SELECT * FROM orders WHERE business_id = $1 AND id = $2',
+    [businessId, orderId],
   );
   if (o.rowCount === 0) throw new BadRequest('Order not found');
 
   // Generate IRN per NIC algorithm: SHA256(supplier_gstin + doc_no + doc_date + fy)
-  const biz = await query(
-    `SELECT gstin FROM businesses WHERE id = $1`, [businessId]
-  );
+  const biz = await query('SELECT gstin FROM businesses WHERE id = $1', [businessId]);
   const gstin = biz.rows[0]?.gstin || '';
   const order = o.rows[0];
-  const docDate = new Date(order.created_at).toISOString().slice(0,10);
+  const docDate = new Date(order.created_at).toISOString().slice(0, 10);
   const fy = (() => {
     const d = new Date(order.created_at);
     const year = d.getMonth() < 3 ? d.getFullYear() - 1 : d.getFullYear();
@@ -112,20 +108,20 @@ async function generateIrn(businessId, orderId) {
      VALUES ($1, $2, $3, $4, NOW(), 'generated')
      ON CONFLICT (irn) DO UPDATE SET ack_date = NOW()
      RETURNING *`,
-    [businessId, orderId, irn, `ACK-${Date.now()}`]
+    [businessId, orderId, irn, `ACK-${Date.now()}`],
   );
   return r.rows[0];
 }
 
 async function generateEwayBill(businessId, invoiceId, body) {
-  const ewayNo = 'EWB' + Date.now().toString();
+  const ewayNo = `EWB${Date.now().toString()}`;
   const validity = new Date(Date.now() + 24 * 60 * 60 * 1000); // 1 day default
   const r = await query(
     `INSERT INTO eway_bills
        (business_id, invoice_id, eway_no, eway_date, validity,
         vehicle_no, distance_km)
      VALUES ($1, $2, $3, CURRENT_DATE, $4, $5, $6) RETURNING *`,
-    [businessId, invoiceId, ewayNo, validity, body.vehicleNo, body.distanceKm]
+    [businessId, invoiceId, ewayNo, validity, body.vehicleNo, body.distanceKm],
   );
   return r.rows[0];
 }
@@ -134,7 +130,7 @@ async function listExports(businessId) {
   const r = await query(
     `SELECT * FROM accounting_exports WHERE business_id = $1
       ORDER BY created_at DESC LIMIT 50`,
-    [businessId]
+    [businessId],
   );
   return r.rows;
 }
@@ -153,7 +149,7 @@ async function listIrns(businessId) {
       WHERE business_id = $1
       ORDER BY created_at DESC
       LIMIT 500`,
-    [businessId]
+    [businessId],
   );
   return r.rows.map((row) => ({
     orderId: row.order_id,

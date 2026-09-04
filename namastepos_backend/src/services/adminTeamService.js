@@ -3,39 +3,41 @@
 const bcrypt = require('../utils/bcrypt');
 const { query } = require('../config/db');
 const env = require('../config/env');
-const {
-  issueAccessToken, generateRefreshToken, hashRefreshToken,
-} = require('../utils/jwt');
+const { issueAccessToken } = require('../utils/jwt');
 const { Unauthorized, NotFound, Conflict, BadRequest, Forbidden } = require('../utils/errors');
 
 const SALT = 10;
 
 function serialize(a) {
   return {
-    id: a.id, email: a.email, displayName: a.display_name,
-    role: a.role, isActive: a.is_active,
-    lastLoginAt: a.last_login_at, createdAt: a.created_at,
+    id: a.id,
+    email: a.email,
+    displayName: a.display_name,
+    role: a.role,
+    isActive: a.is_active,
+    lastLoginAt: a.last_login_at,
+    createdAt: a.created_at,
   };
 }
 
 // Bootstrap a super_admin from env vars if no admins exist
 async function ensureBootstrap() {
-  const r = await query(`SELECT COUNT(*)::int AS c FROM admin_users WHERE is_active = TRUE`);
+  const r = await query('SELECT COUNT(*)::int AS c FROM admin_users WHERE is_active = TRUE');
   if (r.rows[0].c > 0) return;
   if (!env.SUPER_ADMIN_PASSWORD || !env.SUPER_ADMIN_EMAIL) return;
   const hash = await bcrypt.hash(env.SUPER_ADMIN_PASSWORD, SALT);
   await query(
     `INSERT INTO admin_users (email, password_hash, display_name, role)
      VALUES ($1, $2, 'Founding Admin', 'super_admin') ON CONFLICT DO NOTHING`,
-    [env.SUPER_ADMIN_EMAIL, hash]
+    [env.SUPER_ADMIN_EMAIL, hash],
   );
 }
 
 async function login(email, password) {
   await ensureBootstrap();
   const r = await query(
-    `SELECT * FROM admin_users WHERE email = $1 AND is_active = TRUE LIMIT 1`,
-    [email]
+    'SELECT * FROM admin_users WHERE email = $1 AND is_active = TRUE LIMIT 1',
+    [email],
   );
   if (r.rowCount === 0) throw new Unauthorized('Invalid credentials');
   const admin = r.rows[0];
@@ -59,18 +61,25 @@ async function login(email, password) {
   // TOTP code, the confirm endpoint swaps it for a full token.
   const enforce = await require('./settingsService').get('security.enforce_admin_2fa');
   if (enforce) {
-    await query(`UPDATE admin_users SET last_login_at = NOW() WHERE id = $1`, [admin.id]);
+    await query('UPDATE admin_users SET last_login_at = NOW() WHERE id = $1', [admin.id]);
     const token = issueAccessToken({
-      sub: admin.id, sid: admin.id, isSuperAdmin: true,
-      email: admin.email, role: admin.role, enrol2fa: true,
+      sub: admin.id,
+      sid: admin.id,
+      isSuperAdmin: true,
+      email: admin.email,
+      role: admin.role,
+      enrol2fa: true,
     });
     return { token, admin: serialize(admin), mustEnrol2fa: true };
   }
 
-  await query(`UPDATE admin_users SET last_login_at = NOW() WHERE id = $1`, [admin.id]);
+  await query('UPDATE admin_users SET last_login_at = NOW() WHERE id = $1', [admin.id]);
   const token = issueAccessToken({
-    sub: admin.id, sid: admin.id, isSuperAdmin: true,
-    email: admin.email, role: admin.role,
+    sub: admin.id,
+    sid: admin.id,
+    isSuperAdmin: true,
+    email: admin.email,
+    role: admin.role,
   });
   return { token, admin: serialize(admin) };
 }
@@ -79,21 +88,22 @@ async function login(email, password) {
 async function complete2faLogin(challengeId, code) {
   const twoFactor = require('./twoFactorService');
   const { adminId } = await twoFactor.verifyChallenge(challengeId, code);
-  const r = await query(
-    `SELECT * FROM admin_users WHERE id = $1 AND is_active = TRUE`, [adminId]
-  );
+  const r = await query('SELECT * FROM admin_users WHERE id = $1 AND is_active = TRUE', [adminId]);
   if (r.rowCount === 0) throw new Unauthorized('Admin not found');
   const admin = r.rows[0];
-  await query(`UPDATE admin_users SET last_login_at = NOW() WHERE id = $1`, [admin.id]);
+  await query('UPDATE admin_users SET last_login_at = NOW() WHERE id = $1', [admin.id]);
   const token = issueAccessToken({
-    sub: admin.id, sid: admin.id, isSuperAdmin: true,
-    email: admin.email, role: admin.role,
+    sub: admin.id,
+    sid: admin.id,
+    isSuperAdmin: true,
+    email: admin.email,
+    role: admin.role,
   });
   return { token, admin: serialize(admin) };
 }
 
 async function list() {
-  const r = await query(`SELECT * FROM admin_users ORDER BY created_at ASC`);
+  const r = await query('SELECT * FROM admin_users ORDER BY created_at ASC');
   return r.rows.map(serialize);
 }
 
@@ -109,7 +119,7 @@ async function create({ email, password, displayName, role = 'support', invitedB
     const r = await query(
       `INSERT INTO admin_users (email, password_hash, display_name, role, invited_by)
        VALUES ($1, $2, $3, $4, $5) RETURNING *`,
-      [email, hash, displayName, role, invitedBy]
+      [email, hash, displayName, role, invitedBy],
     );
     return serialize(r.rows[0]);
   } catch (err) {
@@ -132,7 +142,7 @@ async function update(id, patch, actorId = null) {
   // Additionally, no admin may deactivate their OWN account (lockout guard);
   // the founder can still deactivate any other admin, including other
   // super_admins.
-  const targetQ = await query(`SELECT * FROM admin_users WHERE id = $1`, [id]);
+  const targetQ = await query('SELECT * FROM admin_users WHERE id = $1', [id]);
   if (targetQ.rowCount === 0) throw new NotFound('Admin not found');
   const target = targetQ.rows[0];
 
@@ -161,13 +171,13 @@ async function update(id, patch, actorId = null) {
     sets.push(`password_hash = $${idx++}`); values.push(hash);
   }
   if (sets.length === 0) {
-    const r = await query(`SELECT * FROM admin_users WHERE id = $1`, [id]);
+    const r = await query('SELECT * FROM admin_users WHERE id = $1', [id]);
     return serialize(r.rows[0]);
   }
   values.push(id);
   const r = await query(
     `UPDATE admin_users SET ${sets.join(', ')} WHERE id = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Admin not found');
   // Drop the RBAC role cache so a role change / deactivation takes effect
@@ -181,7 +191,7 @@ async function deactivate(id, actorId = null) {
 }
 
 async function me(id) {
-  const r = await query(`SELECT * FROM admin_users WHERE id = $1`, [id]);
+  const r = await query('SELECT * FROM admin_users WHERE id = $1', [id]);
   if (r.rowCount === 0) throw new NotFound('Admin not found');
   return serialize(r.rows[0]);
 }

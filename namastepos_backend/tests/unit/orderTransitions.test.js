@@ -7,7 +7,7 @@ const { ORDER_TRANSITIONS } = require('../../src/services/orderService');
 describe('ORDER_TRANSITIONS matrix', () => {
   test('exposes exactly the four canonical statuses as keys', () => {
     expect(Object.keys(ORDER_TRANSITIONS).sort()).toEqual(
-      ['cancelled', 'collected', 'pending', 'ready'].sort()
+      ['cancelled', 'collected', 'pending', 'ready'].sort(),
     );
   });
 
@@ -17,13 +17,13 @@ describe('ORDER_TRANSITIONS matrix', () => {
 
   test('pending can fast-collect (skip ready) or cancel', () => {
     expect(ORDER_TRANSITIONS.pending).toEqual(
-      expect.arrayContaining(['ready', 'collected', 'cancelled'])
+      expect.arrayContaining(['ready', 'collected', 'cancelled']),
     );
   });
 
   test('ready can only move forward (collect) or cancel', () => {
     expect(ORDER_TRANSITIONS.ready).toEqual(
-      expect.arrayContaining(['collected', 'cancelled'])
+      expect.arrayContaining(['collected', 'cancelled']),
     );
     expect(ORDER_TRANSITIONS.ready).not.toContain('pending');
   });

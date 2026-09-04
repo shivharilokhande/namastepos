@@ -14,7 +14,7 @@ const { NotFound } = require('../utils/errors');
 
 function inr(paise) {
   const n = (Number(paise) || 0) / 100;
-  return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `₹${n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 function fmtDate(d) {
   if (!d) return '—';
@@ -66,7 +66,14 @@ async function computeTax(inv) {
   const sgst = interState ? 0 : tax - cgst;
 
   return {
-    pct, gross, subtotal, tax, interState, igst, cgst, sgst,
+    pct,
+    gross,
+    subtotal,
+    tax,
+    interState,
+    igst,
+    cgst,
+    sgst,
     seller: {
       name: s['platform.legal_name'] || s['brand.name'] || 'NamastePOS Technologies Pvt. Ltd.',
       gstin: sellerGstin,
@@ -112,7 +119,8 @@ async function renderPdf(res, { invoiceId, businessId = null } = {}) {
 
   // Divider
   let y = 140;
-  doc.moveTo(left, y).lineTo(left + pageW, y).strokeColor(LINE).lineWidth(1).stroke();
+  doc.moveTo(left, y).lineTo(left + pageW, y).strokeColor(LINE).lineWidth(1)
+    .stroke();
   y += 16;
 
   // Bill To
@@ -153,7 +161,8 @@ async function renderPdf(res, { invoiceId, businessId = null } = {}) {
   doc.text(inr(t.tax), cols.tax, y + 7);
   doc.text(inr(t.gross), cols.amount, y + 7, { width: left + pageW - cols.amount - 6, align: 'right' });
   y += rowH;
-  doc.moveTo(left, y).lineTo(left + pageW, y).strokeColor(LINE).lineWidth(1).stroke();
+  doc.moveTo(left, y).lineTo(left + pageW, y).strokeColor(LINE).lineWidth(1)
+    .stroke();
   y += 14;
 
   // Totals block (right aligned)

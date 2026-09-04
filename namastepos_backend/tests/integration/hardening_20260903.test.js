@@ -19,8 +19,11 @@ beforeAll(async () => {
 afterAll(async () => { await closePool(); });
 
 const adminToken = () => issueAccessToken({
-  sub: '00000000-0000-0000-0000-0000000000ad', sid: '00000000-0000-0000-0000-0000000000ad',
-  isSuperAdmin: true, email: 'ops@namastepos.in', role: 'support',
+  sub: '00000000-0000-0000-0000-0000000000ad',
+  sid: '00000000-0000-0000-0000-0000000000ad',
+  isSuperAdmin: true,
+  email: 'ops@namastepos.in',
+  role: 'support',
 });
 
 describe('platform staff cannot modify a tenant outlet structure', () => {
@@ -47,30 +50,30 @@ describe('a downgrade does not confiscate add-on days already paid for', () => {
   it('keeps a paid activation until its period ends, and only then locks it', async () => {
     await query(
       `UPDATE addons SET required_tier_kind = 'enterprise', is_active = TRUE, price_inr_paise = 49900
-        WHERE slug = 'multi-outlet'`
+        WHERE slug = 'multi-outlet'`,
     );
     const ent = await query(
       `INSERT INTO plans (tier, tier_kind, name, price_inr_paise, is_active, limits, features)
        VALUES ('ent-hard', 'enterprise', 'Ent', 99900, TRUE, '{}'::jsonb, '{}'::jsonb)
-       ON CONFLICT (tier) DO UPDATE SET tier_kind = 'enterprise' RETURNING id`
+       ON CONFLICT (tier) DO UPDATE SET tier_kind = 'enterprise' RETURNING id`,
     );
     await query(
       `INSERT INTO subscriptions (business_id, plan_id, status, current_period_end)
        VALUES ($1, $2, 'active', NOW() + INTERVAL '30 days')
        ON CONFLICT (business_id) DO UPDATE SET plan_id = $2, status = 'active'`,
-      [biz.id, ent.rows[0].id]
+      [biz.id, ent.rows[0].id],
     );
     require('../../src/services/featureService').clearCache(biz.id);
 
     // 20 days of a paid period remaining.
-    const addon = await query(`SELECT id FROM addons WHERE slug = 'multi-outlet'`);
+    const addon = await query('SELECT id FROM addons WHERE slug = \'multi-outlet\'');
     await query(
       `INSERT INTO business_addons
          (business_id, addon_id, status, current_period_start, current_period_end)
        VALUES ($1, $2, 'active', NOW() - INTERVAL '10 days', NOW() + INTERVAL '20 days')
        ON CONFLICT (business_id, addon_id) DO UPDATE
          SET status = 'active', current_period_end = NOW() + INTERVAL '20 days'`,
-      [biz.id, addon.rows[0].id]
+      [biz.id, addon.rows[0].id],
     );
     expect(await addons.hasAddon(biz.id, 'multi-outlet')).toBe(true);
 
@@ -78,7 +81,7 @@ describe('a downgrade does not confiscate add-on days already paid for', () => {
     await query(
       `INSERT INTO plans (tier, tier_kind, name, price_inr_paise, is_active, limits, features)
        VALUES ('start-hard', 'starter', 'Start', 9900, TRUE, '{}'::jsonb, '{}'::jsonb)
-       ON CONFLICT (tier) DO NOTHING`
+       ON CONFLICT (tier) DO NOTHING`,
     );
     await require('../../src/services/subscriptionService').changePlan(biz.id, 'start-hard');
 
@@ -86,7 +89,7 @@ describe('a downgrade does not confiscate add-on days already paid for', () => {
       `SELECT ba.status, ba.cancel_at_period_end, ba.current_period_end
          FROM business_addons ba JOIN addons a ON a.id = ba.addon_id
         WHERE ba.business_id = $1 AND a.slug = 'multi-outlet'`,
-      [biz.id]
+      [biz.id],
     );
     // Paid days honoured: flagged to end, NOT switched off today.
     expect(row.rows[0].cancel_at_period_end).toBe(true);
@@ -97,7 +100,7 @@ describe('a downgrade does not confiscate add-on days already paid for', () => {
     await query(
       `UPDATE business_addons SET current_period_end = NOW() - INTERVAL '1 minute'
         WHERE business_id = $1`,
-      [biz.id]
+      [biz.id],
     );
     expect(await addons.hasAddon(biz.id, 'multi-outlet')).toBe(false);
   });
@@ -107,12 +110,16 @@ describe('custom plan tier codes cannot collide across tenants', () => {
   it('uses the full business id, and its feature rows actually persist', async () => {
     const b = await makeBusiness({ email: `cp-${Date.now()}@example.com` });
     const tier = customPlans.customTierFor(b.id);
-    expect(tier.length).toBeGreaterThan(30);   // full uuid, not 8 chars
+    expect(tier.length).toBeGreaterThan(30); // full uuid, not 8 chars
     // The regression this caught: plan_features.tier_kind was VARCHAR(20), so
     // a long tier code created the plan but silently failed to grant features.
     const out = await customPlans.upsertForBusiness(b.id, {
-      name: 'Bespoke', priceInrPaise: 123400, tierKind: 'pro',
-      limits: {}, extraFeatureKeys: ['kds', 'loyalty'], assign: false,
+      name: 'Bespoke',
+      priceInrPaise: 123400,
+      tierKind: 'pro',
+      limits: {},
+      extraFeatureKeys: ['kds', 'loyalty'],
+      assign: false,
     });
     expect(out.plan.tier).toBe(tier);
     expect(out.plan.featureKeys).toEqual(expect.arrayContaining(['kds', 'loyalty']));

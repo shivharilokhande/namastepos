@@ -40,8 +40,11 @@ describe('Bill math', () => {
   test('5% service + ₹10 discount pre-tax + ₹5 tax', () => {
     // subtotal 100 + service 5 = 105; discount 10 pre-tax → taxable 95; +tax 5 = 100
     const r = billMath({
-      subtotal: 100, serviceChargePct: 5, discount: 10,
-      tax: 5, discountIsPreTax: true,
+      subtotal: 100,
+      serviceChargePct: 5,
+      discount: 10,
+      tax: 5,
+      discountIsPreTax: true,
     });
     expect(r.total).toBe(100);
     expect(r.serviceCharge).toBe(5);
@@ -51,8 +54,11 @@ describe('Bill math', () => {
   test('5% service + ₹10 discount POST-tax + ₹5 tax', () => {
     // subtotal 100 + service 5 + tax 5 = 110; discount 10 post-tax → 100
     const r = billMath({
-      subtotal: 100, serviceChargePct: 5, discount: 10,
-      tax: 5, discountIsPreTax: false,
+      subtotal: 100,
+      serviceChargePct: 5,
+      discount: 10,
+      tax: 5,
+      discountIsPreTax: false,
     });
     expect(r.total).toBe(100);
   });

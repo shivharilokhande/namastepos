@@ -14,7 +14,6 @@
 //     WhatsApp services elsewhere.
 
 const { query } = require('../config/db');
-const env = require('../config/env');
 const logger = require('../config/logger');
 
 let cachedToken = null;
@@ -29,11 +28,12 @@ async function _getAccessToken() {
   const crypto = require('crypto');
   const now = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
-  const claim  = Buffer.from(JSON.stringify({
+  const claim = Buffer.from(JSON.stringify({
     iss: svc.client_email,
     scope: 'https://www.googleapis.com/auth/firebase.messaging',
     aud: 'https://oauth2.googleapis.com/token',
-    exp: now + 3600, iat: now,
+    exp: now + 3600,
+    iat: now,
   })).toString('base64url');
   const signer = crypto.createSign('RSA-SHA256').update(`${header}.${claim}`);
   const signature = signer.sign(svc.private_key, 'base64url');
@@ -59,7 +59,7 @@ async function registerToken(userId, businessId, { token, platform }) {
        SET business_id = EXCLUDED.business_id,
            platform    = EXCLUDED.platform,
            last_seen_at = NOW()`,
-    [userId, businessId || null, platform || 'android', token]
+    [userId, businessId || null, platform || 'android', token],
   );
 }
 
@@ -72,7 +72,7 @@ async function sendToBusinessOwners(businessId, { title, body, data = {} }) {
                              AND bu.role = 'business_owner'
                              AND bu.is_active = TRUE
       WHERE dt.last_seen_at > NOW() - INTERVAL '30 days'`,
-    [businessId]
+    [businessId],
   );
   if (r.rowCount === 0) return { sent: 0 };
 
@@ -105,7 +105,7 @@ async function sendToBusinessOwners(businessId, { title, body, data = {} }) {
               android: { priority: 'HIGH' },
             },
           }),
-        }
+        },
       );
       if (resp.ok) sent++;
       else {
@@ -113,7 +113,7 @@ async function sendToBusinessOwners(businessId, { title, body, data = {} }) {
         logger.warn(`[push] FCM ${resp.status}: ${t.slice(0, 200)}`);
         // Common: UNREGISTERED — token stale, drop it.
         if (t.includes('UNREGISTERED') || resp.status === 404) {
-          await query(`DELETE FROM device_tokens WHERE token = $1`, [row.token]);
+          await query('DELETE FROM device_tokens WHERE token = $1', [row.token]);
         }
       }
     } catch (e) {

@@ -59,8 +59,7 @@ function buildRequest(provider, ev, creds) {
 function _post({ base, path, headers, body }) {
   return new Promise((resolve, reject) => {
     let u;
-    try { u = new URL(path, base.endsWith('/') ? base : `${base}/`); }
-    catch (e) { return reject(new Error(`Bad provider base URL: ${base}`)); }
+    try { u = new URL(path, base.endsWith('/') ? base : `${base}/`); } catch (e) { return reject(new Error(`Bad provider base URL: ${base}`)); }
     const data = JSON.stringify(body);
     const req = https.request({
       hostname: u.hostname,
@@ -79,7 +78,7 @@ function _post({ base, path, headers, body }) {
         if (res.statusCode >= 200 && res.statusCode < 300) return resolve({ ok: true });
         reject(Object.assign(
           new Error(`provider HTTP ${res.statusCode}: ${String(chunks).slice(0, 200)}`),
-          { statusCode: res.statusCode }
+          { statusCode: res.statusCode },
         ));
       });
     });
@@ -106,7 +105,7 @@ async function push(ev) {
     `SELECT outlet_id, api_key FROM aggregator_credentials
       WHERE business_id = $1 AND provider = $2 AND is_active = TRUE
       LIMIT 1`,
-    [ev.business_id, provider]
+    [ev.business_id, provider],
   );
   const creds = c.rows[0];
   if (!creds?.api_key) {

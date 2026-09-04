@@ -9,13 +9,13 @@ function serializePlan(p) {
   // to 10× monthly (2 months free) so the dashboard has something
   // sensible to show without the admin filling both fields.
   const monthly = p.price_inr_paise || 0;
-  const yearly  = p.price_yearly_paise != null ? p.price_yearly_paise
-                : monthly > 0 ? monthly * 10 : null;
+  const yearly = p.price_yearly_paise != null ? p.price_yearly_paise
+    : monthly > 0 ? monthly * 10 : null;
   return {
     id: p.id,
     tier: p.tier,
-    tierKind: p.tier_kind,           // Push 14d — surface tier_kind so admin
-                                     // can edit feature matrix per tier_kind
+    tierKind: p.tier_kind, // Push 14d — surface tier_kind so admin
+    // can edit feature matrix per tier_kind
     name: p.name,
     priceInr: monthly / 100,
     priceInrPaise: monthly,
@@ -62,21 +62,21 @@ function serializeSubscription(s, plan) {
 async function listPlans({ forBusinessId = null } = {}) {
   const r = forBusinessId
     ? await query(
-        `SELECT * FROM plans
+      `SELECT * FROM plans
           WHERE is_active = TRUE AND (is_public = TRUE OR business_id = $1)
           ORDER BY price_inr_paise ASC`,
-        [forBusinessId]
-      )
+      [forBusinessId],
+    )
     : await query(
-        `SELECT * FROM plans
+      `SELECT * FROM plans
           WHERE is_active = TRUE AND is_public = TRUE
-          ORDER BY price_inr_paise ASC`
-      );
+          ORDER BY price_inr_paise ASC`,
+    );
   return r.rows.map(serializePlan);
 }
 
 async function getPlanByTier(tier) {
-  const r = await query(`SELECT * FROM plans WHERE tier = $1 LIMIT 1`, [tier]);
+  const r = await query('SELECT * FROM plans WHERE tier = $1 LIMIT 1', [tier]);
   if (r.rowCount === 0) throw new NotFound(`Plan ${tier} not found`);
   return r.rows[0];
 }
@@ -86,9 +86,9 @@ async function updatePlan(tier, patch) {
   // the plan row is deprecated but we still let admins tweak it for
   // legacy tooling.
   const fields = ['name', 'price_inr_paise', 'price_yearly_paise',
-                  'is_active', 'limits', 'features',
-                  'razorpay_plan_id', 'razorpay_plan_id_yearly',
-                  'billing_period', 'tier_kind'];
+    'is_active', 'limits', 'features',
+    'razorpay_plan_id', 'razorpay_plan_id_yearly',
+    'billing_period', 'tier_kind'];
   const sets = [];
   const values = [];
   let idx = 1;
@@ -127,7 +127,7 @@ async function updatePlan(tier, patch) {
   values.push(tier);
   const r = await query(
     `UPDATE plans SET ${sets.join(', ')} WHERE tier = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Plan not found');
   // Push 14d — invalidate ALL feature caches when a plan is mutated so
@@ -160,13 +160,13 @@ async function createPlan(body) {
   const yearlyPaise = (tier_kind === 'starter' || price_inr_paise === 0)
     ? null
     : (price_yearly_paise !== undefined
-        ? price_yearly_paise
-        : price_inr_paise * 10);
+      ? price_yearly_paise
+      : price_inr_paise * 10);
   if (!tier || !name) throw new Error('tier and name are required');
   // Push 18a — surface a friendly conflict message instead of letting the
   // raw PG 23505 propagate. The dashboard already maps 23505 to "CONFLICT"
   // but a tier-specific hint is more useful than "Duplicate value".
-  const existing = await query(`SELECT tier FROM plans WHERE tier = $1`, [tier]);
+  const existing = await query('SELECT tier FROM plans WHERE tier = $1', [tier]);
   if (existing.rowCount > 0) {
     const err = new Error(`A plan with tier "${tier}" already exists. Pick a different tier code.`);
     err.statusCode = 409;
@@ -181,9 +181,9 @@ async function createPlan(body) {
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [tier, tier_kind || 'starter', name, price_inr_paise, yearlyPaise,
-     billing_period, is_active,
-     JSON.stringify(limits), JSON.stringify(features),
-     razorpay_plan_id, razorpay_plan_id_yearly]
+      billing_period, is_active,
+      JSON.stringify(limits), JSON.stringify(features),
+      razorpay_plan_id, razorpay_plan_id_yearly],
   );
   try { require('./featureService').clearAllCaches(); } catch (_) {}
   return r.rows[0];
@@ -196,24 +196,24 @@ async function deletePlan(tier) {
     `SELECT COUNT(*)::int AS c FROM subscriptions s
        JOIN plans p ON p.id = s.plan_id
       WHERE p.tier = $1 AND s.status IN ('active','trialing')`,
-    [tier]
+    [tier],
   );
   if (used.rows[0].c > 0) {
     const err = new Error(
-      `Cannot delete plan ${tier}: ${used.rows[0].c} active subscription(s) still on it. ` +
-      `Move customers to another plan first.`
+      `Cannot delete plan ${tier}: ${used.rows[0].c} active subscription(s) still on it. `
+      + 'Move customers to another plan first.',
     );
     err.statusCode = 409;
     throw err;
   }
-  const r = await query(`DELETE FROM plans WHERE tier = $1 RETURNING *`, [tier]);
+  const r = await query('DELETE FROM plans WHERE tier = $1 RETURNING *', [tier]);
   if (r.rowCount === 0) throw new NotFound('Plan not found');
   try { require('./featureService').clearAllCaches(); } catch (_) {}
   return r.rows[0];
 }
 
 async function listAllPlans() {
-  const r = await query(`SELECT * FROM plans ORDER BY price_inr_paise ASC`);
+  const r = await query('SELECT * FROM plans ORDER BY price_inr_paise ASC');
   return r.rows.map(serializePlan);
 }
 
@@ -224,7 +224,7 @@ async function get(businessId) {
     `SELECT s.*, p.* FROM subscriptions s
        JOIN plans p ON p.id = s.plan_id
       WHERE s.business_id = $1 LIMIT 1`,
-    [businessId]
+    [businessId],
   );
   if (r.rowCount === 0) return null;
   // Split joined row
@@ -263,21 +263,24 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
   // retired plan, a hidden internal plan, or another tenant's custom plan
   // all 400 PLAN_NOT_AVAILABLE. (Admin assignment uses
   // customerAdminService.setPlanManually, which is not restricted here.)
-  const notAvailable =
-    plan.is_active === false
+  const notAvailable = plan.is_active === false
     || (plan.business_id != null && String(plan.business_id) !== String(businessId))
     || (plan.is_public === false && plan.business_id == null);
   if (notAvailable) {
     const { HttpError } = require('../utils/errors');
-    throw new HttpError(400, 'This plan is not available', 'PLAN_NOT_AVAILABLE',
-      { tier: newTier });
+    throw new HttpError(
+      400,
+      'This plan is not available',
+      'PLAN_NOT_AVAILABLE',
+      { tier: newTier },
+    );
   }
   // Load the CURRENT sub + plan first so we can price the upgrade delta.
   const curQ = await query(
     `SELECT s.*, p.price_inr_paise, p.price_yearly_paise, p.tier AS cur_tier
        FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
       WHERE s.business_id = $1 LIMIT 1`,
-    [businessId]
+    [businessId],
   );
   const curRow = curQ.rows[0] || null;
   const cadence = billingPeriod || curRow?.billing_period || 'monthly';
@@ -304,7 +307,7 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
             updated_at = NOW()
       WHERE business_id = $2
       RETURNING *`,
-    [plan.id, businessId, period]
+    [plan.id, businessId, period],
   );
   if (r.rowCount === 0) throw new NotFound('No subscription on this business');
   // Invalidate the in-process feature cache so the new tier kicks in immediately.
@@ -322,7 +325,8 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
   if (prorationPaise > 0) {
     try {
       await require('./crmService').logActivity({
-        businessId, kind: 'proration',
+        businessId,
+        kind: 'proration',
         title: `Upgrade proration: ₹${(prorationPaise / 100).toFixed(2)}`,
         meta: { fromTier: curRow?.cur_tier, toTier: newTier, cadence, prorationPaise },
         actorType: 'system',
@@ -343,9 +347,11 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
     const revoked = await require('./addonService').revokeIneligibleAddons(businessId);
     if (revoked.length > 0) {
       await require('./crmService').logActivity({
-        businessId, kind: 'plan_change',
+        businessId,
+        kind: 'plan_change',
         title: `Add-ons revoked on plan change: ${revoked.join(', ')}`,
-        meta: { revoked, newTier }, actorType: 'system',
+        meta: { revoked, newTier },
+        actorType: 'system',
       }).catch(() => {});
     }
   } catch (e) {
@@ -364,7 +370,7 @@ async function cancelAtPeriodEnd(businessId) {
             cancelled_at = NOW()
       WHERE business_id = $1
       RETURNING *`,
-    [businessId]
+    [businessId],
   );
   if (r.rowCount === 0) throw new NotFound('No subscription');
   // P0 fix (2026-08-30): actually stop the Razorpay mandate. Previously this
@@ -390,7 +396,7 @@ async function resume(businessId) {
             status = 'active'
       WHERE business_id = $1
       RETURNING *`,
-    [businessId]
+    [businessId],
   );
   if (r.rowCount === 0) throw new NotFound('No subscription');
   return r.rows[0];
@@ -425,7 +431,7 @@ function enforceLimit(metric) {
         const r = await query(
           `SELECT COUNT(*)::int AS c FROM menu_items
             WHERE business_id = $1 AND is_active = TRUE`,
-          [businessId]
+          [businessId],
         );
         current = r.rows[0].c;
       } else if (metric === 'staff') {
@@ -437,21 +443,21 @@ function enforceLimit(metric) {
           `SELECT COUNT(*)::int AS c FROM business_users
             WHERE business_id = $1 AND is_active = TRUE
               AND role <> 'business_owner'`,
-          [businessId]
+          [businessId],
         );
         current = r.rows[0].c;
       } else if (metric === 'tables') {
         // Push 16d — gate table creation by plan. Starter typically gets
         // a small cap (e.g. 5), Pro 50, Enterprise -1 (unlimited).
         const r = await query(
-          `SELECT COUNT(*)::int AS c FROM tables WHERE business_id = $1`,
-          [businessId]
+          'SELECT COUNT(*)::int AS c FROM tables WHERE business_id = $1',
+          [businessId],
         );
         current = r.rows[0].c;
       } else if (metric === 'floors') {
         const r = await query(
-          `SELECT COUNT(*)::int AS c FROM floors WHERE business_id = $1`,
-          [businessId]
+          'SELECT COUNT(*)::int AS c FROM floors WHERE business_id = $1',
+          [businessId],
         );
         current = r.rows[0].c;
       } else if (metric === 'monthly_orders') {
@@ -459,7 +465,7 @@ function enforceLimit(metric) {
         const r = await query(
           `SELECT count FROM usage_counters
             WHERE business_id = $1 AND metric = 'monthly_orders' AND period = $2`,
-          [businessId, period]
+          [businessId, period],
         );
         current = r.rowCount > 0 ? r.rows[0].count : 0;
       }
@@ -473,7 +479,7 @@ function enforceLimit(metric) {
           }).catch(() => {});
         } catch (_) { /* non-fatal */ }
         const err = new Forbidden(
-          `Plan limit reached for ${metric}: ${current}/${limit}. Upgrade your plan.`
+          `Plan limit reached for ${metric}: ${current}/${limit}. Upgrade your plan.`,
         );
         err.code = 'PLAN_LIMIT';
         err.details = { metric, limit, current, plan: sub.plan.tier };
@@ -508,7 +514,7 @@ async function incrementUsage(businessId, metric = 'monthly_orders', { limit = n
        VALUES ($1, $2, $3, 1, NOW())
        ON CONFLICT (business_id, metric, period)
        DO UPDATE SET count = usage_counters.count + 1, updated_at = NOW()`,
-      [businessId, metric, period]
+      [businessId, metric, period],
     );
     return;
   }
@@ -520,7 +526,7 @@ async function incrementUsage(businessId, metric = 'monthly_orders', { limit = n
      DO UPDATE SET count = usage_counters.count + 1, updated_at = NOW()
        WHERE usage_counters.count < $4
      RETURNING count`,
-    [businessId, metric, period, limit]
+    [businessId, metric, period, limit],
   );
   if (r.rowCount === 0) {
     const err = new Forbidden(`Plan limit reached for ${metric}: ${limit}/${limit}`);
@@ -531,8 +537,18 @@ async function incrementUsage(businessId, metric = 'monthly_orders', { limit = n
 }
 
 module.exports = {
-  listPlans, listAllPlans, getPlanByTier, updatePlan, createPlan, deletePlan,
+  listPlans,
+  listAllPlans,
+  getPlanByTier,
+  updatePlan,
+  createPlan,
+  deletePlan,
   serializePlan,
-  get, changePlan, cancelAtPeriodEnd, resume, serializeSubscription,
-  enforceLimit, incrementUsage,
+  get,
+  changePlan,
+  cancelAtPeriodEnd,
+  resume,
+  serializeSubscription,
+  enforceLimit,
+  incrementUsage,
 };

@@ -34,7 +34,7 @@ async function makeAdmin(email, role) {
   const r = await query(
     `INSERT INTO admin_users (email, password_hash, role, is_active)
      VALUES ($1, 'x-not-a-real-hash', $2, TRUE) RETURNING id, email, role`,
-    [email, role]
+    [email, role],
   );
   return issueAccessToken({
     sid: r.rows[0].id,
@@ -50,7 +50,7 @@ async function giveFreeSubscription(businessId) {
      VALUES ($1, (SELECT id FROM plans WHERE tier = 'free'), 'active',
              NOW() + INTERVAL '30 days')
      ON CONFLICT (business_id) DO NOTHING`,
-    [businessId]
+    [businessId],
   );
 }
 
@@ -60,30 +60,28 @@ beforeAll(async () => {
   await resetDb();
   app = buildApp();
 
-  hq     = await makeBusiness({ email: 'privacy-hq@example.com',     name: 'Sharma Dhaba HQ' });
+  hq = await makeBusiness({ email: 'privacy-hq@example.com', name: 'Sharma Dhaba HQ' });
   outlet = await makeBusiness({ email: 'privacy-outlet@example.com', name: 'Sharma Dhaba Andheri' });
-  solo   = await makeBusiness({ email: 'privacy-solo@example.com',   name: 'Solo Tea Stall' });
+  solo = await makeBusiness({ email: 'privacy-solo@example.com', name: 'Solo Tea Stall' });
   await Promise.all([
     giveFreeSubscription(hq.id), giveFreeSubscription(outlet.id), giveFreeSubscription(solo.id),
   ]);
 
   // Outlet group: hq is the parent, outlet is a branch.
   const g = await query(
-    `INSERT INTO outlet_groups (name, parent_business_id) VALUES ($1, $2) RETURNING id`,
-    ['Sharma Dhaba Group', hq.id]
+    'INSERT INTO outlet_groups (name, parent_business_id) VALUES ($1, $2) RETURNING id',
+    ['Sharma Dhaba Group', hq.id],
   );
   await query(
-    `UPDATE businesses SET outlet_group_id = $1 WHERE id = ANY($2::uuid[])`,
-    [g.rows[0].id, [hq.id, outlet.id]]
+    'UPDATE businesses SET outlet_group_id = $1 WHERE id = ANY($2::uuid[])',
+    [g.rows[0].id, [hq.id, outlet.id]],
   );
-  await query(
-    `UPDATE businesses SET outlet_label = 'Andheri West' WHERE id = $1`, [outlet.id]
-  );
+  await query('UPDATE businesses SET outlet_label = \'Andheri West\' WHERE id = $1', [outlet.id]);
 
   // Tenant money detail that must never reach the admin API.
   await query(
-    `UPDATE businesses SET bank_account = $1, bank_ifsc = 'HDFC0001234' WHERE id = $2`,
-    [BANK_ACCOUNT, hq.id]
+    'UPDATE businesses SET bank_account = $1, bank_ifsc = \'HDFC0001234\' WHERE id = $2',
+    [BANK_ACCOUNT, hq.id],
   );
 
   // A tenant order carrying diner PII. Inserted directly so the test does not
@@ -93,22 +91,22 @@ beforeAll(async () => {
                          subtotal, tax, discount, total, status)
      VALUES ($1, 1001, 'dineIn', $2, $3, 500, 25, 0, 525, 'collected')
      RETURNING id`,
-    [hq.id, DINER_NAME, DINER_PHONE]
+    [hq.id, DINER_NAME, DINER_PHONE],
   );
   orderId = o.rows[0].id;
   await query(
     `INSERT INTO orders (business_id, order_no, source, customer_name, customer_phone,
                          subtotal, tax, discount, total, status)
      VALUES ($1, 1002, 'dineIn', $2, $3, 200, 10, 0, 210, 'cancelled')`,
-    [hq.id, DINER_NAME, DINER_PHONE]
+    [hq.id, DINER_NAME, DINER_PHONE],
   );
   await query(
     `INSERT INTO order_items (order_id, menu_item_id, name, price, qty, note)
      VALUES ($1, NULL, 'Paneer Tikka', 250, 2, 'less spicy')`,
-    [orderId]
+    [orderId],
   );
 
-  superToken   = await makeAdmin('privacy-super@namastepos.in',   'super_admin');
+  superToken = await makeAdmin('privacy-super@namastepos.in', 'super_admin');
   supportToken = await makeAdmin('privacy-support@namastepos.in', 'support');
 });
 
@@ -127,7 +125,7 @@ describe('drilldown redacts the tenant sales ledger', () => {
   it('returns no per-order rows at all', () => {
     expect(body.orders).toBeUndefined();
     // Nothing else may smuggle order rows back in under a different key.
-    for (const [key, value] of Object.entries(body)) {
+    for (const [, value] of Object.entries(body)) {
       if (!Array.isArray(value)) continue;
       for (const row of value) {
         if (row && typeof row === 'object') {
@@ -161,7 +159,7 @@ describe('drilldown redacts the tenant sales ledger', () => {
   it('returns aggregates instead', () => {
     const s = body.orderStats;
     expect(s).toBeDefined();
-    expect(s.orderCount).toBe(1);          // the cancelled one is excluded
+    expect(s.orderCount).toBe(1); // the cancelled one is excluded
     expect(s.cancelledCount).toBe(1);
     expect(s.grossVolumeInr).toBeCloseTo(525, 2);
     expect(s.avgTicketInr).toBeCloseTo(525, 2);
@@ -213,10 +211,8 @@ describe('single-order support lookup', () => {
   });
 
   it('allows super_admin, masks diner PII, and writes an audit row', async () => {
-    const before = await query(
-      `SELECT COUNT(*)::int AS c FROM audit_log
-        WHERE action = 'tenant-order-lookup' AND entity_id = $1`, [orderId]
-    );
+    const before = await query(`SELECT COUNT(*)::int AS c FROM audit_log
+        WHERE action = 'tenant-order-lookup' AND entity_id = $1`, [orderId]);
 
     const r = await request(app).get(`${url(hq.id, orderId)}?reason=TKT-42`)
       .set(auth(superToken));
@@ -238,11 +234,9 @@ describe('single-order support lookup', () => {
     expect(o).not.toHaveProperty('customerPhone');
 
     // Audited — the row exists by the time the response is sent.
-    const after = await query(
-      `SELECT business_id, module, payload FROM audit_log
+    const after = await query(`SELECT business_id, module, payload FROM audit_log
         WHERE action = 'tenant-order-lookup' AND entity_id = $1
-        ORDER BY created_at DESC`, [orderId]
-    );
+        ORDER BY created_at DESC`, [orderId]);
     expect(after.rowCount).toBe(before.rows[0].c + 1);
     expect(after.rows[0].business_id).toBe(hq.id);
     expect(after.rows[0].module).toBe('customers');

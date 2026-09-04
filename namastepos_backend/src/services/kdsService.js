@@ -22,20 +22,20 @@ async function ticketsForStation(businessId, stationId, sinceIso) {
         AND (kt.created_at > $3::timestamptz OR $3 IS NULL)
       GROUP BY kt.id, o.order_no, o.source, o.table_no, ks.name, ks.color
       ORDER BY kt.created_at`,
-    [businessId, stationId, sinceIso || null]
+    [businessId, stationId, sinceIso || null],
   );
   return r.rows;
 }
 
 async function markTicketStatus(businessId, ticketId, status) {
   const setExtras = status === 'in_progress' ? ', started_at = COALESCE(started_at, NOW())'
-                  : status === 'done'        ? ', completed_at = NOW()'
-                  : '';
+    : status === 'done' ? ', completed_at = NOW()'
+      : '';
   const r = await query(
     `UPDATE kot_tickets
         SET status = $1::kot_status ${setExtras}
       WHERE business_id = $2 AND id = $3 RETURNING *`,
-    [status, businessId, ticketId]
+    [status, businessId, ticketId],
   );
   const ticket = r.rows[0];
 
@@ -48,13 +48,13 @@ async function markTicketStatus(businessId, ticketId, status) {
     const remaining = await query(
       `SELECT COUNT(*)::int AS n FROM kot_tickets
         WHERE order_id = $1 AND status NOT IN ('done','cancelled')`,
-      [ticket.order_id]
+      [ticket.order_id],
     );
     if (remaining.rows[0].n === 0) {
       await query(
         `UPDATE orders SET status = 'ready', ready_at = NOW(), updated_at = NOW()
           WHERE id = $1 AND business_id = $2 AND status = 'pending'`,
-        [ticket.order_id, businessId]
+        [ticket.order_id, businessId],
       );
     }
   }
@@ -65,7 +65,7 @@ async function heartbeat(businessId, stationId, label) {
   await query(
     `INSERT INTO kds_clients (business_id, station_id, client_label)
      VALUES ($1, $2, $3)`,
-    [businessId, stationId, label]
+    [businessId, stationId, label],
   );
 }
 

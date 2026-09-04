@@ -125,8 +125,12 @@ async function sendWelcome({ userId, businessId, email: recipient, name }) {
   const tpl = tplD0({ name });
   return email.sendMail({
     template: 'onboarding_d0',
-    recipient, subject: tpl.subject, html: tpl.html, text: tpl.text,
-    userId, businessId,
+    recipient,
+    subject: tpl.subject,
+    html: tpl.html,
+    text: tpl.text,
+    userId,
+    businessId,
   });
 }
 
@@ -150,7 +154,7 @@ async function dispatchStage(template, days, tplFn) {
         AND u.created_at BETWEEN NOW() - INTERVAL '${days + 1} days'
                              AND NOW() - INTERVAL '${days} days'
         AND u.email IS NOT NULL`,
-    [template]
+    [template],
   );
   if (r.rowCount === 0) return;
   logger.info(`[onboarding] ${template}: ${r.rowCount} candidate(s)`);
@@ -180,9 +184,7 @@ let _timer = null;
 function startScheduler() {
   if (_timer) return _timer;
   const HOUR = 60 * 60 * 1000;
-  const tick = () => runScheduler().catch((e) =>
-    logger.error(`[onboarding] scheduler tick failed: ${e.message}`)
-  );
+  const tick = () => runScheduler().catch((e) => logger.error(`[onboarding] scheduler tick failed: ${e.message}`));
   // Slight delay on first run so the app finishes booting first.
   setTimeout(tick, 30 * 1000);
   _timer = setInterval(tick, HOUR);
@@ -194,7 +196,12 @@ function stopScheduler() {
 }
 
 module.exports = {
-  sendWelcome, runScheduler, startScheduler, stopScheduler,
+  sendWelcome,
+  runScheduler,
+  startScheduler,
+  stopScheduler,
   // exposed for testing
-  __tplD0: tplD0, __tplD3: tplD3, __tplD7: tplD7,
+  __tplD0: tplD0,
+  __tplD3: tplD3,
+  __tplD7: tplD7,
 };

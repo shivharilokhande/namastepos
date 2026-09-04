@@ -6,7 +6,8 @@ const request = require('supertest');
 const { resetDb, makeBusiness, tokenFor, closePool } = require('../setup');
 const { query } = require('../../src/config/db');
 
-let app, business, token;
+let app; let business; let
+  token;
 beforeAll(async () => {
   await resetDb();
   app = require('../../src/app')();
@@ -17,7 +18,7 @@ beforeAll(async () => {
   // the gate lets the CRUD calls through (we're testing CRUD, not gating).
   await query(
     `INSERT INTO plan_features (tier_kind, feature_key) VALUES ('starter','memberships'), ('free','memberships')
-     ON CONFLICT DO NOTHING`
+     ON CONFLICT DO NOTHING`,
   );
 });
 afterAll(async () => { await closePool(); });

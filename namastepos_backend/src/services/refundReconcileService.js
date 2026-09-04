@@ -35,7 +35,7 @@ function rzRefund(paymentId, amountPaise, reason) {
       amount: amountPaise, notes: { reason: reason || '' },
     });
     const auth = Buffer.from(
-      `${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`
+      `${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`,
     ).toString('base64');
     const req = https.request({
       hostname: 'api.razorpay.com',
@@ -58,7 +58,7 @@ function rzRefund(paymentId, amountPaise, reason) {
         // Distinguish 4xx (permanent) from 5xx (transient).
         return reject(Object.assign(
           new Error(json.error?.description || `Razorpay HTTP ${res.statusCode}`),
-          { statusCode: res.statusCode, body: json, isTransient: res.statusCode >= 500 }
+          { statusCode: res.statusCode, body: json, isTransient: res.statusCode >= 500 },
         ));
       });
     });
@@ -96,7 +96,7 @@ function _rzGetRefund(refundId) {
           if (res.statusCode >= 300) {
             return reject(Object.assign(
               new Error(json.error?.description || `Razorpay HTTP ${res.statusCode}`),
-              { statusCode: res.statusCode, body: json, isTransient: res.statusCode >= 500 }
+              { statusCode: res.statusCode, body: json, isTransient: res.statusCode >= 500 },
             ));
           }
           resolve(json);
@@ -117,7 +117,7 @@ async function pollAsyncPending() {
         AND created_at < NOW() - INTERVAL '10 minutes'
       ORDER BY created_at
       LIMIT $1`,
-    [MAX_BATCH]
+    [MAX_BATCH],
   );
   let settled = 0;
   for (const row of due.rows) {
@@ -131,7 +131,7 @@ async function pollAsyncPending() {
                   raw_payload = COALESCE(raw_payload, '{}'::jsonb)
                                 || jsonb_build_object('poller_ok', TRUE, 'rz', $1::jsonb)
             WHERE id = $2 AND status = 'pending'`,
-          [rz, row.id]
+          [rz, row.id],
         );
       } else if (rz.status === 'failed') {
         settled += 1;
@@ -142,7 +142,7 @@ async function pollAsyncPending() {
                                 || jsonb_build_object('poller_reason', 'gateway reports failed',
                                                       'rz', $1::jsonb)
             WHERE id = $2 AND status = 'pending'`,
-          [rz, row.id]
+          [rz, row.id],
         );
       }
       // still 'pending' at the gateway → leave it; next tick re-polls.
@@ -192,7 +192,7 @@ async function tick() {
         AND o.payment_method IN ('card', 'online')
       ORDER BY r.created_at
       LIMIT $1`,
-    [MAX_BATCH]
+    [MAX_BATCH],
   );
 
   if (due.rowCount === 0) {
@@ -220,15 +220,13 @@ async function tick() {
                                     'no razorpay_payment_id on payment row',
                                     'manualRequired', TRUE)
           WHERE id = $1`,
-        [row.id]
+        [row.id],
       );
       continue;
     }
 
     try {
-      const rz = await rzRefund(
-        row.razorpay_payment_id, row.amount_paise, row.reason
-      );
+      const rz = await rzRefund(row.razorpay_payment_id, row.amount_paise, row.reason);
       // NP-111: only claim 'processed' when Razorpay says so. A refund the
       // API reports as 'pending' is genuinely async — stamp the refund id
       // (which also removes it from this drainer's WHERE) and let the
@@ -242,7 +240,7 @@ async function tick() {
                                 || jsonb_build_object('gatewayAsync', TRUE,
                                                       'rz', $2::jsonb)
             WHERE id = $3`,
-          [rz.body.id || null, rz.body, row.id]
+          [rz.body.id || null, rz.body, row.id],
         );
         continue;
       }
@@ -256,7 +254,7 @@ async function tick() {
                               || jsonb_build_object('reconciler_ok', TRUE,
                                                     'rz', $2::jsonb)
           WHERE id = $3`,
-        [rz.body.id || null, rz.body, row.id]
+        [rz.body.id || null, rz.body, row.id],
       );
     } catch (err) {
       if (err.isTransient) {
@@ -270,11 +268,11 @@ async function tick() {
                                                       'last_transient_error', $2::text,
                                                       'flagged_for_review', $3::boolean)
             WHERE id = $4`,
-          [attempts, err.message || 'transient', flagged, row.id]
+          [attempts, err.message || 'transient', flagged, row.id],
         );
         if (flagged) {
           logger.warn(
-            `[refund-reconciler] refund ${row.id} flagged for review after ${attempts} transient failures`
+            `[refund-reconciler] refund ${row.id} flagged for review after ${attempts} transient failures`,
           );
         }
       } else {
@@ -286,7 +284,7 @@ async function tick() {
                                 || jsonb_build_object('reconciler_reason', $1::text,
                                                       'rz_body', $2::jsonb)
             WHERE id = $3`,
-          [err.message || 'unknown', err.body || {}, row.id]
+          [err.message || 'unknown', err.body || {}, row.id],
         );
       }
     }
@@ -294,7 +292,7 @@ async function tick() {
 
   if (processed || failed || deferred) {
     logger.info(
-      `[refund-reconciler] processed=${processed} failed=${failed} deferred=${deferred}`
+      `[refund-reconciler] processed=${processed} failed=${failed} deferred=${deferred}`,
     );
   }
   // NP-111 follow-up: settle async-pending rows the webhook never finished.

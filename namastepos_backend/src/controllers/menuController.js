@@ -9,7 +9,7 @@ const variants = require('../services/variantService');
 // Combo component shape: a reference to an existing menu item with a qty.
 const comboLine = Joi.object({
   menuItemId: Joi.string().uuid().required(),
-  name: Joi.string().max(255),   // denormalized for display, optional
+  name: Joi.string().max(255), // denormalized for display, optional
   qty: Joi.number().positive().default(1),
 });
 
@@ -31,8 +31,10 @@ const itemBody = Joi.object({
   // Combo + display polish (migration 012)
   isCombo: Joi.boolean().default(false),
   comboItems: Joi.array().items(comboLine).allow(null),
-  prepMinutes: Joi.number().integer().min(0).max(240).allow(null),
-  displayOrder: Joi.number().integer().min(0).max(9999).default(100),
+  prepMinutes: Joi.number().integer().min(0).max(240)
+    .allow(null),
+  displayOrder: Joi.number().integer().min(0).max(9999)
+    .default(100),
   tags: Joi.array().items(Joi.string().max(40)).allow(null),
   // GST per-item slab (migration 017). Indian GST council allows 0/5/12/18/28.
   gstPct: Joi.number().valid(0, 5, 12, 18, 28).allow(null),
@@ -65,7 +67,8 @@ const listQuery = Joi.object({
 // (Name/name, Price/price, Category/category, etc.) so a CSV exported
 // from Excel or Google Sheets works without column renames.
 const bulkImportBody = Joi.object({
-  items: Joi.array().items(Joi.object().unknown(true)).min(1).max(1000).required(),
+  items: Joi.array().items(Joi.object().unknown(true)).min(1).max(1000)
+    .required(),
 });
 
 module.exports = {
@@ -139,9 +142,9 @@ module.exports = {
       until: Joi.alternatives().try(
         Joi.string().valid('tomorrow_open', 'forever'),
         Joi.date().iso(),
-        Joi.allow(null)
+        Joi.allow(null),
       ),
-    })}),
+    }) }),
     asyncHandler(async (req, res) => {
       const r = await variants.setSoldOut(req.params.businessId, req.params.itemId, req.body.until);
       res.json(r);

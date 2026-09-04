@@ -22,7 +22,21 @@ async function appliedSet() {
   return new Set(r.rows.map((x) => x.name));
 }
 
+// 2026-09-04: two instances booting together (a Render redeploy overlaps the
+// old container, or PM2 fans out) both read `_migrations`, both see 083 as
+// pending, and both try to apply it — one then fails on the DDL or the
+// bookkeeping insert, and a failed deploy on a half-migrated database is the
+// worst possible time to find out. A session advisory lock serialises the
+// whole runner: the loser waits, then re-reads and finds nothing to do.
+const MIGRATE_LOCK_KEY = 421199002; // distinct from the cron lock (…001)
+
 async function run() {
+  // Serialise across instances (see MIGRATE_LOCK_KEY above). pg_advisory_lock
+  // BLOCKS rather than failing, which is what we want on a rolling deploy.
+  const { getClient } = require('../src/config/db');
+  const lockClient = await getClient();
+  await lockClient.query('SELECT pg_advisory_lock($1)', [MIGRATE_LOCK_KEY]);
+  try {
   await ensureMigrationsTable();
   const applied = await appliedSet();
 
@@ -52,6 +66,10 @@ async function run() {
       logger.error(`✗ ${f} failed (rolled back): ${err.message}`);
       throw err;
     }
+  }
+  } finally {
+    try { await lockClient.query('SELECT pg_advisory_unlock($1)', [MIGRATE_LOCK_KEY]); } catch (_) {}
+    try { lockClient.release(); } catch (_) {}
   }
 }
 

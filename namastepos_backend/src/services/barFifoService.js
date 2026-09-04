@@ -9,8 +9,6 @@
 // Failures are non-blocking (logged + recorded as wastage shortage), since
 // we don't want to refuse a paid order over a barback under-counting stock.
 
-const { query } = require('../config/db');
-
 // Deduct `pourMl × qty` from FIFO batches for one liquor menu item.
 // Returns the list of (batchId, qtyDeducted) tuples used — useful for the
 // audit/excise report.
@@ -24,15 +22,15 @@ async function deductOne(client, businessId, menuItemId, totalMl) {
       WHERE business_id = $1 AND menu_item_id = $2 AND qty_remaining > 0
       ORDER BY received_at ASC, created_at ASC
       FOR UPDATE`,
-    [businessId, menuItemId]
+    [businessId, menuItemId],
   );
 
   for (const b of batches.rows) {
     if (remaining <= 0) break;
     const take = Math.min(parseFloat(b.qty_remaining), remaining);
     await client.query(
-      `UPDATE liquor_batches SET qty_remaining = qty_remaining - $1 WHERE id = $2`,
-      [take, b.id]
+      'UPDATE liquor_batches SET qty_remaining = qty_remaining - $1 WHERE id = $2',
+      [take, b.id],
     );
     used.push({ batchId: b.id, batchNo: b.batch_no, qtyDeducted: take });
     remaining -= take;

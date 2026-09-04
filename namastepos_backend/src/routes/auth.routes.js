@@ -44,11 +44,11 @@ const impersonationExchangeLimiter = env.isProd()
 // place (services/otpService.js), what's missing is the users.phone
 // schema migration + the authController.otpLogin session-mint helper.
 // Held for a follow-up sprint — phone sign-in isn't on the launch path.
-router.post ('/google',          loginLimiter, ...c.googleLogin);
-router.post ('/dev-login',       loginLimiter, ...c.devLogin);  // gated by FF_DEV_LOGIN=1
-router.post ('/register',        loginLimiter, ...c.register);
-router.post ('/login',           loginLimiter, ...c.passwordLogin);
-router.post ('/pin-login',       pinLimiter, ...c.pinLogin);   // Push 14a
+router.post('/google', loginLimiter, ...c.googleLogin);
+router.post('/dev-login', loginLimiter, ...c.devLogin); // gated by FF_DEV_LOGIN=1
+router.post('/register', loginLimiter, ...c.register);
+router.post('/login', loginLimiter, ...c.passwordLogin);
+router.post('/pin-login', pinLimiter, ...c.pinLogin); // Push 14a
 // FB-17 (2026-09-01): the staff PICKER dumps the whole staff roster (userId +
 // role + name) for any businessId, and businessIds aren't secret (they appear
 // in QR/deep links). Rate-limiting slowed enumeration but the roster was still
@@ -56,14 +56,14 @@ router.post ('/pin-login',       pinLimiter, ...c.pinLogin);   // Push 14a
 // phone-first via /auth/staff-resolve (which returns [] for unknown numbers, so
 // no enumeration) and never calls the picker pre-login, so this is not a
 // functional regression — it only removes the anonymous roster-dump surface.
-router.post ('/staff-picker',    requireAuth, enumLimiter, ...c.staffPicker); // Push 14b
-router.post ('/staff-resolve',   enumLimiter, ...c.staffResolve); // phone-first staff login
-router.post ('/refresh',         loginLimiter, ...c.refresh);
+router.post('/staff-picker', requireAuth, enumLimiter, ...c.staffPicker); // Push 14b
+router.post('/staff-resolve', enumLimiter, ...c.staffResolve); // phone-first staff login
+router.post('/refresh', loginLimiter, ...c.refresh);
 // NP-126: one-time admin→dashboard impersonation handoff (see authController).
-router.post ('/impersonation-exchange', impersonationExchangeLimiter, ...c.impersonationExchange);
-router.post ('/logout',          requireAuth,  c.logout);
-router.get  ('/me',              requireAuth,  c.me);
-router.post ('/change-password', requireAuth,  ...c.changePassword); // founder bug #1
+router.post('/impersonation-exchange', impersonationExchangeLimiter, ...c.impersonationExchange);
+router.post('/logout', requireAuth, c.logout);
+router.get('/me', requireAuth, c.me);
+router.post('/change-password', requireAuth, ...c.changePassword); // founder bug #1
 // NP-201: patchMe already refused anyone but owner/manager and kept
 // OWNER_ONLY_FIELDS owner-only — but it judged that on `req.user.role`, i.e.
 // the role baked into the JWT at login. A staff member demoted from manager
@@ -71,9 +71,7 @@ router.post ('/change-password', requireAuth,  ...c.changePassword); // founder 
 // re-reads the live business_users row (30s cache) and rewrites req.user.role,
 // so the controller's OWNER_ONLY_FIELDS check now runs against the live role
 // too. Kept the in-controller checks: they are the field-level policy.
-router.patch('/me',              requireAuth,
-                                 requireRole(['business_owner', 'staff_manager']),
-                                 ...c.patchMe);
-router.post ('/switch-business', requireAuth,  ...c.switchBusiness);
+router.patch('/me', requireAuth, requireRole(['business_owner', 'staff_manager']), ...c.patchMe);
+router.post('/switch-business', requireAuth, ...c.switchBusiness);
 
 module.exports = router;

@@ -26,18 +26,18 @@ describe('S1 — refresh token is user-bound', () => {
     const cashier = await query(
       `INSERT INTO users (email, display_name, google_sub)
        VALUES ($1, 'Cashier', $2) RETURNING *`,
-      [`cashier-${Date.now()}@example.com`, `sub-cashier-${Date.now()}`]
+      [`cashier-${Date.now()}@example.com`, `sub-cashier-${Date.now()}`],
     );
     await query(
       `INSERT INTO business_users (business_id, user_id, role, is_active)
        VALUES ($1, $2, 'staff_cashier', TRUE)`,
-      [biz.id, cashier.rows[0].id]
+      [biz.id, cashier.rows[0].id],
     );
 
     // Issue a session for the CASHIER specifically.
     const { refreshToken } = await authService.issueSession(
       { user: cashier.rows[0], businessId: biz.id, role: 'staff_cashier' },
-      {}
+      {},
     );
 
     const refreshed = await authService.refreshSession(refreshToken, {});
@@ -50,9 +50,7 @@ describe('S1 — refresh token is user-bound', () => {
 
   it('reused (already-rotated) refresh token is rejected', async () => {
     const biz = await makeBusiness({ email: `s1b-${Date.now()}` });
-    const { refreshToken } = await authService.issueSession(
-      { user: biz._owner, businessId: biz.id, role: 'business_owner' }, {}
-    );
+    const { refreshToken } = await authService.issueSession({ user: biz._owner, businessId: biz.id, role: 'business_owner' }, {});
     await authService.refreshSession(refreshToken, {}); // rotates + revokes
     await expect(authService.refreshSession(refreshToken, {})).rejects.toThrow();
   });
@@ -71,7 +69,7 @@ describe('S2 — super-admin is read-only on the business API', () => {
     await query(
       `INSERT INTO admin_users (id, email, password_hash, role, is_active)
        VALUES ('admin-1', 'a@x.com', 'x', 'support', TRUE)
-       ON CONFLICT (id) DO UPDATE SET is_active = TRUE`
+       ON CONFLICT (id) DO UPDATE SET is_active = TRUE`,
     ).catch(() => { /* schema may use uuid default; fall back below */ });
 
     const tok = adminToken();

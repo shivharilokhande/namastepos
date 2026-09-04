@@ -93,7 +93,8 @@ router.post(
   '/food-coupons',
   requireRole(['business_owner']),
   validate({ body: Joi.object({
-    code: Joi.string().alphanum().min(3).max(30).required(),
+    code: Joi.string().alphanum().min(3).max(30)
+      .required(),
     type: Joi.string().valid('percent', 'flat').required(),
     value: Joi.when('type', {
       is: 'percent',
@@ -258,7 +259,8 @@ router.put(
   requireRole(['business_owner']),
   validate({ body: Joi.object({
     name: Joi.string(),
-    dayOfWeek: Joi.number().integer().min(0).max(6).allow(null),
+    dayOfWeek: Joi.number().integer().min(0).max(6)
+      .allow(null),
     startMinute: Joi.number().integer().min(0).max(1440),
     endMinute: Joi.number().integer().min(0).max(1440),
     multiplier: Joi.number().positive(),

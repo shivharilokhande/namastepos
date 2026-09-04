@@ -5,13 +5,13 @@ const { Conflict } = require('../utils/errors');
 
 async function get(businessId) {
   const r = await query(
-    `SELECT * FROM site_settings WHERE business_id = $1`,
-    [businessId]
+    'SELECT * FROM site_settings WHERE business_id = $1',
+    [businessId],
   );
   if (r.rowCount === 0) {
     const ins = await query(
-      `INSERT INTO site_settings (business_id) VALUES ($1) RETURNING *`,
-      [businessId]
+      'INSERT INTO site_settings (business_id) VALUES ($1) RETURNING *',
+      [businessId],
     );
     return ins.rows[0];
   }
@@ -47,7 +47,7 @@ async function update(businessId, patch) {
       `INSERT INTO site_settings (business_id) VALUES ($${idx})
        ON CONFLICT (business_id) DO UPDATE SET ${sets.join(', ')}
        RETURNING *`,
-      values
+      values,
     );
     return r.rows[0];
   } catch (err) {
@@ -63,7 +63,7 @@ async function bySlug(slug) {
        FROM site_settings ss JOIN businesses b ON b.id = ss.business_id
       WHERE ss.brand_slug = $1 AND ss.is_published = TRUE AND b.deleted_at IS NULL
       LIMIT 1`,
-    [slug]
+    [slug],
   );
   return s.rowCount > 0 ? s.rows[0] : null;
 }

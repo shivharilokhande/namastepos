@@ -19,19 +19,15 @@ function serialize(r) {
 }
 
 async function get(businessId) {
-  const r = await query(
-    `SELECT * FROM bill_templates WHERE business_id = $1`, [businessId]
-  );
+  const r = await query('SELECT * FROM bill_templates WHERE business_id = $1', [businessId]);
   if (r.rowCount === 0) {
     // Lazy-create defaults so the editor has something to render
     const ins = await query(
       `INSERT INTO bill_templates (business_id) VALUES ($1)
        ON CONFLICT DO NOTHING RETURNING *`,
-      [businessId]
+      [businessId],
     );
-    return serialize(ins.rows[0] || (await query(
-      `SELECT * FROM bill_templates WHERE business_id = $1`, [businessId]
-    )).rows[0]);
+    return serialize(ins.rows[0] || (await query('SELECT * FROM bill_templates WHERE business_id = $1', [businessId])).rows[0]);
   }
   return serialize(r.rows[0]);
 }
@@ -60,7 +56,7 @@ async function update(businessId, patch) {
     `INSERT INTO bill_templates (business_id) VALUES ($${idx})
      ON CONFLICT (business_id) DO UPDATE SET ${sets.join(', ')}
      RETURNING *`,
-    values
+    values,
   );
   return serialize(r.rows[0]);
 }

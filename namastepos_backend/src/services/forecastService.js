@@ -16,7 +16,7 @@ async function refreshForecast(businessId) {
           AND kind = 'sale'
           AND created_at > NOW() - INTERVAL '14 days'
         GROUP BY ingredient_id, DATE(created_at), EXTRACT(DOW FROM created_at)`,
-      [businessId]
+      [businessId],
     );
 
     // For each ingredient, project tomorrow's qty = 0.7 * 14d average + 0.3 * same-weekday average
@@ -26,15 +26,15 @@ async function refreshForecast(businessId) {
       const e = byIng.get(r.ingredient_id);
       e.sum += parseFloat(r.qty_used);
       e.count += 1;
-      const dow = r.dow;
+      const { dow } = r;
       if (!e.byDow[dow]) e.byDow[dow] = { sum: 0, count: 0 };
       e.byDow[dow].sum += parseFloat(r.qty_used);
       e.byDow[dow].count += 1;
     }
 
-    const tomorrow = new Date(Date.now() + 24*60*60*1000);
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const tomorrowDow = tomorrow.getDay();
-    const tomorrowDate = tomorrow.toISOString().slice(0,10);
+    const tomorrowDate = tomorrow.toISOString().slice(0, 10);
 
     let updated = 0;
     for (const [ingId, e] of byIng.entries()) {
@@ -49,7 +49,7 @@ async function refreshForecast(businessId) {
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (business_id, ingredient_id, forecast_date)
          DO UPDATE SET expected_qty = EXCLUDED.expected_qty, refreshed_at = NOW()`,
-        [businessId, ingId, tomorrowDate, expected]
+        [businessId, ingId, tomorrowDate, expected],
       );
       updated += 1;
     }
@@ -64,7 +64,7 @@ async function getForecast(businessId, date) {
        JOIN ingredients i ON i.id = df.ingredient_id
       WHERE df.business_id = $1 AND df.forecast_date = $2
       ORDER BY df.expected_qty DESC`,
-    [businessId, date || new Date(Date.now()+86400000).toISOString().slice(0,10)]
+    [businessId, date || new Date(Date.now() + 86400000).toISOString().slice(0, 10)],
   );
   // Add "needs reorder" flag
   return r.rows.map((x) => ({

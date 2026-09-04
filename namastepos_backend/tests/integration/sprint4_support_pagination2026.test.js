@@ -12,7 +12,8 @@ const { resetDb, makeBusiness, tokenFor, closePool } = require('../setup');
 const support = require('../../src/services/supportService');
 const adminTeam = require('../../src/services/adminTeamService');
 
-let app, biz1, biz2, ownerToken, adminToken;
+let app; let biz1; let biz2; let ownerToken; let
+  adminToken;
 const ticketIds = {}; // subject → id
 
 beforeAll(async () => {
@@ -41,8 +42,10 @@ beforeAll(async () => {
 
   // Real admin (support role has customers.*) — matches production auth path.
   await adminTeam.create({
-    email: 'pager-admin@namastepos.in', password: 'secret123-strong',
-    displayName: 'Pager Admin', role: 'support',
+    email: 'pager-admin@namastepos.in',
+    password: 'secret123-strong',
+    displayName: 'Pager Admin',
+    role: 'support',
   });
   const login = await adminTeam.login('pager-admin@namastepos.in', 'secret123-strong');
   adminToken = login.token;

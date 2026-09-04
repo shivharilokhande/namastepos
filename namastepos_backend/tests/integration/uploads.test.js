@@ -15,7 +15,7 @@ let app;
 let ownerA;
 let tokenA;
 let ownerB;
-let tokenB;
+let _tokenB;
 
 beforeAll(async () => {
   await resetDb();
@@ -23,7 +23,7 @@ beforeAll(async () => {
   ownerA = await makeBusiness({ email: 'a@example.com', name: 'Cafe A' });
   ownerB = await makeBusiness({ email: 'b@example.com', name: 'Cafe B' });
   tokenA = tokenFor(ownerA);
-  tokenB = tokenFor(ownerB);
+  _tokenB = tokenFor(ownerB);
 });
 
 afterAll(async () => {
@@ -46,7 +46,7 @@ afterAll(async () => {
 const TINY_PNG = Buffer.from(
   '89504E470D0A1A0A0000000D49484452000000010000000108060000001F15C4890000000A4944415478'
   + '9C6300010000000500010D0A2DB40000000049454E44AE426082',
-  'hex'
+  'hex',
 );
 
 describe('POST /v1/businesses/:businessId/uploads — AUTH boundary', () => {

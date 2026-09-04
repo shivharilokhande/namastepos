@@ -46,8 +46,7 @@ function putObject(key, buffer, contentType) {
     const dateStamp = amzDate.slice(0, 8);
     const payloadHash = sha256hex(buffer);
 
-    const canonicalHeaders =
-      `content-type:${contentType}\n`
+    const canonicalHeaders = `content-type:${contentType}\n`
       + `host:${host}\n`
       + `x-amz-content-sha256:${payloadHash}\n`
       + `x-amz-date:${amzDate}\n`;

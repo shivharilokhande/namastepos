@@ -18,7 +18,7 @@ const ExcelJS = require('exceljs');
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function _money(n) {
-  if (n === null || n === undefined || isNaN(n)) return '-';
+  if (n === null || n === undefined || Number.isNaN(Number(n))) return '-';
   const fmt = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return fmt.format(n);
 }
@@ -45,7 +45,7 @@ function streamIncomeStatementCsv(res, p) {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
   const lines = [];
-  lines.push(`Statement of Profit & Loss`);
+  lines.push('Statement of Profit & Loss');
   lines.push(`Name,${_csvEscape(p.meta.business.name)}`);
   if (p.meta.business.gstin) lines.push(`GSTIN,${_csvEscape(p.meta.business.gstin)}`);
   if (p.meta.business.address) lines.push(`Address,${_csvEscape(p.meta.business.address)}`);
@@ -55,7 +55,7 @@ function streamIncomeStatementCsv(res, p) {
   lines.push('Particulars,Amount (INR)');
   lines.push('I. Revenue from operations,');
   for (const r of p.revenue.fromOperations) {
-    lines.push(`${_csvEscape('  ' + r.label)},${_money(r.grossValue)}`);
+    lines.push(`${_csvEscape(`  ${r.label}`)},${_money(r.grossValue)}`);
   }
   lines.push(`Gross revenue,${_money(p.revenue.grossRevenue)}`);
   lines.push(`Less: GST collected (pass-through liability),${_money(p.indirectTaxesCollected.total)}`);
@@ -70,7 +70,7 @@ function streamIncomeStatementCsv(res, p) {
   lines.push('');
   lines.push('V. Operating expenses,');
   for (const e of p.operatingExpenses) {
-    lines.push(`${_csvEscape('  ' + e.label)},${_money(e.amount)}`);
+    lines.push(`${_csvEscape(`  ${e.label}`)},${_money(e.amount)}`);
   }
   lines.push(`Total operating expenses,${_money(p.totalOperatingExpenses)}`);
   lines.push('');
@@ -182,8 +182,10 @@ async function streamIncomeStatementXlsx(res, p) {
   }
 
   const filename = `pnl_${p.meta.period.startDate}_${p.meta.period.endDate}.xlsx`;
-  res.setHeader('Content-Type',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  );
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   await wb.xlsx.write(res);
   res.end();
@@ -208,11 +210,11 @@ function streamIncomeStatementPdf(res, p) {
   doc.moveDown(0.4);
 
   // Title
-  doc.font('Helvetica-Bold').fontSize(13).text(
-    'Statement of Profit & Loss', { align: 'center' });
+  doc.font('Helvetica-Bold').fontSize(13).text('Statement of Profit & Loss', { align: 'center' });
   doc.font('Helvetica').fontSize(9).text(
     `(For the period ${p.meta.period.startDate} to ${p.meta.period.endDate})`,
-    { align: 'center' });
+    { align: 'center' },
+  );
   doc.moveDown(0.5);
 
   // Helpers for the two-col P&L table
@@ -226,7 +228,7 @@ function streamIncomeStatementPdf(res, p) {
     doc.moveDown(0.2);
   }
   function r(label, amount, opts = {}) {
-    const y = doc.y;
+    const { y } = doc;
     doc.font(opts.bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(opts.size || 9);
     doc.text((opts.indent ? '   ' : '') + label, labelX, y, { width: 410 });
     if (amount !== undefined && amount !== null) {
@@ -238,7 +240,7 @@ function streamIncomeStatementPdf(res, p) {
   function section(title) {
     doc.moveDown(0.2);
     doc.font('Helvetica-Bold').fontSize(10);
-    const y = doc.y;
+    const { y } = doc;
     doc.rect(50, y - 2, 495, 14).fillAndStroke('#EEEEEE', '#CCCCCC');
     doc.fillColor('black').text(title, 56, y);
     doc.y = y + rowH;
@@ -294,10 +296,12 @@ function streamIncomeStatementPdf(res, p) {
   doc.moveDown(2);
   doc.font('Helvetica').fontSize(8).fillColor('#666666');
   doc.text(
-    `Generated on ${new Date(p.meta.generatedAt).toLocaleString('en-IN')} by NamastePOS. ` +
-    `This statement is prepared on an accrual basis from sales (orders) and expenses recorded in the system. ` +
-    `Figures in INR. Subject to audit.`,
-    50, doc.y, { width: 495, align: 'justify' }
+    `Generated on ${new Date(p.meta.generatedAt).toLocaleString('en-IN')} by NamastePOS. `
+    + 'This statement is prepared on an accrual basis from sales (orders) and expenses recorded in the system. '
+    + 'Figures in INR. Subject to audit.',
+    50,
+    doc.y,
+    { width: 495, align: 'justify' },
   );
   doc.moveDown(2);
   doc.fillColor('black').fontSize(9);
@@ -316,7 +320,7 @@ function streamIncomeStatementPdf(res, p) {
 
 function streamTaxInvoicePdf(res, inv) {
   const doc = new PDFDocument({ size: 'A4', margin: 36 });
-  const filename = `tax_invoice_${inv.invoiceNo.replace(/[\/\\]/g, '_')}.pdf`;
+  const filename = `tax_invoice_${inv.invoiceNo.replace(/[/\\]/g, '_')}.pdf`;
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   doc.pipe(res);
@@ -326,8 +330,7 @@ function streamTaxInvoicePdf(res, inv) {
   doc.font('Helvetica-Bold').fontSize(14).text('TAX INVOICE', 36, 44, {
     width: 523, align: 'center',
   });
-  doc.fontSize(8).font('Helvetica').text(
-    '(Per Rule 46 of CGST Rules, 2017)', 36, 60, { width: 523, align: 'center' });
+  doc.fontSize(8).font('Helvetica').text('(Per Rule 46 of CGST Rules, 2017)', 36, 60, { width: 523, align: 'center' });
 
   // Supplier block (left) + invoice meta (right)
   let y = 76;
@@ -336,20 +339,20 @@ function streamTaxInvoicePdf(res, inv) {
   doc.font('Helvetica-Bold').fontSize(10).text(inv.supplier.name, 44, y + 6);
   doc.font('Helvetica').fontSize(9);
   if (inv.supplier.address) doc.text(inv.supplier.address, 44, y + 22, { width: 280 });
-  if (inv.supplier.gstin)   doc.text(`GSTIN: ${inv.supplier.gstin}`, 44, y + 56);
+  if (inv.supplier.gstin) doc.text(`GSTIN: ${inv.supplier.gstin}`, 44, y + 56);
   if (inv.supplier.stateCode) doc.text(`State code: ${inv.supplier.stateCode}`, 44, y + 70);
   // Meta
   const rx = 340;
   doc.fontSize(9);
-  doc.text(`Invoice No: `, rx, y + 6).font('Helvetica-Bold').text(inv.invoiceNo, rx + 70, y + 6);
-  doc.font('Helvetica').text(`Date: `, rx, y + 22).font('Helvetica-Bold')
-     // IST fix (2026-08-25): server runs in UTC on Render — without an
-     // explicit timeZone the printed invoice time was 5h30 behind.
-     .text(new Date(inv.invoiceDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), rx + 70, y + 22);
-  doc.font('Helvetica').text(`Place of supply: `, rx, y + 38).text(inv.placeOfSupply, rx + 100, y + 38);
-  doc.text(`Reverse charge: `, rx, y + 52).text(inv.reverseCharge ? 'Yes' : 'No', rx + 100, y + 52);
-  doc.text(`Payment: `, rx, y + 66).text(`${inv.paymentMethod || '-'} (${inv.paymentStatus})`, rx + 100, y + 66);
-  doc.text(`FY: `, rx, y + 80).text(inv.fy, rx + 100, y + 80);
+  doc.text('Invoice No: ', rx, y + 6).font('Helvetica-Bold').text(inv.invoiceNo, rx + 70, y + 6);
+  doc.font('Helvetica').text('Date: ', rx, y + 22).font('Helvetica-Bold')
+  // IST fix (2026-08-25): server runs in UTC on Render — without an
+  // explicit timeZone the printed invoice time was 5h30 behind.
+    .text(new Date(inv.invoiceDate).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), rx + 70, y + 22);
+  doc.font('Helvetica').text('Place of supply: ', rx, y + 38).text(inv.placeOfSupply, rx + 100, y + 38);
+  doc.text('Reverse charge: ', rx, y + 52).text(inv.reverseCharge ? 'Yes' : 'No', rx + 100, y + 52);
+  doc.text('Payment: ', rx, y + 66).text(`${inv.paymentMethod || '-'} (${inv.paymentStatus})`, rx + 100, y + 66);
+  doc.text('FY: ', rx, y + 80).text(inv.fy, rx + 100, y + 80);
 
   // Recipient
   y = 190;
@@ -358,22 +361,22 @@ function streamTaxInvoicePdf(res, inv) {
   doc.font('Helvetica').fontSize(9);
   doc.text(`Name: ${inv.recipient.name || '-'}`, 44, y + 22);
   doc.text(`Phone: ${inv.recipient.phone || '-'}`, 44, y + 36);
-  if (inv.recipient.gstin)   doc.text(`GSTIN: ${inv.recipient.gstin}`, 280, y + 22);
+  if (inv.recipient.gstin) doc.text(`GSTIN: ${inv.recipient.gstin}`, 280, y + 22);
   if (inv.recipient.stateCode) doc.text(`State code: ${inv.recipient.stateCode}`, 280, y + 36);
   if (inv.recipient.address) doc.text(`Address: ${inv.recipient.address}`, 44, y + 50, { width: 480 });
 
   // Items table
   y = 268;
   const cols = [
-    { x: 36,  w: 24,  title: '#' },
-    { x: 60,  w: 170, title: 'Item' },
-    { x: 230, w: 50,  title: 'HSN' },
-    { x: 280, w: 30,  title: 'Qty' },
-    { x: 310, w: 60,  title: 'Rate' },
-    { x: 370, w: 60,  title: 'Taxable' },
-    { x: 430, w: 32,  title: 'GST %' },
-    { x: 462, w: 50,  title: 'GST Amt' },
-    { x: 512, w: 47,  title: 'Total' },
+    { x: 36, w: 24, title: '#' },
+    { x: 60, w: 170, title: 'Item' },
+    { x: 230, w: 50, title: 'HSN' },
+    { x: 280, w: 30, title: 'Qty' },
+    { x: 310, w: 60, title: 'Rate' },
+    { x: 370, w: 60, title: 'Taxable' },
+    { x: 430, w: 32, title: 'GST %' },
+    { x: 462, w: 50, title: 'GST Amt' },
+    { x: 512, w: 47, title: 'Total' },
   ];
   // Header row
   doc.rect(36, y, 523, 18).fillAndStroke('#EEEEEE', '#000000');
@@ -433,8 +436,7 @@ function streamTaxInvoicePdf(res, inv) {
   totRow('Total', inv.totalInr, true);
 
   // Amount in words below totals
-  doc.font('Helvetica').fontSize(9).text(
-    `Amount in words: ${inv.amountInWords}`, 36, y + 10, { width: 320 });
+  doc.font('Helvetica').fontSize(9).text(`Amount in words: ${inv.amountInWords}`, 36, y + 10, { width: 320 });
 
   // HSN summary
   y += 50;
@@ -465,9 +467,12 @@ function streamTaxInvoicePdf(res, inv) {
   y = Math.max(y + 30, 720);
   doc.font('Helvetica').fontSize(8).fillColor('#666666');
   doc.text(
-    'Declaration: We declare that this invoice shows the actual price of the goods/services described ' +
-    'and that all particulars are true and correct.',
-    36, y, { width: 523 });
+    'Declaration: We declare that this invoice shows the actual price of the goods/services described '
+    + 'and that all particulars are true and correct.',
+    36,
+    y,
+    { width: 523 },
+  );
   y += 30;
   doc.fillColor('black').fontSize(9);
   doc.text('_________________________', 380, y);
@@ -498,8 +503,7 @@ function _letterheadLines(meta) {
 }
 
 function _pdfHeader(doc, meta, title) {
-  doc.font('Helvetica-Bold').fontSize(13).text(
-    meta.business?.name || '—', { align: 'center' });
+  doc.font('Helvetica-Bold').fontSize(13).text(meta.business?.name || '—', { align: 'center' });
   doc.font('Helvetica').fontSize(8.5);
   if (meta.business?.address) doc.text(meta.business.address, { align: 'center' });
   const tail = [];
@@ -510,7 +514,7 @@ function _pdfHeader(doc, meta, title) {
   doc.font('Helvetica-Bold').fontSize(12).text(title, { align: 'center' });
   doc.font('Helvetica').fontSize(8.5).text(
     `For the period ${meta.period.startDate} to ${meta.period.endDate}`,
-    { align: 'center' }
+    { align: 'center' },
   );
   doc.moveDown(0.5);
 }
@@ -518,9 +522,9 @@ function _pdfHeader(doc, meta, title) {
 function _pdfFooter(doc, meta) {
   doc.moveDown(1.5);
   doc.font('Helvetica').fontSize(7.5).fillColor('#666666').text(
-    `Generated on ${new Date(meta.generatedAt).toLocaleString('en-IN')} by NamastePOS. ` +
-    `Figures in INR. Subject to audit.`,
-    { width: doc.page.width - 72, align: 'justify' }
+    `Generated on ${new Date(meta.generatedAt).toLocaleString('en-IN')} by NamastePOS. `
+    + 'Figures in INR. Subject to audit.',
+    { width: doc.page.width - 72, align: 'justify' },
   );
   doc.fillColor('black');
 }
@@ -534,7 +538,7 @@ function streamIncomeRegisterCsv(res, p) {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   const lines = [];
-  lines.push(`Income Register`);
+  lines.push('Income Register');
   for (const l of _letterheadLines(p.meta)) lines.push(_csvLine([l]));
   lines.push(`Period,${p.meta.period.startDate} to ${p.meta.period.endDate}`);
   lines.push(`Generated at,${p.meta.generatedAt}`);
@@ -576,21 +580,21 @@ async function streamIncomeRegisterXlsx(res, p) {
   wb.creator = 'NamastePOS'; wb.created = new Date();
   const ws = wb.addWorksheet('Income Register');
   ws.columns = [
-    { header: 'Date',       key: 'date',  width: 12 },
-    { header: 'Time',       key: 'time',  width: 10 },
-    { header: 'Order #',    key: 'no',    width: 12 },
-    { header: 'Source',     key: 'src',   width: 12 },
-    { header: 'Customer',   key: 'cust',  width: 22 },
-    { header: 'Phone',      key: 'ph',    width: 14 },
-    { header: 'Taxable',    key: 'tax',   width: 12, style: { numFmt: '#,##,##0.00' } },
-    { header: 'CGST',       key: 'cgst',  width: 10, style: { numFmt: '#,##,##0.00' } },
-    { header: 'SGST',       key: 'sgst',  width: 10, style: { numFmt: '#,##,##0.00' } },
-    { header: 'IGST',       key: 'igst',  width: 10, style: { numFmt: '#,##,##0.00' } },
-    { header: 'Service',    key: 'svc',   width: 10, style: { numFmt: '#,##,##0.00' } },
-    { header: 'Discount',   key: 'disc',  width: 10, style: { numFmt: '#,##,##0.00' } },
-    { header: 'Total',      key: 'tot',   width: 13, style: { numFmt: '#,##,##0.00' } },
-    { header: 'Payment',    key: 'pay',   width: 12 },
-    { header: 'Status',     key: 'st',    width: 12 },
+    { header: 'Date', key: 'date', width: 12 },
+    { header: 'Time', key: 'time', width: 10 },
+    { header: 'Order #', key: 'no', width: 12 },
+    { header: 'Source', key: 'src', width: 12 },
+    { header: 'Customer', key: 'cust', width: 22 },
+    { header: 'Phone', key: 'ph', width: 14 },
+    { header: 'Taxable', key: 'tax', width: 12, style: { numFmt: '#,##,##0.00' } },
+    { header: 'CGST', key: 'cgst', width: 10, style: { numFmt: '#,##,##0.00' } },
+    { header: 'SGST', key: 'sgst', width: 10, style: { numFmt: '#,##,##0.00' } },
+    { header: 'IGST', key: 'igst', width: 10, style: { numFmt: '#,##,##0.00' } },
+    { header: 'Service', key: 'svc', width: 10, style: { numFmt: '#,##,##0.00' } },
+    { header: 'Discount', key: 'disc', width: 10, style: { numFmt: '#,##,##0.00' } },
+    { header: 'Total', key: 'tot', width: 13, style: { numFmt: '#,##,##0.00' } },
+    { header: 'Payment', key: 'pay', width: 12 },
+    { header: 'Status', key: 'st', width: 12 },
   ];
   ws.getRow(1).font = { bold: true };
   ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEEEEE' } };
@@ -599,22 +603,38 @@ async function streamIncomeRegisterXlsx(res, p) {
     ws.addRow({
       date: d.toISOString().slice(0, 10),
       time: d.toISOString().slice(11, 19),
-      no: r.orderNo, src: r.source, cust: r.customerName, ph: r.customerPhone,
-      tax: r.taxableValue, cgst: r.cgst, sgst: r.sgst, igst: r.igst,
-      svc: r.serviceCharge, disc: r.discount, tot: r.total,
-      pay: r.paymentMethod, st: r.status,
+      no: r.orderNo,
+      src: r.source,
+      cust: r.customerName,
+      ph: r.customerPhone,
+      tax: r.taxableValue,
+      cgst: r.cgst,
+      sgst: r.sgst,
+      igst: r.igst,
+      svc: r.serviceCharge,
+      disc: r.discount,
+      tot: r.total,
+      pay: r.paymentMethod,
+      st: r.status,
     });
   }
   const totalRow = ws.addRow({
-    date: 'TOTALS', cust: `${p.totals.orderCount} orders`,
-    tax: p.totals.taxableValue, cgst: p.totals.cgst, sgst: p.totals.sgst,
-    igst: p.totals.igst, svc: p.totals.serviceCharge, disc: p.totals.discount,
+    date: 'TOTALS',
+    cust: `${p.totals.orderCount} orders`,
+    tax: p.totals.taxableValue,
+    cgst: p.totals.cgst,
+    sgst: p.totals.sgst,
+    igst: p.totals.igst,
+    svc: p.totals.serviceCharge,
+    disc: p.totals.discount,
     tot: p.totals.total,
   });
   totalRow.font = { bold: true };
   const filename = `income_register_${p.meta.period.startDate}_${p.meta.period.endDate}.xlsx`;
-  res.setHeader('Content-Type',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  );
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   await wb.xlsx.write(res); res.end();
 }
@@ -628,11 +648,11 @@ function streamIncomeRegisterPdf(res, p) {
   _pdfHeader(doc, p.meta, 'INCOME REGISTER');
 
   const headers = ['Date', 'Order #', 'Source', 'Customer', 'Taxable', 'CGST', 'SGST', 'IGST', 'Svc', 'Disc', 'Total', 'Pay'];
-  const widths  = [56,     50,        50,       110,        58,        42,    42,    42,    36,    36,    62,    44];
+  const widths = [56, 50, 50, 110, 58, 42, 42, 42, 36, 36, 62, 44];
   const right = [false, false, false, false, true, true, true, true, true, true, true, false];
 
   function row(cells, opts = {}) {
-    const y = doc.y;
+    const { y } = doc;
     const rowH = 14;
     if (opts.bold) doc.font('Helvetica-Bold'); else doc.font('Helvetica');
     doc.fontSize(7.5);
@@ -669,9 +689,9 @@ function streamIncomeRegisterPdf(res, p) {
     ]);
   }
   row(['TOTALS', `${p.totals.orderCount}`, '', '',
-       _money(p.totals.taxableValue), _money(p.totals.cgst), _money(p.totals.sgst),
-       _money(p.totals.igst), _money(p.totals.serviceCharge), _money(p.totals.discount),
-       _money(p.totals.total), ''], { bold: true, bg: '#FFE0B2' });
+    _money(p.totals.taxableValue), _money(p.totals.cgst), _money(p.totals.sgst),
+    _money(p.totals.igst), _money(p.totals.serviceCharge), _money(p.totals.discount),
+    _money(p.totals.total), ''], { bold: true, bg: '#FFE0B2' });
 
   _pdfFooter(doc, p.meta);
   doc.end();
@@ -683,7 +703,7 @@ function streamExpenseRegisterCsv(res, p) {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   const lines = [];
-  lines.push(`Expense Register`);
+  lines.push('Expense Register');
   for (const l of _letterheadLines(p.meta)) lines.push(_csvLine([l]));
   lines.push(`Period,${p.meta.period.startDate} to ${p.meta.period.endDate}`);
   lines.push('');
@@ -709,18 +729,21 @@ async function streamExpenseRegisterXlsx(res, p) {
   wb.creator = 'NamastePOS'; wb.created = new Date();
   const ws = wb.addWorksheet('Expenses');
   ws.columns = [
-    { header: 'Date',         key: 'date', width: 12 },
-    { header: 'Category',     key: 'cat',  width: 16 },
-    { header: 'Description',  key: 'desc', width: 40 },
-    { header: 'Amount (INR)', key: 'amt',  width: 14, style: { numFmt: '#,##,##0.00' } },
-    { header: 'Receipt',      key: 'rcpt', width: 40 },
+    { header: 'Date', key: 'date', width: 12 },
+    { header: 'Category', key: 'cat', width: 16 },
+    { header: 'Description', key: 'desc', width: 40 },
+    { header: 'Amount (INR)', key: 'amt', width: 14, style: { numFmt: '#,##,##0.00' } },
+    { header: 'Receipt', key: 'rcpt', width: 40 },
   ];
   ws.getRow(1).font = { bold: true };
   for (const r of p.rows) {
     const d = r.date instanceof Date ? r.date : new Date(r.date);
     ws.addRow({
       date: d.toISOString ? d.toISOString().slice(0, 10) : String(r.date),
-      cat: r.category, desc: r.description, amt: r.amount, rcpt: r.receiptUrl,
+      cat: r.category,
+      desc: r.description,
+      amt: r.amount,
+      rcpt: r.receiptUrl,
     });
   }
   const totalRow = ws.addRow({ date: 'TOTAL', desc: `${p.totals.entryCount} entries`, amt: p.totals.total });
@@ -729,7 +752,7 @@ async function streamExpenseRegisterXlsx(res, p) {
   // Category summary sheet
   const sum = wb.addWorksheet('Category summary');
   sum.columns = [
-    { header: 'Category',     key: 'c', width: 18 },
+    { header: 'Category', key: 'c', width: 18 },
     { header: 'Amount (INR)', key: 'a', width: 14, style: { numFmt: '#,##,##0.00' } },
   ];
   sum.getRow(1).font = { bold: true };
@@ -738,8 +761,10 @@ async function streamExpenseRegisterXlsx(res, p) {
   tot.font = { bold: true };
 
   const filename = `expense_register_${p.meta.period.startDate}_${p.meta.period.endDate}.xlsx`;
-  res.setHeader('Content-Type',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  );
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   await wb.xlsx.write(res); res.end();
 }
@@ -753,11 +778,11 @@ function streamExpenseRegisterPdf(res, p) {
   _pdfHeader(doc, p.meta, 'EXPENSE REGISTER');
 
   const headers = ['Date', 'Category', 'Description', 'Amount (INR)'];
-  const widths  = [70,     90,         260,           90];
+  const widths = [70, 90, 260, 90];
   const right = [false, false, false, true];
 
   function row(cells, opts = {}) {
-    const y = doc.y; const rowH = 14;
+    const { y } = doc; const rowH = 14;
     if (opts.bold) doc.font('Helvetica-Bold'); else doc.font('Helvetica');
     doc.fontSize(9);
     if (opts.bg) { doc.rect(42, y - 1, doc.page.width - 84, rowH).fill(opts.bg).fillColor('black'); }
@@ -766,7 +791,8 @@ function streamExpenseRegisterPdf(res, p) {
       doc.text(cells[i] ?? '', x + 3, y + 2, {
         width: widths[i] - 6,
         align: right[i] ? 'right' : 'left',
-        ellipsis: true, height: 12,
+        ellipsis: true,
+        height: 12,
       });
       x += widths[i];
     }
@@ -808,7 +834,7 @@ function streamInvoiceRegisterCsv(res, p) {
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   const lines = [];
-  lines.push(`Tax Invoice Register`);
+  lines.push('Tax Invoice Register');
   for (const l of _letterheadLines(p.meta)) lines.push(_csvLine([l]));
   lines.push(`Period,${p.meta.period.startDate} to ${p.meta.period.endDate}`);
   lines.push('');
@@ -848,18 +874,18 @@ async function streamInvoiceRegisterXlsx(res, p) {
   wb.creator = 'NamastePOS'; wb.created = new Date();
   const ws = wb.addWorksheet('Invoice Register');
   ws.columns = [
-    { header: 'Invoice No',     key: 'no',    width: 18 },
-    { header: 'Date',           key: 'date',  width: 18 },
-    { header: 'Recipient',      key: 'rcp',   width: 22 },
-    { header: 'GSTIN',          key: 'gstin', width: 18 },
-    { header: 'Place of supply',key: 'pos',   width: 8 },
-    { header: 'Taxable',        key: 'tax',   width: 12, style: { numFmt: '#,##,##0.00' } },
-    { header: 'CGST',           key: 'cgst',  width: 10, style: { numFmt: '#,##,##0.00' } },
-    { header: 'SGST',           key: 'sgst',  width: 10, style: { numFmt: '#,##,##0.00' } },
-    { header: 'IGST',           key: 'igst',  width: 10, style: { numFmt: '#,##,##0.00' } },
-    { header: 'Total',          key: 'tot',   width: 13, style: { numFmt: '#,##,##0.00' } },
-    { header: 'Payment',        key: 'pay',   width: 10 },
-    { header: 'Status',         key: 'st',    width: 10 },
+    { header: 'Invoice No', key: 'no', width: 18 },
+    { header: 'Date', key: 'date', width: 18 },
+    { header: 'Recipient', key: 'rcp', width: 22 },
+    { header: 'GSTIN', key: 'gstin', width: 18 },
+    { header: 'Place of supply', key: 'pos', width: 8 },
+    { header: 'Taxable', key: 'tax', width: 12, style: { numFmt: '#,##,##0.00' } },
+    { header: 'CGST', key: 'cgst', width: 10, style: { numFmt: '#,##,##0.00' } },
+    { header: 'SGST', key: 'sgst', width: 10, style: { numFmt: '#,##,##0.00' } },
+    { header: 'IGST', key: 'igst', width: 10, style: { numFmt: '#,##,##0.00' } },
+    { header: 'Total', key: 'tot', width: 13, style: { numFmt: '#,##,##0.00' } },
+    { header: 'Payment', key: 'pay', width: 10 },
+    { header: 'Status', key: 'st', width: 10 },
   ];
   ws.getRow(1).font = { bold: true };
   ws.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEEEEEE' } };
@@ -868,20 +894,33 @@ async function streamInvoiceRegisterXlsx(res, p) {
     ws.addRow({
       no: r.invoiceNo,
       date: d.toISOString().replace('T', ' ').slice(0, 16),
-      rcp: r.recipientName, gstin: r.recipientGstin, pos: r.placeOfSupply,
-      tax: r.taxableValue, cgst: r.cgst, sgst: r.sgst, igst: r.igst,
-      tot: r.total, pay: r.paymentMethod, st: r.status,
+      rcp: r.recipientName,
+      gstin: r.recipientGstin,
+      pos: r.placeOfSupply,
+      tax: r.taxableValue,
+      cgst: r.cgst,
+      sgst: r.sgst,
+      igst: r.igst,
+      tot: r.total,
+      pay: r.paymentMethod,
+      st: r.status,
     });
   }
   const totalRow = ws.addRow({
-    no: 'TOTALS (issued only)', date: `${p.totals.invoiceCount} invoices`,
-    tax: p.totals.taxableValue, cgst: p.totals.cgst, sgst: p.totals.sgst,
-    igst: p.totals.igst, tot: p.totals.total,
+    no: 'TOTALS (issued only)',
+    date: `${p.totals.invoiceCount} invoices`,
+    tax: p.totals.taxableValue,
+    cgst: p.totals.cgst,
+    sgst: p.totals.sgst,
+    igst: p.totals.igst,
+    tot: p.totals.total,
   });
   totalRow.font = { bold: true };
   const filename = `invoice_register_${p.meta.period.startDate}_${p.meta.period.endDate}.xlsx`;
-  res.setHeader('Content-Type',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader(
+    'Content-Type',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  );
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   await wb.xlsx.write(res); res.end();
 }
@@ -895,19 +934,21 @@ function streamInvoiceRegisterPdf(res, p) {
   _pdfHeader(doc, p.meta, 'TAX INVOICE REGISTER');
 
   const headers = ['Invoice No', 'Date', 'Recipient', 'GSTIN', 'PoS', 'Taxable', 'CGST', 'SGST', 'IGST', 'Total', 'Status'];
-  const widths  = [88,           80,    132,         88,      28,    62,        42,    42,    42,    66,    52];
+  const widths = [88, 80, 132, 88, 28, 62, 42, 42, 42, 66, 52];
   const right = [false, false, false, false, false, true, true, true, true, true, false];
 
   function row(cells, opts = {}) {
-    const y = doc.y; const rowH = 14;
+    const { y } = doc; const rowH = 14;
     if (opts.bold) doc.font('Helvetica-Bold'); else doc.font('Helvetica');
     doc.fontSize(7.5);
     if (opts.bg) { doc.rect(30, y - 1, doc.page.width - 60, rowH).fill(opts.bg).fillColor('black'); }
     let x = 30;
     for (let i = 0; i < cells.length; i++) {
       doc.text(cells[i] ?? '', x + 3, y + 2, {
-        width: widths[i] - 6, align: right[i] ? 'right' : 'left',
-        ellipsis: true, height: 12,
+        width: widths[i] - 6,
+        align: right[i] ? 'right' : 'left',
+        ellipsis: true,
+        height: 12,
       });
       x += widths[i];
     }
@@ -951,7 +992,13 @@ module.exports = {
   streamIncomeStatementPdf,
   streamTaxInvoicePdf,
   // Push 15h — register exports
-  streamIncomeRegisterCsv, streamIncomeRegisterXlsx, streamIncomeRegisterPdf,
-  streamExpenseRegisterCsv, streamExpenseRegisterXlsx, streamExpenseRegisterPdf,
-  streamInvoiceRegisterCsv, streamInvoiceRegisterXlsx, streamInvoiceRegisterPdf,
+  streamIncomeRegisterCsv,
+  streamIncomeRegisterXlsx,
+  streamIncomeRegisterPdf,
+  streamExpenseRegisterCsv,
+  streamExpenseRegisterXlsx,
+  streamExpenseRegisterPdf,
+  streamInvoiceRegisterCsv,
+  streamInvoiceRegisterXlsx,
+  streamInvoiceRegisterPdf,
 };

@@ -8,7 +8,10 @@ async function currentSurge(businessId, when = new Date()) {
   // 5h30m off, so rules never matched).
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: 'Asia/Kolkata',
-    hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+    weekday: 'short',
   }).formatToParts(when);
   const get = (t) => parts.find((p) => p.type === t)?.value;
   const dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
@@ -21,7 +24,7 @@ async function currentSurge(businessId, when = new Date()) {
         AND (day_of_week IS NULL OR day_of_week = $2)
         AND start_minute <= $3 AND end_minute >= $3
       ORDER BY multiplier DESC LIMIT 1`,
-    [businessId, dow, minute]
+    [businessId, dow, minute],
   );
   return r.rowCount > 0 ? r.rows[0] : null;
 }
@@ -36,8 +39,8 @@ async function applyToDeliveryFee(businessId, baseFeeInr) {
 
 async function listRules(businessId) {
   const r = await query(
-    `SELECT * FROM surge_rules WHERE business_id = $1 ORDER BY start_minute`,
-    [businessId]
+    'SELECT * FROM surge_rules WHERE business_id = $1 ORDER BY start_minute',
+    [businessId],
   );
   return r.rows;
 }
@@ -49,7 +52,7 @@ async function createRule(businessId, body) {
         multiplier, flat_extra_paise)
      VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
     [businessId, body.name, body.dayOfWeek, body.startMinute, body.endMinute,
-     body.multiplier, body.flatExtraPaise || 0]
+      body.multiplier, body.flatExtraPaise || 0],
   );
   return r.rows[0];
 }
@@ -58,9 +61,12 @@ async function createRule(businessId, body) {
 // app + dashboard, not create-only).
 async function updateRule(businessId, ruleId, body) {
   const map = {
-    name: 'name', dayOfWeek: 'day_of_week',
-    startMinute: 'start_minute', endMinute: 'end_minute',
-    multiplier: 'multiplier', flatExtraPaise: 'flat_extra_paise',
+    name: 'name',
+    dayOfWeek: 'day_of_week',
+    startMinute: 'start_minute',
+    endMinute: 'end_minute',
+    multiplier: 'multiplier',
+    flatExtraPaise: 'flat_extra_paise',
     isActive: 'is_active',
   };
   const sets = []; const values = []; let idx = 1;
@@ -72,7 +78,7 @@ async function updateRule(businessId, ruleId, body) {
   const r = await query(
     `UPDATE surge_rules SET ${sets.join(', ')}
       WHERE business_id = $${idx++} AND id = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) {
     const { NotFound } = require('../utils/errors');
@@ -83,8 +89,8 @@ async function updateRule(businessId, ruleId, body) {
 
 async function deleteRule(businessId, ruleId) {
   const r = await query(
-    `DELETE FROM surge_rules WHERE business_id = $1 AND id = $2 RETURNING id`,
-    [businessId, ruleId]
+    'DELETE FROM surge_rules WHERE business_id = $1 AND id = $2 RETURNING id',
+    [businessId, ruleId],
   );
   if (r.rowCount === 0) {
     const { NotFound } = require('../utils/errors');
@@ -94,6 +100,10 @@ async function deleteRule(businessId, ruleId) {
 }
 
 module.exports = {
-  currentSurge, applyToDeliveryFee, listRules, createRule,
-  updateRule, deleteRule,
+  currentSurge,
+  applyToDeliveryFee,
+  listRules,
+  createRule,
+  updateRule,
+  deleteRule,
 };

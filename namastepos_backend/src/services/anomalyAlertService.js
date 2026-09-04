@@ -45,12 +45,15 @@ async function checkVoidSpike(biz) {
         AND status = 'cancelled'
         AND printed = TRUE
         AND updated_at > NOW() - INTERVAL '1 hour'`,
-    [biz.id]
+    [biz.id],
   );
-  const n = r.rows[0].n;
+  const { n } = r.rows[0];
   if (n < 5) return;
-  await maybeAlert(biz, 'VOID_SPIKE',
-    `⚠️ NamastePOS alert for ${biz.name}: ${n} cancellations in the last hour after KOT print. Check Revenue Leakage on the dashboard.`);
+  await maybeAlert(
+    biz,
+    'VOID_SPIKE',
+    `⚠️ NamastePOS alert for ${biz.name}: ${n} cancellations in the last hour after KOT print. Check Revenue Leakage on the dashboard.`,
+  );
 }
 
 async function checkAfterHours(biz) {
@@ -63,12 +66,15 @@ async function checkAfterHours(biz) {
       WHERE business_id = $1
         AND created_at > NOW() - INTERVAL '15 minutes'
         AND EXTRACT(hour FROM created_at AT TIME ZONE 'Asia/Kolkata') BETWEEN 0 AND 4`,
-    [biz.id]
+    [biz.id],
   );
-  const n = r.rows[0].n;
+  const { n } = r.rows[0];
   if (n === 0) return;
-  await maybeAlert(biz, 'AFTER_HOURS',
-    `⚠️ NamastePOS alert for ${biz.name}: order #${r.rows[0].latest} was placed after midnight. If this wasn't you, review who has staff PIN access.`);
+  await maybeAlert(
+    biz,
+    'AFTER_HOURS',
+    `⚠️ NamastePOS alert for ${biz.name}: order #${r.rows[0].latest} was placed after midnight. If this wasn't you, review who has staff PIN access.`,
+  );
 }
 
 async function checkStockOut(biz) {
@@ -81,12 +87,15 @@ async function checkStockOut(biz) {
         AND is_active = TRUE
         AND (sold_out_until IS NULL OR sold_out_until <= NOW())
       LIMIT 5`,
-    [biz.id]
+    [biz.id],
   );
   if (r.rowCount === 0) return;
   const names = r.rows.map((x) => x.name).join(', ');
-  await maybeAlert(biz, 'STOCK_OUT',
-    `📦 NamastePOS alert for ${biz.name}: ${names} at zero stock but still marked active. Mark sold-out or restock from the Menu screen.`);
+  await maybeAlert(
+    biz,
+    'STOCK_OUT',
+    `📦 NamastePOS alert for ${biz.name}: ${names} at zero stock but still marked active. Mark sold-out or restock from the Menu screen.`,
+  );
 }
 
 async function maybeAlert(biz, kind, message) {
@@ -96,7 +105,7 @@ async function maybeAlert(biz, kind, message) {
      VALUES ($1, $2, DATE_TRUNC('hour', NOW()))
      ON CONFLICT (business_id, kind, bucket_hour) DO NOTHING
      RETURNING id`,
-    [biz.id, kind]
+    [biz.id, kind],
   ).catch((e) => {
     // Bug fix (B23): don't fully swallow — log so a real DB error
     // (bad column, disk full, unique index rebuild) surfaces in the
@@ -109,7 +118,7 @@ async function maybeAlert(biz, kind, message) {
     return { rowCount: 0 };
   });
 
-  if (r.rowCount === 0) return;   // already alerted this hour
+  if (r.rowCount === 0) return; // already alerted this hour
 
   try {
     const wa = require('./whatsappService');
@@ -121,8 +130,7 @@ async function maybeAlert(biz, kind, message) {
 
 // Called from cronWorker — soft-schedule every 15 minutes.
 async function tick() {
-  try { await scan(); }
-  catch (e) { logger.error(`[anomaly] tick error: ${e.message}`); }
+  try { await scan(); } catch (e) { logger.error(`[anomaly] tick error: ${e.message}`); }
 }
 
 module.exports = { tick, scan };

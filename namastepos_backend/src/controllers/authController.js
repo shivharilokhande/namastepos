@@ -123,8 +123,8 @@ const changePasswordSchema = {
 const pinLoginSchema = {
   body: Joi.object({
     businessId: Joi.string().uuid().required(),
-    userId:     Joi.string().uuid().required(),
-    pin:        Joi.string().length(4).pattern(/^\d{4}$/).required(),
+    userId: Joi.string().uuid().required(),
+    pin: Joi.string().length(4).pattern(/^\d{4}$/).required(),
   }),
 };
 const staffPickerSchema = {
@@ -177,7 +177,7 @@ async function _sessionPayload(user, { req, name }) {
   const business = await auth.getBusinessById(active.businessId);
   const { accessToken, refreshToken } = await auth.issueSession(
     { user, businessId: active.businessId, role: active.role },
-    { userAgent: req.headers['user-agent'], ip: req.ip }
+    { userAgent: req.headers['user-agent'], ip: req.ip },
   );
   let plan = null;
   try {
@@ -200,7 +200,7 @@ async function _sessionPayload(user, { req, name }) {
       const r = await query(
         `SELECT permissions FROM business_users
           WHERE business_id = $1 AND user_id = $2 LIMIT 1`,
-        [active.businessId, user.id]
+        [active.businessId, user.id],
       );
       const raw = r.rows[0]?.permissions;
       const explicit = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
@@ -236,8 +236,7 @@ const register = asyncHandler(async (req, res) => {
   if (referralCode) {
     const newBizId = raw?.business?.id || raw?.memberships?.[0]?.businessId;
     if (newBizId) {
-      try { await require('../services/referralService').associate(referralCode, newBizId); }
-      catch (_) { /* non-fatal — stale/invalid code */ }
+      try { await require('../services/referralService').associate(referralCode, newBizId); } catch (_) { /* non-fatal — stale/invalid code */ }
     }
   }
   const payload = _applyRefreshCookie(req, res, raw);
@@ -265,11 +264,10 @@ const pinLogin = asyncHandler(async (req, res) => {
   const business = await auth.getBusinessById(businessId);
   const { accessToken, refreshToken } = await auth.issueSession(
     { user, businessId, role: row.role },
-    { userAgent: req.headers['user-agent'], ip: req.ip }
+    { userAgent: req.headers['user-agent'], ip: req.ip },
   );
   let plan = null;
-  try { plan = await features.planSummary(businessId); }
-  catch (e) { console.warn(`[authController] planSummary failed biz=${businessId}: ${e?.message}`); }
+  try { plan = await features.planSummary(businessId); } catch (e) { console.warn(`[authController] planSummary failed biz=${businessId}: ${e?.message}`); }
   // Resolve effective permissions for this staff (Push 14c)
   const rawPerms = row.permissions;
   const explicitPerms = Array.isArray(rawPerms)
@@ -325,7 +323,7 @@ const devLogin = asyncHandler(async (req, res) => {
   const business = await auth.getBusinessById(active.businessId);
   const { accessToken, refreshToken } = await auth.issueSession(
     { user, businessId: active.businessId, role: active.role },
-    { userAgent: req.headers['user-agent'], ip: req.ip }
+    { userAgent: req.headers['user-agent'], ip: req.ip },
   );
 
   let plan = null;
@@ -360,7 +358,7 @@ const googleLogin = asyncHandler(async (req, res) => {
 
   // First-time user: bootstrap a business owned by them
   if (memberships.length === 0) {
-    const biz = await auth.createBusinessForUser(user, { name: profile.name });
+    await auth.createBusinessForUser(user, { name: profile.name });
     memberships = await auth.listMembershipsForUser(user.id);
     createdBusiness = true;
   }
@@ -376,7 +374,7 @@ const googleLogin = asyncHandler(async (req, res) => {
   const business = await auth.getBusinessById(active.businessId);
   const { accessToken, refreshToken } = await auth.issueSession(
     { user, businessId: active.businessId, role: active.role },
-    { userAgent: req.headers['user-agent'], ip: req.ip }
+    { userAgent: req.headers['user-agent'], ip: req.ip },
   );
 
   let planSum = null;
@@ -393,7 +391,7 @@ const googleLogin = asyncHandler(async (req, res) => {
     user: auth.serializeUser(user),
     business: auth.serializeBusiness(business),
     role: active.role,
-    memberships,                  // so the client can offer a switcher
+    memberships, // so the client can offer a switcher
     isNewUser: created,
     isNewBusiness: createdBusiness,
     plan: planSum,
@@ -402,6 +400,23 @@ const googleLogin = asyncHandler(async (req, res) => {
 });
 
 const REFRESH_COOKIE = 'ff_refresh';
+
+// FF-213 Cookie flags audit:
+//   - httpOnly     → JS can't read the refresh token (XSS-safe).
+//   - sameSite=strict → refresh cookie never sent on cross-site nav (CSRF-safe).
+//   - secure=prod  → HTTPS only in prod; must be false in dev over HTTP or the
+//                    browser silently drops the cookie.
+//   - path=/v1/auth → cookie only sent to auth endpoints (blast-radius).
+//   - maxAge 30 d  → matches the refresh-token TTL in auth.service.
+// `app.set('trust proxy', 1)` in app.js ensures `req.secure` is correct
+// behind the nginx TLS terminator.
+const COOKIE_OPTS = {
+  httpOnly: true,
+  sameSite: 'strict',
+  secure: process.env.NODE_ENV === 'production',
+  path: '/v1/auth',
+  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
+};
 
 /// Task-99: opt-in refresh-token-as-cookie helper for login endpoints.
 /// The client says "I want cookie auth" by sending
@@ -424,22 +439,6 @@ function _applyRefreshCookie(req, res, payload) {
   return { ...payload, refreshToken: undefined };
 }
 
-// FF-213 Cookie flags audit:
-//   - httpOnly     → JS can't read the refresh token (XSS-safe).
-//   - sameSite=strict → refresh cookie never sent on cross-site nav (CSRF-safe).
-//   - secure=prod  → HTTPS only in prod; must be false in dev over HTTP or the
-//                    browser silently drops the cookie.
-//   - path=/v1/auth → cookie only sent to auth endpoints (blast-radius).
-//   - maxAge 30 d  → matches the refresh-token TTL in auth.service.
-// `app.set('trust proxy', 1)` in app.js ensures `req.secure` is correct
-// behind the nginx TLS terminator.
-const COOKIE_OPTS = {
-  httpOnly: true,
-  sameSite: 'strict',
-  secure: process.env.NODE_ENV === 'production',
-  path: '/v1/auth',
-  maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days
-};
 // clearCookie must repeat the same attributes or some browsers keep the
 // cookie alive (spec §5.3.11 — the (name,domain,path) triple identifies it,
 // but Chrome+Safari also require matching sameSite/secure to actually remove).
@@ -507,7 +506,7 @@ const me = asyncHandler(async (req, res) => {
       const r = await require('../config/db').query(
         `SELECT permissions, role FROM business_users
           WHERE business_id = $1 AND user_id = $2 LIMIT 1`,
-        [req.user.businessId, req.user.id]
+        [req.user.businessId, req.user.id],
       );
       if (r.rowCount > 0) {
         const row = r.rows[0];
@@ -524,8 +523,8 @@ const me = asyncHandler(async (req, res) => {
     business: auth.serializeBusiness(business),
     role: req.user.role,
     memberships,
-    plan,                 // { tierKind, features: [...] }
-    permissions,          // null for owner = "all"; array for staff
+    plan, // { tierKind, features: [...] }
+    permissions, // null for owner = "all"; array for staff
     // Founder bug #1 (2026-08-25): the profile screen needs to know
     // whether to ask for the current password (has one) or offer a
     // first-time "set password" flow (Google-only account). Boolean
@@ -555,7 +554,7 @@ const patchMe = asyncHandler(async (req, res) => {
   const protectedKeysInBody = Object.keys(req.body).filter((k) => OWNER_ONLY_FIELDS.has(k));
   if (protectedKeysInBody.length > 0 && req.user.role !== 'business_owner') {
     throw new Forbidden(
-      `Only the business owner can change: ${protectedKeysInBody.join(', ')}`
+      `Only the business owner can change: ${protectedKeysInBody.join(', ')}`,
     );
   }
 
@@ -584,12 +583,11 @@ const switchBusiness = asyncHandler(async (req, res) => {
   const user = await auth.getUserById(req.user.id);
   const tokens = await auth.switchBusiness(
     { user, businessId: req.body.businessId },
-    { userAgent: req.headers['user-agent'], ip: req.ip }
+    { userAgent: req.headers['user-agent'], ip: req.ip },
   );
   const business = await auth.getBusinessById(req.body.businessId);
   let plan = null;
-  try { plan = await require('../services/featureService').planSummary(req.body.businessId); }
-  catch (_) { /* non-fatal — dashboard refetches /auth/me anyway */ }
+  try { plan = await require('../services/featureService').planSummary(req.body.businessId); } catch (_) { /* non-fatal — dashboard refetches /auth/me anyway */ }
   const memberships = await auth.listMembershipsForUser(req.user.id);
   const active = memberships.find((m) => m.businessId === req.body.businessId);
   const payload = _applyRefreshCookie(req, res, {

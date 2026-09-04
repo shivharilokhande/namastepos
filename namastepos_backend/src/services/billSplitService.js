@@ -64,8 +64,7 @@ async function splitSession(businessId, sessionId, body) {
       const byId = new Map(items.rows.map((r) => [r.id, r]));
       // Every non-cancelled line must be fully allocated across guests —
       // otherwise omitted items silently under-collect the bill.
-      const allItemsPaise = items.rows.reduce(
-        (s, r) => s + Math.round(parseFloat(r.price) * parseFloat(r.qty) * 100), 0);
+      const allItemsPaise = items.rows.reduce((s, r) => s + Math.round(parseFloat(r.price) * parseFloat(r.qty) * 100), 0);
       let splitSum = 0;
       for (const sp of splits) {
         let amt = 0;
@@ -84,7 +83,7 @@ async function splitSession(businessId, sessionId, body) {
       }
       if (splitSum !== allItemsPaise) {
         throw new BadRequest(
-          `By-item split covers ₹${splitSum / 100} but the bill's items total ₹${allItemsPaise / 100} — every item must be assigned to a guest.`
+          `By-item split covers ₹${splitSum / 100} but the bill's items total ₹${allItemsPaise / 100} — every item must be assigned to a guest.`,
         );
       }
     }

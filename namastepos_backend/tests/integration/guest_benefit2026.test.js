@@ -12,7 +12,8 @@ const { query } = require('../../src/config/db');
 const qrService = require('../../src/services/qrService');
 const tableService = require('../../src/services/tableService');
 
-let app, token, businessId;
+let app; let token; let
+  businessId;
 
 beforeAll(async () => {
   await resetDb();
@@ -20,12 +21,12 @@ beforeAll(async () => {
   const biz = await makeBusiness({ email: `gb-${Date.now()}` });
   businessId = biz.id;
   const floor = (await query(
-    `INSERT INTO floors (business_id, name) VALUES ($1, 'Ground') RETURNING id`,
-    [businessId]
+    'INSERT INTO floors (business_id, name) VALUES ($1, \'Ground\') RETURNING id',
+    [businessId],
   )).rows[0];
   const table = await tableService.createTable(businessId, { floorId: floor.id, label: 'T1', seats: 4 });
   token = await qrService.issueTokenForTable(businessId, table.id);
-  await query(`UPDATE tables SET qr_enabled = TRUE WHERE id = $1`, [table.id]);
+  await query('UPDATE tables SET qr_enabled = TRUE WHERE id = $1', [table.id]);
 });
 afterAll(async () => { await closePool(); });
 
@@ -34,7 +35,7 @@ async function seedOtp({ phone, purpose, meta, code = '123456' }) {
   return (await query(
     `INSERT INTO otp_requests (phone, purpose, code_hash, expires_at, meta)
      VALUES ($1, $2, $3, NOW() + INTERVAL '10 min', $4::jsonb) RETURNING id`,
-    [phone, purpose, hash, JSON.stringify(meta || {})]
+    [phone, purpose, hash, JSON.stringify(meta || {})],
   )).rows[0].id;
 }
 

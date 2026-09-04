@@ -30,8 +30,8 @@ try {
 
 // -- PII scrubbing --------------------------------------------------------
 const RE_EMAIL = /[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/gi;
-const RE_PHONE = /(?:\+?91[- ]?)?[6-9]\d{9}\b/g;      // Indian mobile
-const RE_JWT   = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
+const RE_PHONE = /(?:\+?91[- ]?)?[6-9]\d{9}\b/g; // Indian mobile
+const RE_JWT = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
 const RE_BEARER = /Bearer\s+[A-Za-z0-9._-]+/gi;
 
 const SENSITIVE_KEYS = new Set([
@@ -119,8 +119,8 @@ let initialised = false;
 function init() {
   if (initialised) return;
   initialised = true;
-  if (!Sentry) return;                          // SDK missing → no-op
-  if (!process.env.SENTRY_DSN) return;          // DSN not set → no-op
+  if (!Sentry) return; // SDK missing → no-op
+  if (!process.env.SENTRY_DSN) return; // DSN not set → no-op
 
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
@@ -128,7 +128,7 @@ function init() {
     release: process.env.APP_VERSION || undefined,
     // Sample rates — start conservative in prod, verbose in dev.
     tracesSampleRate: env.isProd() ? 0.10 : 1.0,
-    profilesSampleRate: 0.0,                    // profiling off for now
+    profilesSampleRate: 0.0, // profiling off for now
     beforeSend,
     beforeBreadcrumb(bc) {
       // The DB integration would log SQL params in breadcrumbs which may

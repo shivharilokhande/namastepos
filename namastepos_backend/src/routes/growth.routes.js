@@ -22,74 +22,85 @@ const promo = require('../services/promoRulesService');
 const router = express.Router({ mergeParams: true });
 
 // ── FF-333 referral ────────────────────────────────────────────────────
-router.get('/referral',
-requireRole(['business_owner', 'staff_manager']),   asyncHandler(async (req, res) => {
+router.get(
+  '/referral',
+  requireRole(['business_owner', 'staff_manager']),
+  asyncHandler(async (req, res) => {
     const code = await referral.myCode(req.params.businessId);
     const stats = await referral.stats(req.params.businessId);
     res.json({ code, stats });
-  }));
+  }),
+);
 
 // ── FF-329 promo evaluation ────────────────────────────────────────────
-router.post('/promo/evaluate',
+router.post(
+  '/promo/evaluate',
   validate({ body: Joi.object({
     code: Joi.string().required(),
     customerId: Joi.string().uuid().allow(null),
     orderSubtotalInr: Joi.number().min(0).required(),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.json(await promo.evaluate({ ...req.body, businessId: req.params.businessId }))));
+  }) }),
+  asyncHandler(async (req, res) => res.json(await promo.evaluate({ ...req.body, businessId: req.params.businessId }))),
+);
 
 // ── FF-315 Feature-flag overrides (owner-scoped read; write is admin-only
 // via /v1/admin/customers/:businessId/feature-overrides) ──────────────────
 // 2026-09-03: also return the REAL merged feature set (plan + addons +
 // overrides, straight from featureService) so the client can render what is
 // actually enforced rather than re-deriving it.
-router.get('/feature-overrides',
+router.get(
+  '/feature-overrides',
   asyncHandler(async (req, res) => {
     const overrides = await featureFlags.list(req.params.businessId);
     const summary = await require('../services/featureService')
       .planSummary(req.params.businessId);
     res.json({ overrides, features: summary.features, tier: summary.tier });
-  }));
+  }),
+);
 
 // ── Membership plans + subscriptions ─────────────────────────────────────
-router.get ('/memberships', asyncHandler(async (req, res) =>
-  res.json({ memberships: await membership.listMemberships(req.params.businessId) })));
+router.get('/memberships', asyncHandler(async (req, res) => res.json({ memberships: await membership.listMemberships(req.params.businessId) })));
 // 2026-08-26: roster of customers who hold a membership (name/phone/plan/
 // amount/status/expiry) for the Members list on mobile + web.
-router.get ('/memberships/subscribers', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) =>
-  res.json({ subscribers: await membership.listSubscribers(req.params.businessId) })));
-router.post('/memberships',
+router.get('/memberships/subscribers', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) => res.json({ subscribers: await membership.listSubscribers(req.params.businessId) })));
+router.post(
+  '/memberships',
   requireRole(['business_owner']),
   validate({ body: Joi.object({
-    name: Joi.string().required(), description: Joi.string().allow('', null),
+    name: Joi.string().required(),
+    description: Joi.string().allow('', null),
     priceInr: Joi.number().positive().required(),
-    validityDays: Joi.number().integer().min(1).max(3650).default(30),
+    validityDays: Joi.number().integer().min(1).max(3650)
+      .default(30),
     benefits: Joi.object().unknown(true).allow(null),
-  })}),
-  asyncHandler(async (req, res) => res.status(201).json({ membership: await membership.createMembership(req.params.businessId, req.body) }))
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json({ membership: await membership.createMembership(req.params.businessId, req.body) })),
 );
 // Membership plan Update + Delete (2026-08-24): screen had create+read only.
-router.put('/memberships/:id',
+router.put(
+  '/memberships/:id',
   requireRole(['business_owner']),
   // NB: don't validate params here — mergeParams injects businessId too and
   // the strict validator rejects unknown keys. The :id is used in a
   // business-scoped query, so a bad/foreign id simply 404s.
   validate({
     body: Joi.object({
-      name: Joi.string(), description: Joi.string().allow('', null),
+      name: Joi.string(),
+      description: Joi.string().allow('', null),
       priceInr: Joi.number().positive(),
       validityDays: Joi.number().integer().min(1).max(3650),
       benefits: Joi.object().unknown(true).allow(null),
     }).min(1),
   }),
-  asyncHandler(async (req, res) => res.json({ membership: await membership.updateMembership(req.params.businessId, req.params.id, req.body) }))
+  asyncHandler(async (req, res) => res.json({ membership: await membership.updateMembership(req.params.businessId, req.params.id, req.body) })),
 );
-router.delete('/memberships/:id',
+router.delete(
+  '/memberships/:id',
   requireRole(['business_owner']),
-  asyncHandler(async (req, res) => res.json(await membership.deleteMembership(req.params.businessId, req.params.id)))
+  asyncHandler(async (req, res) => res.json(await membership.deleteMembership(req.params.businessId, req.params.id))),
 );
-router.post('/memberships/subscribe',
+router.post(
+  '/memberships/subscribe',
   validate({ body: Joi.object({
     customerId: Joi.string().uuid().required(),
     membershipId: Joi.string().uuid().required(),
@@ -101,13 +112,14 @@ router.post('/memberships/subscribe',
     // 'wallet' debits the customer wallet atomically with the sale, and an
     // optional paymentBreakdown splits the plan price across 1-3 tenders
     // (service enforces legs sum = plan price ±₹0.01, else 400).
-    paymentMethod: Joi.string().valid('cash','upi','card','online','wallet').default('cash'),
+    paymentMethod: Joi.string().valid('cash', 'upi', 'card', 'online', 'wallet').default('cash'),
     paymentBreakdown: Joi.array().items(Joi.object({
-      method: Joi.string().valid('cash','upi','card','online','wallet').required(),
+      method: Joi.string().valid('cash', 'upi', 'card', 'online', 'wallet').required(),
       amountInr: Joi.number().positive().required(),
-    })).min(1).max(3).allow(null),
-  })}),
-  asyncHandler(async (req, res) => res.status(201).json({ subscription: await membership.subscribe(req.params.businessId, req.body) }))
+    })).min(1).max(3)
+      .allow(null),
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json({ subscription: await membership.subscribe(req.params.businessId, req.body) })),
 );
 // 2026-08-25 (founder): cancel a sold membership → refund the unused share.
 // Remaining value = price paid × (remaining bundle qty ÷ original bundle
@@ -116,24 +128,25 @@ router.post('/memberships/subscribe',
 // the customer wallet (ledger reason 'membership_refund'); 'cash'/'upi'
 // records a payout in `refunds` so the income statement can net it off as
 // 'Membership refunds'. Owner/manager only — refunds move money.
-router.post('/customer-memberships/:id/cancel',
+router.post(
+  '/customer-memberships/:id/cancel',
   requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({
     mode: Joi.string().valid('wallet', 'cash', 'upi').required(),
     cancellationPct: Joi.number().min(0).max(100).allow(null),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => res.json(
-    await membership.cancelSubscription(
-      req.params.businessId, req.params.id, {
-        mode: req.body.mode,
-        cancellationPct: req.body.cancellationPct ?? null,
-      })))
+    await membership.cancelSubscription(req.params.businessId, req.params.id, {
+      mode: req.body.mode,
+      cancellationPct: req.body.cancellationPct ?? null,
+    }),
+  )),
 );
 
 // ── Site (online ordering brand site) ───────────────────────────────────
-router.get ('/site', asyncHandler(async (req, res) =>
-  res.json({ site: await site.get(req.params.businessId) })));
-router.put ('/site',
+router.get('/site', asyncHandler(async (req, res) => res.json({ site: await site.get(req.params.businessId) })));
+router.put(
+  '/site',
   requireRole(['business_owner']),
   validate({ body: Joi.object({
     brandSlug: Joi.string().lowercase().pattern(/^[a-z0-9-]{2,60}$/).allow('', null),
@@ -147,32 +160,27 @@ router.put ('/site',
     minOrderInr: Joi.number().min(0),
     deliveryFeeInr: Joi.number().min(0),
     isPublished: Joi.boolean(),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.json({ site: await site.update(req.params.businessId, req.body) })
-  )
+  }) }),
+  asyncHandler(async (req, res) => res.json({ site: await site.update(req.params.businessId, req.body) })),
 );
 
 // ── WhatsApp campaigns ──────────────────────────────────────────────────
-router.get ('/wa/campaigns', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) =>
-  res.json({ campaigns: await whatsapp.listCampaigns(req.params.businessId) })));
-router.post('/wa/campaigns',
-  requireRole(['business_owner','staff_manager']),
+router.get('/wa/campaigns', requireRole(['business_owner', 'staff_manager']), asyncHandler(async (req, res) => res.json({ campaigns: await whatsapp.listCampaigns(req.params.businessId) })));
+router.post(
+  '/wa/campaigns',
+  requireRole(['business_owner', 'staff_manager']),
   validate({ body: Joi.object({
     name: Joi.string().required(),
     templateBody: Joi.string().required(),
     audienceFilter: Joi.object().unknown(true).allow(null),
     scheduledAt: Joi.date().iso().allow(null),
-  })}),
-  asyncHandler(async (req, res) =>
-    res.status(201).json({ campaign: await whatsapp.createCampaign(req.params.businessId, req.body, req.user?.id) })
-  )
+  }) }),
+  asyncHandler(async (req, res) => res.status(201).json({ campaign: await whatsapp.createCampaign(req.params.businessId, req.body, req.user?.id) })),
 );
-router.post('/wa/campaigns/:id/run',
+router.post(
+  '/wa/campaigns/:id/run',
   requireRole(['business_owner']),
-  asyncHandler(async (req, res) =>
-    res.json(await whatsapp.runCampaign(req.params.businessId, req.params.id))
-  )
+  asyncHandler(async (req, res) => res.json(await whatsapp.runCampaign(req.params.businessId, req.params.id))),
 );
 
 module.exports = router;

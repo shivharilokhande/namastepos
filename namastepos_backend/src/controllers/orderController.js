@@ -8,21 +8,39 @@ const auth = require('../services/authService');
 const { formatToken } = require('../utils/tokenPrinter');
 
 const orderItem = Joi.object({
+  // NP-201 (2026-09-04): `menuItemId` stays REQUIRED on this (untrusted,
+  // client-facing) route. Unmapped lines (menuItemId=null) are legitimate only
+  // for server-side callers — aggregatorService / guestController, which pass
+  // {trustedChannel:true} — because the server has no way to price a line it
+  // cannot look up, and will not let the client name its own price.
   menuItemId: Joi.string().uuid().required(),
   name: Joi.string().max(255).required(),
-  price: Joi.number().min(0).required(),
+  // NP-201: ADVISORY ONLY. The server prices the line from menu_items.price
+  // (or the validated variant) + the validated modifiers' DB deltas; this
+  // value is used solely to detect and record a divergence on
+  // orders.price_adjustments (stale offline menu). Optional so a hardened
+  // client can stop sending it altogether.
+  price: Joi.number().min(0),
   qty: Joi.number().positive().required(),
   note: Joi.string().max(500).allow('', null),
   // Batch A: variants + modifier groups picker. These are optional —
   // the order_items row stores them so KOT printing + receipt show them.
+  // NP-202: only the IDs are inputs. `variantLabel` and every modifier
+  // label/delta below are RE-DERIVED from the DB before persisting, and the
+  // ids are validated (variant belongs to this item + is active; modifier
+  // belongs to an active group attached to this item) or the order 400s.
   variantId: Joi.string().uuid().allow(null),
   variantLabel: Joi.string().max(120).allow('', null),
+  // Two shapes are in production: mobile sends optionId/optionLabel/priceDelta,
+  // the web dashboard sends modifierId/name/priceDeltaInr/qty. `.unknown(true)`
+  // admits both and the service reads the id from optionId ?? modifierId.
   modifierLines: Joi.array().items(Joi.object({
     groupId: Joi.string().uuid().allow(null),
     groupLabel: Joi.string().max(120).allow('', null),
     optionId: Joi.string().uuid().allow(null),
     optionLabel: Joi.string().max(120).allow('', null),
     priceDelta: Joi.number().allow(null),
+    modifierId: Joi.string().uuid().allow(null),
   }).unknown(true)).allow(null),
 });
 
@@ -76,7 +94,8 @@ const createBody = Joi.object({
   paymentBreakdown: Joi.array().items(Joi.object({
     method: Joi.string().valid('cash', 'upi', 'card', 'online', 'wallet').required(),
     amountInr: Joi.number().positive().required(),
-  })).min(1).max(3).allow(null),
+  })).min(1).max(3)
+    .allow(null),
   // FF-903 server attribution + tip:
   serverUserId: Joi.string().uuid().allow(null),
   tipInr: Joi.number().min(0).allow(null),
@@ -114,7 +133,8 @@ const listQuery = Joi.object({
   // instead of re-downloading 500 rows every tick. Additive: omitted =
   // exactly the old full-list behaviour.
   updatedSince: Joi.date().iso(),
-  limit: Joi.number().integer().min(1).max(500).default(100),
+  limit: Joi.number().integer().min(1).max(500)
+    .default(100),
   offset: Joi.number().integer().min(0).default(0),
 });
 
@@ -170,8 +190,11 @@ module.exports = {
     validate({ body: statusBody }),
     asyncHandler(async (req, res) => {
       const o = await order.updateStatus(
-        req.params.businessId, req.params.orderId,
-        req.body.status, req.body.reason, req.body.reasonCode
+        req.params.businessId,
+        req.params.orderId,
+        req.body.status,
+        req.body.reason,
+        req.body.reasonCode,
       );
       res.json({ order: o });
     }),

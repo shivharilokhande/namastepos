@@ -67,7 +67,9 @@ describe('membership subscribe idempotency (clientKey)', () => {
 
   test('a different clientKey is a genuine new sale', async () => {
     const r = await membership.subscribe(biz.id, {
-      customerId, membershipId: planId, paymentMethod: 'wallet',
+      customerId,
+      membershipId: planId,
+      paymentMethod: 'wallet',
       clientKey: 'b4b4f9d2-7f21-4e57-9a8e-0c5d1b2e3f41',
     });
     expect(r.id).toBeTruthy();

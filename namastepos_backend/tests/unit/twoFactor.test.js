@@ -11,7 +11,8 @@ describe('TOTP RFC 6238', () => {
   test('base32 round-trip is lossless for 20-byte secrets', () => {
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
     const encode = (buf) => {
-      let bits = '', out = '';
+      let bits = ''; let
+        out = '';
       for (const b of buf) bits += b.toString(2).padStart(8, '0');
       for (let i = 0; i + 5 <= bits.length; i += 5) {
         out += alphabet[parseInt(bits.substr(i, 5), 2)];
@@ -44,10 +45,10 @@ describe('TOTP RFC 6238', () => {
       const mac = crypto.createHmac('sha1', secret).update(cbuf).digest();
       const off = mac[mac.length - 1] & 0x0f;
       const code = (
-        ((mac[off] & 0x7f) << 24) |
-        ((mac[off + 1] & 0xff) << 16) |
-        ((mac[off + 2] & 0xff) << 8) |
-        (mac[off + 3] & 0xff)
+        ((mac[off] & 0x7f) << 24)
+        | ((mac[off + 1] & 0xff) << 16)
+        | ((mac[off + 2] & 0xff) << 8)
+        | (mac[off + 3] & 0xff)
       ) % 1_000_000;
       return code.toString().padStart(6, '0');
     };

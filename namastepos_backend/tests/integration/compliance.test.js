@@ -38,9 +38,9 @@ describe('POST /v1/me/consents', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         consentKey: 'privacy_policy',
-        granted:    true,
+        granted: true,
         policyVersion: 'privacy-2026-05-26',
-        source:     'mobile_app',
+        source: 'mobile_app',
       });
     expect(res.status).toBe(201);
     expect(res.body.id).toBeTruthy();
@@ -72,7 +72,7 @@ describe('GET /v1/me/consents', () => {
       .get('/v1/me/consents')
       .set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
-    const me = (res.body.consents || []).find(c => c.consentKey === 'marketing_email');
+    const me = (res.body.consents || []).find((c) => c.consentKey === 'marketing_email');
     expect(me).toBeTruthy();
     expect(me.granted).toBe(false); // most recent state wins
   });
@@ -120,7 +120,7 @@ describe('POST /v1/compliance/grievance (public)', () => {
       .send({
         complainantEmail: 'angry@example.com',
         subject: 'Where is my data',
-        body:    'Asked for export 30 days ago, nothing happened.',
+        body: 'Asked for export 30 days ago, nothing happened.',
         category: 'privacy',
       });
     expect(res.status).toBe(201);

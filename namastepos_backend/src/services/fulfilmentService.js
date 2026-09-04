@@ -36,15 +36,15 @@ const STATES = [
 // `placed` to `delivered` hides missed steps and breaks the prep-time SLA
 // reporting the aggregators grade us on.
 const TRANSITIONS = {
-  placed:         ['accepted', 'rejected', 'cancelled'],
-  accepted:       ['preparing', 'food_ready', 'cancelled'],
-  preparing:      ['food_ready', 'cancelled'],
-  food_ready:     ['rider_assigned', 'picked_up', 'cancelled'],
+  placed: ['accepted', 'rejected', 'cancelled'],
+  accepted: ['preparing', 'food_ready', 'cancelled'],
+  preparing: ['food_ready', 'cancelled'],
+  food_ready: ['rider_assigned', 'picked_up', 'cancelled'],
   rider_assigned: ['picked_up', 'cancelled'],
-  picked_up:      ['delivered', 'cancelled'],
-  delivered:      [],
-  rejected:       [],
-  cancelled:      [],
+  picked_up: ['delivered', 'cancelled'],
+  delivered: [],
+  rejected: [],
+  cancelled: [],
 };
 
 // Which transitions the aggregator must hear about, and under what event name.
@@ -84,7 +84,7 @@ async function board(businessId) {
         AND fulfilment_state IS NOT NULL
         AND fulfilment_state NOT IN ('delivered', 'rejected', 'cancelled')
       ORDER BY created_at ASC`,
-    [businessId]
+    [businessId],
   );
   return r.rows.map((o) => ({
     id: o.id,
@@ -121,7 +121,7 @@ async function _enqueueOutbound(client, { businessId, orderId, provider, event, 
        (business_id, order_id, provider, event, payload)
      VALUES ($1, $2, $3, $4, $5::jsonb)
      ON CONFLICT (order_id, event) DO NOTHING`,
-    [businessId, orderId, provider || 'own', event, JSON.stringify(payload || {})]
+    [businessId, orderId, provider || 'own', event, JSON.stringify(payload || {})],
   );
 }
 
@@ -150,7 +150,7 @@ async function transition(businessId, orderId, opts = {}) {
          FROM orders
         WHERE business_id = $1 AND id = $2
         FOR UPDATE`,
-      [businessId, orderId]
+      [businessId, orderId],
     );
     if (cur.rowCount === 0) throw new NotFound('Order not found');
     const o = cur.rows[0];
@@ -180,11 +180,11 @@ async function transition(businessId, orderId, opts = {}) {
       if (!opts.force || TERMINAL.includes(from)) {
         throw new Conflict(
           `Cannot move order #${o.order_no} from ${from} to ${target}. `
-          + `Allowed: ${allowed.join(', ') || '(terminal)'}.`
+          + `Allowed: ${allowed.join(', ') || '(terminal)'}.`,
         );
       }
       logger.info(
-        `[fulfilment] forced ${from} → ${target} for order ${orderId} (aggregator authority)`
+        `[fulfilment] forced ${from} → ${target} for order ${orderId} (aggregator authority)`,
       );
     }
 
@@ -239,7 +239,7 @@ async function transition(businessId, orderId, opts = {}) {
       `UPDATE orders SET ${sets.join(', ')}, updated_at = NOW()
         WHERE business_id = $${vals.length - 1} AND id = $${vals.length}
         RETURNING *`,
-      vals
+      vals,
     );
     const row = upd.rows[0];
 
@@ -286,17 +286,17 @@ async function _mirrorPosStatus(businessId, orderId, posStatus) {
   try {
     await require('./orderService').updateStatus(businessId, orderId, posStatus);
     await query(
-      `UPDATE orders SET pos_mirror_error = NULL WHERE business_id = $1 AND id = $2`,
-      [businessId, orderId]
+      'UPDATE orders SET pos_mirror_error = NULL WHERE business_id = $1 AND id = $2',
+      [businessId, orderId],
     ).catch(() => {});
     return true;
   } catch (e) {
     logger.warn(
-      `[fulfilment] POS mirror → ${posStatus} FAILED for ${orderId}: ${e.message} (queued for repair)`
+      `[fulfilment] POS mirror → ${posStatus} FAILED for ${orderId}: ${e.message} (queued for repair)`,
     );
     await query(
-      `UPDATE orders SET pos_mirror_error = $1 WHERE business_id = $2 AND id = $3`,
-      [String(e.message).slice(0, 300), businessId, orderId]
+      'UPDATE orders SET pos_mirror_error = $1 WHERE business_id = $2 AND id = $3',
+      [String(e.message).slice(0, 300), businessId, orderId],
     ).catch(() => {});
     return false;
   }
@@ -314,7 +314,7 @@ async function repairPosMirrors({ limit = 50 } = {}) {
         AND status NOT IN ('collected', 'cancelled')
       ORDER BY delivered_at ASC NULLS LAST
       LIMIT $1`,
-    [limit]
+    [limit],
   );
   let repaired = 0; let stillStuck = 0;
   for (const row of stuck.rows) {
@@ -359,7 +359,7 @@ async function drainOutbound({ limit = 50 } = {}) {
       WHERE status = 'queued' AND next_attempt_at <= NOW()
       ORDER BY created_at ASC
       LIMIT $1`,
-    [limit]
+    [limit],
   );
   let sent = 0; let skipped = 0; let failed = 0;
   for (const ev of due.rows) {
@@ -373,7 +373,7 @@ async function drainOutbound({ limit = 50 } = {}) {
           `UPDATE aggregator_outbound_events
               SET status = 'skipped', last_error = $1, attempts = attempts + 1
             WHERE id = $2`,
-          [out.reason || 'provider not configured', ev.id]
+          [out.reason || 'provider not configured', ev.id],
         );
       } else {
         sent += 1;
@@ -382,7 +382,7 @@ async function drainOutbound({ limit = 50 } = {}) {
           `UPDATE aggregator_outbound_events
               SET status = 'sent', sent_at = NOW(), attempts = attempts + 1
             WHERE id = $1`,
-          [ev.id]
+          [ev.id],
         );
       }
     } catch (e) {
@@ -396,7 +396,7 @@ async function drainOutbound({ limit = 50 } = {}) {
                 next_attempt_at = NOW() + ($4 || ' seconds')::interval
           WHERE id = $5`,
         [dead ? 'failed' : 'queued', attempts, String(e.message).slice(0, 500),
-         String(Math.min(3600, 30 * (2 ** attempts))), ev.id]
+          String(Math.min(3600, 30 * (2 ** attempts))), ev.id],
       );
       if (dead) {
         logger.warn(`[fulfilment] outbound ${ev.event} for order ${ev.order_id} dead-lettered: ${e.message}`);
@@ -420,13 +420,18 @@ async function requeueSkippedOutbound({ olderThanMinutes = 0 } = {}) {
       WHERE status = 'skipped'
         AND created_at < NOW() - ($1 || ' minutes')::interval
       RETURNING id`,
-    [String(olderThanMinutes)]
+    [String(olderThanMinutes)],
   );
   if (r.rowCount > 0) logger.info(`[fulfilment] re-queued ${r.rowCount} skipped callback(s)`);
   return { requeued: r.rowCount };
 }
 
 module.exports = {
-  STATES, TRANSITIONS, board, transition, drainOutbound,
-  repairPosMirrors, requeueSkippedOutbound,
+  STATES,
+  TRANSITIONS,
+  board,
+  transition,
+  drainOutbound,
+  repairPosMirrors,
+  requeueSkippedOutbound,
 };

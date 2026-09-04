@@ -57,15 +57,15 @@ async function list(businessId, { category, isActive, isCombo, search } = {}) {
   const r = await query(
     `SELECT * FROM menu_items WHERE ${where.join(' AND ')}
      ORDER BY category ASC, display_order ASC, name ASC`,
-    values
+    values,
   );
   return r.rows.map(serialize);
 }
 
 async function byId(businessId, itemId) {
   const r = await query(
-    `SELECT * FROM menu_items WHERE business_id = $1 AND id = $2 LIMIT 1`,
-    [businessId, itemId]
+    'SELECT * FROM menu_items WHERE business_id = $1 AND id = $2 LIMIT 1',
+    [businessId, itemId],
   );
   if (r.rowCount === 0) throw new NotFound('Menu item not found');
   return serialize(r.rows[0]);
@@ -92,10 +92,10 @@ async function create(businessId, body) {
                COALESCE($19, 5),$20)
        RETURNING *`,
       [businessId, name, description, category, price, costPrice, sku, unit,
-       stock, reorderLevel, isActive, isVeg, imageUrl,
-       isCombo, comboItems ? JSON.stringify(comboItems) : null,
-       prepMinutes, displayOrder, tags,
-       body.gstPct, body.hsnCode]
+        stock, reorderLevel, isActive, isVeg, imageUrl,
+        isCombo, comboItems ? JSON.stringify(comboItems) : null,
+        prepMinutes, displayOrder, tags,
+        body.gstPct, body.hsnCode],
     );
     return serialize(r.rows[0]);
   } catch (err) {
@@ -106,13 +106,24 @@ async function create(businessId, body) {
 
 async function update(businessId, itemId, body) {
   const allowed = {
-    name: 'name', description: 'description', category: 'category',
-    price: 'price', costPrice: 'cost_price', sku: 'sku', unit: 'unit',
-    stock: 'stock', reorderLevel: 'reorder_level', isActive: 'is_active',
-    isVeg: 'is_veg', imageUrl: 'image_url',
-    isCombo: 'is_combo', prepMinutes: 'prep_minutes',
-    displayOrder: 'display_order', tags: 'tags',
-    gstPct: 'gst_pct', hsnCode: 'hsn_code',
+    name: 'name',
+    description: 'description',
+    category: 'category',
+    price: 'price',
+    costPrice: 'cost_price',
+    sku: 'sku',
+    unit: 'unit',
+    stock: 'stock',
+    reorderLevel: 'reorder_level',
+    isActive: 'is_active',
+    isVeg: 'is_veg',
+    imageUrl: 'image_url',
+    isCombo: 'is_combo',
+    prepMinutes: 'prep_minutes',
+    displayOrder: 'display_order',
+    tags: 'tags',
+    gstPct: 'gst_pct',
+    hsnCode: 'hsn_code',
   };
   const sets = [];
   const values = [];
@@ -130,7 +141,7 @@ async function update(businessId, itemId, body) {
   const r = await query(
     `UPDATE menu_items SET ${sets.join(', ')}
      WHERE business_id = $${idx++} AND id = $${idx} RETURNING *`,
-    values
+    values,
   );
   if (r.rowCount === 0) throw new NotFound('Menu item not found');
   return serialize(r.rows[0]);
@@ -140,7 +151,7 @@ async function softDelete(businessId, itemId) {
   const r = await query(
     `UPDATE menu_items SET is_active = FALSE
      WHERE business_id = $1 AND id = $2 RETURNING id`,
-    [businessId, itemId]
+    [businessId, itemId],
   );
   if (r.rowCount === 0) throw new NotFound('Menu item not found');
   return { id: r.rows[0].id };
@@ -150,22 +161,22 @@ async function softDelete(businessId, itemId) {
 async function adjustStock(businessId, itemId, { delta, reason = 'adjustment', note = null }) {
   return withTransaction(async (client) => {
     const cur = await client.query(
-      `SELECT stock FROM menu_items WHERE business_id = $1 AND id = $2 FOR UPDATE`,
-      [businessId, itemId]
+      'SELECT stock FROM menu_items WHERE business_id = $1 AND id = $2 FOR UPDATE',
+      [businessId, itemId],
     );
     if (cur.rowCount === 0) throw new NotFound('Menu item not found');
     const before = parseFloat(cur.rows[0].stock);
     const after = before + delta;
 
     const upd = await client.query(
-      `UPDATE menu_items SET stock = $1 WHERE id = $2 RETURNING *`,
-      [after, itemId]
+      'UPDATE menu_items SET stock = $1 WHERE id = $2 RETURNING *',
+      [after, itemId],
     );
     await client.query(
       `INSERT INTO inventory_transactions
        (business_id, menu_item_id, qty_change, balance_after, reason, note)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [businessId, itemId, delta, after, reason, note]
+      [businessId, itemId, delta, after, reason, note],
     );
     return serialize(upd.rows[0]);
   });
@@ -176,7 +187,7 @@ async function stockHistory(businessId, itemId, { limit = 50 } = {}) {
     `SELECT * FROM inventory_transactions
      WHERE business_id = $1 AND menu_item_id = $2
      ORDER BY created_at DESC LIMIT $3`,
-    [businessId, itemId, limit]
+    [businessId, itemId, limit],
   );
   return r.rows.map((row) => ({
     id: row.id,
@@ -217,9 +228,9 @@ async function bulkImport(businessId, items) {
   // plain row with the same name earlier in the file). variant_price falls
   // back to the row's price column. Plain CSVs without variant columns hit
   // exactly the old code path, row for row.
-  const variantsByName = new Map();   // lower(name) → [{ label, price }]
-  const variantFirstRow = new Map();  // lower(name) → 1-based row of first variant
-  const createdByName = new Map();    // lower(name) → menu_item id created this batch
+  const variantsByName = new Map(); // lower(name) → [{ label, price }]
+  const variantFirstRow = new Map(); // lower(name) → 1-based row of first variant
+  const createdByName = new Map(); // lower(name) → menu_item id created this batch
   let variantsApplied = 0;
   for (let i = 0; i < items.length; i++) {
     const raw = items[i] || {};
@@ -296,7 +307,9 @@ async function bulkImport(businessId, items) {
         itemId = r.rows[0]?.id;
       }
       if (!itemId) {
-        errors.push({ row: rowNo, name: key, message:
+        errors.push({ row: rowNo,
+          name: key,
+          message:
           'Variant rows need a base item row with the same name (add a plain row for the item first)' });
         skipped += variants.length;
         continue;

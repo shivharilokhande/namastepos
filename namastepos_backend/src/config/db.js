@@ -20,8 +20,7 @@ function buildSslConfig() {
   if (caEnv && caEnv.trim()) {
     let ca = caEnv;
     if (!caEnv.includes('BEGIN CERTIFICATE')) {
-      try { ca = require('fs').readFileSync(caEnv.trim(), 'utf8'); }
-      catch (e) { logger.error('PG_CA_CERT unreadable — falling back to no-verify', { err: e.message }); return { rejectUnauthorized: false }; }
+      try { ca = require('fs').readFileSync(caEnv.trim(), 'utf8'); } catch (e) { logger.error('PG_CA_CERT unreadable — falling back to no-verify', { err: e.message }); return { rejectUnauthorized: false }; }
     }
     return { ca, rejectUnauthorized: true };
   }

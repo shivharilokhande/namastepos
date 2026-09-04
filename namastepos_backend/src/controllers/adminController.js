@@ -5,20 +5,20 @@ const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const logger = require('../config/logger');
 
-const adminTeam   = require('../services/adminTeamService');
-const adminCust   = require('../services/customerAdminService');
-const sub         = require('../services/subscriptionService');
-const coupons     = require('../services/couponService');
-const refunds     = require('../services/refundService');
-const settings    = require('../services/settingsService');
-const gst         = require('../services/gstService');
-const reports     = require('../services/platformReportsService');
-const audit       = require('../services/auditService');
-const adminLegacy = require('../services/adminService');     // kept for old metrics()
-const razorpay    = require('../services/razorpayService');
-const features    = require('../services/featureService');   // Push 14d feature catalog
-const menuService = require('../services/menuService');       // Push 20b bulk import
-const { query }   = require('../config/db');
+const adminTeam = require('../services/adminTeamService');
+const adminCust = require('../services/customerAdminService');
+const sub = require('../services/subscriptionService');
+const coupons = require('../services/couponService');
+const refunds = require('../services/refundService');
+const settings = require('../services/settingsService');
+const gst = require('../services/gstService');
+const reports = require('../services/platformReportsService');
+const audit = require('../services/auditService');
+const adminLegacy = require('../services/adminService'); // kept for old metrics()
+const razorpay = require('../services/razorpayService');
+const features = require('../services/featureService'); // Push 14d feature catalog
+const menuService = require('../services/menuService'); // Push 20b bulk import
+const { query } = require('../config/db');
 
 const loginBody = Joi.object({
   email: Joi.string().email().required(),
@@ -36,6 +36,7 @@ const loginBody = Joi.object({
 // round-trip. Auth acceptance (cookie OR Bearer) lives in middleware/auth.js.
 const env = require('../config/env');
 const csrf = require('../middleware/csrf');
+
 const ADMIN_COOKIE = 'ff_admin';
 const ADMIN_COOKIE_OPTS = {
   httpOnly: true,
@@ -85,7 +86,7 @@ const twoFaVerify = [
   validate({ body: Joi.object({
     challengeId: Joi.string().uuid().required(),
     code: Joi.string().min(6).max(20).required(),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     const r = await adminTeam.complete2faLogin(req.body.challengeId, req.body.code);
     if (r.token) _setAdminSession(res, r.token);
@@ -99,7 +100,7 @@ const twoFaEnrolStart = asyncHandler(async (req, res) => {
 });
 
 const twoFaEnrolConfirm = [
-  validate({ body: Joi.object({ code: Joi.string().length(6).required() })}),
+  validate({ body: Joi.object({ code: Joi.string().length(6).required() }) }),
   asyncHandler(async (req, res) => {
     const r = await twoFactor.confirmEnrolment(req.user.id, req.body.code);
     // If this admin was in an enrol-only session (org-wide 2FA enforcement),
@@ -109,8 +110,11 @@ const twoFaEnrolConfirm = [
     if (req.user.enrol2fa) {
       const { issueAccessToken } = require('../utils/jwt');
       const token = issueAccessToken({
-        sub: req.user.id, sid: req.user.id, isSuperAdmin: true,
-        email: req.user.email, role: req.user.role,
+        sub: req.user.id,
+        sid: req.user.id,
+        isSuperAdmin: true,
+        email: req.user.email,
+        role: req.user.role,
       });
       _setAdminSession(res, token);
       return res.json({ ...r, token });
@@ -122,7 +126,7 @@ const twoFaEnrolConfirm = [
 // Security fix (2026-08-25): require a valid current TOTP / recovery code in
 // the body to disable 2FA (see twoFactorService.disable).
 const twoFaDisable = [
-  validate({ body: Joi.object({ code: Joi.string().min(6).max(20).required() })}),
+  validate({ body: Joi.object({ code: Joi.string().min(6).max(20).required() }) }),
   asyncHandler(async (req, res) => {
     await twoFactor.disable(req.user.id, req.body.code);
     res.json({ disabled: true });
@@ -139,7 +143,7 @@ const teamCreate = [
     password: Joi.string().min(6).required(),
     displayName: Joi.string().allow(null),
     role: Joi.string().valid('super_admin', 'finance', 'support', 'sales').default('support'),
-  })}),
+  }) }),
   asyncHandler(async (req, res) => {
     const admin = await adminTeam.create({ ...req.body, invitedBy: req.user.id });
     res.status(201).json({ admin });
@@ -151,7 +155,7 @@ const teamUpdate = [
     role: Joi.string().valid('super_admin', 'finance', 'support', 'sales'),
     is_active: Joi.boolean(),
     password: Joi.string().min(6),
-  }).min(1)}),
+  }).min(1) }),
   asyncHandler(async (req, res) => {
     const admin = await adminTeam.update(req.params.adminId, req.body, req.user.id);
     res.json({ admin });
@@ -217,6 +221,7 @@ const customerOrderForSupport = asyncHandler(async (req, res) => {
 // on demand (no dependency on Razorpay hosting a PDF). Scoped to the business
 // so the id in the path must belong to that customer.
 const subInvoice = require('../services/subscriptionInvoiceService');
+
 const invoicePdf = asyncHandler(async (req, res) => {
   await subInvoice.renderPdf(res, {
     invoiceId: req.params.invoiceId,
@@ -235,7 +240,8 @@ const createCustomerBody = Joi.object({
   // Allow any reasonable kebab/snake string; the service layer verifies the
   // tier exists in the plans table and 404s otherwise.
   planTier: Joi.string().pattern(/^[a-z][a-z0-9_-]{1,39}$/).default('free'),
-  trialDays: Joi.number().integer().min(0).max(365).default(14),
+  trialDays: Joi.number().integer().min(0).max(365)
+    .default(14),
 });
 
 const createCustomer = [
@@ -252,7 +258,8 @@ const updateCustomer = asyncHandler(async (req, res) => {
 });
 
 const extendTrialBody = Joi.object({
-  days: Joi.number().integer().min(1).max(365).required(),
+  days: Joi.number().integer().min(1).max(365)
+    .required(),
 });
 const extendTrial = [
   validate({ body: extendTrialBody }),
@@ -272,17 +279,21 @@ const setPlanManually = [
   validate({ body: setPlanBody }),
   asyncHandler(async (req, res) => {
     const sub2 = await adminCust.setPlanManually(
-      req.params.businessId, req.body.tier,
-      { billingPeriod: req.body.billingPeriod }
+      req.params.businessId,
+      req.body.tier,
+      { billingPeriod: req.body.billingPeriod },
     );
     // FF-402 — auto-log to the CRM activity feed so support sees the
     // plan change alongside notes/refunds in one timeline.
     require('../services/crmService').logActivity({
-      businessId: req.params.businessId, kind: 'plan_change',
+      businessId: req.params.businessId,
+      kind: 'plan_change',
       title: `Plan set to ${req.body.tier}${req.body.billingPeriod ? ` (${req.body.billingPeriod})` : ''}`,
-      meta: { toTier: req.body.tier, billingPeriod: req.body.billingPeriod,
-              subscriptionStatus: sub2?.status },
-      actorType: 'admin', actorEmail: req.user?.email,
+      meta: { toTier: req.body.tier,
+        billingPeriod: req.body.billingPeriod,
+        subscriptionStatus: sub2?.status },
+      actorType: 'admin',
+      actorEmail: req.user?.email,
     });
     res.json({ subscription: sub2 });
   }),
@@ -323,7 +334,8 @@ const addNote = [
     const note = await adminCust.addNote({
       businessId: req.params.businessId,
       adminId: req.user.id,
-      body: req.body.body, pinned: req.body.pinned,
+      body: req.body.body,
+      pinned: req.body.pinned,
     });
     res.status(201).json({ note });
   }),
@@ -363,7 +375,8 @@ const syncRazorpayPlans = asyncHandler(async (_req, res) => {
 // column is VARCHAR(40) after migration 039 so super-admin can spin
 // up arbitrary tier names like 'pro_lite' or 'enterprise_plus'.
 const createPlanBody = Joi.object({
-  tier: Joi.string().min(1).max(40).pattern(/^[a-z0-9_]+$/).required()
+  tier: Joi.string().min(1).max(40).pattern(/^[a-z0-9_]+$/)
+    .required()
     .messages({ 'string.pattern.base': 'tier must be lowercase letters, numbers, or underscores only' }),
   tier_kind: Joi.string().valid('starter', 'pro', 'enterprise').required(),
   name: Joi.string().min(1).max(60).required(),
@@ -466,10 +479,12 @@ const refundsInitiate = [
     // FF-402 — refund lands on the tenant's CRM timeline.
     if (req.body.businessId) {
       require('../services/crmService').logActivity({
-        businessId: req.body.businessId, kind: 'refund',
+        businessId: req.body.businessId,
+        kind: 'refund',
         title: `Refund initiated ₹${((req.body.amountPaise || 0) / 100).toFixed(2)}`,
         meta: { refundId: r?.id, orderId: req.body.orderId, reason: req.body.reason },
-        actorType: 'admin', actorEmail: req.user?.email,
+        actorType: 'admin',
+        actorEmail: req.user?.email,
       });
     }
     res.status(201).json({ refund: r });
@@ -523,18 +538,18 @@ const reportCohorts = asyncHandler(async (req, res) => {
 const reportFunnel = asyncHandler(async (req, res) => {
   res.json({ funnel: await reports.signupFunnel({ days: parseInt(req.query.days || '30', 10) }) });
 });
-const reportLtv     = asyncHandler(async (_req, res) => res.json(await reports.ltv()));
-const reportChurn   = asyncHandler(async (_req, res) => res.json(await reports.churnRate()));
-const reportItems   = asyncHandler(async (req, res) => res.json({ topItems: await reports.topItems(req.query) }));
-const reportCities  = asyncHandler(async (req, res) => res.json({ topCities: await reports.topCities(req.query) }));
-const reportMrr     = asyncHandler(async (req, res) => res.json({ series: await reports.mrrTrend(req.query) }));
+const reportLtv = asyncHandler(async (_req, res) => res.json(await reports.ltv()));
+const reportChurn = asyncHandler(async (_req, res) => res.json(await reports.churnRate()));
+const reportItems = asyncHandler(async (req, res) => res.json({ topItems: await reports.topItems(req.query) }));
+const reportCities = asyncHandler(async (req, res) => res.json({ topCities: await reports.topCities(req.query) }));
+const reportMrr = asyncHandler(async (req, res) => res.json({ series: await reports.mrrTrend(req.query) }));
 // Push 19e — outstanding (unpaid) invoices + aging buckets
 const reportOutstanding = asyncHandler(async (_req, res) => res.json(await reports.outstandingInvoices()));
 
 // N4 (2026-08-27) — consolidated subscription ledger (all tenants: plan,
 // status, next-charge, trial, paid/comped/free) + summary.
 const reportSubscriptions = asyncHandler(async (req, res) => res.json(
-  await reports.subscriptionLedger({ status: req.query.status, billingMode: req.query.billingMode })
+  await reports.subscriptionLedger({ status: req.query.status, billingMode: req.query.billingMode }),
 ));
 
 // X7 (2026-08-28) — support / ticketing (admin console side)
@@ -551,13 +566,15 @@ const supportList = asyncHandler(async (req, res) => {
   });
   res.json({ tickets, total });
 });
-const supportGet = asyncHandler(async (req, res) =>
-  res.json({ ticket: await support.getTicket(req.params.ticketId) }));
+const supportGet = asyncHandler(async (req, res) => res.json({ ticket: await support.getTicket(req.params.ticketId) }));
 const supportCreate = asyncHandler(async (req, res) => res.status(201).json({
   ticket: await support.createTicket({
-    businessId: req.body.businessId, subject: req.body.subject,
-    priority: req.body.priority, body: req.body.body,
-    authorEmail: req.user?.email, byAdmin: true,
+    businessId: req.body.businessId,
+    subject: req.body.subject,
+    priority: req.body.priority,
+    body: req.body.body,
+    authorEmail: req.user?.email,
+    byAdmin: true,
   }),
 }));
 const supportReply = asyncHandler(async (req, res) => res.json({
@@ -565,8 +582,7 @@ const supportReply = asyncHandler(async (req, res) => res.json({
     body: req.body.body, authorType: 'admin', authorId: req.user?.id, authorEmail: req.user?.email,
   }),
 }));
-const supportSetStatus = asyncHandler(async (req, res) =>
-  res.json({ ticket: await support.setStatus(req.params.ticketId, req.body.status) }));
+const supportSetStatus = asyncHandler(async (req, res) => res.json({ ticket: await support.setStatus(req.params.ticketId, req.body.status) }));
 
 // Tenant audit trail (owner/staff money mutations) for a business.
 const tenantAudit = asyncHandler(async (req, res) => res.json({
@@ -582,20 +598,21 @@ const reportAddonPayouts = asyncHandler(async (_req, res) => res.json(await repo
 
 // L2 (2026-08-28) — referral program (admin view + reward)
 const referral = require('../services/referralService');
-const referralList = asyncHandler(async (req, res) =>
-  res.json({ referrals: await referral.listAll({ status: req.query.status }) }));
-const referralReward = asyncHandler(async (req, res) =>
-  res.json({ referral: await referral.markAwarded(req.params.referralId) }));
+
+const referralList = asyncHandler(async (req, res) => res.json({ referrals: await referral.listAll({ status: req.query.status }) }));
+const referralReward = asyncHandler(async (req, res) => res.json({ referral: await referral.markAwarded(req.params.referralId) }));
 
 // X4 (2026-08-28) — in-console tenant broadcast (email a segment via Brevo)
 const broadcast = require('../services/broadcastService');
-const broadcastPreview = asyncHandler(async (req, res) =>
-  res.json(await broadcast.preview(req.query.segment || 'all')));
+
+const broadcastPreview = asyncHandler(async (req, res) => res.json(await broadcast.preview(req.query.segment || 'all')));
 const broadcastSend = asyncHandler(async (req, res) => res.json(
   await broadcast.send({
-    segment: req.body.segment || 'all', subject: req.body.subject,
-    body: req.body.body, actorEmail: req.user?.email,
-  })
+    segment: req.body.segment || 'all',
+    subject: req.body.subject,
+    body: req.body.body,
+    actorEmail: req.user?.email,
+  }),
 ));
 
 // Push 20d — platform consolidated P&L (income, refunds, expenses, net)
@@ -633,13 +650,13 @@ const auditLog = asyncHandler(async (req, res) => {
     module: req.query.module,
     adminId: req.query.adminId,
     businessId: req.query.businessId,
-  })});
+  }) });
 });
 
 // ── Webhooks log ────────────────────────────────────────────────────────
 const webhookEvents = asyncHandler(async (_req, res) => {
   const r = await query(
-    `SELECT * FROM webhook_events ORDER BY created_at DESC LIMIT 200`
+    'SELECT * FROM webhook_events ORDER BY created_at DESC LIMIT 200',
   );
   res.json({ events: r.rows });
 });
@@ -667,24 +684,27 @@ const crm = require('../services/crmService');
 const listActivitiesCtrl = asyncHandler(async (req, res) => {
   const rows = await crm.listActivities(req.params.businessId, {
     limit: req.query.limit || 100,
-    kind:  req.query.kind  || null,
+    kind: req.query.kind || null,
   });
   res.json({ activities: rows });
 });
 
 const addActivityCtrl = [
   validate({ body: Joi.object({
-    kind:  Joi.string().max(40).default('note'),
+    kind: Joi.string().max(40).default('note'),
     title: Joi.string().max(500).required(),
-    body:  Joi.string().max(5000).allow('', null),
-    meta:  Joi.object().default({}),
-  })}),
+    body: Joi.string().max(5000).allow('', null),
+    meta: Joi.object().default({}),
+  }) }),
   asyncHandler(async (req, res) => {
     const id = await crm.logActivity({
       businessId: req.params.businessId,
-      kind: req.body.kind, title: req.body.title, body: req.body.body,
+      kind: req.body.kind,
+      title: req.body.title,
+      body: req.body.body,
       meta: req.body.meta || {},
-      actorType: 'admin', actorEmail: req.user?.email,
+      actorType: 'admin',
+      actorEmail: req.user?.email,
     });
     res.status(201).json({ id });
   }),
@@ -694,19 +714,19 @@ const listTasksCtrl = asyncHandler(async (req, res) => {
   const tasks = await crm.listTasks({
     businessId: req.query.businessId || null,
     ownerEmail: req.query.ownerEmail || null,
-    openOnly:   req.query.openOnly !== 'false',
+    openOnly: req.query.openOnly !== 'false',
   });
   res.json({ tasks });
 });
 
 const createTaskCtrl = [
   validate({ body: Joi.object({
-    businessId:  Joi.string().uuid().allow(null),
-    title:       Joi.string().min(1).max(500).required(),
-    notes:       Joi.string().max(5000).allow('', null),
-    ownerEmail:  Joi.string().email().allow('', null),
-    dueAt:       Joi.date().iso().allow(null),
-  })}),
+    businessId: Joi.string().uuid().allow(null),
+    title: Joi.string().min(1).max(500).required(),
+    notes: Joi.string().max(5000).allow('', null),
+    ownerEmail: Joi.string().email().allow('', null),
+    dueAt: Joi.date().iso().allow(null),
+  }) }),
   asyncHandler(async (req, res) => {
     const task = await crm.createTask({
       ...req.body,
@@ -758,9 +778,7 @@ const setFeatureOverridesBody = Joi.object({
 const setFeatureOverrides = [
   validate({ body: setFeatureOverridesBody }),
   asyncHandler(async (req, res) => {
-    const overrides = await featureFlags.replaceAll(
-      req.params.businessId, req.body.overrides, { adminId: req.user?.id }
-    );
+    const overrides = await featureFlags.replaceAll(req.params.businessId, req.body.overrides, { adminId: req.user?.id });
     res.json({ overrides });
   }),
 ];
@@ -802,7 +820,7 @@ const putCustomPlanBody = Joi.object({
   // Standalone custom plans (no base) must still state a price + tier kind.
   if (!v.basePlanTier && (v.priceInrPaise === undefined || !v.tierKind)) {
     return helpers.message(
-      'priceInrPaise and tierKind are required when no basePlanTier is given'
+      'priceInrPaise and tierKind are required when no basePlanTier is given',
     );
   }
   return v;
@@ -814,10 +832,12 @@ const putCustomPlan = [
     // Mirror setPlanManually's CRM breadcrumb when the plan was assigned.
     if (req.body.assign === true) {
       require('../services/crmService').logActivity({
-        businessId: req.params.businessId, kind: 'plan_change',
+        businessId: req.params.businessId,
+        kind: 'plan_change',
         title: `Custom plan "${req.body.name}" assigned`,
         meta: { tier: out.plan?.tier, priceInrPaise: req.body.priceInrPaise },
-        actorType: 'admin', actorEmail: req.user?.email,
+        actorType: 'admin',
+        actorEmail: req.user?.email,
       }).catch(() => {});
     }
     res.json(out);
@@ -831,10 +851,12 @@ const deleteCustomPlan = asyncHandler(async (req, res) => {
   const out = await customPlans.removeForBusiness(req.params.businessId, { force });
   if (out.deleted) {
     require('../services/crmService').logActivity({
-      businessId: req.params.businessId, kind: 'plan_change',
+      businessId: req.params.businessId,
+      kind: 'plan_change',
       title: `Custom plan removed${out.movedTo ? ` — moved to ${out.movedTo}` : ''}`,
       meta: { tier: out.tier, movedTo: out.movedTo || null },
-      actorType: 'admin', actorEmail: req.user?.email,
+      actorType: 'admin',
+      actorEmail: req.user?.email,
     }).catch(() => {});
   }
   res.json(out);
@@ -857,7 +879,8 @@ const customerUsage = asyncHandler(async (req, res) => {
 const platformUsage = asyncHandler(async (req, res) => {
   res.json(await ops.platformUsage({
     overLimitOnly: req.query.overLimitOnly === 'true',
-    limit: req.query.limit, offset: req.query.offset,
+    limit: req.query.limit,
+    offset: req.query.offset,
   }));
 });
 
@@ -876,14 +899,15 @@ const dunningRetry = asyncHandler(async (req, res) => {
 });
 
 const dunningWaiveBody = Joi.object({
-  reason: Joi.string().trim().min(3).max(500).required(),
+  reason: Joi.string().trim().min(3).max(500)
+    .required(),
 });
 const dunningWaive = [
   validate({ body: dunningWaiveBody }),
   asyncHandler(async (req, res) => {
     res.json({ subscription: await ops.dunningWaive(req.params.businessId, {
       reason: req.body.reason, adminId: req.user?.id,
-    })});
+    }) });
   }),
 ];
 
@@ -921,7 +945,7 @@ const cancelSubscription = [
   asyncHandler(async (req, res) => {
     res.json({ subscription: await adminCust.cancelSubscription(req.params.businessId, {
       immediate: req.body.immediate, reason: req.body.reason,
-    })});
+    }) });
   }),
 ];
 
@@ -958,7 +982,8 @@ const setAccountFields = [
 
 const anonymiseBody = Joi.object({
   confirm: Joi.string().valid('ANONYMISE').required(),
-  reason: Joi.string().trim().min(3).max(500).required(),
+  reason: Joi.string().trim().min(3).max(500)
+    .required(),
 });
 const anonymiseCustomer = [
   validate({ body: anonymiseBody }),
@@ -970,42 +995,115 @@ const anonymiseCustomer = [
 ];
 
 module.exports = {
-  login, logout, me,
-  twoFaVerify, twoFaEnrolStart, twoFaEnrolConfirm, twoFaDisable,
-  teamList, teamCreate, teamUpdate, teamDeactivate,
-  listCustomers, getCustomer, drilldown, invoicePdf,
+  login,
+  logout,
+  me,
+  twoFaVerify,
+  twoFaEnrolStart,
+  twoFaEnrolConfirm,
+  twoFaDisable,
+  teamList,
+  teamCreate,
+  teamUpdate,
+  teamDeactivate,
+  listCustomers,
+  getCustomer,
+  drilldown,
+  invoicePdf,
   customerOrderForSupport,
-  createCustomer, updateCustomer,
-  extendTrial, setPlanManually,
-  suspend, restore, impersonate, createImpersonationCode, deleteCustomer,
-  addNote, deleteNote,
-  listPlans, updatePlan, syncRazorpayPlans, createPlan, deletePlan,
-  featureCatalog, tierFeatures, setTierFeatures,
-  couponsList, couponsCreate, couponsUpdate, couponsDisable, couponRedemptions,
-  refundsList, refundsInitiate,
-  settingsList, settingsBulkSet,
-  gstSummary, gstr1Csv, gstr3b, gstHsnSummary, gstB2bB2c,
-  reportCohorts, reportFunnel, reportLtv, reportChurn, reportItems, reportCities, reportMrr,
-  reportOutstanding, reportSubscriptions,
-  reportPnl, reportCustomersKpi, reportRevenueBreakdown,
-  supportList, supportGet, supportCreate, supportReply, supportSetStatus,
-  broadcastPreview, broadcastSend,
-  referralList, referralReward, reportAddonPayouts, tenantAudit,
+  createCustomer,
+  updateCustomer,
+  extendTrial,
+  setPlanManually,
+  suspend,
+  restore,
+  impersonate,
+  createImpersonationCode,
+  deleteCustomer,
+  addNote,
+  deleteNote,
+  listPlans,
+  updatePlan,
+  syncRazorpayPlans,
+  createPlan,
+  deletePlan,
+  featureCatalog,
+  tierFeatures,
+  setTierFeatures,
+  couponsList,
+  couponsCreate,
+  couponsUpdate,
+  couponsDisable,
+  couponRedemptions,
+  refundsList,
+  refundsInitiate,
+  settingsList,
+  settingsBulkSet,
+  gstSummary,
+  gstr1Csv,
+  gstr3b,
+  gstHsnSummary,
+  gstB2bB2c,
+  reportCohorts,
+  reportFunnel,
+  reportLtv,
+  reportChurn,
+  reportItems,
+  reportCities,
+  reportMrr,
+  reportOutstanding,
+  reportSubscriptions,
+  reportPnl,
+  reportCustomersKpi,
+  reportRevenueBreakdown,
+  supportList,
+  supportGet,
+  supportCreate,
+  supportReply,
+  supportSetStatus,
+  broadcastPreview,
+  broadcastSend,
+  referralList,
+  referralReward,
+  reportAddonPayouts,
+  tenantAudit,
   customerMenuBulkImport,
-  auditLog, webhookEvents, dbHealth, metrics,
+  auditLog,
+  webhookEvents,
+  dbHealth,
+  metrics,
   // FF-402
-  listActivitiesCtrl, addActivityCtrl,
-  listTasksCtrl, createTaskCtrl, completeTaskCtrl,
-  recomputeHealthCtrl, recomputeAllHealthCtrl, renewalsCtrl,
+  listActivitiesCtrl,
+  addActivityCtrl,
+  listTasksCtrl,
+  createTaskCtrl,
+  completeTaskCtrl,
+  recomputeHealthCtrl,
+  recomputeAllHealthCtrl,
+  renewalsCtrl,
   // 2026-09-03 — feature overrides + custom plans
-  listFeatureOverrides, setFeatureOverrides, deleteFeatureOverride,
-  getCustomPlan, putCustomPlan, deleteCustomPlan,
+  listFeatureOverrides,
+  setFeatureOverrides,
+  deleteFeatureOverride,
+  getCustomPlan,
+  putCustomPlan,
+  deleteCustomPlan,
   // 2026-09-03 — SaaS control plane: overview, usage, dunning ops,
   // notification log, health panel, customer lifecycle actions
-  overview, platformHealth,
-  customerUsage, platformUsage,
-  dunningQueue, dunningTimeline, dunningRetry, dunningWaive, dunningMarkPaid,
+  overview,
+  platformHealth,
+  customerUsage,
+  platformUsage,
+  dunningQueue,
+  dunningTimeline,
+  dunningRetry,
+  dunningWaive,
+  dunningMarkPaid,
   customerNotifications,
-  cancelSubscription, changeOwnerEmail, resetOwnerCredentials,
-  resendWelcome, setAccountFields, anonymiseCustomer,
+  cancelSubscription,
+  changeOwnerEmail,
+  resetOwnerCredentials,
+  resendWelcome,
+  setAccountFields,
+  anonymiseCustomer,
 };
