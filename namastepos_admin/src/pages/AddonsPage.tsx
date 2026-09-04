@@ -172,9 +172,11 @@ function AddonDialog({ mode, addon, onClose, onSaved }:
         ...f,
         required_plan_tier: f.required_plan_tier || null,
       };
-      return mode === 'create'
-        ? adminApi.createAddon(payload)
-        : adminApi.updateAddon(f.slug, payload);
+      if (mode === 'create') return adminApi.createAddon(payload);
+      // The update schema is `allowUnknown:false` and has no `slug` key (the
+      // slug is the URL param and is immutable), so posting it 400s.
+      const { slug: _slug, ...updatePayload } = payload;
+      return adminApi.updateAddon(f.slug, updatePayload);
     },
     onSuccess: () => { toast.success(mode === 'create' ? 'Addon created' : 'Addon updated'); onSaved(); },
     onError: (e) => toast.error(apiError(e)),

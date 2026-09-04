@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -253,14 +253,22 @@ function CreateCustomerDialog({ open, onClose, onCreated, plans }: {
   // Push 19a — default to whichever plan exists at the cheapest price
   // (typically Starter / Free). Falls back to 'free' if /plans hasn't
   // loaded yet so the form never breaks.
-  const defaultTier = plans.length > 0
+  const cheapestTier = plans.length > 0
     ? [...plans].sort((a, b) => (a.priceInr || 0) - (b.priceInr || 0))[0].tier
     : 'free';
   const [form, setForm] = useState({
     email: '', name: '', ownerName: '', phone: '',
-    city: '', category: '', planTier: defaultTier, trialDays: 14,
+    city: '', category: '', planTier: cheapestTier, trialDays: 14,
   });
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+  // useState seeds before listPlans resolves, so the placeholder 'free' used to
+  // stick and every manual creation posted planTier:'free'. Re-seed once the
+  // catalog lands — but never clobber a tier the admin already picked.
+  const planTouched = useRef(false);
+  useEffect(() => {
+    if (planTouched.current || plans.length === 0) return;
+    setForm((f) => (f.planTier === cheapestTier ? f : { ...f, planTier: cheapestTier }));
+  }, [cheapestTier, plans.length]);
 
   const create = useMutation({
     mutationFn: () => adminApi.createCustomer(form),
@@ -287,7 +295,8 @@ function CreateCustomerDialog({ open, onClose, onCreated, plans }: {
           <div><Label>Category</Label><Input value={form.category} onChange={(e) => set('category', e.target.value)} placeholder="tea-stall, dhaba…" /></div>
           <div>
             <Label>Plan</Label>
-            <select value={form.planTier} onChange={(e) => set('planTier', e.target.value)}
+            <select value={form.planTier}
+                    onChange={(e) => { planTouched.current = true; set('planTier', e.target.value); }}
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
               {plans.length === 0 && <option value="free">Free (loading…)</option>}
               {[...plans]

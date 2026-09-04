@@ -134,19 +134,11 @@ api.interceptors.response.use(
       if (!window.location.pathname.startsWith('/login')) {
         window.location.href = '/login';
       }
-    } else if (err.response?.status === 403) {
-      // A mid-session demotion now 403s (backend re-checks the live role). The
-      // nav is gated off `me.role` at load, so a one-time reload re-fetches the
-      // live role and re-gates the UI instead of leaving stale menu items that
-      // keep failing. Guard with a session flag so we reload at most once and
-      // never loop.
-      try {
-        if (!sessionStorage.getItem('ff_admin_403_reloaded')) {
-          sessionStorage.setItem('ff_admin_403_reloaded', '1');
-          window.location.reload();
-        }
-      } catch { /* sessionStorage unavailable — skip */ }
     }
+    // 403 is NOT a session problem — it means "you lack permission for THIS
+    // action". Reloading the SPA on it threw away in-progress work and hid the
+    // real reason, so it now rejects normally and the calling page surfaces the
+    // message (toast / error card). Only 401 (session gone) redirects.
     return Promise.reject(err);
   }
 );

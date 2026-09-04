@@ -497,7 +497,11 @@ async function dunningQueue({ includeRecovered = false, limit = 100 } = {}) {
     razorpaySubscriptionId: x.razorpay_subscription_id || null,
     planTier: x.tier || null,
     planName: x.plan_name || null,
-    amountAtRiskInr: (x.price_inr_paise || 0) / PAISE,
+    // A yearly mandate that fails owes the YEARLY amount — billing the
+    // monthly figure understated every annual customer's risk by ~12x.
+    amountAtRiskInr: ((x.billing_period === 'yearly'
+      ? (x.price_yearly_paise || x.price_inr_paise)
+      : x.price_inr_paise) || 0) / PAISE,
     lifetimeFailures: x.lifetime_failures,
   }));
   return {
@@ -637,7 +641,12 @@ async function dunningWaive(businessId, { reason, adminId = null } = {}) {
 async function dunningMarkPaid(businessId, { amountPaise, reference, adminId = null } = {}) {
   const s = await _subForOps(businessId);
   const amount = amountPaise === undefined || amountPaise === null
-    ? (s.price_inr_paise || 0)
+    // Match the cadence: the invoice period below is 1 year for yearly subs,
+    // so defaulting to the monthly price would book a year of service for a
+    // month's money.
+    ? ((s.billing_period === 'yearly'
+        ? (s.price_yearly_paise || s.price_inr_paise)
+        : s.price_inr_paise) || 0)
     : parseInt(amountPaise, 10);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new BadRequest('amountPaise must be a positive integer (or omit it to use the plan price)');

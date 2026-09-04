@@ -180,8 +180,10 @@ export function BillingOpsPage() {
                               onClick={() => setTimelineFor(r)}>
                         <History className="h-4 w-4" />
                       </Button>
+                      {/* Only the row actually in flight is disabled — gating on
+                          retry.isPending alone froze the button on every row. */}
                       <Button variant="outline" size="sm" title="Re-send the recovery nudge"
-                              disabled={retry.isPending}
+                              disabled={retry.isPending && retry.variables === r.businessId}
                               onClick={() => retry.mutate(r.businessId)}>
                         <RefreshCw className="mr-1 h-3 w-3" /> Retry
                       </Button>

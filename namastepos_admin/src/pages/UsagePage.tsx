@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { adminApi, UsageMetric, UsageRow } from '@/api/admin';
+import { apiError } from '@/api/client';
 
 // 2026-09-03 — platform-wide usage vs plan limits.
 //
@@ -30,7 +31,7 @@ export function UsagePage() {
   const [overLimitOnly, setOverLimitOnly] = useState(false);
   const [page, setPage] = useState(0);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['platform-usage', overLimitOnly, page],
     queryFn: () => adminApi.platformUsage({
       overLimitOnly, limit: PAGE_SIZE, offset: page * PAGE_SIZE,
@@ -103,7 +104,17 @@ export function UsagePage() {
               {isLoading && (
                 <TableRow><TableCell colSpan={7} className="text-muted-foreground">Loading…</TableCell></TableRow>
               )}
-              {!isLoading && rows.length === 0 && (
+              {isError && (
+                // "Nobody is over their plan limits." on a failed fetch is a
+                // false all-clear — say the load failed and offer a retry.
+                <TableRow>
+                  <TableCell colSpan={7} className="py-8 text-center">
+                    <div className="text-sm text-destructive">Couldn't load usage — {apiError(error)}</div>
+                    <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!isLoading && !isError && rows.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
                     {overLimitOnly ? 'Nobody is over their plan limits.' : 'No tenants to show.'}

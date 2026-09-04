@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -72,7 +72,7 @@ export function CustomerDetailPage() {
   const [extending, setExtending] = useState(false);
   const [changingPlan, setChangingPlan] = useState(false);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['drilldown', id],
     queryFn: () => adminApi.drilldown(id!),
     enabled: !!id,
@@ -127,6 +127,28 @@ export function CustomerDetailPage() {
     impersonate.mutate({ w, dash });
   };
 
+  // A 404/403/5xx used to fall through the `!data` guard and render "Loading…"
+  // forever. Show the real reason with a retry instead.
+  if (isError || (!isLoading && !data)) {
+    return (
+      <div className="space-y-4">
+        <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> Back
+        </Button>
+        <Card>
+          <CardHeader>
+            <CardTitle>Couldn't load this customer</CardTitle>
+            <CardDescription>
+              {isError ? apiError(error) : 'The customer drilldown returned no data.'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
   if (isLoading || !data) return <div className="text-muted-foreground">Loading…</div>;
 
   // Defensive defaults — if the drilldown API ever returns a partial response
@@ -671,7 +693,7 @@ function useFeatureGroups(featureKeys: FeatureKey[], search: string) {
 
 function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featureKeys: FeatureKey[] }) {
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['custom-plan', businessId],
     queryFn: () => adminApi.getCustomPlan(businessId),
   });
@@ -701,10 +723,17 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
   // Keys the base plan already grants — shown checked + locked.
   const inherited = new Set<string>(plan?.inheritedFeatureKeys ?? []);
 
-  // Seed the form from the server copy whenever it (re)loads.
+  // Seed the form from the server copy ONCE per loaded plan identity. This used
+  // to depend on `[data]` unconditionally, so any background invalidate (e.g.
+  // the drilldown refetch triggered by another card) re-seeded mid-typing and
+  // silently discarded the admin's unsaved edits.
+  const seededFor = useRef<string | null>(null);
   useEffect(() => {
     if (!data?.plan) return;
     const p = data.plan;
+    const identity = String((p as any).id ?? (p as any).tier ?? businessId);
+    if (seededFor.current === identity) return;
+    seededFor.current = identity;
     setName(p.name || '');
     setPriceMonthly(String((p.priceInrPaise ?? 0) / 100));
     setPriceYearly(p.priceYearlyPaise != null ? String(p.priceYearlyPaise / 100) : '');
@@ -716,7 +745,7 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
     // `data.featureKeys` was always undefined and the picker rendered empty.
     setSelected(new Set(p.extraFeatureKeys ?? p.featureKeys ?? []));
     setEditing(true);
-  }, [data]);
+  }, [data, businessId]);
 
   // Picking a base pre-fills price/limits/tier from it (editable afterwards).
   const applyBase = (tier: string) => {
@@ -759,6 +788,7 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
     mutationFn: (force: boolean) => adminApi.deleteCustomPlan(businessId, force),
     onSuccess: () => {
       toast.success('Custom plan deleted');
+      seededFor.current = null; // let a freshly created plan seed the form again
       setEditing(false);
       setName(''); setPriceMonthly(''); setPriceYearly('');
       setSelected(new Set());
@@ -807,6 +837,13 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
       <CardContent className="space-y-4">
         {isLoading ? (
           <div className="text-sm text-muted-foreground">Loading…</div>
+        ) : isError ? (
+          // Without this, a failed fetch rendered the "Create custom plan"
+          // button — inviting the admin to overwrite a plan we never read.
+          <div className="space-y-2">
+            <div className="text-sm text-destructive">Couldn't load the custom plan — {apiError(error)}</div>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
+          </div>
         ) : !plan && !editing ? (
           <Button variant="outline" onClick={() => setEditing(true)}>
             Create custom plan
@@ -1449,7 +1486,7 @@ function SupportOrderLookup({ businessId }: { businessId: string }) {
                     <TableCell>{it.name}{it.note ? ` (${it.note})` : ''}</TableCell>
                     <TableCell className="text-right">{it.qty}</TableCell>
                     <TableCell className="text-right">
-                      {it.price == null ? '—' : formatINR(it.price)}
+                      {it.price == null ? '—' : formatINR(it.price, { decimals: true })}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1460,7 +1497,7 @@ function SupportOrderLookup({ businessId }: { businessId: string }) {
                 {order.paymentMethod ? `paid by ${order.paymentMethod}` : 'payment mode unknown'}
               </span>
               <span className="font-semibold">
-                {order.total == null ? '—' : formatINR(order.total)}
+                {order.total == null ? '—' : formatINR(order.total, { decimals: true })}
               </span>
             </div>
             <div className="text-[11px] text-muted-foreground">{order.privacyNotice}</div>
@@ -2125,7 +2162,7 @@ function DangerZoneCard({ businessId, business }: { businessId: string; business
 // in the empty/footer state rather than implying we know.
 function MessagesTab({ businessId }: { businessId: string }) {
   const [status, setStatus] = useState('');
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['customer-notifications', businessId, status],
     queryFn: () => adminApi.customerNotifications(businessId, {
       limit: 100, status: status || undefined,
@@ -2144,7 +2181,9 @@ function MessagesTab({ businessId }: { businessId: string }) {
           <div>
             <CardTitle className="text-base">Emails sent to this tenant</CardTitle>
             <CardDescription>
-              {isLoading ? 'Loading…' : `${data?.total ?? 0} recorded dispatches`}
+              {isLoading ? 'Loading…'
+                : isError ? 'Couldn’t load the email log'
+                : `${data?.total ?? 0} recorded dispatches`}
             </CardDescription>
           </div>
           <select value={status} onChange={(e) => setStatus(e.target.value)}
@@ -2172,7 +2211,16 @@ function MessagesTab({ businessId }: { businessId: string }) {
             {isLoading && (
               <TableRow><TableCell colSpan={5} className="text-muted-foreground">Loading…</TableCell></TableRow>
             )}
-            {!isLoading && rows.length === 0 && (
+            {isError && (
+              // "No emails recorded" on a 500 reads as good news. Say it failed.
+              <TableRow>
+                <TableCell colSpan={5} className="py-8 text-center">
+                  <div className="text-sm text-destructive">Couldn't load the email log — {apiError(error)}</div>
+                  <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>Retry</Button>
+                </TableCell>
+              </TableRow>
+            )}
+            {!isLoading && !isError && rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
                   No emails recorded for this tenant.

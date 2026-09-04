@@ -215,59 +215,78 @@ class _DeliveryBoardScreenState extends State<DeliveryBoardScreen> {
   /// the escape hatch for a 45-minute biryani.
   Future<int?> _askPrepMinutes(Map<String, dynamic> order) {
     final controller = TextEditingController();
+    // Out-of-range input used to `return` silently, so typing 500 and tapping
+    // Accept did nothing at all. Now the field says why.
+    String? error;
     return showModalBottomSheet<int>(
       context: context,
       isScrollControlled: true,
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 16, right: 16, top: 16,
-          bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Accept #${order['orderNo']} — how long?',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            Row(
-              children: [10, 15, 20, 30].map((m) => Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: SizedBox(
-                    height: 64,
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx, m),
-                      child: Text('$m\nmin', textAlign: TextAlign.center),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            left: 16, right: 16, top: 16,
+            bottom: 16 + MediaQuery.of(ctx).viewInsets.bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Accept #${order['orderNo']} — how long?',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              Row(
+                children: [10, 15, 20, 30].map((m) => Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: SizedBox(
+                      height: 64,
+                      child: ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, m),
+                        child: Text('$m\nmin', textAlign: TextAlign.center),
+                      ),
                     ),
                   ),
+                )).toList(),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: 'Or type minutes (1-240)',
+                  border: const OutlineInputBorder(),
+                  errorText: error,
                 ),
-              )).toList(),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Or type minutes (1-240)',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton(
-                onPressed: () {
-                  final n = int.tryParse(controller.text.trim());
-                  if (n == null || n < 1 || n > 240) return;
-                  Navigator.pop(ctx, n);
+                onChanged: (_) {
+                  if (error != null) setSheet(() => error = null);
                 },
-                child: const Text('Accept'),
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: () {
+                    final raw = controller.text.trim();
+                    final n = int.tryParse(raw);
+                    if (n == null) {
+                      setSheet(() => error = raw.isEmpty
+                          ? 'Pick a chip above or type the minutes'
+                          : 'Enter a whole number of minutes');
+                      return;
+                    }
+                    if (n < 1 || n > 240) {
+                      setSheet(() => error = 'Prep time must be between 1 and 240 minutes');
+                      return;
+                    }
+                    Navigator.pop(ctx, n);
+                  },
+                  child: const Text('Accept'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

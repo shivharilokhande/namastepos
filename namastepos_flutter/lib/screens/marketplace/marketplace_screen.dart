@@ -225,9 +225,15 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   }
 
   void _onExternalWallet(ExternalWalletResponse resp) {
-    // PhonePe / GPay handoff — no final result here; the user returns and
-    // can refresh. Keep it neutral.
-    _showSnack('Opening ${resp.walletName ?? "wallet"}…');
+    // PhonePe / GPay handoff — no final result ever arrives on this callback,
+    // so the row must be released here (it used to spin forever). The payment
+    // continues in the wallet app; activation lands via confirmAddonPayment on
+    // return, or the user pulls to refresh.
+    _payingSlug = null;
+    if (!mounted) return;
+    setState(() => _busySlug = null);
+    _showSnack('Payment moved to ${resp.walletName ?? "your wallet app"} — '
+        'finish it there, then pull down to refresh.');
   }
 
   void _showSnack(String msg) {

@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { adminApi, Admin } from '@/api/admin';
-import { adminLogout } from '@/api/client';
+import { adminLogout, apiError } from '@/api/client';
 import { cn } from '@/lib/utils';
 
 interface NavItem { to: string; icon: any; label: string; needs?: string; }
@@ -50,8 +50,10 @@ const SECTIONS: Section[] = [
     { to: '/customers', icon: Users,           label: 'Customers', needs: 'customers.read' },
     // FF-402 — CRM primitives: cross-tenant follow-up + renewal view
     { to: '/crm',       icon: TrendingUp,      label: 'CRM',       needs: 'customers.read' },
-    { to: '/support',   icon: LifeBuoy,        label: 'Support',   needs: 'compliance.read' },
-    { to: '/broadcast', icon: Send,            label: 'Broadcast', needs: 'compliance.write' },
+    // Nav gates mirror what the routes actually require: support tickets and
+    // broadcast are customers.* (not compliance.*).
+    { to: '/support',   icon: LifeBuoy,        label: 'Support',   needs: 'customers.read' },
+    { to: '/broadcast', icon: Send,            label: 'Broadcast', needs: 'customers.write' },
     { to: '/referrals', icon: Gift,            label: 'Referrals', needs: 'reports.read' },
     // Usage vs plan caps — upsell candidates + support triage in one table.
     { to: '/usage',     icon: Gauge,           label: 'Usage & limits', needs: 'reports.read' },
@@ -71,7 +73,8 @@ const SECTIONS: Section[] = [
   { label: 'Operations', items: [
     { to: '/compliance', icon: ShieldCheck,    label: 'Compliance', needs: 'compliance.read' },
     { to: '/audit',     icon: ScrollText,      label: 'Audit log', needs: 'audit.read' },
-    { to: '/webhooks',  icon: BarChart3,       label: 'Webhooks',  needs: 'settings.write' },
+    // GET /admin/webhooks/events is audit.read, not settings.write.
+    { to: '/webhooks',  icon: BarChart3,       label: 'Webhooks',  needs: 'audit.read' },
     { to: '/team',      icon: UsersRound,      label: 'Admin team', needs: 'settings.write' },
     { to: '/settings',  icon: Settings,        label: 'Platform settings', needs: 'settings.write' },
   ]},
@@ -80,8 +83,16 @@ const SECTIONS: Section[] = [
 export function Layout() {
   const navigate = useNavigate();
   const [me, setMe] = useState<Admin | null>(null);
+  // A failed /auth/me used to be swallowed, leaving `me=null` — every roleCan()
+  // returned false and the console looked empty with no explanation. Surface it.
+  const [meError, setMeError] = useState<string | null>(null);
 
-  useEffect(() => { adminApi.me().then(setMe).catch(() => {}); }, []);
+  const loadMe = () => {
+    setMeError(null);
+    adminApi.me().then((m) => { setMe(m); setMeError(null); })
+      .catch((e) => { setMe(null); setMeError(apiError(e)); });
+  };
+  useEffect(() => { loadMe(); }, []);
 
   const logout = async () => { await adminLogout(); navigate('/login'); };
 
@@ -109,6 +120,22 @@ export function Layout() {
               <Badge variant={roleColor[me.role] || 'muted'} className="text-[10px] capitalize">
                 {me.role.replace('_', ' ')}
               </Badge>
+            </div>
+          </div>
+        )}
+
+        {meError && (
+          <div className="px-3 py-2 mb-2 rounded-lg border border-destructive/40 bg-destructive/10">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-4 w-4 mt-0.5 text-destructive shrink-0" />
+              <div className="text-xs">
+                <div className="font-medium text-destructive">Couldn't load your permissions</div>
+                <div className="text-muted-foreground mt-0.5 break-words">{meError}</div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-2">
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={loadMe}>Retry</Button>
+              <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={logout}>Sign in again</Button>
             </div>
           </div>
         )}

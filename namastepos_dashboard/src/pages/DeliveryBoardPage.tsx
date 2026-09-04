@@ -16,7 +16,8 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Bike, Phone, Clock, User, AlertTriangle } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Bike, Phone, Clock, User, AlertTriangle, Lock } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +27,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { ffApi } from '@/api/namastepos';
 import type { FulfilmentOrder, FulfilmentState, FulfilmentTransitionBody } from '@/api/namastepos';
 import { apiError } from '@/api/client';
+import { featureLockedInfo } from '@/hooks/useOutletSwitch';
 import { formatINR } from '@/lib/utils';
 
 // Restaurant language, never enum names — the person reading this is
@@ -97,11 +99,15 @@ export function DeliveryBoardPage() {
   const qc = useQueryClient();
   const [pending, setPending] = useState<Pending | null>(null);
 
-  const { data: orders = [], isLoading } = useQuery<FulfilmentOrder[]>({
+  const { data: orders = [], isLoading, isError, error, refetch } = useQuery<FulfilmentOrder[]>({
     queryKey: ['fulfilment-board'],
     queryFn: ffApi.fulfilmentBoard,
     refetchInterval: 10_000,
   });
+  // A 402 FEATURE_LOCKED is not a failure — the plan simply doesn't include
+  // delivery fulfilment, so show the upsell (same treatment as the outlet
+  // rollup) rather than a red error.
+  const locked = featureLockedInfo(error);
 
   // Drives the "N min ago" counters so they tick between polls instead of
   // freezing until the next refetch.
@@ -177,7 +183,40 @@ export function DeliveryBoardPage() {
         </p>
       </div>
 
-      {orders.length === 0 && !isLoading && (
+      {locked && (
+        <Card>
+          <CardContent className="py-10">
+            <div className="mb-1 flex items-center gap-2 font-semibold">
+              <Lock className="h-4 w-4" /> Delivery fulfilment isn&apos;t on your plan
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Add the delivery add-on or upgrade
+              {locked.requiredTier ? ` to ${locked.requiredTier}` : ' your plan'} to run
+              the delivery board.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <Button size="sm" asChild><Link to="/marketplace">Browse add-ons</Link></Button>
+              <Button size="sm" variant="outline" asChild><Link to="/billing">View plans</Link></Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isError && !locked && (
+        // "No live delivery orders." on a 500/403 told the counter that
+        // everything was calm while orders were piling up unseen.
+        <Card>
+          <CardContent className="py-16 text-center">
+            <div className="flex items-center justify-center gap-2 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4" />
+              Couldn&apos;t load the delivery board — {apiError(error)}
+            </div>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>Retry</Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {orders.length === 0 && !isLoading && !isError && (
         <Card>
           <CardContent className="py-16 text-center text-muted-foreground">
             No live delivery orders.
@@ -203,7 +242,10 @@ export function DeliveryBoardPage() {
                   key={o.id}
                   order={o}
                   now={now}
-                  busy={transition.isPending}
+                  // Only the card whose action is actually in flight goes
+                  // busy — `transition.isPending` alone froze every button on
+                  // every order across all five columns.
+                  busy={transition.isPending && transition.variables?.orderId === o.id}
                   onAction={onAction}
                 />
               ))}

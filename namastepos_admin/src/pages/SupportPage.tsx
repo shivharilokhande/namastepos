@@ -35,7 +35,7 @@ export function SupportPage() {
   // NP-143 — server-side pagination (same Prev/Next pager as CustomersPage).
   const PAGE_SIZE = 50;
   const [page, setPage] = useState(0);
-  const { data } = useQuery<{ tickets: Ticket[]; total: number }>({
+  const { data, isLoading, isError, error, refetch } = useQuery<{ tickets: Ticket[]; total: number }>({
     queryKey: ['support', status, page],
     queryFn: () => adminApi.supportTickets({
       status: status || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE,
@@ -66,7 +66,17 @@ export function SupportPage() {
       </div>
 
       <div className="grid gap-3">
-        {tickets.length === 0 && (
+        {isError && (
+          // "No tickets." on a 403/500 reads like an empty inbox. Say it failed.
+          <Card><CardContent className="py-10 text-center">
+            <div className="text-sm text-destructive">Couldn't load tickets — {apiError(error)}</div>
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>Retry</Button>
+          </CardContent></Card>
+        )}
+        {isLoading && !isError && (
+          <Card><CardContent className="py-10 text-center text-muted-foreground">Loading…</CardContent></Card>
+        )}
+        {!isLoading && !isError && tickets.length === 0 && (
           <Card><CardContent className="py-10 text-center text-muted-foreground">No tickets.</CardContent></Card>
         )}
         {tickets.map((t) => (

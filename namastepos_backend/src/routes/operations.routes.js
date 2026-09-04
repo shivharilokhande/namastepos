@@ -264,17 +264,42 @@ const purchaseRowSchema = Joi.object({
   note: Joi.string().max(500).allow('', null),
 }).or('unitCostInr', 'totalCostInr');
 
+const EXPENSE_CATEGORIES = [
+  'ingredients', 'fuel', 'labor', 'rent', 'utilities',
+  'packaging', 'marketing', 'maintenance',
+  'chef_salary', 'helper_salary', 'staff_salary', 'gas', 'electricity',
+  'water', 'transport', 'equipment', 'cleaning', 'license_fees',
+  'other',
+];
+
 // Mirrors expenseController.createBody (categories = expense_category enum,
 // migrations 001/055/058) — keep in sync when the enum grows.
 const expenseRowSchema = Joi.object({
   date: Joi.date().iso().required(),
-  category: Joi.string().valid(
-    'ingredients', 'fuel', 'labor', 'rent', 'utilities',
-    'packaging', 'marketing', 'maintenance',
-    'chef_salary', 'helper_salary', 'staff_salary', 'gas', 'electricity',
-    'water', 'transport', 'equipment', 'cleaning', 'license_fees',
-    'other'
-  ).default('other'),
+  // A real legacy-POS export writes "Gas", "Rent", "Food", "Salary" — a
+  // case-sensitive enum failed 100% of those rows, which made the migration
+  // wizard's expenses step useless. Normalise first (lower-case, spaces →
+  // underscores, common synonyms), then validate; anything unrecognised
+  // falls back to 'other' rather than rejecting the row.
+  category: Joi.string()
+    .custom((v) => {
+      const k = String(v || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+      const SYNONYMS = {
+        food: 'ingredients', groceries: 'ingredients', raw_material: 'ingredients',
+        vegetables: 'ingredients', provisions: 'ingredients', purchase: 'ingredients',
+        salary: 'staff_salary', salaries: 'staff_salary', wages: 'staff_salary',
+        staff: 'staff_salary', chef: 'chef_salary', helper: 'helper_salary',
+        lpg: 'gas', cylinder: 'gas', power: 'electricity', current_bill: 'electricity',
+        eb: 'electricity', internet: 'utilities', phone: 'utilities',
+        license: 'license_fees', licence: 'license_fees', licence_fees: 'license_fees',
+        repair: 'maintenance', repairs: 'maintenance', ads: 'marketing',
+        advertising: 'marketing', promotion: 'marketing', delivery: 'transport',
+        fuel_petrol: 'fuel', petrol: 'fuel', diesel: 'fuel',
+      };
+      const mapped = SYNONYMS[k] || k;
+      return EXPENSE_CATEGORIES.includes(mapped) ? mapped : 'other';
+    })
+    .default('other'),
   amount: Joi.number().positive().precision(2).required(),
   description: Joi.string().max(500).allow('', null),
 });

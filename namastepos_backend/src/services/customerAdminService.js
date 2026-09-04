@@ -48,7 +48,13 @@ async function createCustomer({
     );
 
     // 4) Subscription
-    const plan = await client.query(`SELECT id FROM plans WHERE tier = $1`, [planTier]);
+    // A custom plan belongs to ONE tenant (plans.business_id, migration 074),
+    // so a brand-new customer may only be put on a shared/public plan — never
+    // on another tenant's bespoke one.
+    const plan = await client.query(
+      `SELECT id FROM plans WHERE tier = $1 AND business_id IS NULL`,
+      [planTier]
+    );
     if (plan.rowCount === 0) throw new NotFound(`Plan ${planTier} not found`);
     const status = planTier === 'free' ? 'trialing' : 'active';
     await client.query(
@@ -114,7 +120,15 @@ async function extendTrial(businessId, additionalDays) {
 }
 
 async function setPlanManually(businessId, tier, { reason = 'admin-manual', billingPeriod } = {}) {
-  const plan = await query(`SELECT * FROM plans WHERE tier = $1`, [tier]);
+  // Scope custom plans to their owner: a `custom-xxxxxxxx` tier belongs to one
+  // tenant (plans.business_id, migration 074) and must never be attachable to
+  // a different business — that would hand them another customer's bespoke
+  // pricing and feature set.
+  const plan = await query(
+    `SELECT * FROM plans
+      WHERE tier = $1 AND (business_id IS NULL OR business_id = $2)`,
+    [tier, businessId]
+  );
   if (plan.rowCount === 0) throw new NotFound('Plan not found');
   // FF-402c — persist the cadence choice too so renewal + Razorpay
   // sync bill the right amount. Blank ⇒ keep whatever the sub had.
