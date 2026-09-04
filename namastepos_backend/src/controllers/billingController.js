@@ -70,6 +70,11 @@ module.exports = {
   // `grace`  — when a charge has failed and we are inside
   //   PAST_DUE_GRACE_DAYS: the amount, the exact date access ends, and a
   //   plain-language line. Null at every other time.
+  // `overage` — 2026-09-04 (decision 5): `monthly_orders` is now a SOFT
+  //   limit, so a tenant CAN be past their included volume with nothing
+  //   blocked. This is the recorded overage for the current period (included
+  //   volume, bills taken, how many were over, when it started). Null when
+  //   they are inside their plan, which is the normal case.
   current: asyncHandler(async (req, res) => {
     const businessId = req.params.businessId;
     const subscription = await sub.get(businessId);
@@ -101,7 +106,13 @@ module.exports = {
     } catch (e) {
       require('../config/logger').warn(`[billing] grace notice failed for ${businessId}: ${e.message}`);
     }
-    res.json({ subscription: { ...subscription, usage, grace } });
+    let overage = null;
+    try {
+      overage = await sub.overageFor(businessId, 'monthly_orders');
+    } catch (e) {
+      require('../config/logger').warn(`[billing] overage read failed for ${businessId}: ${e.message}`);
+    }
+    res.json({ subscription: { ...subscription, usage, grace, overage } });
   }),
 
   // Change plan (initiates Razorpay flow for paid plans, immediate for free)

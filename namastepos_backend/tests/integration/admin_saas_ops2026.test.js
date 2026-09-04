@@ -280,8 +280,9 @@ describe('usage vs plan limits', () => {
   });
 
   it('flags a tenant that has blown past its staff cap', async () => {
-    // basic seeds staff: 3. Add 4 non-owner staff to push it over.
-    for (let i = 0; i < 4; i += 1) {
+    // Growth ('basic') allows 5 staff since migration 089 raised it from 3
+    // (decision 3, 2026-09-04). Add 6 non-owner staff to push it over.
+    for (let i = 0; i < 6; i += 1) {
       const u = await query(
         `INSERT INTO users (email, display_name, google_sub)
          VALUES ($1, 'Staffer', $2) RETURNING id`,
@@ -297,8 +298,8 @@ describe('usage vs plan limits', () => {
       .get(`/v1/admin/customers/${biz.id}/usage`).set(auth(superToken));
     expect(r.status).toBe(200);
     const staff = r.body.usage.metrics.find((m) => m.metric === 'staff');
-    expect(staff.used).toBe(4);
-    expect(staff.limit).toBe(3);
+    expect(staff.used).toBe(6);
+    expect(staff.limit).toBe(5);
     expect(staff.over).toBe(true);
     expect(r.body.usage.overLimitCount).toBeGreaterThanOrEqual(1);
   });

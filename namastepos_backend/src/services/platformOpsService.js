@@ -353,6 +353,21 @@ async function needsAttention({ limit = 25 } = {}) {
 // number nobody enforces.
 const USAGE_METRICS = ['staff', 'tables', 'floors', 'menu_items', 'monthly_orders'];
 
+/**
+ * 'soft' | 'hard' per metric, read from the ONE classification table
+ * (subscriptionService.METRIC_POLICY) rather than restated here — otherwise
+ * the admin console would say "over limit" about a tenant nothing is being
+ * refused for. Lazily required to keep this module free of a load-order
+ * dependency on the subscription service.
+ */
+function _enforcementOf(metric) {
+  try {
+    return require('./subscriptionService').enforcementOf(metric);
+  } catch (_) {
+    return 'hard'; // fail closed, same default as the table
+  }
+}
+
 function _period() { return new Date().toISOString().slice(0, 7); }
 
 /** Per-tenant usage vs limits. One round trip. */
@@ -437,6 +452,11 @@ function _shapeUsage(row) {
       utilisationPct: pct,
       over: !unlimited && limit >= 0 && used >= limit,
       near: !unlimited && pct !== null && pct >= 80 && used < limit,
+      // 2026-09-04 (decision 5). 'soft' = past the included volume with
+      // nothing refused (an upsell conversation); 'hard' = the tenant is
+      // actually being blocked (a support conversation). The console needs to
+      // tell those apart, and it must not re-derive the rule.
+      enforcement: _enforcementOf(metric),
     };
   });
   return {

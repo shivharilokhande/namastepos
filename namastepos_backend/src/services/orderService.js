@@ -1549,6 +1549,10 @@ async function create(businessId, body, opts = {}) {
     // REPAIRED rather than tolerated: orderDurabilityService.reconcileMonthlyOrders
     // runs in the nightly 02:02 IST slot, compares COUNT(orders) for the period
     // against usage_counters.monthly_orders, and corrects the counter.
+    // 2026-09-04 (decision 5): `monthly_orders` is a SOFT limit, so this call
+    // can no longer refuse anything — it resolves the tenant's included volume
+    // itself and records any units past it as overage in the same atomic
+    // upsert (usage_counters.overage_count, migration 089).
     try { await sub.incrementUsage(businessId, 'monthly_orders'); } catch (e) {
       // eslint-disable-next-line no-console
       console.warn(`[orderService] incrementUsage failed biz=${businessId}: ${e?.message}`);

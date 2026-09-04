@@ -21,6 +21,12 @@ const createOrderLimiter = rateLimit({
   message: { error: 'TOO_MANY_ORDERS', message: 'Slow down — too many orders in the last minute' },
 });
 
+// `monthly_orders` is a SOFT limit (2026-09-04, decision 5): this middleware
+// NEVER refuses the bill. It stays mounted because it is what notices the
+// breach — it records the upsell signal and merges a `planLimit` notice into
+// the 201 body so analytics still sees the pricing cliff. The soft/hard
+// classification is data in subscriptionService.METRIC_POLICY; this line does
+// not need to know which class the metric is in.
 router.post('/', createOrderLimiter, sub.enforceLimit('monthly_orders'), ...c.create);
 router.get('/', ...c.list);
 router.get('/:orderId', c.get);

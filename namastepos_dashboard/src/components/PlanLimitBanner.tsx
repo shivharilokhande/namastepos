@@ -3,18 +3,22 @@
 // WHY THIS EXISTS
 // Two ways a working restaurant used to break with no warning:
 //
-//  1. Plan caps. `POST /orders` 403s at `monthly_orders`, and on Starter that
-//     cap is 200 bills a month — about 6.6 a day. The only "you are near your
-//     limit" signal in the product lived in the SUPER-ADMIN console, where the
-//     person who can act on it cannot see it. So an outlet stopped billing
-//     mid-service and the owner learned about the cap from a failed bill.
+//  1. Plan caps. The only "you are near your limit" signal in the product
+//     lived in the SUPER-ADMIN console, where the person who can act on it
+//     cannot see it. So an owner learned about a cap from a failed action.
 //  2. A failed card. `past_due` used to strip features immediately.
 //
-// The rule this component enforces: it must be impossible to hit the wall
+// The rule this component enforces: it must be impossible to hit a wall
 // without having been told. So:
 //   • at >= 80% of any cap  → amber banner, dismissable for the session
-//   • at >= 100% of any cap → red banner, NOT dismissable (dismissing the
-//     last warning before the till stops would defeat the entire point)
+//   • at >= 100% of a HARD cap → red banner, NOT dismissable (dismissing the
+//     last warning before the action stops would defeat the entire point)
+//   • at >= 100% of a SOFT cap → amber OVERAGE notice. 2026-09-04 (decision
+//     5): `monthly_orders` no longer blocks — a POS must never refuse a bill,
+//     because a restaurant that cannot bill during dinner service uninstalls
+//     that evening. Nothing has stopped, so this must NOT be a red alert; it
+//     is a notice that the included volume has been passed. `m.enforcement`
+//     decides which, so no metric name is hardcoded here.
 //   • inside the past-due grace window → amber banner naming the amount and
 //     the exact date access ends
 //
@@ -29,7 +33,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, CreditCard, X } from 'lucide-react';
+import { AlertTriangle, CreditCard, Info, X } from 'lucide-react';
 import { ffApi } from '@/api/namastepos';
 import type { PlanUsageMetric, Subscription } from '@/api/namastepos';
 import { formatINR } from '@/lib/utils';
@@ -53,6 +57,17 @@ function dismissedWarnings(): Set<string> {
  */
 function warnKey(m: PlanUsageMetric) {
   return `${m.metric}:${Math.min(99, m.pct)}`;
+}
+
+/**
+ * A soft-cap overage notice IS dismissable — nothing is broken, and pinning an
+ * undismissable banner to every screen for the rest of the month would punish
+ * the owner for billing more, which is the opposite of the point. Keyed per
+ * metric so it comes back next session (and next month, when the counter
+ * resets and the notice re-earns its place).
+ */
+function overKey(m: PlanUsageMetric) {
+  return `${m.metric}:over`;
 }
 
 export function PlanLimitBanner() {
@@ -79,14 +94,22 @@ export function PlanLimitBanner() {
   };
 
   const metrics = sub?.usage?.metrics ?? [];
-  // Worst first: if anything is at the wall, that is the message that matters.
-  const critical = metrics.filter((m) => m.level === 'critical');
+  // At the cap, split by what actually happens there. A hard cap has REFUSED
+  // something (or will on the next attempt) → red, undismissable. A soft cap
+  // has refused nothing → amber notice. Anything without `enforcement` (older
+  // server) is treated as hard, which is what every cap used to be.
+  const atCap = metrics.filter((m) => m.level === 'critical');
+  const blocked = atCap.filter((m) => m.enforcement !== 'soft');
+  const overages = atCap.filter(
+    (m) => m.enforcement === 'soft' && !dismissed.has(overKey(m)),
+  );
   const warnings = metrics
     .filter((m) => m.level === 'warn' && !dismissed.has(warnKey(m)))
     .sort((a, b) => b.pct - a.pct);
   const grace = sub?.grace ?? null;
 
-  if (critical.length === 0 && warnings.length === 0 && !grace) return null;
+  if (blocked.length === 0 && overages.length === 0
+      && warnings.length === 0 && !grace) return null;
 
   return (
     <div className="mb-4 space-y-2">
@@ -127,8 +150,8 @@ export function PlanLimitBanner() {
         </div>
       )}
 
-      {/* AT the wall. Deliberately has no dismiss control. */}
-      {critical.map((m) => (
+      {/* AT a HARD wall — something is refused. No dismiss control. */}
+      {blocked.map((m) => (
         <div
           key={m.metric}
           role="alert"
@@ -148,6 +171,43 @@ export function PlanLimitBanner() {
                 See plans &amp; upgrade
               </Link>
             </div>
+          </div>
+        </div>
+      ))}
+
+      {/* PAST a SOFT cap. Nothing has stopped, so the first thing the owner
+          reads must say so — an owner who thinks their till is about to die
+          mid-service will not read the second line. */}
+      {overages.map((m) => (
+        <div
+          key={m.metric}
+          role="status"
+          className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-amber-900"
+        >
+          <div className="flex items-start gap-3">
+            <Info className="mt-0.5 h-4 w-4 shrink-0" />
+            <div className="flex-1 text-sm">
+              <div className="font-semibold">
+                You&apos;ve passed the {m.limit} {m.label} included in your plan
+                {sub?.usage?.planName ? ` (${sub.usage.planName})` : ''}
+                {' '}— nothing has stopped
+              </div>
+              <div className="mt-0.5">{m.message}</div>
+              <Link
+                to="/billing"
+                className="mt-2 inline-block rounded-md bg-amber-900 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-amber-800"
+              >
+                See plans
+              </Link>
+            </div>
+            <button
+              type="button"
+              onClick={() => dismiss(overKey(m))}
+              aria-label="Dismiss"
+              className="grid h-6 w-6 shrink-0 place-items-center rounded hover:bg-amber-200"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
       ))}

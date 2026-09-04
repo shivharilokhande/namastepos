@@ -7,27 +7,60 @@ const entitlement = require('./planEntitlement');
 // header of that file before touching anything tier-related.
 const planTiers = require('./planTiers');
 
-// ── Capped metrics: labels + owner-facing copy ───────────────────────────
+// ── Capped metrics: the ONE table ─────────────────────────────────────────
 //
-// 2026-09-04 (pricing audit F-03). The 403 used to read
+// Everything the product knows about a capped metric lives in this table:
+// its owner-facing label, its copy, whether we can count it, and — the part
+// that decides whether a request is refused — its ENFORCEMENT CLASS.
+// Keys MUST match the metric names in plans.limits.
+//
+// ══════════════════════════════════════════════════════════════════════════
+// SOFT vs HARD (decision 5, 2026-09-04). THIS IS THE ONLY PLACE IT LIVES.
+// ══════════════════════════════════════════════════════════════════════════
+//   'hard' — the request is REFUSED at the cap (403 PLAN_LIMIT). Correct for
+//            every CONFIGURATION action: adding a dish, a staff login, a
+//            table, a floor, an outlet. Nobody is standing at a till waiting
+//            for it, and refusing it is a legitimate way to sell a plan.
+//   'soft' — the request is ALWAYS ACCEPTED; the overage is recorded and the
+//            owner is told. Correct for a bill in progress. `POST /orders`
+//            used to 403 at `monthly_orders`, which means a restaurant that
+//            cannot bill during dinner service — and that restaurant
+//            uninstalls the same evening. The revenue lost by blocking dwarfs
+//            the revenue protected by blocking.
+//
+// A metric with no row here (or a row with no `enforcement`) is HARD, by
+// DEFAULT_ENFORCEMENT below — fail closed, so a metric added later is refused
+// rather than silently over-served. To reclassify a metric, change ONE word
+// in this table; nothing else in the codebase compares a metric name against
+// 'monthly_orders' to decide whether to block.
+//
+// 2026-09-04 (pricing audit F-03) note on the copy: the 403 used to read
 // "Plan limit reached for monthly_orders: 200/200. Upgrade your plan." — a
 // column name and a fraction, shown to a cashier with a queue in front of
-// them. These are the same metrics enforceLimit() counts, with words an owner
-// can act on. Keys MUST match the metric names in plans.limits.
-const METRIC_COPY = {
+// them. `hit`/`over`/`warn` are the same numbers in words an owner can act on.
+const METRIC_POLICY = {
   monthly_orders: {
     label: 'bills this month',
     noun: 'bills',
-    // The one that stops the till. Say what still works and what to do.
-    hit: (limit) => `You've used all ${limit} bills included in your plan this month. `
-      + 'Billing is paused until you upgrade or the month resets. Upgrading takes '
-      + 'about a minute and your bills carry on immediately.',
-    warn: (remaining, limit) => `${remaining} of your ${limit} monthly bills left. `
-      + 'At zero, the till stops taking orders until you upgrade.',
+    // SOFT. A POS must never refuse a bill.
+    enforcement: 'soft',
+    // Shown once the included volume is used up. This is a NOTICE, not an
+    // error: nothing has stopped, so it must not read like something has.
+    over: (limit, current) => `Your plan includes ${limit} bills a month and you're now at `
+      + `${current}. Nothing has stopped — billing carries on as normal and the extra `
+      + 'bills are recorded as overage. Upgrading raises your included volume whenever '
+      + 'it suits you.',
+    // Kept for the usage meter's "critical" row. Same message, same promise.
+    hit: (limit) => `You've used the ${limit} bills included in your plan this month. `
+      + 'Billing keeps working — extra bills are counted as overage. Upgrade when you '
+      + 'want a higher included volume.',
+    warn: (remaining, limit) => `${remaining} of your ${limit} included monthly bills left. `
+      + 'Nothing stops at zero — bills beyond it still go through, counted as overage.',
   },
   menu_items: {
     label: 'menu items',
     noun: 'dishes',
+    enforcement: 'hard',
     hit: (limit) => `Your plan covers ${limit} dishes and all ${limit} are in use. `
       + 'Upgrade to add more, or deactivate a dish you no longer sell.',
     warn: (remaining, limit) => `${remaining} of your ${limit} menu items left.`,
@@ -35,6 +68,7 @@ const METRIC_COPY = {
   staff: {
     label: 'staff logins',
     noun: 'staff',
+    enforcement: 'hard',
     hit: (limit) => `Your plan covers ${limit} staff login${limit === 1 ? '' : 's'} `
       + '(the owner does not count). Upgrade to add another.',
     warn: (remaining, limit) => `${remaining} of your ${limit} staff logins left.`,
@@ -42,6 +76,7 @@ const METRIC_COPY = {
   tables: {
     label: 'tables',
     noun: 'tables',
+    enforcement: 'hard',
     hit: (limit) => `Your plan covers ${limit} table${limit === 1 ? '' : 's'}. `
       + 'Upgrade to add more seating.',
     warn: (remaining, limit) => `${remaining} of your ${limit} tables left.`,
@@ -49,29 +84,73 @@ const METRIC_COPY = {
   floors: {
     label: 'floors',
     noun: 'floors',
+    enforcement: 'hard',
     hit: (limit) => `Your plan covers ${limit} floor${limit === 1 ? '' : 's'}. `
       + 'Upgrade to add another seating area.',
     warn: (remaining, limit) => `${remaining} of your ${limit} floors left.`,
   },
+  // Capped in plans.limits and shown on the pricing page, but there is no
+  // counter for it and no route gates on it today (outlet creation is gated by
+  // the multi_outlet FEATURE, not by this number). Listed anyway so its
+  // enforcement class is on record the day something does gate on it, and so
+  // `countable: false` keeps it out of the owner-facing usage meter — a meter
+  // row we cannot count would read "0 of 1" forever.
+  businesses: {
+    label: 'outlets',
+    noun: 'outlets',
+    enforcement: 'hard',
+    countable: false,
+  },
 };
+Object.freeze(METRIC_POLICY);
+
+/**
+ * Fail-closed default for a metric this table does not describe. HARD: a new
+ * cap must refuse rather than over-serve until somebody decides otherwise.
+ */
+const DEFAULT_ENFORCEMENT = 'hard';
 
 /** Metrics we can both cap and count. Everything else is data-only. */
-const COUNTABLE_METRICS = Object.keys(METRIC_COPY);
+const COUNTABLE_METRICS = Object.keys(METRIC_POLICY)
+  .filter((m) => METRIC_POLICY[m].countable !== false);
+
+/** 'soft' | 'hard' for `metric`. The single classification entry point. */
+function enforcementOf(metric) {
+  return METRIC_POLICY[metric]?.enforcement || DEFAULT_ENFORCEMENT;
+}
+
+/** True when breaching `metric` must NOT refuse the request. */
+function isSoftMetric(metric) {
+  return enforcementOf(metric) === 'soft';
+}
 
 function metricLabel(metric) {
-  return METRIC_COPY[metric]?.label || String(metric).replace(/_/g, ' ');
+  return METRIC_POLICY[metric]?.label || String(metric).replace(/_/g, ' ');
 }
 
 function limitHitMessage(metric, limit) {
-  const c = METRIC_COPY[metric];
-  if (c) return c.hit(limit);
+  const c = METRIC_POLICY[metric];
+  if (c?.hit) return c.hit(limit);
   return `Your plan covers ${limit} ${metricLabel(metric)} and you have reached that. `
     + 'Upgrade to continue.';
 }
 
+/**
+ * Owner-facing copy for a SOFT breach. Deliberately separate from
+ * `limitHitMessage`: a soft breach is a notice that the included volume has
+ * been passed, not a refusal, and the two must never share wording.
+ */
+function limitOverMessage(metric, limit, current) {
+  const c = METRIC_POLICY[metric];
+  if (c?.over) return c.over(limit, current);
+  if (c?.hit) return c.hit(limit);
+  return `Your plan includes ${limit} ${metricLabel(metric)} and you're now at ${current}. `
+    + 'Nothing has stopped — the extra is recorded as overage.';
+}
+
 function limitWarnMessage(metric, remaining, limit) {
-  const c = METRIC_COPY[metric];
-  if (c) return c.warn(remaining, limit);
+  const c = METRIC_POLICY[metric];
+  if (c?.warn) return c.warn(remaining, limit);
   return `${remaining} of your ${limit} ${metricLabel(metric)} left.`;
 }
 
@@ -533,17 +612,71 @@ async function resume(businessId) {
 // ── Plan-limit enforcement ───────────────────────────────────────────────
 
 /**
+ * Key the SOFT-breach notice rides under in an otherwise successful response
+ * body. Read by the dashboard's success interceptor and available to any
+ * future client; a client that does not know about it simply ignores an extra
+ * key, which is why this is a safe, additive way to report a soft breach.
+ */
+const SOFT_NOTICE_KEY = 'planLimit';
+
+/**
+ * Report a SOFT breach on a request that is going to SUCCEED.
+ *
+ * A hard breach reports itself through the error path — that is where the
+ * dashboard's and the mobile app's `plan_limit_hit` hooks already live
+ * (dashboard src/api/client.ts, mobile ApiService._maybeTrackPlanLimit). A
+ * soft breach has no error, so there would be nothing for those hooks to see
+ * and the pricing cliff would stop reporting itself the day we stopped
+ * blocking. So the notice is merged into the 2xx JSON body under
+ * `planLimit`, carrying the SAME field names as the 403's `details` plus
+ * `enforcement: 'soft'`, and the dashboard emits the same event from its
+ * success interceptor.
+ *
+ * `res.json` is wrapped exactly once per response and only touches a plain
+ * object 2xx body, so it cannot disturb a redirect, a stream, an array
+ * payload or an error.
+ */
+function attachSoftBreachNotice(req, res, notice) {
+  req.planLimitNotice = notice; // for anything downstream in this request
+  if (res.locals) res.locals.planLimitNotice = notice;
+  if (res.__softNoticePatched) return;
+  res.__softNoticePatched = true;
+  const sendJson = res.json.bind(res);
+  res.json = (body) => {
+    const ok = res.statusCode >= 200 && res.statusCode < 300;
+    const plainObject = body !== null && typeof body === 'object' && !Array.isArray(body);
+    if (ok && plainObject && body[SOFT_NOTICE_KEY] === undefined) {
+      return sendJson({ ...body, [SOFT_NOTICE_KEY]: res.locals?.planLimitNotice || notice });
+    }
+    return sendJson(body);
+  };
+}
+
+/**
  * Express middleware factory.
  *   enforceLimit('menu_items')        → counts current menu_items
  *   enforceLimit('monthly_orders')    → counts orders in current month
  *   enforceLimit('staff')             → counts active business_users
  *
- * If the limit is -1 (unlimited) we let it through. If it's a positive
- * number and the count is >= limit, we 402 Payment Required with
- * { code: PLAN_LIMIT, limit, current }.
+ * Unlimited (-1) or uncapped (key absent) → straight through.
+ *
+ * At or past the cap, what happens is decided by ONE lookup —
+ * `enforcementOf(metric)`, whose answer is DATA in METRIC_POLICY at the top of
+ * this file. There is deliberately no `if (metric === 'monthly_orders')`
+ * anywhere:
+ *
+ *   HARD → 403 with { error: 'PLAN_LIMIT', details: { metric, limit, current,
+ *          plan, enforcement: 'hard', … } }.
+ *   SOFT → the request PROCEEDS. The overage is recorded by incrementUsage()
+ *          when the counter moves, the same deduped upsell task is dropped,
+ *          and the 2xx body carries a `planLimit` notice with
+ *          enforcement: 'soft' so analytics still sees the cliff.
+ *
+ * Both paths drop the upsell task, so "they are over their plan" is as
+ * visible to the sales team when we serve them as when we refuse them.
  */
 function enforceLimit(metric) {
-  return async (req, _res, next) => {
+  return async (req, res, next) => {
     if (req.user?.isSuperAdmin) return next();
     const businessId = req.params.businessId || req.user?.businessId;
     if (!businessId) return next();
@@ -551,41 +684,64 @@ function enforceLimit(metric) {
     try {
       const eff = await effectivePlan(businessId);
       if (!eff.plan) return next();
-      const limit = eff.plan.limits?.[metric];
-      if (limit === undefined || limit === -1) return next(); // unlimited
+      const raw = eff.plan.limits?.[metric];
+      if (raw === undefined || raw === null) return next(); // uncapped
+      const limit = Number(raw);
+      if (!Number.isFinite(limit) || limit < 0) return next(); // -1 = unlimited
 
       const current = await currentUsage(businessId, metric);
+      if (current < limit) return next();
 
-      if (current >= limit) {
-        // X3 (2026-08-28) — drop a deduped upsell task for the sales team.
-        // Fire-and-forget so it never delays or breaks the request.
-        try {
-          require('./crmService').ensureUpsellTask(businessId, metric, {
-            limit, current, planTier: eff.plan.tier,
-          }).catch(() => {});
-        } catch (_) { /* non-fatal */ }
-        // 2026-09-04 (pricing audit F-03) — the message is now something an
-        // owner can act on rather than a column name and a fraction. The
-        // WIRE SHAPE IS DELIBERATELY UNCHANGED: `error: 'PLAN_LIMIT'` plus
-        // `details: { metric, limit, current, plan }`. Both the dashboard's
-        // error path and its `plan_limit_hit` analytics hook read exactly
-        // those keys (namastepos_dashboard/src/api/client.ts), so the extra
-        // fields below are ADDITIVE only — never rename or drop the four.
+      // X3 (2026-08-28) — drop a deduped upsell task for the sales team.
+      // Fire-and-forget so it never delays or breaks the request. Runs on the
+      // soft path too: an owner billing past their included volume every month
+      // is the single best upgrade conversation we have.
+      try {
+        require('./crmService').ensureUpsellTask(businessId, metric, {
+          limit, current, planTier: eff.plan.tier,
+        }).catch(() => {});
+      } catch (_) { /* non-fatal */ }
+
+      // 2026-09-04 (pricing audit F-03) — the message is now something an
+      // owner can act on rather than a column name and a fraction. The
+      // WIRE SHAPE IS DELIBERATELY UNCHANGED: `error: 'PLAN_LIMIT'` plus
+      // `details: { metric, limit, current, plan }`. Both the dashboard's
+      // error path and its `plan_limit_hit` analytics hook read exactly
+      // those keys (namastepos_dashboard/src/api/client.ts), so everything
+      // else here is ADDITIVE only — never rename or drop the four.
+      const enforcement = enforcementOf(metric);
+      const shape = {
+        metric,
+        limit,
+        current,
+        plan: eff.plan.tier,
+        // Additive (safe for existing readers, useful for new ones).
+        enforcement,
+        metricLabel: metricLabel(metric),
+        remaining: 0,
+        planName: eff.plan.name || null,
+        upgradePath: '/billing',
+      };
+
+      if (enforcement !== 'soft') {
         const err = new Forbidden(limitHitMessage(metric, limit));
         err.code = 'PLAN_LIMIT';
-        err.details = {
-          metric,
-          limit,
-          current,
-          plan: eff.plan.tier,
-          // Additive (safe for existing readers, useful for new ones).
-          metricLabel: metricLabel(metric),
-          remaining: 0,
-          planName: eff.plan.name || null,
-          upgradePath: '/billing',
-        };
+        err.details = shape;
         return next(err);
       }
+
+      attachSoftBreachNotice(req, res, {
+        // `code` mirrors the error body's `error` field so one client-side
+        // parser handles both shapes.
+        code: 'PLAN_LIMIT',
+        ...shape,
+        // How far past the included volume this request takes them.
+        over: (current - limit) + 1,
+        // True only on the request that crosses the line, so a client can
+        // emit one analytics event per period instead of one per bill.
+        firstBreach: current === limit,
+        message: limitOverMessage(metric, limit, current),
+      });
       return next();
     } catch (err) {
       return next(err);
@@ -636,6 +792,9 @@ function bulkLimitMessage(metric, {
 async function assertCapacity(businessId, metric, wanted) {
   const want = Number(wanted);
   if (!businessId || !Number.isFinite(want) || want <= 0) return null;
+  // A SOFT metric is never refused, in bulk any more than one at a time
+  // (decision 5). Same single classification lookup as enforceLimit.
+  if (isSoftMetric(metric)) return null;
   const eff = await effectivePlan(businessId);
   if (!eff.plan) return null;
   const raw = eff.plan.limits?.[metric];
@@ -669,6 +828,7 @@ async function assertCapacity(businessId, metric, wanted) {
     current,
     plan: eff.plan.tier,
     // Additive.
+    enforcement: enforcementOf(metric),
     metricLabel: metricLabel(metric),
     remaining: Math.max(0, limit - current),
     attempted: want,
@@ -739,7 +899,10 @@ async function effectivePlan(businessId) {
  * `level`:
  *   ok       — under the warn threshold
  *   warn     — at or past 80% of the cap
- *   critical — at or past 100%; the next attempt is the 403
+ *   critical — at or past 100%. On a HARD metric the next attempt is the 403;
+ *              on a SOFT metric nothing is blocked and this is an overage
+ *              notice. `enforcement` on each row is what tells them apart, so
+ *              a client never has to know which metric is which.
  */
 const WARN_AT = 0.8;
 
@@ -760,6 +923,7 @@ async function usageSummary(businessId) {
     const remaining = Math.max(0, numeric - current);
     const pct = numeric > 0 ? Math.min(999, Math.round((current / numeric) * 100)) : 100;
     const level = current >= numeric ? 'critical' : (pct >= WARN_AT * 100 ? 'warn' : 'ok');
+    const enforcement = enforcementOf(metric);
     out.push({
       metric,
       label: metricLabel(metric),
@@ -768,9 +932,15 @@ async function usageSummary(businessId) {
       remaining,
       pct,
       level,
-      message: level === 'critical'
-        ? limitHitMessage(metric, numeric)
-        : limitWarnMessage(metric, remaining, numeric),
+      // Additive: 'soft' means passing the cap costs nothing but money, so
+      // the banner must read as a notice rather than an outage.
+      enforcement,
+      over: Math.max(0, current - numeric),
+      message: level !== 'critical'
+        ? limitWarnMessage(metric, remaining, numeric)
+        : (enforcement === 'soft'
+          ? limitOverMessage(metric, numeric, current)
+          : limitHitMessage(metric, numeric)),
     });
   }
   return {
@@ -786,21 +956,84 @@ async function usageSummary(businessId) {
 }
 
 /**
- * Bump a monthly counter (call after a successful order).
+ * The effective numeric cap for one metric, or null when uncapped/unlimited.
+ * Never throws — a counter bump must not fail because a plan read did.
+ */
+async function effectiveLimitFor(businessId, metric) {
+  try {
+    const eff = await effectivePlan(businessId);
+    const raw = eff.plan?.limits?.[metric];
+    if (raw === undefined || raw === null) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n < 0) return null;
+    return n;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Bump a monthly counter (call after a successful order) and, on a SOFT
+ * metric, record the overage in the same write.
  *
  * P0-5 hardening: the previous code was a check-then-write split across
  * `enforceLimit` (read count) and this function (increment). Under load two
  * requests could both read `count = limit - 1`, both pass enforceLimit, and
- * both insert — exceeding the paid quota.
+ * both insert — exceeding the paid quota. For a HARD metric that CAS is still
+ * here, so even a race-winner cannot push the counter past the cap.
  *
- * We keep the per-request `enforceLimit` gate (cheap, returns the right 402
- * error code to the client) but also enforce the limit atomically here so
- * that even a race-winner cannot push the counter past the cap. If the
- * UPDATE clause sees `count >= limit` it returns 0 rows and we throw 402.
+ * For a SOFT metric there is nothing to protect: the whole point of decision 5
+ * is that the bill is accepted, so the counter always moves and the units past
+ * the cap are recorded in `usage_counters.overage_count` /
+ * `first_overage_at` / `last_overage_at` (migration 089). One statement, so
+ * the count and the overage can never disagree, and the reconciler
+ * (orderDurabilityService.reconcileMonthlyOrders) still has a counter that
+ * matches COUNT(orders).
+ *
+ * `limit`: omit it and the effective cap is resolved from the tenant's plan —
+ * which is what makes the overage correct even for callers that never went
+ * through the `enforceLimit` middleware (offline sync replay, admin tooling).
+ * Pass `null` or `-1` explicitly to mean "uncapped, do not look it up".
  */
-async function incrementUsage(businessId, metric = 'monthly_orders', { limit = null } = {}) {
+async function incrementUsage(businessId, metric = 'monthly_orders', { limit } = {}) {
   const period = new Date().toISOString().slice(0, 7);
-  if (limit === null || limit === -1) {
+  const soft = isSoftMetric(metric);
+  const cap = limit === undefined ? await effectiveLimitFor(businessId, metric) : limit;
+
+  if (soft) {
+    // Never refuses. `soft_limit` records the cap that applied at the time so
+    // the overage reads back as "500 included, 618 billed" without having to
+    // guess which plan they were on. A unit counts as overage when the value
+    // it lands on is past the cap.
+    await query(
+      `INSERT INTO usage_counters
+         (business_id, metric, period, count, updated_at, soft_limit,
+          overage_count, first_overage_at, last_overage_at)
+       VALUES ($1, $2, $3, 1, NOW(), $4::int,
+               CASE WHEN $4::int IS NOT NULL AND 1 > $4::int THEN 1 ELSE 0 END,
+               CASE WHEN $4::int IS NOT NULL AND 1 > $4::int THEN NOW() ELSE NULL END,
+               CASE WHEN $4::int IS NOT NULL AND 1 > $4::int THEN NOW() ELSE NULL END)
+       ON CONFLICT (business_id, metric, period)
+       DO UPDATE SET
+         count = usage_counters.count + 1,
+         updated_at = NOW(),
+         soft_limit = COALESCE($4::int, usage_counters.soft_limit),
+         overage_count = usage_counters.overage_count
+           + CASE WHEN $4::int IS NOT NULL AND usage_counters.count + 1 > $4::int
+                  THEN 1 ELSE 0 END,
+         first_overage_at = CASE
+           WHEN $4::int IS NOT NULL AND usage_counters.count + 1 > $4::int
+             THEN COALESCE(usage_counters.first_overage_at, NOW())
+           ELSE usage_counters.first_overage_at END,
+         last_overage_at = CASE
+           WHEN $4::int IS NOT NULL AND usage_counters.count + 1 > $4::int THEN NOW()
+           ELSE usage_counters.last_overage_at END`,
+      [businessId, metric, period, cap],
+    );
+    return;
+  }
+
+  if (cap === null || cap === -1) {
     // Unlimited: simple upsert, no race risk on the cap.
     await query(
       `INSERT INTO usage_counters (business_id, metric, period, count, updated_at)
@@ -819,7 +1052,7 @@ async function incrementUsage(businessId, metric = 'monthly_orders', { limit = n
      DO UPDATE SET count = usage_counters.count + 1, updated_at = NOW()
        WHERE usage_counters.count < $4
      RETURNING count`,
-    [businessId, metric, period, limit],
+    [businessId, metric, period, cap],
   );
   if (r.rowCount === 0) {
     // Keep the "Plan limit reached for <metric>: n/n" prefix: the dashboard's
@@ -827,22 +1060,53 @@ async function incrementUsage(businessId, metric = 'monthly_orders', { limit = n
     // PLAN_LIMIT arrives with no details (this 402 race-backstop was the only
     // such path). Details are now attached too, so the regex is belt-and-
     // braces rather than the only source.
+    //
+    // Unreachable for a SOFT metric — the soft branch above returns before
+    // here — which is exactly why an order can no longer be un-sold by a
+    // counter.
     const err = new Forbidden(
-      `Plan limit reached for ${metric}: ${limit}/${limit}. ${limitHitMessage(metric, limit)}`,
+      `Plan limit reached for ${metric}: ${cap}/${cap}. ${limitHitMessage(metric, cap)}`,
     );
     err.code = 'PLAN_LIMIT';
     err.statusCode = 402;
     err.details = {
       metric,
-      limit,
-      current: limit,
+      limit: cap,
+      current: cap,
       plan: null,
+      enforcement: enforcementOf(metric),
       metricLabel: metricLabel(metric),
       remaining: 0,
       upgradePath: '/billing',
     };
     throw err;
   }
+}
+
+/**
+ * Read back the recorded overage for one metric in the current period, or null
+ * when the tenant has no counter row / is not over. Used by the billing read
+ * so the owner sees the same number the sales team does.
+ */
+async function overageFor(businessId, metric = 'monthly_orders', period = null) {
+  const p = period || new Date().toISOString().slice(0, 7);
+  const r = await query(
+    `SELECT count, soft_limit, overage_count, first_overage_at, last_overage_at
+       FROM usage_counters
+      WHERE business_id = $1 AND metric = $2 AND period = $3`,
+    [businessId, metric, p],
+  );
+  const row = r.rows[0];
+  if (!row || !(row.overage_count > 0)) return null;
+  return {
+    metric,
+    period: p,
+    included: row.soft_limit,
+    used: row.count,
+    over: row.overage_count,
+    firstAt: row.first_overage_at,
+    lastAt: row.last_overage_at,
+  };
 }
 
 module.exports = {
@@ -868,4 +1132,13 @@ module.exports = {
   currentUsage,
   metricLabel,
   COUNTABLE_METRICS,
+  // 2026-09-04 (decision 5) — the soft/hard classification and the overage
+  // record. `METRIC_POLICY` is exported so tests can assert the table itself
+  // rather than a behaviour that happens to agree with it.
+  METRIC_POLICY,
+  DEFAULT_ENFORCEMENT,
+  enforcementOf,
+  isSoftMetric,
+  overageFor,
+  SOFT_NOTICE_KEY,
 };

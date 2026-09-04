@@ -4,6 +4,27 @@ import axios, { AxiosError } from 'axios';
 import { toast } from 'sonner';
 import { track, recordBlockedMetric } from '@/lib/analytics';
 
+/**
+ * The notice the server merges into an otherwise successful 2xx body when a
+ * request passed a SOFT plan limit (2026-09-04, decision 5). Same field names
+ * as the 403's `details` block, plus `enforcement`, `over` and `firstBreach` —
+ * see subscriptionService.attachSoftBreachNotice.
+ */
+export interface SoftLimitNotice {
+  code?: 'PLAN_LIMIT';
+  enforcement?: 'soft' | 'hard';
+  metric?: string;
+  limit?: number;
+  current?: number;
+  over?: number;
+  firstBreach?: boolean;
+  plan?: string;
+  planName?: string | null;
+  metricLabel?: string;
+  message?: string;
+  upgradePath?: string;
+}
+
 const baseURL = import.meta.env.VITE_API_URL || '/v1';
 
 export const api = axios.create({
@@ -221,10 +242,45 @@ api.interceptors.request.use((cfg) => {
 let refreshing: Promise<void> | null = null;
 
 api.interceptors.response.use(
-  (r) => r,
+  (r) => {
+    // Activation funnel (2026-09-04, decision 5) — `plan_limit_hit` on a SOFT
+    // breach, i.e. a request that SUCCEEDED past the plan's included volume.
+    //
+    // `POST /orders` used to 403 at `monthly_orders`, so every cap breach was
+    // an error and the error interceptor below was enough. A POS must never
+    // refuse a bill, so that cap is now soft: the bill goes through and the
+    // server merges a `planLimit` notice into the 2xx body
+    // (subscriptionService.attachSoftBreachNotice). Without this hook the
+    // pricing cliff would silently stop reporting itself the day we stopped
+    // blocking, which is precisely when we most need the number.
+    //
+    // `firstBreach` is true only on the request that crosses the line, so this
+    // emits once per period rather than once per bill for the rest of the
+    // month. Everything is inside a total try/catch: analytics must never
+    // interfere with a successful response.
+    try {
+      const notice = (r.data as { planLimit?: SoftLimitNotice } | undefined)?.planLimit;
+      if (notice && notice.code === 'PLAN_LIMIT' && notice.firstBreach !== false) {
+        track('plan_limit_hit', {
+          metric: notice.metric ?? 'unknown',
+          limit: typeof notice.limit === 'number' ? notice.limit : null,
+          attempted: typeof notice.current === 'number' ? notice.current + 1 : null,
+          tier: notice.plan ?? null,
+          enforcement: notice.enforcement ?? 'soft',
+        });
+        // A soft breach is still the metric that will sell the upgrade, so it
+        // feeds upgrade_paid.blocked_metric exactly like a refusal does.
+        if (notice.metric) recordBlockedMetric(notice.metric);
+      }
+    } catch { /* analytics must never mask a good response */ }
+    return r;
+  },
   async (err: AxiosError<{
     error?: string; message?: string; code?: string;
-    details?: { metric?: string; limit?: number; current?: number; plan?: string };
+    details?: {
+      metric?: string; limit?: number; current?: number; plan?: string;
+      enforcement?: 'soft' | 'hard';
+    };
   }>) => {
     const orig = err.config!;
 
@@ -260,6 +316,9 @@ api.interceptors.response.use(
           limit,
           attempted,
           tier: d.plan || null,
+          // An error path is always a REFUSAL. Older servers do not send the
+          // field; 'hard' is the truthful default for anything that 403/402'd.
+          enforcement: d.enforcement || 'hard',
         });
         recordBlockedMetric(metric);
       } catch { /* analytics must never mask an API error */ }

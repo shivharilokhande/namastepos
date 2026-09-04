@@ -111,7 +111,13 @@ const EVENT_PROPS: Record<FunnelEvent, readonly string[]> = {
     'from_tier', 'to_tier', 'amount_inr', 'billing_cycle',
     'days_since_signup', 'blocked_metric',
   ],
-  plan_limit_hit: ['metric', 'limit', 'attempted', 'tier'],
+  // `enforcement` (2026-09-04, decision 5) separates the two kinds of cliff:
+  //   'hard' — the request was REFUSED (adding a dish, a staff login, a table)
+  //   'soft' — the request SUCCEEDED past the included volume (a bill; a POS
+  //            must never refuse one). Without this property the two collapse
+  //            into one number and "how often does a cap actually stop
+  //            someone" becomes unanswerable.
+  plan_limit_hit: ['metric', 'limit', 'attempted', 'tier', 'enforcement'],
 };
 
 /** Milestones that must fire at most once per business. */

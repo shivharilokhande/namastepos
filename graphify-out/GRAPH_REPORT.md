@@ -1,16 +1,16 @@
 # Graph Report - PetPooja Clone  (2026-09-04)
 
 ## Corpus Check
-- 781 files · ~987,275 words
+- 819 files · ~1,080,241 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 8317 nodes · 14970 edges · 402 communities (313 shown, 51 thin omitted)
-- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 741 edges (avg confidence: 0.85)
+- 9064 nodes · 15935 edges · 429 communities (342 shown, 49 thin omitted)
+- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 765 edges (avg confidence: 0.85)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `7eeea348`
+- Built from commit: `9cec45db`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -19,11 +19,11 @@
 - api_service.dart
 - BadRequest
 - adminController.js
-- MenuPage.tsx
+- BillingPage.tsx
 - namastepos_admin/src/components/ui/card.tsx
 - MigrationPage.tsx
-- namastepos_dashboard/src/lib/utils.ts
-- hardening_20260903.test.js
+- namastepos_dashboard/src/components/ui/input.tsx
+- analytics_service.dart
 - 2. P0 — Ship Blockers (must fix before any customer goes live)
 - twoFactorService.js
 - edit_item_screen.dart
@@ -31,12 +31,12 @@
 - order_detail_screen.dart
 - orderService.js
 - FoodFlow — Launch Plan
-- daily_closing_screen.dart
+- package:provider/provider.dart
 - auth.js
+- activation.ts
+- aggregators_screen.dart
+- ../../services/api_service.dart
 - getBusinessCache
-- package:flutter/material.dart
-- driver_screen.dart
-- apiError
 - tables_editor_screen.dart
 - confirm_order_screen.dart
 - auth_service.dart
@@ -45,8 +45,8 @@
 - order.dart
 - devDependencies
 - rules
-- namastepos_dashboard/src/components/ui/badge.tsx
-- StatelessWidget
+- staff_screen.dart
+- package:flutter/material.dart
 - compilerOptions
 - app.js
 - complianceController.js
@@ -60,9 +60,9 @@
 - btPrinter.ts
 - captain_screen.dart
 - opsController.js
-- dashboard_screen.dart
-- namastepos_admin/src/api/client.ts
-- namastepos_admin/src/components/ui/button.tsx
+- inventory_transaction.dart
+- namastepos_admin/src/lib/sentry.ts
+- namastepos_admin/src/App.tsx
 - strings.dart
 - _admin_helpers.ts
 - setup_wizard_screen.dart
@@ -70,47 +70,47 @@
 - colors.dart
 - dependencies
 - namastepos_admin/src/pages/CustomersPage.tsx
-- authService.js
+- Jira Workflow Steward Agent
 - platformOpsService.js
 - printer_service.dart
-- ingredientController.js
+- Accessibility Auditor Agent Personality
 - reportsController.js
 - pin_login_screen.dart
 - Disaster Recovery drill — NamastePOS
 - dependencies
 - dependencies
-- login_screen.dart
-- ../../constants/colors.dart
+- staffService.js
+- Product Sprint Prioritizer Agent
 - addonController.js
 - guestController.js
 - repositories.dart
 - FoodFlow — Complete Build Package
-- delivery.routes.js
+- Integration Agent Personality
 - reportExporters.js
 - menu_item.dart
 - offline_outbox.dart
-- CustomerDetailPage.tsx
+- Product Trend Researcher Agent
 - report.dart
 - NamastePOS — Complete Build Package
-- customers_screen.dart
+- Experiment Tracker Agent Personality
 - orders_provider.dart
 - authController.js
 - uploads.routes.js
-- business.dart
+- resetDb
 - FoodFlow — Claude Code Execution Guide
 - Offer & Lead Gen Strategist
-- InvoicesPage.tsx
+- namastepos_dashboard/src/api/client.ts
 - subscription.dart
-- adminTeamService.js
+- Project Shepherd Agent Personality
 - namastepos_backend/.eslintrc.json
 - Coverage against the 49-story PRD
 - connectivity_banner.dart
 - cronWorker.js
-- ../../services/api_service.dart
+- delivery_board_screen.dart
 - menu_editor_screen.dart
-- inventory_screen.dart
+- menu_provider.dart
 - database_service.dart
-- admin.routes.js
+- adminRbac.js
 - notification_service.dart
 - settings_provider.dart
 - aggregatorService.js
@@ -130,15 +130,15 @@
 - devDependencies
 - GeneratedPluginRegistrant.swift
 - feature_tour.dart
-- kds_screen.dart
+- Studio Operations Agent Personality
 - tests/package.json
 - Sales Coach Agent
 - setup.js
 - FoodFlow — Manual Smoke Test Plan
-- marketplace_screen.dart
+- inventory_screen.dart
 - jest
-- customer.dart
-- multiOutlet.routes.js
+- business.dart
+- Forbidden
 - customPlanService.js
 - FoodFlow → Handover doc
 - taxInvoiceService.js
@@ -149,18 +149,18 @@
 - addonService.js
 - bool get
 - NotFound
-- OrdersProvider
+- Studio Producer Agent Personality
 - adminService.js
-- AuthProvider
+- API Tester Agent Personality
 - google_logo.dart
-- qrService.js
+- marketplace_screen.dart
 - Expected first bottleneck
 - Migrations — conventions & deliberate gaps
 - errors.js
 - Account Strategist Agent
 - AuthProvider
-- idempotent.js
-- dart:io
+- Performance Benchmarker Agent Personality
+- package:flutter/foundation.dart
 - globals
 - Deal Strategist Agent
 - customer_detail_screen.dart
@@ -178,17 +178,17 @@
 - supportService.js
 - 6. Backlog — user stories, epic by epic
 - namastepos_dashboard/package.json
-- namastepos_dashboard/src/lib/sentry.ts
+- authService.js
 - Project Name Clearance — FoodFlow Rebrand
 - compilerOptions
 - FoodFlow vs PetPooja / Vyapar — Competitive Gap Analysis
-- package:flutter/foundation.dart
-- whatsapp_service.dart
-- admin_saas_ops2026.test.js
-- reportService.js
+- expenses_provider.dart
+- Test Results Analyzer Agent Personality
+- Tool Evaluator Agent Personality
+- Workflow Optimizer Agent Personality
 - NamastePOS — Flutter Mobile POS (PetPooja Clone)
 - friendlyError
-- plan_info.dart
+- bill_split_screen.dart
 - namastepos_print_agent/package.json
 - AppDelegate
 - FlutterMacOS
@@ -196,36 +196,36 @@
 - menuService.js
 - orders-delta-poll.js
 - Sales Engineer Agent
-- durability2026.test.js
+- subscriptionService.js
 - ios/RunnerTests/RunnerTests.swift
 - namastepos_backend/package.json
 - Part 1 — Google Sign-In on iOS
 - payments.routes.js
-- logger.js
+- env.js
 - index.ts
-- InventoryPage.tsx
+- apiError
 - AppDelegate
 - NamastePOS — Super-Admin Review, Plan Strategy & Path to Unicorn
 - Discovery Coach Agent
 - idor-audit.js
 - Outbound Strategist Agent
-- ingredientService.js
+- orderDurabilityService.js
 - FoodFlow — Regulatory Compliance Gap Analysis & Remediation Plan
 - FoodFlow — Deploy-Ready Punchlist
 - FoodFlow — Post-Launch Roadmap
 - Hardcode Audit — 2026-08-24
 - validators.dart
 - TestSprite
-- RunnerTests
+- QA Agent Personality
 - withTransaction
 - order_race.k6.js
 - worker.js
 - FlutterActivity
 - RegisterGeneratedPlugins
 - customerService.js
-- guest_benefit2026.test.js
+- planTiers.js
 - @radix-ui/react-slot
-- money_regressions2026.test.js
+- 🧭 Product Manager Agent
 - twoFactor.test.js
 - verify-backup.sh
 - tests/playwright.config.ts
@@ -238,11 +238,11 @@
 - 2. Current architecture bottlenecks (ordered by impact)
 - marketplaceService.js
 - FoodFlow — Security Audit (attacker's-eye review)
-- orderTaxEnforce2026.test.js
+- CompliancePage.tsx
 - test-migrations.sh
-- extends
+- cart_item.dart
 - NamastePOS — 10-Sprint Plan (20 weeks)
-- namastepos_dashboard/src/api/client.ts
+- namastepos_dashboard/src/components/ui/button.tsx
 - setup.sh
 - backup-db.sh
 - install-backup-cron.sh
@@ -255,23 +255,24 @@
 - NamastePOS SaaS — full stack run guide
 - NamastePOS — Full Product, Codebase & Competitive Review
 - Reticle: the full rules
-- _DraggableTable
+- Map
 - asyncHandler.js
 - NamastePOS Backend
 - Reticle: the full rules
 - Part B — Product bets (from the brainstorm)
-- NewOrderDialog.tsx
+- ingredientController.js
 - NamastePOS — Directory & Listing Kit
 - NamastePOS — Build-team Roster (22 people)
 - FoodFlow — QA Fix Report v3 (FINAL — Sprints QA-8 through QA-11)
-- error
-- finalSprint.routes.js
+- Product Feedback Synthesizer Agent
 - register_screen.dart
+- PlansPage.tsx
 - FoodFlow — DB backup & restore
 - i18n.dart
-- _TableFormDialog
-- couponcap2026.test.js
+- kds_screen.dart
+- idempotent.js
 - Device-test fixes — 23 Aug 2026, round 2
+- Test Automation Engineer
 - app.dart
 - 1. DPDP Act 2023 — The Big Red
 - CTO memo — Vikram Iyer → Shivhari (founder)
@@ -280,20 +281,21 @@
 - NamastePOS — Directory Submission Pack
 - NamastePOS — Super-Admin, Compliance & Growth Roadmap
 - NamastePOS — Session Handover
-- coupons_screen.dart
+- adminTeamService.js
 - NamastePOS — Product Backlog (66 user stories)
 - FoodFlow — Security scan report (FF-216)
 - NamastePOS — Load testing kit
-- tables_screen.dart
+- billingController.js
 - cacheBus.js
+- pnlService.js
 - compression
 - Day 1 status — 22 Aug 2026
 - Phase 0 — Compliance gate (BLOCKS everything below) 🛑
 - Pre-deploy fix sweep — 22 Aug 2026 (evening session)
 - Meta WhatsApp Cloud API — setup guide
 - namastepos_admin/.claude/commands/reticle.md
-- privacy_screen.dart
-- csrf.js
+- State
+- formatINR
 - namastepos_dashboard/.claude/commands/reticle.md
 - onboardingEmailService.js
 - NamastePOS Print Agent
@@ -342,7 +344,7 @@
 - tailwindcss
 - autoprefixer
 - eslint
-- max-len
+- Project Manager Agent Personality
 - nodemailer
 - winston
 - @radix-ui/react-separator
@@ -359,38 +361,63 @@
 - README.md
 - @playwright/test
 - postcss
+- admin.routes.js
 - idempotency2026.test.js
-- migration_imports2026.test.js
-- reservationService.js
+- reviewsService.js
+- upsell_hints.dart
+- 🧠 Behavioral Nudge Engine
+- expenses.routes.js
+- plan_info.dart
+- refundService.js
+- trialGraceLimits2026.test.js
+- Meeting Notes Specialist
+- hardening2026.test.js
+- subscriptionInvoiceService.js
 - plans_addons_2026.test.js
-- home_drawer_button.dart
-- billingController.js
-- autowallet2026.test.js
-- reportsCompliance.routes.js
-- anomalyAlertService.js
-- pricing_authority2026.test.js
-- featureGate.js
-- resetDb
-- whatsapp-webhook.test.js
-- _sessionPayload
 - fulfilment2026.test.js
+- reportsCompliance.routes.js
+- autowallet2026.test.js
+- planEntitlement.js
+- pricing_authority2026.test.js
+- staffPerms2026.test.js
+- reportService.js
 - addon_tier_outlets2026.test.js
+- whatsapp-webhook.test.js
+- compliance.routes.js
+- fulfilmentService.js
+- menuBulkCap2026.test.js
+- couponcap2026.test.js
+- guest_benefit2026.test.js
+- hardening_20260903.test.js
+- PlanInfo
+- SubscriptionProvider
+- migration_imports2026.test.js
+- money_regressions2026.test.js
+- orderTaxEnforce2026.test.js
 - razorpay_webhook2026.test.js
+- sprint4_support_pagination2026.test.js
+- expenseService.js
+- expenses-reports.test.js
 - uploads.test.js
+- home_drawer_button.dart
+- csrf.js
+- customers.test.js
+- membership_crud.test.js
 - sprint4_updatedsince2026.test.js
 - tax-invoices.test.js
+- PaperSize
 
 ## God Nodes (most connected - your core abstractions)
-1. `query()` - 672 edges
-2. `AuthProvider` - 200 edges
+1. `query()` - 671 edges
+2. `AuthProvider` - 226 edges
 3. `apiError()` - 136 edges
 4. `NotFound` - 132 edges
 5. `BadRequest` - 120 edges
-6. `formatINR()` - 101 edges
-7. `apiError()` - 91 edges
-8. `withTransaction()` - 91 edges
+6. `formatINR()` - 103 edges
+7. `withTransaction()` - 92 edges
+8. `apiError()` - 91 edges
 9. `_` - 80 edges
-10. `Button` - 64 edges
+10. `ffApi` - 64 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `verify()` --calls--> `Forbidden`  [EXTRACTED]
@@ -401,14 +428,14 @@
   namastepos_backend/src/controllers/guestController.js → namastepos_backend/src/utils/errors.js
 - `validate()` --calls--> `BadRequest`  [EXTRACTED]
   namastepos_backend/src/middleware/validate.js → namastepos_backend/src/utils/errors.js
-- `creditWalletTx()` --calls--> `BadRequest`  [EXTRACTED]
-  namastepos_backend/src/services/giftCardService.js → namastepos_backend/src/utils/errors.js
+- `main()` --calls--> `query()`  [EXTRACTED]
+  namastepos_backend/scripts/rotate-super-admin.js → namastepos_backend/src/config/db.js
 
 ## Import Cycles
 - 2-file cycle: `namastepos_backend/src/services/npsService.js -> namastepos_backend/src/services/whatsappService.js -> namastepos_backend/src/services/npsService.js`
 - 2-file cycle: `namastepos_backend/src/services/addonService.js -> namastepos_backend/src/services/razorpayService.js -> namastepos_backend/src/services/addonService.js`
 
-## Communities (402 total, 51 thin omitted)
+## Communities (429 total, 49 thin omitted)
 
 ### Community 0 - "query"
 Cohesion: 0.02
@@ -416,35 +443,35 @@ Nodes (143): query(), { BadRequest }, crypto, generateEwayBill(), generateIrn(),
 
 ### Community 1 - "api_service.dart"
 Cohesion: 0.01
-Nodes (149): Dio get, Future, adjustStock, adjustVariantStock, ApiService, applyFoodCoupon, _authInterceptor, baseUrl (+141 more)
+Nodes (152): analytics_service.dart, Dio get, adjustStock, adjustVariantStock, ApiService, applyFoodCoupon, _authInterceptor, baseUrl (+144 more)
 
 ### Community 2 - "BadRequest"
 Cohesion: 0.04
-Nodes (71): { BadRequest, NotFound }, BREACH_STATUS, _businessOwnerEmail(), CONSENT_KEYS, consentHistory(), crypto, currentConsents(), _dispatchComplianceEmails() (+63 more)
+Nodes (76): { BadRequest, NotFound }, BREACH_STATUS, _businessOwnerEmail(), CONSENT_KEYS, consentHistory(), crypto, currentConsents(), _dispatchComplianceEmails() (+68 more)
 
 ### Community 3 - "adminController.js"
 Cohesion: 0.01
-Nodes (155): accountFieldsBody, addActivityCtrl, addNote, addNoteBody, ADMIN_COOKIE_CLEAR_OPTS, ADMIN_COOKIE_OPTS, adminCust, adminLegacy (+147 more)
+Nodes (158): accountFieldsBody, addActivityCtrl, addNote, addNoteBody, ADMIN_COOKIE_CLEAR_OPTS, ADMIN_COOKIE_OPTS, adminCust, adminLegacy (+150 more)
 
-### Community 4 - "MenuPage.tsx"
-Cohesion: 0.08
-Nodes (30): exitImpersonation(), isImpersonating(), setBusinessCache(), setSession(), MenuPage, ImpersonationBanner(), Layout(), navBottom (+22 more)
+### Community 4 - "BillingPage.tsx"
+Cohesion: 0.09
+Nodes (28): BillingPage, MenuPage, MenuCsvImportDialog(), parseCsv(), PlanState, STARTER_DEFAULT, usePlan(), isTopTier() (+20 more)
 
 ### Community 5 - "namastepos_admin/src/components/ui/card.tsx"
 Cohesion: 0.13
-Nodes (26): adminApi, UsageMetric, UsageRow, Card, CardContent, CardFooter, CardHeader, Table (+18 more)
+Nodes (27): adminApi, UsageMetric, UsageRow, Card, CardContent, CardFooter, CardHeader, CardTitle (+19 more)
 
 ### Community 6 - "MigrationPage.tsx"
 Cohesion: 0.07
 Nodes (30): BulkImportPage, MigrationPage, CsvRow, downloadCsv(), parseCsv(), shapeRow(), EXPENSE_MAP, IMPORT_TYPES (+22 more)
 
-### Community 7 - "namastepos_dashboard/src/lib/utils.ts"
-Cohesion: 0.06
-Nodes (77): clearBusinessScopedStorage(), MyOutlet, CustomersPage, KotPage, ModifierGroupsPage, PrintersPage, StaffPage, Guest (+69 more)
+### Community 7 - "namastepos_dashboard/src/components/ui/input.tsx"
+Cohesion: 0.09
+Nodes (66): WastagePage, Guest, Mode, Badge(), BadgeProps, badgeVariants, DateInput, DateInputProps (+58 more)
 
-### Community 8 - "hardening_20260903.test.js"
-Cohesion: 0.25
-Nodes (7): addons, buildApp, customPlans, { issueAccessToken }, { query }, request, { resetDb, makeBusiness, tokenFor, closePool }
+### Community 8 - "analytics_service.dart"
+Cohesion: 0.03
+Nodes (79): bool?, FirebaseAnalytics?, Future, _a, Activation, all, AnalyticsIdentity, AnalyticsService (+71 more)
 
 ### Community 9 - "2. P0 — Ship Blockers (must fix before any customer goes live)"
 Cohesion: 0.04
@@ -455,52 +482,52 @@ Cohesion: 0.13
 Nodes (27): RFC-6238, { BadRequest, Unauthorized, NotFound }, _base32Decode(), _base32Encode(), bcrypt, _checkCode(), confirmEnrolment(), crypto (+19 more)
 
 ### Community 11 - "edit_item_screen.dart"
-Cohesion: 0.04
-Nodes (53): FormState, ../home/home_screen.dart, build, _category, _city, _continue, createState, dispose (+45 more)
+Cohesion: 0.03
+Nodes (78): FormState, ../home/home_screen.dart, build, _category, _city, _continue, createState, dispose (+70 more)
 
 ### Community 12 - "FoodFlow — Claude Code Autonomous Build System"
 Cohesion: 0.05
 Nodes (37): AUTOMATION RULES, ESTIMATED TIMELINE, FoodFlow — Claude Code Autonomous Build System, Master Orchestration for Complete App Generation, NOTES, OVERVIEW, PHASE 1: BACKEND GENERATION (Days 1–4), PHASE 2: MOBILE APP GENERATION (Days 5–8) (+29 more)
 
 ### Community 13 - "order_detail_screen.dart"
-Cohesion: 0.03
-Nodes (80): ../captain/captain_screen.dart, CartItem, confirm_order_screen.dart, item_config_sheet.dart, _Mode, Order, OrderStatus, OrdersProvider (+72 more)
+Cohesion: 0.02
+Nodes (169): add_expense_screen.dart, aggregators_screen.dart, app.dart, business_info_screen.dart, ../captain/captain_screen.dart, CartItem, confirm_order_screen.dart, ../customers/customers_screen.dart (+161 more)
 
 ### Community 14 - "orderService.js"
-Cohesion: 0.06
-Nodes (43): deductForOrder(), deductOne(), { BadRequest, Conflict }, create(), list(), { query }, serialize(), update() (+35 more)
+Cohesion: 0.07
+Nodes (36): deductForOrder(), deductOne(), computeGstBreakdown(), { BadRequest }, gc, importCustomerRow(), importSalesRow(), { nextOrderNo } (+28 more)
 
 ### Community 15 - "FoodFlow — Launch Plan"
 Cohesion: 0.05
 Nodes (37): Acquisition (zero ad spend — your network only), Aggregator economics batch (defer until first cloud-kitchen customer), AI batch (defer until at least 100 outlets), Anti-goals (things explicitly NOT to do pre-launch), Beta customer wishlist (start filling this as soon as you reach out), Beta deal terms, Beta failure criteria (forces a pivot or restart), Beta scorecard (track per customer, weekly) (+29 more)
 
-### Community 16 - "daily_closing_screen.dart"
-Cohesion: 0.05
-Nodes (39): build, _busy, _cash, createState, DailyClosingScreen, _DailyClosingScreenState, dispose, initState (+31 more)
+### Community 16 - "package:provider/provider.dart"
+Cohesion: 0.04
+Nodes (60): billing_screen.dart, DateTime?, TrialExpiredScreen, build, _busy, _cash, createState, DailyClosingScreen (+52 more)
 
 ### Community 17 - "auth.js"
 Cohesion: 0.04
-Nodes (67): _adminActive(), _adminActiveCache, cacheBus, _currentMembership(), _currentRole(), _decode(), _decodeAdmin(), _dropMembershipLocal() (+59 more)
+Nodes (62): _adminActive(), _adminActiveCache, cacheBus, _currentMembership(), _currentRole(), _decode(), _decodeAdmin(), _dropMembershipLocal() (+54 more)
 
-### Community 18 - "getBusinessCache"
-Cohesion: 0.06
-Nodes (42): getBusinessCache(), TablesPage, BillSplitDialog(), CrispChat(), Window, ActiveSubscription, AddMembershipDialog(), CancelMembershipDialog() (+34 more)
+### Community 18 - "activation.ts"
+Cohesion: 0.07
+Nodes (59): CookieBanner(), close(), ensureSessionId(), record(), countOwnerAuthored(), hasOwnerAuthoredLine(), isPrefilled(), lastSeenTier() (+51 more)
 
-### Community 19 - "package:flutter/material.dart"
-Cohesion: 0.03
-Nodes (68): Color?, colors.dart, IconData?, AppTheme, AggregatorsScreen, _AggregatorsScreenState, _apiKey, build (+60 more)
+### Community 19 - "aggregators_screen.dart"
+Cohesion: 0.07
+Nodes (30): AggregatorsScreen, _AggregatorsScreenState, _apiKey, build, _busy, _code, color, createState (+22 more)
 
-### Community 20 - "driver_screen.dart"
-Cohesion: 0.06
-Nodes (32): build, _code, _codeSent, createState, dispose, OtpScreen, _OtpScreenState, _phone (+24 more)
+### Community 20 - "../../services/api_service.dart"
+Cohesion: 0.02
+Nodes (87): customer_detail_screen.dart, List, ../../models/customer.dart, _authBusinessId, _businessId, _error, _floors, load (+79 more)
 
-### Community 21 - "apiError"
-Cohesion: 0.03
-Nodes (80): apiError(), baseURL, guest, guestApi, GuestMenu, GuestMenuPage, SplitInvoiceRow(), FloorCanvas() (+72 more)
+### Community 21 - "getBusinessCache"
+Cohesion: 0.04
+Nodes (75): getBusinessCache(), OrdersPage, TablesPage, BillSplitDialog(), ActiveSubscription, AddMembershipDialog(), CancelMembershipDialog(), CancelRefund (+67 more)
 
 ### Community 22 - "tables_editor_screen.dart"
 Cohesion: 0.03
-Nodes (60): _addFloor, _addTable, autoX, autoY, _bizId, build, _canvasHeight, _canvasMode (+52 more)
+Nodes (69): TablesProvider, _addFloor, _addTable, autoX, autoY, _bizId, build, _canvasHeight (+61 more)
 
 ### Community 23 - "confirm_order_screen.dart"
 Cohesion: 0.03
@@ -527,16 +554,16 @@ Cohesion: 0.06
 Nodes (31): devDependencies, eslint-plugin-react-hooks, eslint-plugin-react-refresh, @playwright/test, postcss, @reticlehq/react, @reticlehq/vite-plugin, tailwindcss-animate (+23 more)
 
 ### Community 29 - "rules"
-Cohesion: 0.07
-Nodes (30): rules, arrow-body-style, camelcase, consistent-return, default-param-last, function-paren-newline, global-require, implicit-arrow-linebreak (+22 more)
+Cohesion: 0.06
+Nodes (37): rules, arrow-body-style, camelcase, consistent-return, default-param-last, function-paren-newline, global-require, implicit-arrow-linebreak (+29 more)
 
-### Community 30 - "namastepos_dashboard/src/components/ui/badge.tsx"
-Cohesion: 0.10
-Nodes (22): ActionCenterPage, ReviewsPage, SurgePage, Props, STATUS_COLORS, TableRow, Badge(), BadgeProps (+14 more)
+### Community 30 - "staff_screen.dart"
+Cohesion: 0.03
+Nodes (74): SubscriptionProvider, _billingPeriod, BillingScreen, _BillingScreenState, build, _checkoutBusy, createState, _ctaLabel (+66 more)
 
-### Community 31 - "StatelessWidget"
+### Community 31 - "package:flutter/material.dart"
 Cohesion: 0.02
-Nodes (94): dart:typed_data, _FloorPlan, _KotPaidChip, _Tile, createState, _endDate, _error, fmt (+86 more)
+Nodes (160): Color?, colors.dart, ../config/app_config.dart, ../constants/colors.dart, dart:typed_data, IconData?, AppTheme, _FloorPlan (+152 more)
 
 ### Community 32 - "compilerOptions"
 Cohesion: 0.08
@@ -548,11 +575,11 @@ Nodes (44): addonRoutes, adminRoutes, aggregatorWebhookRoutes, authRoutes, billi
 
 ### Community 34 - "complianceController.js"
 Cohesion: 0.04
-Nodes (43): adminGetRetention, adminGetSettings, adminListBreaches, adminListDSRs, adminListGrievances, adminLogBreach, adminLogBreachSchema, adminPreviewRetention (+35 more)
+Nodes (47): adminGetRetention, adminGetSettings, adminListBreaches, adminListDSRs, adminListGrievances, adminLogBreach, adminLogBreachSchema, adminPreviewRetention (+39 more)
 
 ### Community 35 - "namastepos.ts"
-Cohesion: 0.10
-Nodes (16): FulfilmentOrder, FulfilmentState, FulfilmentTransitionBody, OutletRollup, ProvisionOutletResult, SwitchBusinessResult, DeliveryBoardPage, ACTION_LABEL (+8 more)
+Cohesion: 0.07
+Nodes (38): clearBusinessScopedStorage(), FulfilmentOrder, FulfilmentState, FulfilmentTransitionBody, MyOutlet, OutletRollup, PastDueGrace, PlanOverage (+30 more)
 
 ### Community 36 - "tip_report_screen.dart"
 Cohesion: 0.06
@@ -564,19 +591,19 @@ Nodes (15): 1.1 NUMERIC rupee columns (the legacy island), 1.2 Integer-paise col
 
 ### Community 38 - "auth_provider.dart"
 Cohesion: 0.04
-Nodes (46): AuthStatus get, Business?, Business? get, ../models/plan_info.dart, AuthStatus, _bootstrap, bumpMpinFails, _business (+38 more)
+Nodes (45): AuthStatus get, Business?, Business? get, ../models/plan_info.dart, AuthStatus, _bootstrap, bumpMpinFails, _business (+37 more)
 
 ### Community 39 - "subscription_provider.dart"
 Cohesion: 0.11
-Nodes (17): ../models/subscription.dart, Subscription, _addons, _authBusinessId, _businessId, clear, _error, hasAddon (+9 more)
+Nodes (18): ../models/subscription.dart, _addons, _authBusinessId, _businessId, clear, _error, hasAddon, isPaused (+10 more)
 
 ### Community 40 - "namastepos_dashboard/src/App.tsx"
-Cohesion: 0.03
-Nodes (62): bootstrapAuth(), getToken(), AccountingPage, AccountingReportsPage, AggregatorsPage, App(), B2BInvoiceTemplatePage, BankReconcilePage (+54 more)
+Cohesion: 0.04
+Nodes (53): bootstrapAuth(), getToken(), AccountingPage, AccountingReportsPage, ActionCenterPage, AggregatorsPage, App(), B2BInvoiceTemplatePage (+45 more)
 
 ### Community 41 - "admin.ts"
 Cohesion: 0.06
-Nodes (32): Addon, AttentionItem, AuditEvent, ComplianceSettings, Coupon, CronJobStat, Customer, CustomPlan (+24 more)
+Nodes (31): Addon, AttentionItem, AuditEvent, ComplianceSettings, Coupon, CronJobStat, Customer, CustomPlan (+23 more)
 
 ### Community 42 - "btPrinter.ts"
 Cohesion: 0.08
@@ -590,17 +617,17 @@ Nodes (38): _abandonSession, _autoGrid, build, businessId, CaptainScreen, _Capta
 Cohesion: 0.05
 Nodes (37): abandonSession, asyncHandler, closeSession, createFloor, createStation, createTable, deleteFloor, deleteStation (+29 more)
 
-### Community 45 - "dashboard_screen.dart"
-Cohesion: 0.03
-Nodes (92): add_expense_screen.dart, app.dart, DateTime?, ../expenses/add_expense_screen.dart, income_statement_screen.dart, MaterialPageRoute, ../models/expense.dart, ../../models/order.dart (+84 more)
-
-### Community 46 - "namastepos_admin/src/api/client.ts"
-Cohesion: 0.11
-Nodes (22): Admin, adminLogout(), api, clearSession(), establishSession(), reportAuthProbe(), setAdminToken(), App() (+14 more)
-
-### Community 47 - "namastepos_admin/src/components/ui/button.tsx"
+### Community 45 - "inventory_transaction.dart"
 Cohesion: 0.13
-Nodes (15): Button, ButtonProps, buttonVariants, CardDescription, SEGMENTS, downloadCsv(), FinancePage(), RFC-4180 (+7 more)
+Nodes (14): balanceAfter, businessId, createdAt, fromMap, id, InventoryReason, inventoryReasonFromString, InventoryTransaction (+6 more)
+
+### Community 46 - "namastepos_admin/src/lib/sentry.ts"
+Cohesion: 0.29
+Nodes (7): App(), beforeSend(), initSentry(), scrubString(), scrubTree(), SENSITIVE_KEYS, queryClient
+
+### Community 47 - "namastepos_admin/src/App.tsx"
+Cohesion: 0.07
+Nodes (40): Admin, adminLogout(), api, clearSession(), establishSession(), isAuthed(), reportAuthProbe(), setAdminToken() (+32 more)
 
 ### Community 48 - "strings.dart"
 Cohesion: 0.05
@@ -616,7 +643,7 @@ Nodes (35): _body, build, _busy, _categories, _category, _city, createState, dis
 
 ### Community 51 - "modifier_groups_screen.dart"
 Cohesion: 0.06
-Nodes (34): build, createState, dispose, _emptyState, _error, _errorState, fromJson, group (+26 more)
+Nodes (35): build, createState, dispose, _emptyState, _error, _errorState, fromJson, group (+27 more)
 
 ### Community 52 - "colors.dart"
 Cohesion: 0.07
@@ -627,12 +654,12 @@ Cohesion: 0.07
 Nodes (29): dependencies, axios, class-variance-authority, clsx, date-fns, lucide-react, qrcode.react, @radix-ui/react-dialog (+21 more)
 
 ### Community 54 - "namastepos_admin/src/pages/CustomersPage.tsx"
-Cohesion: 0.17
-Nodes (27): Plan, Badge(), BadgeProps, badgeVariants, Dialog, DialogContent, DialogDescription, DialogFooter() (+19 more)
+Cohesion: 0.25
+Nodes (19): Badge(), BadgeProps, badgeVariants, Dialog, DialogContent, DialogDescription, DialogFooter(), DialogHeader() (+11 more)
 
-### Community 55 - "authService.js"
-Cohesion: 0.09
-Nodes (24): { BadRequest }, bcrypt, changePassword(), createBusinessForUser(), env, findOrCreateUser(), getBusinessById(), getMembership() (+16 more)
+### Community 55 - "Jira Workflow Steward Agent"
+Cohesion: 0.07
+Nodes (29): 🚀 Advanced Capabilities, Branch and Commit Decision Matrix, Branch Strategy and Commit Hygiene, Commit and Branch Validation Hook, 🚨 Critical Rules You Must Follow, Delivery Planning Template, Jira Gate, Jira Workflow Steward Agent (+21 more)
 
 ### Community 56 - "platformOpsService.js"
 Cohesion: 0.12
@@ -640,11 +667,11 @@ Nodes (26): _addonAttach(), dunningMarkPaid(), dunningQueue(), dunningRetry(), d
 
 ### Community 57 - "printer_service.dart"
 Cohesion: 0.06
-Nodes (32): address, _buildReceipt, connect, disconnect, _ensureConnected, fromBluetoothInfo, hasSelectedPrinter, instance (+24 more)
+Nodes (30): address, _buildReceipt, connect, disconnect, _ensureConnected, fromBluetoothInfo, hasSelectedPrinter, instance (+22 more)
 
-### Community 58 - "ingredientController.js"
-Cohesion: 0.09
-Nodes (19): adjustBody, asyncHandler, ingredientBody, ingredientPatch, ingredients, Joi, purchaseBody, recipes (+11 more)
+### Community 58 - "Accessibility Auditor Agent Personality"
+Cohesion: 0.07
+Nodes (29): Accessibility Audit Report Template, Accessibility Auditor Agent Personality, 🚀 Advanced Capabilities, Audit Against WCAG Standards, Catch What Automation Misses, 🚨 Critical Rules You Must Follow, Cross-Agent Collaboration, Design System Accessibility (+21 more)
 
 ### Community 59 - "reportsController.js"
 Cohesion: 0.10
@@ -666,21 +693,21 @@ Nodes (33): bcrypt, bcryptjs, cookie-parser, cors, dotenv, exceljs, express, exp
 Cohesion: 0.07
 Nodes (29): dependencies, axios, class-variance-authority, clsx, date-fns, lucide-react, @radix-ui/react-dropdown-menu, @radix-ui/react-label (+21 more)
 
-### Community 64 - "login_screen.dart"
-Cohesion: 0.08
-Nodes (24): ../constants/strings.dart, _afterAuth, _blue, createState, dispose, _email, _GoogleLogo, _googleSignIn (+16 more)
+### Community 64 - "staffService.js"
+Cohesion: 0.10
+Nodes (29): requireStaffPerm(), acceptInvite(), bcrypt, complyStaffLimit(), createStaffWithPin(), crypto, DEFAULT_PERMS_BY_ROLE, hashToken() (+21 more)
 
-### Community 65 - "../../constants/colors.dart"
-Cohesion: 0.03
-Nodes (79): aggregators_screen.dart, billing_screen.dart, business_info_screen.dart, ../config/app_config.dart, ../../constants/colors.dart, ../customers/customers_screen.dart, ../expenses/expenses_screen.dart, ../menu/menu_editor_screen.dart (+71 more)
+### Community 65 - "Product Sprint Prioritizer Agent"
+Cohesion: 0.07
+Nodes (26): Alignment Techniques, Capacity Planning, Continuous Improvement, Core Capabilities, Decision Framework, Kano Model Classification, Mitigation Strategies, Pre-Sprint Planning (Week Before) (+18 more)
 
 ### Community 66 - "addonController.js"
 Cohesion: 0.06
 Nodes (28): addons, adminActivationsForCustomer, adminAttachToCustomer, adminCreate, adminCreateBody, adminDetachFromCustomer, adminList, adminSyncRazorpay (+20 more)
 
 ### Community 67 - "guestController.js"
-Cohesion: 0.06
-Nodes (31): asyncHandler, { BadRequest }, benefitCheck, benefitVerify, confirmPayment, confirmSessionPayment, createCheckoutOrder, crypto (+23 more)
+Cohesion: 0.04
+Nodes (47): asyncHandler, { BadRequest }, benefitCheck, benefitVerify, confirmPayment, confirmSessionPayment, createCheckoutOrder, crypto (+39 more)
 
 ### Community 68 - "repositories.dart"
 Cohesion: 0.06
@@ -690,9 +717,9 @@ Nodes (34): database_service.dart, adjust, byId, cacheAll, categories, create, d
 Cohesion: 0.06
 Nodes (35): 6 Core Documents, 📞 CONTACT & NEXT STEPS, 🔗 DOCUMENT CROSS-REFERENCES, 📁 FILE ORGANIZATION, ✅ FINAL CHECKLIST, FoodFlow — Complete Build Package, 👨‍💻 For Backend Engineer, 🔧 For DevOps/Infrastructure (+27 more)
 
-### Community 70 - "delivery.routes.js"
-Cohesion: 0.17
-Nodes (11): aggregator, aggregatorLink, asyncHandler, driver, express, fulfilment, Joi, { requireRole } (+3 more)
+### Community 70 - "Integration Agent Personality"
+Cohesion: 0.07
+Nodes (26): Build Expertise In:, Complete System Screenshots Analysis, 🚨 Critical Rules You Must Follow, Default to Skepticism, Evidence Failures, Fantasy Assessment Indicators, Integration Agent Personality, 🔄 Learning & Memory (+18 more)
 
 ### Community 71 - "reportExporters.js"
 Cohesion: 0.15
@@ -704,11 +731,11 @@ Nodes (30): businessId, category, copyWith, costPrice, createdAt, description, f
 
 ### Community 73 - "offline_outbox.dart"
 Cohesion: 0.06
-Nodes (31): Dio?, activePendingCount, _api, clearAll, _connSub, _db, deadLetterCount, deadLetters (+23 more)
+Nodes (31): Dio, activePendingCount, _api, clearAll, _connSub, _db, deadLetterCount, deadLetters (+23 more)
 
-### Community 74 - "CustomerDetailPage.tsx"
-Cohesion: 0.10
-Nodes (22): CardTitle, formatDate(), AdminTeamPage(), CouponsPage(), HealthPill(), LifecycleBadge(), AddonsTab(), CUSTOM_PLAN_LIMIT_KEYS (+14 more)
+### Community 74 - "Product Trend Researcher Agent"
+Cohesion: 0.08
+Nodes (25): Competitive Intelligence, Consumer Behavior Analysis, Continuous Intelligence, Core Capabilities, Decision Framework, Identity & Role Definition, Innovation Tracking, Insight Delivery Formats (+17 more)
 
 ### Community 75 - "report.dart"
 Cohesion: 0.08
@@ -718,25 +745,25 @@ Nodes (25): DailyReport, date, dineInRevenue, fuelExpense, ingredientsExpense, i
 Cohesion: 0.06
 Nodes (35): 6 Core Documents, 📞 CONTACT & NEXT STEPS, 🔗 DOCUMENT CROSS-REFERENCES, 📁 FILE ORGANIZATION, ✅ FINAL CHECKLIST, 👨‍💻 For Backend Engineer, 🔧 For DevOps/Infrastructure, 👨‍💼 For Founder/CEO (+27 more)
 
-### Community 77 - "customers_screen.dart"
-Cohesion: 0.09
-Nodes (22): customer_detail_screen.dart, ../../models/customer.dart, build, createState, _customers, CustomersScreen, _CustomersScreenState, initState (+14 more)
+### Community 77 - "Experiment Tracker Agent Personality"
+Cohesion: 0.08
+Nodes (24): 🚀 Advanced Capabilities, 🚨 Critical Rules You Must Follow, Data Science Integration, Deliver Data-Driven Insights and Recommendations, Design and Execute Scientific Experiments, Experiment Design Document Template, Experiment Portfolio Management, Experiment Safety and Ethics (+16 more)
 
 ### Community 78 - "orders_provider.dart"
-Cohesion: 0.03
-Nodes (79): double?, double get, List, menu_item.dart, CartItem, groupId, groupLabel, item (+71 more)
+Cohesion: 0.05
+Nodes (36): addToCart, _authBusinessId, _businessId, _cart, cartItemCount, cartSubtotal, clearCart, createOrderFromCart (+28 more)
 
 ### Community 79 - "authController.js"
-Cohesion: 0.08
-Nodes (24): asyncHandler, auth, changePassword, changePasswordSchema, COOKIE_CLEAR_OPTS, COOKIE_OPTS, devLoginSchema, google (+16 more)
+Cohesion: 0.07
+Nodes (33): _applyRefreshCookie(), asyncHandler, auth, changePassword, changePasswordSchema, COOKIE_CLEAR_OPTS, COOKIE_OPTS, devLogin (+25 more)
 
 ### Community 80 - "uploads.routes.js"
 Cohesion: 0.08
 Nodes (22): ALLOWED_MIME, asyncHandler, diskStorage, express, fs, MIME_EXT, multer, path (+14 more)
 
-### Community 81 - "business.dart"
-Cohesion: 0.06
-Nodes (32): address, bankAccount, bankIfsc, Business, category, city, copyWith, createdAt (+24 more)
+### Community 81 - "resetDb"
+Cohesion: 0.05
+Nodes (34): adminTeam, csrf, { resetDb, closePool }, retention, settings, { verifyAccessToken }, buildApp, request (+26 more)
 
 ### Community 82 - "FoodFlow — Claude Code Execution Guide"
 Cohesion: 0.06
@@ -746,21 +773,21 @@ Nodes (34): Backend ✅, 📋 CHECKLIST: What You Need, Common Issues, 🚀 DEPL
 Cohesion: 0.06
 Nodes (32): 🚀 Advanced Capabilities, Amplifier Program Operations, Channel & Amplifier Principles, Channel Economics, 💭 Communication Style, Core Four Channel Plan, 🎯 Core Mission, 🚨 Critical Rules (+24 more)
 
-### Community 84 - "InvoicesPage.tsx"
-Cohesion: 0.09
-Nodes (33): BillingPage, InvoicesPage, OrdersPage, escapeHtml(), formatIstDateTime(), money(), printReceipt(), ReceiptLine (+25 more)
+### Community 84 - "namastepos_dashboard/src/api/client.ts"
+Cohesion: 0.11
+Nodes (28): api, exitImpersonation(), isImpersonating(), setBusinessCache(), setSession(), PublicOrderTrackerPage, SettingsPage, ImpersonationBanner() (+20 more)
 
 ### Community 85 - "subscription.dart"
-Cohesion: 0.08
-Nodes (24): AddonActivation, cancelAtPeriodEnd, category, currentPeriodEnd, features, fromActive, fromMap, icon (+16 more)
-
-### Community 86 - "adminTeamService.js"
 Cohesion: 0.07
-Nodes (30): bcrypt, complete2faLogin(), create(), deactivate(), ensureBootstrap(), env, isFounder(), { issueAccessToken } (+22 more)
+Nodes (27): AddonActivation, billingPeriod, cancelAtPeriodEnd, category, currentPeriodEnd, features, fromActive, fromMap (+19 more)
+
+### Community 86 - "Project Shepherd Agent Personality"
+Cohesion: 0.08
+Nodes (24): 🚀 Advanced Capabilities, Align Stakeholders and Manage Communications, Complex Project Orchestration, 🚨 Critical Rules You Must Follow, 🔄 Learning & Memory, Mitigate Risks and Ensure Quality Delivery, Orchestrate Complex Cross-Functional Projects, Organizational Change Leadership (+16 more)
 
 ### Community 87 - "namastepos_backend/.eslintrc.json"
-Cohesion: 0.14
-Nodes (13): env, es2022, jest, node, parserOptions, ecmaVersion, sourceType, plugins (+5 more)
+Cohesion: 0.15
+Nodes (12): env, es2022, jest, node, extends, parserOptions, ecmaVersion, sourceType (+4 more)
 
 ### Community 88 - "Coverage against the 49-story PRD"
 Cohesion: 0.06
@@ -771,28 +798,28 @@ Cohesion: 0.10
 Nodes (21): dart:convert, _bar, _bootstrap, build, child, ConnectivityBanner, _ConnectivityBannerState, createState (+13 more)
 
 ### Community 90 - "cronWorker.js"
-Cohesion: 0.05
-Nodes (51): anomaly, autoRestock86(), bankReconcile, drainOutboundWaMessages(), drainScheduledMessages(), dueRecurringInvoices(), env, forecast (+43 more)
+Cohesion: 0.04
+Nodes (68): checkAfterHours(), checkStockOut(), checkVoidSpike(), logger, maybeAlert(), { query }, scan(), tick() (+60 more)
 
-### Community 91 - "../../services/api_service.dart"
-Cohesion: 0.02
-Nodes (97): Map, ../../models/cart_item.dart, _askHandover, _askPrepMinutes, _askReason, _askRider, build, _busy (+89 more)
+### Community 91 - "delivery_board_screen.dart"
+Cohesion: 0.08
+Nodes (26): _askHandover, _askPrepMinutes, _askReason, _askRider, build, _busy, _card, createState (+18 more)
 
 ### Community 92 - "menu_editor_screen.dart"
-Cohesion: 0.05
-Nodes (44): _allGroups, _attachedGroupIds, _availabilityChip, _category, _costPrice, createState, _description, _displayOrder (+36 more)
+Cohesion: 0.02
+Nodes (104): ChangeNotifier, edit_item_screen.dart, MenuItem?, ../../models/inventory_transaction.dart, ../../models/menu_item.dart, InventoryProvider, MenuProvider, _menuName (+96 more)
 
-### Community 93 - "inventory_screen.dart"
-Cohesion: 0.03
-Nodes (86): edit_item_screen.dart, InventoryReason, item_detail_screen.dart, ../../models/inventory_transaction.dart, ../../models/menu_item.dart, adjust, _authBusinessId, _history (+78 more)
+### Community 93 - "menu_provider.dart"
+Cohesion: 0.10
+Nodes (19): _authBusinessId, _businessId, byId, _cachedMenuCap, _error, _items, load, _loading (+11 more)
 
 ### Community 94 - "database_service.dart"
 Cohesion: 0.09
 Nodes (21): Database?, AppConfig, hasSupportWhatsApp, supportWhatsApp, webAppUrl, clearAll, DatabaseService, _db (+13 more)
 
-### Community 95 - "admin.routes.js"
-Cohesion: 0.08
-Nodes (24): cacheBus, can(), { Forbidden }, _liveRole(), PERMISSIONS, { query }, requirePermission(), _roleCache (+16 more)
+### Community 95 - "adminRbac.js"
+Cohesion: 0.19
+Nodes (11): cacheBus, can(), { Forbidden }, _liveRole(), PERMISSIONS, { query }, requirePermission(), _roleCache (+3 more)
 
 ### Community 96 - "notification_service.dart"
 Cohesion: 0.10
@@ -803,8 +830,8 @@ Cohesion: 0.10
 Nodes (19): int get, _autoWhatsAppOnReady, _load, _notifyOnLowStock, _notifyOnNewOrder, _paperWidthMm, _printerAddress, _printerEnabled (+11 more)
 
 ### Community 98 - "aggregatorService.js"
-Cohesion: 0.05
-Nodes (50): asyncHandler, crypto, env, express, router, whatsapp, CANCEL_EVENTS, crypto (+42 more)
+Cohesion: 0.09
+Nodes (26): CANCEL_EVENTS, crypto, DELIVERED_EVENTS, _eventTypeOf(), _externalIdOf(), _findOrder(), getCredentials(), handleWebhookEvent() (+18 more)
 
 ### Community 99 - "FoodFlow — Duplicate Code & Logic Audit"
 Cohesion: 0.06
@@ -835,16 +862,16 @@ Cohesion: 0.11
 Nodes (19): scripts, audit:idor, dev, docker:down, docker:logs, docker:up, lint, lint:fix (+11 more)
 
 ### Community 106 - "featureService.js"
-Cohesion: 0.13
-Nodes (17): me, features, cache, cacheBus, clearAllCaches(), clearCache(), featuresFor(), hasFeature() (+9 more)
+Cohesion: 0.09
+Nodes (21): me, FEATURE_RULES, features, features, cache, cacheBus, clearAllCaches(), clearCache() (+13 more)
 
 ### Community 107 - "orderController.js"
 Cohesion: 0.14
 Nodes (16): asyncHandler, auth, createBody, { formatToken }, Joi, listQuery, order, orderItem (+8 more)
 
 ### Community 108 - "home_screen.dart"
-Cohesion: 0.04
-Nodes (52): ../billing/billing_screen.dart, ../billing/trial_expired_screen.dart, dashboard_screen.dart, ../delivery/delivery_board_screen.dart, ../driver/driver_screen.dart, ExpensesProvider, GlobalKey, ../inventory/inventory_screen.dart (+44 more)
+Cohesion: 0.03
+Nodes (75): ../billing/billing_screen.dart, ../billing/trial_expired_screen.dart, dashboard_screen.dart, ../delivery/delivery_board_screen.dart, ../driver/driver_screen.dart, ExpensesProvider, GlobalKey, ../inventory/inventory_screen.dart (+67 more)
 
 ### Community 109 - "kotService.js"
 Cohesion: 0.18
@@ -864,15 +891,15 @@ Nodes (31): devDependencies, autoprefixer, eslint, eslint-plugin-react-refresh, 
 
 ### Community 113 - "GeneratedPluginRegistrant.swift"
 Cohesion: 0.11
-Nodes (17): connectivity_plus, file_selector_macos, firebase_core, firebase_messaging, flutter_local_notifications, flutter_secure_storage_darwin, Foundation, geolocator_apple (+9 more)
+Nodes (18): connectivity_plus, file_selector_macos, firebase_analytics, firebase_core, firebase_messaging, flutter_local_notifications, flutter_secure_storage_darwin, Foundation (+10 more)
 
 ### Community 114 - "feature_tour.dart"
 Cohesion: 0.12
 Nodes (17): int?, body, build, createState, FeatureTour, _FeatureTourState, _finish, _go (+9 more)
 
-### Community 115 - "kds_screen.dart"
-Cohesion: 0.10
-Nodes (20): _advance, _bootstrap, build, businessId, createState, dispose, initState, KdsScreen (+12 more)
+### Community 115 - "Studio Operations Agent Personality"
+Cohesion: 0.08
+Nodes (24): 🚀 Advanced Capabilities, 🚨 Critical Rules You Must Follow, Digital Transformation and Automation, Drive Continuous Improvement and Operational Innovation, 🔄 Learning & Memory, Optimize Daily Operations and Workflow Efficiency, Organizational Excellence Development, Process Excellence and Quality Standards (+16 more)
 
 ### Community 116 - "tests/package.json"
 Cohesion: 0.14
@@ -883,32 +910,32 @@ Cohesion: 0.06
 Nodes (30): Advanced Capabilities, Call Coaching and Behavioral Feedback, Call Coaching Debrief, Coaching at Scale, Coaching Discipline, Communication Style, Critical Rules You Must Follow, Deal Strategy and Preparation (+22 more)
 
 ### Community 118 - "setup.js"
-Cohesion: 0.04
-Nodes (41): buildApp, request, { resetDb, makeBusiness, tokenFor, closePool }, buildApp, request, { resetDb, makeBusiness, tokenFor, closePool }, BIZ_GETS, buildApp (+33 more)
+Cohesion: 0.05
+Nodes (35): buildApp, request, { resetDb, makeBusiness, tokenFor, closePool }, BIZ_GETS, buildApp, request, { resetDb, makeBusiness, tokenFor, closePool }, membership (+27 more)
 
 ### Community 119 - "FoodFlow — Manual Smoke Test Plan"
 Cohesion: 0.07
 Nodes (28): A1. Email login (mobile), A2. Google Sign-In (mobile, Android), A3. Registration with granular consent (DPDP, Push 21), A4. Dashboard login, A5. Super-admin login (separate creds), A. Authentication (8 min), B. Menu CRUD (5 min), C1. Create dine-in session + KOT 1 (+20 more)
 
-### Community 120 - "marketplace_screen.dart"
+### Community 120 - "inventory_screen.dart"
 Cohesion: 0.09
-Nodes (23): _activate, _activeSlugs, _addonCard, build, _busySlug, _cancel, _catalog, createState (+15 more)
+Nodes (27): InventoryProvider, InventoryReason, item_detail_screen.dart, MenuProvider, _adjust, build, createState, initState (+19 more)
 
 ### Community 121 - "jest"
 Cohesion: 0.12
 Nodes (17): global, branches, functions, lines, statements, jest, collectCoverageFrom, coverageThreshold (+9 more)
 
-### Community 122 - "customer.dart"
-Cohesion: 0.10
-Nodes (19): Customer, earnRatePaise, email, fromMap, id, isActive, lifetimePoints, LoyaltySettingsLite (+11 more)
+### Community 122 - "business.dart"
+Cohesion: 0.05
+Nodes (37): address, bankAccount, bankIfsc, Business, category, city, copyWith, createdAt (+29 more)
 
-### Community 123 - "multiOutlet.routes.js"
-Cohesion: 0.10
-Nodes (19): patchMe, requireNotImpersonating(), assertOwnsBusiness(), asyncHandler, express, features, { Forbidden }, Joi (+11 more)
+### Community 123 - "Forbidden"
+Cohesion: 0.12
+Nodes (17): requireNotImpersonating(), assertOwnsBusiness(), asyncHandler, express, features, { Forbidden }, Joi, multiOutlet (+9 more)
 
 ### Community 124 - "customPlanService.js"
-Cohesion: 0.21
-Nodes (14): _baseFeatureKeys(), _basePlanRow(), customTierFor(), _extrasOf(), features, getForBusiness(), logger, { NotFound, Conflict } (+6 more)
+Cohesion: 0.19
+Nodes (15): _baseFeatureKeys(), _basePlanRow(), customTierFor(), _extrasOf(), features, getForBusiness(), logger, { NotFound, Conflict } (+7 more)
 
 ### Community 125 - "FoodFlow → Handover doc"
 Cohesion: 0.07
@@ -923,12 +950,12 @@ Cohesion: 0.07
 Nodes (27): Advanced Capabilities, Analytical Integrity, Communication Style, Critical Rules You Must Follow, Deal Health Scoring, Deal Scoring Card, Diagnostic Discipline, Forecast Model (+19 more)
 
 ### Community 128 - "staffController.js"
-Cohesion: 0.09
-Nodes (19): acceptBody, ALL_STAFF_ROLES, asyncHandler, createPinBody, inviteBody, Joi, staff, updatePinBody (+11 more)
+Cohesion: 0.12
+Nodes (14): acceptBody, ALL_STAFF_ROLES, asyncHandler, createPinBody, inviteBody, Joi, staff, updatePinBody (+6 more)
 
 ### Community 129 - "jwt.js"
-Cohesion: 0.04
-Nodes (42): c, express, optionalAuth(), publicWriteLimiter, rateLimit, router, { verifyAccessToken }, crypto (+34 more)
+Cohesion: 0.05
+Nodes (39): crypto, env, issueAccessToken(), jwt, buildApp, givePaidSubscription(), { issueAccessToken }, makeAdmin() (+31 more)
 
 ### Community 130 - "expense.dart"
 Cohesion: 0.11
@@ -943,28 +970,28 @@ Cohesion: 0.13
 Nodes (14): bool get, E? get, Iterable, available, _FirstOrNull, init, instance, listen (+6 more)
 
 ### Community 133 - "NotFound"
-Cohesion: 0.04
-Nodes (97): _activity(), addNote(), adminLegacy, anonymiseCustomer(), cancelSubscription(), changeOwnerEmail(), createCustomer(), crypto (+89 more)
+Cohesion: 0.05
+Nodes (67): _activity(), addNote(), adminLegacy, anonymiseCustomer(), cancelSubscription(), changeOwnerEmail(), createCustomer(), crypto (+59 more)
 
-### Community 134 - "OrdersProvider"
-Cohesion: 0.33
-Nodes (6): _applyCoupon, build, _addAndClose, ItemConfigSheet, _ItemConfigSheetState, OrdersProvider
+### Community 134 - "Studio Producer Agent Personality"
+Cohesion: 0.08
+Nodes (24): 🚀 Advanced Capabilities, 🚨 Critical Rules You Must Follow, Drive Business Growth and Market Leadership, Executive-Level Strategic Focus, Financial and Risk Management Excellence, Innovation and Technology Leadership, Lead Strategic Portfolio Management and Creative Vision, 🔄 Learning & Memory (+16 more)
 
 ### Community 135 - "adminService.js"
 Cohesion: 0.16
 Nodes (17): createImpersonationCode(), crypto, exchangeImpersonationCode(), getCustomer(), _hashImpersonationCode(), impersonate(), { issueAccessToken }, listCustomers() (+9 more)
 
-### Community 136 - "AuthProvider"
-Cohesion: 0.10
-Nodes (25): AuthProvider, InventoryProvider, MenuProvider, _CaptainTab, initState, _KitchenTab, _MinimalMoreTab, _openDriver (+17 more)
+### Community 136 - "API Tester Agent Personality"
+Cohesion: 0.08
+Nodes (24): 🚀 Advanced Capabilities, API Tester Agent Personality, Comprehensive API Test Suite Example, Comprehensive API Testing Strategy, 🚨 Critical Rules You Must Follow, Integration and Documentation Testing, 🔄 Learning & Memory, Performance and Security Validation (+16 more)
 
 ### Community 137 - "google_logo.dart"
 Cohesion: 0.14
 Nodes (13): CustomPainter, _GooglePainter, _GridPainter, _blue, build, GoogleLogo, _GooglePainter, _green (+5 more)
 
-### Community 138 - "qrService.js"
-Cohesion: 0.14
-Nodes (17): crypto, ensureGuestSession(), _ensureQrColumns(), env, getSettings(), guestMenu(), guestOrderStatus(), issueTokenForTable() (+9 more)
+### Community 138 - "marketplace_screen.dart"
+Cohesion: 0.09
+Nodes (27): AuthProvider, _loadVariants, _VariantInventoryRow, _activate, _activeSlugs, _addonCard, build, _busySlug (+19 more)
 
 ### Community 139 - "Expected first bottleneck"
 Cohesion: 0.15
@@ -975,8 +1002,8 @@ Cohesion: 0.33
 Nodes (5): Deliberate gaps in the sequence, Future work (deferred on purpose), How migrations run, Migrations — conventions & deliberate gaps, Numbering convention
 
 ### Community 141 - "errors.js"
-Cohesion: 0.04
-Nodes (54): RFC-5233, { BadRequest, NotFound }, completeLinkFromWebhook(), listSessions(), otp, { query }, startLink(), SUPPORTED_PROVIDERS (+46 more)
+Cohesion: 0.05
+Nodes (55): RFC-5233, loginWithPassword(), bcrypt, getThresholdPaise(), listApprovals(), logApproval(), { query }, setMyPin() (+47 more)
 
 ### Community 142 - "Account Strategist Agent"
 Cohesion: 0.07
@@ -984,15 +1011,15 @@ Nodes (26): Account Expansion Plan, Account Health First, Account Strategist Age
 
 ### Community 143 - "AuthProvider"
 Cohesion: 0.02
-Nodes (144): ChangeNotifier, members_screen.dart, AuthProvider, SettingsProvider, TablesProvider, build, _busy, createState (+136 more)
+Nodes (104): ../constants/strings.dart, MaterialPageRoute, members_screen.dart, AuthProvider, _afterAuth, _blue, build, createState (+96 more)
 
-### Community 144 - "idempotent.js"
-Cohesion: 0.13
-Nodes (18): armCapture(), { BadRequest }, idempotent(), inFlight(), logger, { query }, readKey(), releaseClaim() (+10 more)
+### Community 144 - "Performance Benchmarker Agent Personality"
+Cohesion: 0.08
+Nodes (24): 🚀 Advanced Capabilities, Advanced Performance Testing Suite Example, Capacity Planning and Scalability Assessment, Comprehensive Performance Testing, 🚨 Critical Rules You Must Follow, Infrastructure Performance, 🔄 Learning & Memory, Performance Benchmarker Agent Personality (+16 more)
 
-### Community 145 - "dart:io"
-Cohesion: 0.17
-Nodes (11): dart:io, _forStatus, humanizeError, _lowLevelFallback, null, s, main, package:dio/dio.dart (+3 more)
+### Community 145 - "package:flutter/foundation.dart"
+Cohesion: 0.09
+Nodes (19): dart:io, _forStatus, humanizeError, _lowLevelFallback, null, s, main, main (+11 more)
 
 ### Community 146 - "globals"
 Cohesion: 0.15
@@ -1007,8 +1034,8 @@ Cohesion: 0.07
 Nodes (30): Customer?, _addMembership, _buyAttemptSig, _buyBusy, _buyClientKey, _cancelBusy, _cancelMembership, _createMembershipPlan (+22 more)
 
 ### Community 149 - "apiError"
-Cohesion: 0.05
-Nodes (68): Breach, Dsr, Grievance, apiError(), isAuthed(), RequireAuth(), useDebounce(), formatDateTime() (+60 more)
+Cohesion: 0.06
+Nodes (56): RFC-4180, DunningRow, apiError(), formatDate(), formatDateTime(), formatINR(), AddonCard(), AddonDialog() (+48 more)
 
 ### Community 150 - "sentry.js"
 Cohesion: 0.24
@@ -1040,7 +1067,7 @@ Nodes (12): engines, node, name, private, scripts, build, dev, lint (+4 more)
 
 ### Community 157 - "db.js"
 Cohesion: 0.04
-Nodes (49): appliedSet(), ensureMigrationsTable(), fs, logger, path, { pool, query, withTransaction }, run(), bcrypt (+41 more)
+Nodes (50): appliedSet(), ensureMigrationsTable(), fs, logger, path, { pool, query, withTransaction }, run(), bcrypt (+42 more)
 
 ### Community 158 - "gstService.js"
 Cohesion: 0.24
@@ -1062,9 +1089,9 @@ Nodes (24): 10. Sprint 11 kickoff — starting now, 1. Team roster, 2. Priority 
 Cohesion: 0.15
 Nodes (12): engines, node, name, private, scripts, build, dev, lint (+4 more)
 
-### Community 163 - "namastepos_dashboard/src/lib/sentry.ts"
-Cohesion: 0.33
-Nodes (6): beforeSend(), initSentry(), scrubString(), scrubTree(), SENSITIVE_KEYS, queryClient
+### Community 163 - "authService.js"
+Cohesion: 0.09
+Nodes (25): { BadRequest }, bcrypt, changePassword(), createBusinessForUser(), env, expireLapsedTrials(), findOrCreateUser(), getBusinessById() (+17 more)
 
 ### Community 164 - "Project Name Clearance — FoodFlow Rebrand"
 Cohesion: 0.08
@@ -1078,21 +1105,21 @@ Nodes (23): compilerOptions, allowImportingTsExtensions, baseUrl, isolatedModule
 Cohesion: 0.09
 Nodes (21): Backend, Customer dashboard, FoodFlow vs PetPooja / Vyapar — Competitive Gap Analysis, Gap 1 — FOOD VERTICAL (must-have to compete with PetPooja), Gap 2 — RETAIL EXPANSION (Vyapar territory), Mobile (Flutter, on hold for QA polish), Phase 1 — Close the table-stakes gap (4-6 weeks, food only), Phase 2 — Retention polish (3-4 weeks) (+13 more)
 
-### Community 167 - "package:flutter/foundation.dart"
-Cohesion: 0.18
-Nodes (8): main, main, main, package:flutter/foundation.dart, package:flutter_test/flutter_test.dart, package:namastepos/services/telemetry.dart, package:namastepos/widgets/connectivity_banner.dart, package:namastepos/widgets/primary_button.dart
+### Community 167 - "expenses_provider.dart"
+Cohesion: 0.14
+Nodes (13): double get, add, _authBusinessId, _businessId, delete, _expenses, load, _loading (+5 more)
 
-### Community 168 - "whatsapp_service.dart"
-Cohesion: 0.22
-Nodes (8): ../models/business.dart, instance, _normalize, notifyOrderConfirmed, notifyOrderReady, _open, WhatsAppService, static final WhatsAppService
+### Community 168 - "Test Results Analyzer Agent Personality"
+Cohesion: 0.08
+Nodes (24): Advanced Analytics and Machine Learning, 🚀 Advanced Capabilities, Advanced Test Analysis Framework Example, Comprehensive Test Result Analysis, 🚨 Critical Rules You Must Follow, Data-Driven Analysis Approach, 🔄 Learning & Memory, Quality-First Decision Making (+16 more)
 
-### Community 169 - "admin_saas_ops2026.test.js"
-Cohesion: 0.22
-Nodes (7): buildApp, givePaidSubscription(), { issueAccessToken }, makeAdmin(), { query }, request, { resetDb, makeBusiness, tokenFor, closePool }
+### Community 169 - "Tool Evaluator Agent Personality"
+Cohesion: 0.08
+Nodes (24): 🚀 Advanced Capabilities, Advanced Evaluation Methodologies, Comprehensive Tool Assessment and Selection, Comprehensive Tool Evaluation Framework Example, Cost-Conscious Decision Making, 🚨 Critical Rules You Must Follow, Evidence-Based Evaluation Process, 🔄 Learning & Memory (+16 more)
 
-### Community 170 - "reportService.js"
-Cohesion: 0.50
-Nodes (7): dailyReport(), getCache(), isToday(), istToday(), monthlyReport(), { query }, setCache()
+### Community 170 - "Workflow Optimizer Agent Personality"
+Cohesion: 0.08
+Nodes (24): 🚀 Advanced Capabilities, Advanced Workflow Optimization Framework Example, Comprehensive Workflow Analysis and Optimization, 🚨 Critical Rules You Must Follow, Cross-Functional Integration and Coordination, Data-Driven Process Improvement, Human-Centered Design Approach, Intelligent Automation and Integration (+16 more)
 
 ### Community 171 - "NamastePOS — Flutter Mobile POS (PetPooja Clone)"
 Cohesion: 0.10
@@ -1102,9 +1129,9 @@ Nodes (20): 1. Install, 2. Run on Android (debug), 3. Run on iOS (macOS only), 4
 Cohesion: 0.39
 Nodes (8): friendlyError(), PrivacyPage(), onErase(), onExport(), onFileCorrection(), onFileGrievance(), reload(), toggleConsent()
 
-### Community 173 - "plan_info.dart"
-Cohesion: 0.22
-Nodes (8): features, fromMap, has, PlanInfo, starterDefault, tierKind, toMap, Set
+### Community 173 - "bill_split_screen.dart"
+Cohesion: 0.09
+Nodes (22): BillSplitScreen, _BillSplitScreenState, build, businessId, _busy, _configBody, createState, _customSum (+14 more)
 
 ### Community 174 - "namastepos_print_agent/package.json"
 Cohesion: 0.14
@@ -1115,8 +1142,8 @@ Cohesion: 0.25
 Nodes (6): Any, FlutterImplicitEngineBridge, FlutterImplicitEngineDelegate, AppDelegate, Bool, UIApplication
 
 ### Community 176 - "FlutterMacOS"
-Cohesion: 0.32
-Nodes (5): Cocoa, FlutterMacOS, MainFlutterWindow, NSWindow, XCTest
+Cohesion: 0.38
+Nodes (3): Cocoa, FlutterMacOS, RunnerTests
 
 ### Community 177 - "FoodFlow — India Launch Roadmap"
 Cohesion: 0.10
@@ -1134,13 +1161,13 @@ Nodes (8): deltaPoll, emptyDeltas, errors, menuRead, options, PROD_HOSTS, rowDel
 Cohesion: 0.10
 Nodes (19): Communication Style, Competitive Technical Positioning, Core Capabilities, Demo Craft — The Art of Technical Storytelling, Design Principles, Evaluation Notes — Deal-Level Technical Intelligence, FIA Framework — Fact, Impact, Act, Landmine Questions for Discovery (+11 more)
 
-### Community 181 - "durability2026.test.js"
-Cohesion: 0.06
-Nodes (34): checkDeadPrintJobs(), checkOrdersMissingKot(), checkStuckInventoryEffects(), checkUsageDrift(), findOrdersMissingKot(), findOrdersWithInventoryError(), findUsageDrift(), logger (+26 more)
+### Community 181 - "subscriptionService.js"
+Cohesion: 0.14
+Nodes (28): assertCapacity(), bulkLimitMessage(), changePlan(), computeProrationPaise(), COUNTABLE_METRICS, createPlan(), currentUsage(), deletePlan() (+20 more)
 
 ### Community 182 - "ios/RunnerTests/RunnerTests.swift"
-Cohesion: 0.38
-Nodes (4): Flutter, FlutterSceneDelegate, SceneDelegate, UIKit
+Cohesion: 0.22
+Nodes (7): Flutter, FlutterSceneDelegate, SceneDelegate, RunnerTests, UIKit, XCTest, XCTestCase
 
 ### Community 183 - "namastepos_backend/package.json"
 Cohesion: 0.29
@@ -1151,20 +1178,20 @@ Cohesion: 0.12
 Nodes (16): 1.1 — Create OAuth client IDs in Google Cloud Console, 1.2 — Tell the Flutter app about the Web client ID, 1.3 — Register the iOS URL scheme, 1.4 — Update the backend allow-list, 1.5 — Smoke test, 2.1 — Get Razorpay test keys, 2.2 — Backend env, 2.3 — pod install on iOS (+8 more)
 
 ### Community 185 - "payments.routes.js"
-Cohesion: 0.11
-Nodes (20): asyncHandler, auditSvc, discountApproval, express, giftCard, idempotent, Joi, membership (+12 more)
+Cohesion: 0.14
+Nodes (12): asyncHandler, auditSvc, discountApproval, express, giftCard, idempotent, Joi, membership (+4 more)
 
-### Community 186 - "logger.js"
+### Community 186 - "env.js"
 Cohesion: 0.03
-Nodes (85): env, devFmt, env, logger, winston, asyncHandler, crypto, env (+77 more)
+Nodes (87): env, devFmt, env, logger, winston, asyncHandler, crypto, env (+79 more)
 
 ### Community 187 - "index.ts"
 Cohesion: 0.33
 Nodes (5): Bundle, BUNDLES, getLocale(), LANGS, t()
 
-### Community 188 - "InventoryPage.tsx"
-Cohesion: 0.18
-Nodes (16): InventoryPage, AdjustStockDialog(), fmtQty(), HistoryDialog(), InventoryItem, InventoryPage(), InventoryVariant, isLow() (+8 more)
+### Community 188 - "apiError"
+Cohesion: 0.04
+Nodes (62): apiError(), MembershipsPage, ReviewsPage, FloorCanvas(), onPointerDown(), onPointerMove(), toCanvasCoords(), Props (+54 more)
 
 ### Community 189 - "AppDelegate"
 Cohesion: 0.47
@@ -1186,9 +1213,9 @@ Nodes (5): devLogin(), http, request(), ROUTES, url
 Cohesion: 0.12
 Nodes (16): Building an ICP That Actually Works, Channel Selection by Persona, Communication Style, ICP Definition and Account Tiering, Metrics That Matter, Multi-Channel Sequence Design, Outbound Strategist Agent, Rules of Engagement (+8 more)
 
-### Community 194 - "ingredientService.js"
-Cohesion: 0.26
-Nodes (12): adjustStock(), byId(), create(), list(), { NotFound, Conflict, BadRequest }, { query, withTransaction }, recordPurchase(), serialize() (+4 more)
+### Community 194 - "orderDurabilityService.js"
+Cohesion: 0.10
+Nodes (20): checkDeadPrintJobs(), checkOrdersMissingKot(), checkStuckInventoryEffects(), checkUsageDrift(), findOrdersMissingKot(), findOrdersWithInventoryError(), findUsageDrift(), logger (+12 more)
 
 ### Community 195 - "FoodFlow — Regulatory Compliance Gap Analysis & Remediation Plan"
 Cohesion: 0.12
@@ -1214,13 +1241,13 @@ Nodes (5): nonNegativeNumber, phone, positiveNumber, required, Validators
 Cohesion: 0.40
 Nodes (4): API_KEY, npx, TestSprite, @testsprite/testsprite-mcp
 
-### Community 201 - "RunnerTests"
-Cohesion: 0.40
-Nodes (3): RunnerTests, RunnerTests, XCTestCase
+### Community 201 - "QA Agent Personality"
+Cohesion: 0.08
+Nodes (23): Accordion Testing Protocol, Build Expertise In:, "Default to Finding Issues", Fantasy Reporting Signs, Form Testing Protocol, 🔄 Learning & Memory, Mobile Responsive Testing, "Prove Everything" (+15 more)
 
 ### Community 202 - "withTransaction"
-Cohesion: 0.03
-Nodes (67): withTransaction(), autoMatch(), importStatement(), listUnmatched(), { query, withTransaction }, close(), { Conflict }, list() (+59 more)
+Cohesion: 0.02
+Nodes (89): withTransaction(), asyncHandler, bankRecon, billSplit, express, foodCoupons, forecast, fx (+81 more)
 
 ### Community 203 - "order_race.k6.js"
 Cohesion: 0.50
@@ -1230,17 +1257,21 @@ Nodes (3): dupes, options, seen
 Cohesion: 0.83
 Nodes (3): fetch(), ping(), scheduled()
 
+### Community 206 - "RegisterGeneratedPlugins"
+Cohesion: 0.40
+Nodes (4): FlutterPluginRegistry, RegisterGeneratedPlugins(), MainFlutterWindow, NSWindow
+
 ### Community 207 - "customerService.js"
 Cohesion: 0.29
 Nodes (12): byId(), byPhone(), linkToOrder(), list(), normalizePhone(), { NotFound, Conflict, BadRequest }, { query }, recentOrders() (+4 more)
 
-### Community 208 - "guest_benefit2026.test.js"
-Cohesion: 0.25
-Nodes (7): bcrypt, qrService, { query }, request, { resetDb, makeBusiness, closePool }, seedOtp(), tableService
+### Community 208 - "planTiers.js"
+Cohesion: 0.23
+Nodes (11): compareKinds(), isKnownKind(), legacyRequiredPlanTierToKind(), LIVE_PLAN_CODE_TO_KIND, meetsKind(), nextKindUp(), _RANK, rankForGate() (+3 more)
 
-### Community 210 - "money_regressions2026.test.js"
-Cohesion: 0.25
-Nodes (7): ingredientService, menuService, orderService, { query }, razorpayService, recipeService, { resetDb, makeBusiness, closePool }
+### Community 210 - "🧭 Product Manager Agent"
+Cohesion: 0.10
+Nodes (20): 💬 Communication Style, 🎯 Core Mission, 🚨 Critical Rules, Go-to-Market Brief, 🧠 Identity & Memory, Opportunity Assessment, 🎭 Personality Highlights, Phase 1 — Discovery (+12 more)
 
 ### Community 216 - "FoodFlow — Comprehensive Audit & Test Build-out"
 Cohesion: 0.13
@@ -1262,21 +1293,21 @@ Nodes (9): listCredentials(), logger, pullAll(), pullAmazonOrders(), pullFlipkar
 Cohesion: 0.13
 Nodes (14): FoodFlow — Security Audit (attacker's-eye review), 🔴 HIGH — fix before launch, 🟡 LOW / hardening, 🟠 MEDIUM, Recommended fix order, S1 — Refresh token isn't tied to a user → privilege escalation in any multi-staff business, S2 — Any admin token (any admin role) can read/write ANY tenant, bypassing admin RBAC and the "impersonation is read-only" rule, S3 — Super-admin identity never re-checked against the DB (+6 more)
 
-### Community 223 - "orderTaxEnforce2026.test.js"
-Cohesion: 0.25
-Nodes (6): approvalRows(), logger, menuService, orderService, { query }, { resetDb, makeBusiness, closePool }
+### Community 223 - "CompliancePage.tsx"
+Cohesion: 0.10
+Nodes (20): Breach, Dsr, Grievance, BREACH_STATUS, BreachDialog(), BreachTab(), CompliancePage(), DSR_STATUS (+12 more)
 
-### Community 225 - "extends"
-Cohesion: 0.67
-Nodes (3): extends, airbnb-base, plugin:jest/recommended
+### Community 225 - "cart_item.dart"
+Cohesion: 0.10
+Nodes (19): double?, menu_item.dart, CartItem, groupId, groupLabel, item, lineTotal, ModifierLine (+11 more)
 
 ### Community 232 - "NamastePOS — 10-Sprint Plan (20 weeks)"
 Cohesion: 0.13
 Nodes (14): How this maps to today, Milestones, NamastePOS — 10-Sprint Plan (20 weeks), Risk register, Sprint 10 (09-23 → 10-07) — Retail tier 2 + GA polish, Sprint 1 (2026-05-20 → 06-03) — Foundations & quick wins, Sprint 2 (06-03 → 06-17) — Aggregator ingestion, Sprint 3 (06-17 → 07-01) — Reservations + ops (+6 more)
 
-### Community 233 - "namastepos_dashboard/src/api/client.ts"
-Cohesion: 0.11
-Nodes (45): api, ffApi, HelpCenterPage, ReferPage, WastagePage, Props, autoMatch(), normalise() (+37 more)
+### Community 233 - "namastepos_dashboard/src/components/ui/button.tsx"
+Cohesion: 0.09
+Nodes (40): ffApi, HeatMapPage, HelpCenterPage, SetupWizardPage, Props, autoMatch(), normalise(), Pair (+32 more)
 
 ### Community 260 - "FoodFlow — Deployment Guide"
 Cohesion: 0.14
@@ -1302,9 +1333,13 @@ Nodes (12): 1. Codebase health (engineering review), 2. Super-admin: gaps for a 
 Cohesion: 0.15
 Nodes (10): Verifying with Reticle, Verifying with Reticle, A result carries `update_available`, A result carries `verify_next`, A result carries `version_skew`, More, `reticle_state` comes back empty, Reticle: the full rules (+2 more)
 
+### Community 278 - "Map"
+Cohesion: 0.09
+Nodes (21): Map, adjust, _authBusinessId, _history, resetForLogout, syncAuthSession, build, _code (+13 more)
+
 ### Community 279 - "asyncHandler.js"
-Cohesion: 0.08
-Nodes (19): asyncHandler, cancelBody, exporters, issueBody, Joi, listQuery, svc, validate (+11 more)
+Cohesion: 0.07
+Nodes (21): aggregator, asyncHandler, express, router, aggregator, aggregatorLink, asyncHandler, driver (+13 more)
 
 ### Community 280 - "NamastePOS Backend"
 Cohesion: 0.14
@@ -1318,9 +1353,9 @@ Nodes (10): Verifying with Reticle, Verifying with Reticle, A result carries `up
 Cohesion: 0.17
 Nodes (11): ✅ Done this pass (shipped in `e0aef34`), Founder-blocked (external accounts), Later / watch, NamastePOS — Roadmap & Follow-ups (2026-08-28), Next — monetization depth (higher margin than new logos), Now (next 90 days) — distribution over features, Part A — Code-review follow-ups, Part B — Product bets (from the brainstorm) (+3 more)
 
-### Community 283 - "NewOrderDialog.tsx"
-Cohesion: 0.16
-Nodes (16): CaptainPage, CartLine, customerWalletApi(), ItemConfigDialog(), itemSoldOut(), ModLine, NewOrderDialog(), PayLeg (+8 more)
+### Community 283 - "ingredientController.js"
+Cohesion: 0.09
+Nodes (19): adjustBody, asyncHandler, ingredientBody, ingredientPatch, ingredients, Joi, purchaseBody, recipes (+11 more)
 
 ### Community 284 - "NamastePOS — Directory & Listing Kit"
 Cohesion: 0.17
@@ -1334,17 +1369,17 @@ Nodes (11): Architecture & Senior Engineering, Backend Engineering (4), DevOps +
 Cohesion: 0.18
 Nodes (10): FoodFlow — QA Fix Report v3 (FINAL — Sprints QA-8 through QA-11), Migrations to apply, QA-10 — all 14 P2s addressed, QA-11 — test foundation, 6 of 8 gaps closed, QA-8 — the 4 deferred P1s, now shipped, QA-9 — perf hotspots, 8 of 10 fixed, Status: complete close-out, The 2 perf hotspots + 2 test gaps still open (+2 more)
 
-### Community 287 - "error"
-Cohesion: 0.40
-Nodes (5): import/no-extraneous-dependencies, no-empty, no-unused-vars, no-use-before-define, error
+### Community 287 - "Product Feedback Synthesizer Agent"
+Cohesion: 0.11
+Nodes (18): Collection Strategy, Continuous Improvement, Core Capabilities, Customer Success Playbooks, Decision Framework, Delivery Formats, Executive Dashboards, Feedback Analysis Framework (+10 more)
 
-### Community 288 - "finalSprint.routes.js"
-Cohesion: 0.04
-Nodes (49): asyncHandler, bankRecon, billSplit, express, foodCoupons, forecast, fx, Joi (+41 more)
-
-### Community 289 - "register_screen.dart"
+### Community 288 - "register_screen.dart"
 Cohesion: 0.10
 Nodes (21): _agreePolicy, build, _businessName, _confirm, createState, dispose, _email, _googleSignUp (+13 more)
+
+### Community 289 - "PlansPage.tsx"
+Cohesion: 0.14
+Nodes (13): Plan, TierKindOption, useDebounce(), useTierKinds(), CustomersPage(), CreatePlanDialog(), EditPlanDialog(), PlanCard() (+5 more)
 
 ### Community 290 - "FoodFlow — DB backup & restore"
 Cohesion: 0.20
@@ -1354,13 +1389,21 @@ Nodes (9): Environment variables (all optional), FoodFlow — DB backup & restor
 Cohesion: 0.15
 Nodes (12): dart:ui, containsKey, currentLocale, device, _dict, loadLocaleOverride, loc, _override (+4 more)
 
-### Community 293 - "couponcap2026.test.js"
-Cohesion: 0.25
-Nodes (6): makeCoupon(), menuService, orderService, { query }, redemptionCount(), { resetDb, makeBusiness, closePool }
+### Community 292 - "kds_screen.dart"
+Cohesion: 0.10
+Nodes (20): _advance, _bootstrap, build, businessId, createState, dispose, initState, KdsScreen (+12 more)
+
+### Community 293 - "idempotent.js"
+Cohesion: 0.13
+Nodes (17): armCapture(), { BadRequest }, idempotent(), inFlight(), logger, { query }, readKey(), releaseClaim() (+9 more)
 
 ### Community 294 - "Device-test fixes — 23 Aug 2026, round 2"
 Cohesion: 0.20
 Nodes (9): Device-test fixes — 23 Aug 2026, round 2, flutter analyze round (after your run), Loyalty — THE root cause, found and proven, Membership — why your 6-coffee test didn't deduct, Round 3 — expenses ₹0 bug + full lint burn-down, Round 4 — Mark Ready error, inventory, loyalty clawback, membership at pay-time, Sold-out — fixed end-to-end (it was broken at every link), The rest (+1 more)
+
+### Community 295 - "Test Automation Engineer"
+Cohesion: 0.11
+Nodes (17): 🚀 Advanced Capabilities, CI: Sharded, Traced, Merge-Blocking (GitHub Actions), 🚨 Critical Rules You Must Follow, Deterministic Playwright Test (No Sleeps, API Setup, Role Selectors), Flake Triage Table, Framework Depth, 🔄 Learning & Memory, Suite Operations at Scale (+9 more)
 
 ### Community 296 - "app.dart"
 Cohesion: 0.12
@@ -1394,9 +1437,9 @@ Nodes (8): Compliance track (run in parallel — required for enterprise deals),
 Cohesion: 0.22
 Nodes (8): Build / deploy cheatsheet, Current state (2026-09-01), Key rules (don't relearn the hard way), NamastePOS — Session Handover, Open items / next steps, Repo & components, Secrets, What this is
 
-### Community 304 - "coupons_screen.dart"
-Cohesion: 0.14
-Nodes (14): build, _confirmDeactivate, CouponsScreen, _CouponsScreenState, createState, _error, initState, _list (+6 more)
+### Community 304 - "adminTeamService.js"
+Cohesion: 0.20
+Nodes (15): bcrypt, complete2faLogin(), create(), deactivate(), ensureBootstrap(), env, isFounder(), { issueAccessToken } (+7 more)
 
 ### Community 305 - "NamastePOS — Product Backlog (66 user stories)"
 Cohesion: 0.22
@@ -1410,13 +1453,17 @@ Nodes (7): Admin — foodflow_admin, Backend — foodflow_backend, Dashboard —
 Cohesion: 0.25
 Nodes (7): NamastePOS — Load testing kit, Prereqs, Sizing math — what the numbers mean, Test 1 — Mixed workload (realistic day-in-the-life), Test 2 — Spike / burst (POS rush at 8pm), To stress toward 1M, What to run tomorrow morning before flipping DNS
 
-### Community 308 - "tables_screen.dart"
-Cohesion: 0.15
-Nodes (13): build, createState, _error, _floors, initState, _load, _loading, _selectedFloorId (+5 more)
+### Community 308 - "billingController.js"
+Cohesion: 0.20
+Nodes (9): asyncHandler, changeBody, features, Joi, { query }, razorpay, sub, subInvoice (+1 more)
 
 ### Community 309 - "cacheBus.js"
-Cohesion: 0.20
-Nodes (8): crypto, _dispatch(), env, _handlers, INSTANCE_ID, logger, publish(), TOPIC
+Cohesion: 0.14
+Nodes (12): settings, import/core-modules, crypto, _dispatch(), env, _handlers, INSTANCE_ID, logger (+4 more)
+
+### Community 310 - "pnlService.js"
+Cohesion: 0.13
+Nodes (15): _dailySeries(), EXPENSE_CATEGORIES, EXPENSE_LABELS, incomeStatement(), { query }, REVENUE_SOURCE_LABELS, balanceSheet(), DEFAULT_COA (+7 more)
 
 ### Community 312 - "Day 1 status — 22 Aug 2026"
 Cohesion: 0.29
@@ -1438,21 +1485,21 @@ Nodes (6): Environment variables (set on Render), Is it free?, Meta WhatsApp Clo
 Cohesion: 0.29
 Nodes (6): Drive it where the human can see, If the user handed you a license key, Pick ONE flow, Report, Step 0 — is anything connected?, Two things afterwards
 
-### Community 317 - "privacy_screen.dart"
-Cohesion: 0.05
-Nodes (44): _action, _body, _category, _CorrectionDialog, _CorrectionDialogState, createState, dispose, _erase (+36 more)
+### Community 317 - "State"
+Cohesion: 0.04
+Nodes (70): TaxInvoiceDetailScreen, _TaxInvoiceDetailScreenState, TaxInvoicesScreen, _TaxInvoicesScreenState, _MenuItemEditScreen, _MenuItemEditScreenState, _RefundDialog, _RefundDialogState (+62 more)
 
-### Community 318 - "csrf.js"
-Cohesion: 0.40
-Nodes (5): crypto, { Forbidden }, generate(), issue(), verify()
+### Community 318 - "formatINR"
+Cohesion: 0.04
+Nodes (61): baseURL, guest, guestApi, GuestMenu, DashboardPage, GuestMenuPage, IngredientsPage, MarketplacePage (+53 more)
 
 ### Community 319 - "namastepos_dashboard/.claude/commands/reticle.md"
 Cohesion: 0.29
 Nodes (6): Drive it where the human can see, If the user handed you a license key, Pick ONE flow, Report, Step 0 — is anything connected?, Two things afterwards
 
 ### Community 320 - "onboardingEmailService.js"
-Cohesion: 0.21
-Nodes (12): dispatchStage(), email, env, logger, { query }, runScheduler(), sendWelcome(), startScheduler() (+4 more)
+Cohesion: 0.11
+Nodes (19): app, buildApp, cronWorker, env, logger, onboardingEmail, { pool }, dispatchStage() (+11 more)
 
 ### Community 321 - "NamastePOS Print Agent"
 Cohesion: 0.29
@@ -1496,7 +1543,7 @@ Nodes (5): 1. Your question: refund showed on Admin, not on the Owner dashboard,
 
 ### Community 331 - "validate.js"
 Cohesion: 0.07
-Nodes (23): asyncHandler, createBody, expense, Joi, listQuery, validate, { BadRequest }, validate() (+15 more)
+Nodes (25): asyncHandler, cancelBody, exporters, issueBody, Joi, listQuery, svc, validate (+17 more)
 
 ### Community 332 - "CI E2E — the money path + staff RBAC"
 Cohesion: 0.33
@@ -1539,10 +1586,10 @@ Cohesion: 0.40
 Nodes (4): Copy-paste directly into Claude Code terminal, FoodFlow Claude Code — Ready-to-Copy Prompts, PROMPT 1.1: Backend Project Setup, 🚀 START HERE: Backend Phase 1
 
 ### Community 342 - "sprint1Extras.routes.js"
-Cohesion: 0.17
-Nodes (11): asyncHandler, auditService, billTemplate, cancelReasons, express, Joi, orders, {
+Cohesion: 0.12
+Nodes (19): asyncHandler, auditService, billTemplate, cancelReasons, express, Joi, orders, {
   requireAuth, requireBusinessOwnership, requireRole, requireNotImpersonating,
-} (+3 more)
+} (+11 more)
 
 ### Community 343 - "EPIC F1 — Aggregator integrations (15 pts)"
 Cohesion: 0.40
@@ -1584,105 +1631,201 @@ Nodes (4): EPIC F9 — Tax + bar (16 pts) [Sprint 4], FF-901 · Item-level GST s
 Cohesion: 0.67
 Nodes (3): EPIC R1 — Core retail (39 pts), EPIC R2 — Multi-firm + accounting (32 pts), RETAIL EXPANSION (Sprints 9-10)
 
+### Community 367 - "Project Manager Agent Personality"
+Cohesion: 0.14
+Nodes (13): 1. Specification Analysis, 2. Task List Creation, 3. Technical Stack Requirements, 🚨 Critical Rules You Must Follow, Learning from Experience, 🔄 Learning & Improvement, Project Manager Agent Personality, Realistic Scope Setting (+5 more)
+
 ### Community 381 - "README.md"
 Cohesion: 0.20
 Nodes (9): 🏗️ Architecture, 📐 Engineering principles, ✨ Feature map, 🚀 Local development, ✅ Quality gates, 🔐 Security & compliance, 🛠️ Tech stack, 🧾 The order path (+1 more)
 
+### Community 384 - "admin.routes.js"
+Cohesion: 0.13
+Nodes (13): addonController, asyncHandler, audit, c, compliance, ENROL_ONLY_ALLOWED, env, express (+5 more)
+
 ### Community 385 - "idempotency2026.test.js"
-Cohesion: 0.18
-Nodes (8): buildApp, keyRows(), ledgerCount(), makeItem(), { query }, request, { resetDb, makeBusiness, tokenFor, closePool }, stockOf()
+Cohesion: 0.17
+Nodes (9): sweep(), buildApp, keyRows(), ledgerCount(), makeItem(), { query }, request, { resetDb, makeBusiness, tokenFor, closePool } (+1 more)
 
-### Community 387 - "migration_imports2026.test.js"
-Cohesion: 0.32
-Nodes (7): auth(), buildApp, customerRow(), post(), { query }, request, { resetDb, makeBusiness, tokenFor, closePool }
+### Community 386 - "reviewsService.js"
+Cohesion: 0.21
+Nodes (12): env, extractPlaceIdFromUrl(), fetchAllProviders(), https, ingestReview(), listReviews(), logger, _placeIdFromNameAndCoords() (+4 more)
 
-### Community 388 - "reservationService.js"
+### Community 387 - "upsell_hints.dart"
+Cohesion: 0.15
+Nodes (12): _byFeature, _clean, clear, _currentLabel, instance, labelFor, _lastRequired, lastRequiredLabel (+4 more)
+
+### Community 388 - "🧠 Behavioral Nudge Engine"
+Cohesion: 0.17
+Nodes (11): 🚀 Advanced Capabilities, 🧠 Behavioral Nudge Engine, 🚨 Critical Rules You Must Follow, Example Code: The Momentum Nudge, 🔄 Learning & Memory, 💭 Your Communication Style, 🎯 Your Core Mission, 🧠 Your Identity & Memory (+3 more)
+
+### Community 389 - "expenses.routes.js"
+Cohesion: 0.15
+Nodes (11): asyncHandler, createBody, expense, Joi, listQuery, validate, c, canExpenses (+3 more)
+
+### Community 390 - "plan_info.dart"
+Cohesion: 0.17
+Nodes (11): features, fromMap, has, nextTierLabel, PlanInfo, starterDefault, _str, tierKind (+3 more)
+
+### Community 391 - "refundService.js"
 Cohesion: 0.25
-Nodes (10): addToWaitList(), create(), list(), listWaitList(), { NotFound, BadRequest, Conflict }, notifyWaitList(), { query, withTransaction }, seat() (+2 more)
+Nodes (10): env, https, initiate(), list(), logger, { NotFound, BadRequest }, { query, withTransaction }, refundOrder() (+2 more)
 
-### Community 389 - "plans_addons_2026.test.js"
+### Community 392 - "trialGraceLimits2026.test.js"
+Cohesion: 0.18
+Nodes (10): authService, buildApp, entitlement, featureService, planIdFor(), { query }, request, { resetDb, makeBusiness, tokenFor, closePool } (+2 more)
+
+### Community 393 - "Meeting Notes Specialist"
+Cohesion: 0.20
+Nodes (9): Communication Style, Core Mission, Critical Rules, Identity, Learning and Memory, Meeting Notes Specialist, Success Metrics, Technical Deliverables (+1 more)
+
+### Community 394 - "hardening2026.test.js"
+Cohesion: 0.18
+Nodes (9): adminRbac, adminTeam, menuService, { query }, reservationService, { resetDb, makeBusiness, closePool }, tableService, taxInvoiceService (+1 more)
+
+### Community 395 - "subscriptionInvoiceService.js"
+Cohesion: 0.27
+Nodes (9): computeTax(), fmtDate(), inr(), loadInvoice(), { NotFound }, PDFDocument, { query }, renderPdf() (+1 more)
+
+### Community 396 - "plans_addons_2026.test.js"
 Cohesion: 0.18
 Nodes (9): buildApp, env, featureService, giveFreeSubscription(), { issueAccessToken }, { query }, request, { resetDb, makeBusiness, tokenFor, closePool } (+1 more)
 
-### Community 390 - "home_drawer_button.dart"
-Cohesion: 0.33
-Nodes (5): home_bottom_nav.dart, build, HomeDrawerButton, _open, ../screens/home/home_screen.dart
-
-### Community 395 - "billingController.js"
-Cohesion: 0.12
-Nodes (18): asyncHandler, changeBody, features, Joi, { query }, razorpay, sub, subInvoice (+10 more)
-
-### Community 396 - "autowallet2026.test.js"
-Cohesion: 0.22
-Nodes (7): legs(), menuService, orderService, { query }, { resetDb, makeBusiness, closePool }, seedMember(), walletBal()
+### Community 397 - "fulfilment2026.test.js"
+Cohesion: 0.27
+Nodes (9): auth(), buildApp, fulfilment, makeDeliveryOrder(), move(), { query }, request, { resetDb, makeBusiness, tokenFor, closePool } (+1 more)
 
 ### Community 398 - "reportsCompliance.routes.js"
 Cohesion: 0.12
 Nodes (15): accountingExport, actionCenter, asyncHandler, canReports, canTax, eway, express, gstr (+7 more)
 
-### Community 399 - "anomalyAlertService.js"
-Cohesion: 0.42
-Nodes (8): checkAfterHours(), checkStockOut(), checkVoidSpike(), logger, maybeAlert(), { query }, scan(), tick()
+### Community 399 - "autowallet2026.test.js"
+Cohesion: 0.22
+Nodes (7): legs(), menuService, orderService, { query }, { resetDb, makeBusiness, closePool }, seedMember(), walletBal()
 
-### Community 400 - "pricing_authority2026.test.js"
+### Community 400 - "planEntitlement.js"
+Cohesion: 0.42
+Nodes (9): classify(), entitledSql(), entitlementExpiryMs(), env, graceDays(), graceEndsAt(), graceEndsAtSql(), graceNotice() (+1 more)
+
+### Community 401 - "pricing_authority2026.test.js"
 Cohesion: 0.22
 Nodes (7): adjustmentsOf(), itemRowsOf(), menuService, orderService, { query }, { resetDb, makeBusiness, closePool }, variantService
 
-### Community 404 - "resetDb"
-Cohesion: 0.05
-Nodes (33): buildApp, request, { resetDb, closePool }, buildApp, request, { resetDb, closePool }, buildApp, request (+25 more)
+### Community 402 - "staffPerms2026.test.js"
+Cohesion: 0.22
+Nodes (6): buildApp, FORBIDDEN_FOR_KITCHEN, { issueAccessToken }, { query }, request, { resetDb, makeBusiness, tokenFor, closePool }
+
+### Community 403 - "reportService.js"
+Cohesion: 0.50
+Nodes (7): dailyReport(), getCache(), isToday(), istToday(), monthlyReport(), { query }, setCache()
+
+### Community 404 - "addon_tier_outlets2026.test.js"
+Cohesion: 0.25
+Nodes (7): addons, buildApp, putOnPlan(), { query }, request, { resetDb, makeBusiness, tokenFor, closePool }, subs
 
 ### Community 405 - "whatsapp-webhook.test.js"
 Cohesion: 0.22
 Nodes (6): buildApp, crypto, env, request, { resetDb, makeBusiness, closePool }, whatsapp
 
-### Community 406 - "_sessionPayload"
-Cohesion: 0.29
-Nodes (8): _applyRefreshCookie(), devLogin, googleLogin, passwordLogin, pinLogin, register, _sessionPayload(), switchBusiness
+### Community 406 - "compliance.routes.js"
+Cohesion: 0.22
+Nodes (8): c, express, optionalAuth(), publicWriteLimiter, rateLimit, router, { verifyAccessToken }, verifyAccessToken()
 
-### Community 407 - "fulfilment2026.test.js"
-Cohesion: 0.27
-Nodes (9): auth(), buildApp, fulfilment, makeDeliveryOrder(), move(), { query }, request, { resetDb, makeBusiness, tokenFor, closePool } (+1 more)
+### Community 407 - "fulfilmentService.js"
+Cohesion: 0.15
+Nodes (16): board(), _digits(), drainOutbound(), _enqueueOutbound(), logger, _mirrorPosStatus(), { NotFound, BadRequest, Conflict }, OUTBOUND_FOR (+8 more)
 
-### Community 408 - "addon_tier_outlets2026.test.js"
+### Community 408 - "menuBulkCap2026.test.js"
+Cohesion: 0.22
+Nodes (7): activeCount(), buildApp, featureService, { query }, request, { resetDb, makeBusiness, tokenFor, closePool }, subscribeToPrivatePlan()
+
+### Community 409 - "couponcap2026.test.js"
 Cohesion: 0.25
-Nodes (7): addons, buildApp, putOnPlan(), { query }, request, { resetDb, makeBusiness, tokenFor, closePool }, subs
+Nodes (6): makeCoupon(), menuService, orderService, { query }, redemptionCount(), { resetDb, makeBusiness, closePool }
 
-### Community 409 - "razorpay_webhook2026.test.js"
+### Community 410 - "guest_benefit2026.test.js"
+Cohesion: 0.25
+Nodes (7): bcrypt, qrService, { query }, request, { resetDb, makeBusiness, closePool }, seedOtp(), tableService
+
+### Community 411 - "hardening_20260903.test.js"
+Cohesion: 0.25
+Nodes (7): addons, buildApp, customPlans, { issueAccessToken }, { query }, request, { resetDb, makeBusiness, tokenFor, closePool }
+
+### Community 414 - "migration_imports2026.test.js"
+Cohesion: 0.32
+Nodes (7): auth(), buildApp, customerRow(), post(), { query }, request, { resetDb, makeBusiness, tokenFor, closePool }
+
+### Community 415 - "money_regressions2026.test.js"
+Cohesion: 0.25
+Nodes (7): ingredientService, menuService, orderService, { query }, razorpayService, recipeService, { resetDb, makeBusiness, closePool }
+
+### Community 416 - "orderTaxEnforce2026.test.js"
+Cohesion: 0.25
+Nodes (6): approvalRows(), logger, menuService, orderService, { query }, { resetDb, makeBusiness, closePool }
+
+### Community 417 - "razorpay_webhook2026.test.js"
 Cohesion: 0.25
 Nodes (6): buildApp, crypto, { query }, razorpayService, request, { resetDb, makeBusiness, closePool }
 
-### Community 411 - "uploads.test.js"
+### Community 418 - "sprint4_support_pagination2026.test.js"
+Cohesion: 0.25
+Nodes (6): adminTeam, buildApp, request, { resetDb, makeBusiness, tokenFor, closePool }, support, ticketIds
+
+### Community 419 - "expenseService.js"
+Cohesion: 0.38
+Nodes (6): create(), list(), { NotFound }, { query }, serialize(), softDelete()
+
+### Community 420 - "expenses-reports.test.js"
+Cohesion: 0.29
+Nodes (5): buildApp, month, request, { resetDb, makeBusiness, tokenFor, closePool }, today
+
+### Community 421 - "uploads.test.js"
 Cohesion: 0.29
 Nodes (6): buildApp, fs, path, request, { resetDb, makeBusiness, tokenFor, closePool }, TINY_PNG
 
-### Community 415 - "sprint4_updatedsince2026.test.js"
+### Community 422 - "home_drawer_button.dart"
+Cohesion: 0.33
+Nodes (5): home_bottom_nav.dart, build, HomeDrawerButton, _open, ../screens/home/home_screen.dart
+
+### Community 423 - "csrf.js"
+Cohesion: 0.40
+Nodes (5): crypto, { Forbidden }, generate(), issue(), verify()
+
+### Community 424 - "customers.test.js"
+Cohesion: 0.33
+Nodes (3): buildApp, request, { resetDb, makeBusiness, tokenFor, closePool }
+
+### Community 425 - "membership_crud.test.js"
+Cohesion: 0.33
+Nodes (3): { query }, request, { resetDb, makeBusiness, tokenFor, closePool }
+
+### Community 426 - "sprint4_updatedsince2026.test.js"
 Cohesion: 0.47
 Nodes (5): auth(), buildApp, placeOrder(), request, { resetDb, makeBusiness, tokenFor, closePool }
 
-### Community 417 - "tax-invoices.test.js"
+### Community 427 - "tax-invoices.test.js"
 Cohesion: 0.33
 Nodes (3): buildApp, request, { resetDb, makeBusiness, tokenFor, closePool }
 
 ## Knowledge Gaps
-- **4841 isolated node(s):** `📖 What this is`, `✨ Feature map`, `🏗️ Architecture`, `🧾 The order path`, `🔐 Security & compliance` (+4836 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 5334 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **51 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **5342 isolated node(s):** `PlanOverage`, `PlanUsage`, `PastDueGrace`, `SwitchBusinessResult`, `ProvisionOutletResult` (+5337 more)
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 5869 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **49 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `query()` connect `query` to `idempotency2026.test.js`, `BadRequest`, `adminController.js`, `addonService.js`, `NotFound`, `reservationService.js`, `adminService.js`, `hardening_20260903.test.js`, `migration_imports2026.test.js`, `qrService.js`, `billingController.js`, `twoFactorService.js`, `errors.js`, `orderService.js`, `anomalyAlertService.js`, `idempotent.js`, `autowallet2026.test.js`, `siteRender.routes.js`, `jwt.js`, `pricing_authority2026.test.js`, `resetDb`, `_sessionPayload`, `fulfilment2026.test.js`, `addon_tier_outlets2026.test.js`, `razorpay_webhook2026.test.js`, `db.js`, `gstService.js`, `retentionService.js`, `finalSprint.routes.js`, `supportService.js`, `sprint4_updatedsince2026.test.js`, `couponcap2026.test.js`, `plans_addons_2026.test.js`, `admin_saas_ops2026.test.js`, `reportService.js`, `menuService.js`, `durability2026.test.js`, `authService.js`, `platformOpsService.js`, `payments.routes.js`, `logger.js`, `onboardingEmailService.js`, `ingredientService.js`, `guestController.js`, `withTransaction`, `customerService.js`, `guest_benefit2026.test.js`, `money_regressions2026.test.js`, `adminTeamService.js`, `cronWorker.js`, `marketplaceService.js`, `admin.routes.js`, `orderTaxEnforce2026.test.js`, `aggregatorService.js`, `securityBatch2026.test.js`, `featureService.js`, `kotService.js`, `setup.js`, `multiOutlet.routes.js`, `customPlanService.js`, `taxInvoiceService.js`?**
-  _High betweenness centrality (0.044) - this node is a cross-community bridge._
-- **Why does `ioredis` connect `namastepos_backend/.eslintrc.json` to `cacheBus.js`?**
-  _High betweenness centrality (0.026) - this node is a cross-community bridge._
+- **Why does `axios` connect `cacheBus.js` to `namastepos_dashboard/src/api/client.ts`, `namastepos_admin/src/App.tsx`?**
+  _High betweenness centrality (0.308) - this node is a cross-community bridge._
+- **Why does `Customer` connect `admin.ts` to `namastepos_admin/src/pages/CustomersPage.tsx`, `confirm_order_screen.dart`?**
+  _High betweenness centrality (0.260) - this node is a cross-community bridge._
 - **Are the 2 inferred relationships involving `query()` (e.g. with `db.js` and `subscribe()`) actually correct?**
   _`query()` has 2 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `📖 What this is`, `✨ Feature map`, `🏗️ Architecture` to the rest of the system?**
-  _4841 weakly-connected nodes found - possible documentation gaps or missing edges._
+- **What connects `PlanOverage`, `PlanUsage`, `PastDueGrace` to the rest of the system?**
+  _5342 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `query` be split into smaller, more focused modules?**
-  _Cohesion score 0.020842572062084258 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.02106430155210643 - nodes in this community are weakly interconnected._
 - **Should `api_service.dart` be split into smaller, more focused modules?**
-  _Cohesion score 0.013333333333333334 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.013071895424836602 - nodes in this community are weakly interconnected._
 - **Should `BadRequest` be split into smaller, more focused modules?**
-  _Cohesion score 0.039644565960355434 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.03733815115928937 - nodes in this community are weakly interconnected._
