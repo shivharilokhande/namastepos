@@ -78,6 +78,11 @@ const UNENFORCED_DEBT = Object.freeze([
   'api_access', // no tenant API-key surface exists at all
   'customers_crm', // CRM screens are the directory screens; nothing branches
   'dashboard_access', // migration 034 sells it; nothing checks it
+  // 2026-09-05 (entitlements review B8): ADDED DELIBERATELY. Its featureGate
+  // rule '/marketplace' matched no route (the marketplace is /addons, which
+  // the gate exempts on purpose) and neither client checks the key — it was
+  // "route-enforced" on paper only. See the registry entry's `why`.
+  'marketplace_addons',
   'pos', // the product itself — deliberately never gated
   'staff_unlimited', // a CLAIM; the cap is plans.limits.staff
   'tables_multi_floor', // a CLAIM; the cap is plans.limits.floors
@@ -157,6 +162,16 @@ function scanServerGates() {
   // pattern across all of src matches ExcelJS column definitions and dunning
   // stage names, which would drown the real signal in noise — and a guard
   // that cries wolf gets switched off.
+  //
+  // KNOWN LIMIT (2026-09-05, entitlements review B10): a rule row counts as a
+  // gate here whether or not its `match` string hits any mounted route. Ten
+  // dead rules ('/captain/', '/qr-codes', '/whatsapp', …) passed this scan
+  // for months while the features they named were open to every plan. This
+  // script cannot build the Express app (it runs without env/DB), so the
+  // route-coverage half lives in tests/integration/featureRuleCoverage2026
+  // .test.js, which walks the real router stack and fails on any rule that
+  // matches nothing and on any enforcement:'route' key no route resolves to.
+  // Treat the two as one gate.
   const gateFile = path.join(BACKEND, 'src', 'middleware', 'featureGate.js');
   for (const [k, where] of collect([gateFile], [/\{\s*match:\s*'[^']*',\s*key:\s*'([a-z_0-9]+)'\s*\}/g])) {
     if (!found.has(k)) found.set(k, []);
@@ -299,8 +314,7 @@ function compare({
   // offer is a capability he cannot sell, price or switch off.
   for (const [key, where] of [...server, ...mobile, ...dashboard]) {
     if (registered.has(key)) continue;
-    V('enforced-not-grantable', key,
-      `'${key}' gates real behaviour but is not in src/config/featureRegistry.js, so it is `
+    V('enforced-not-grantable', key, `'${key}' gates real behaviour but is not in src/config/featureRegistry.js, so it is `
       + 'absent from GET /v1/admin/feature-catalog and CANNOT BE GRANTED in the admin console. '
       + 'Add a registry entry.', where);
   }
@@ -312,8 +326,7 @@ function compare({
   for (const key of registered) {
     if (enforcedAnywhere.has(key)) continue;
     if (debt.has(key)) continue;
-    V('grantable-not-enforced', key,
-      `'${key}' can be granted to a plan but NOTHING enforces it — no route rule, no `
+    V('grantable-not-enforced', key, `'${key}' can be granted to a plan but NOTHING enforces it — no route rule, no `
       + 'requireFeature, no mobile check, no dashboard check. Selling it delivers nothing. '
       + 'Add a gate, or add it to UNENFORCED_DEBT in scripts/feature-registry-audit.js with '
       + 'a reason in its registry entry.');
@@ -324,14 +337,12 @@ function compare({
   // when the mobile gate lands, this fires and asks for the promotion.
   for (const key of debtList) {
     if (!registered.has(key)) {
-      V('stale-debt-entry', key,
-        `'${key}' is listed in UNENFORCED_DEBT but is not a registered feature key. Remove it.`);
+      V('stale-debt-entry', key, `'${key}' is listed in UNENFORCED_DEBT but is not a registered feature key. Remove it.`);
       continue;
     }
     if (!enforcedAnywhere.has(key)) continue;
     const where = [...(server.get(key) || []), ...(mobile.get(key) || []), ...(dashboard.get(key) || [])];
-    V('debt-now-enforced', key,
-      `'${key}' IS enforced now — remove it from UNENFORCED_DEBT and set its registry `
+    V('debt-now-enforced', key, `'${key}' IS enforced now — remove it from UNENFORCED_DEBT and set its registry `
       + "enforcement to the real one ('route' / 'middleware' / 'service' / 'client').", where);
   }
 
@@ -345,33 +356,28 @@ function compare({
     const inMobile = mobile.has(key);
     const inDashboard = dashboard.has(key);
     if (['route', 'middleware', 'service'].includes(enforcement) && !inServer) {
-      V('declared-server-gate-missing', key,
-        `registry declares '${key}' as enforcement:'${enforcement}' but no backend gate `
+      V('declared-server-gate-missing', key, `registry declares '${key}' as enforcement:'${enforcement}' but no backend gate `
         + 'references it. Either the gate was deleted (a paid feature just became free) or '
         + 'the declaration is wrong.');
     }
     if (enforcement === 'client') {
       const clients = entry.clients || [];
       if (clients.includes('mobile') && !inMobile) {
-        V('declared-client-gate-missing', key,
-          `registry declares '${key}' as gated in the MOBILE app but no check exists in `
+        V('declared-client-gate-missing', key, `registry declares '${key}' as gated in the MOBILE app but no check exists in `
           + 'namastepos_flutter/lib. This is exactly the voice_pos failure: the key is sold, '
           + 'the server has no surface to enforce it, and the client shows it to everyone.');
       }
       if (clients.includes('dashboard') && !inDashboard) {
-        V('declared-client-gate-missing', key,
-          `registry declares '${key}' as gated in the owner DASHBOARD but no check exists in `
+        V('declared-client-gate-missing', key, `registry declares '${key}' as gated in the owner DASHBOARD but no check exists in `
           + 'namastepos_dashboard/src.');
       }
       if (!clients.length) {
-        V('client-gate-unspecified', key,
-          `registry declares '${key}' as enforcement:'client' without a \`clients\` list. `
+        V('client-gate-unspecified', key, `registry declares '${key}' as enforcement:'client' without a \`clients\` list. `
           + "Name them: ['mobile'], ['dashboard'] or both.");
       }
     }
     if (enforcement === 'ungated' && !entry.why) {
-      V('ungated-without-reason', key,
-        `registry declares '${key}' as enforcement:'ungated' with no \`why\`. An unenforced `
+      V('ungated-without-reason', key, `registry declares '${key}' as enforcement:'ungated' with no \`why\`. An unenforced `
         + 'plan line needs a reason and an exit, not silence.');
     }
   }
@@ -381,10 +387,8 @@ function compare({
   // plan card and does nothing — an invisible promise.
   for (const [key, where] of data) {
     if (registered.has(key)) continue;
-    V('data-not-registered', key,
-      `'${key}' is granted to a plan in the data but is not a registered feature key, so `
-      + 'nothing reads it and no admin screen explains it. Register it or remove the grant.',
-    [...new Set(where)].slice(0, 4));
+    V('data-not-registered', key, `'${key}' is granted to a plan in the data but is not a registered feature key, so `
+      + 'nothing reads it and no admin screen explains it. Register it or remove the grant.', [...new Set(where)].slice(0, 4));
   }
 
   // ── 6. THE MOBILE APP'S REGISTRY MUST BE THE SAME REGISTRY ─────────────
@@ -396,16 +400,14 @@ function compare({
   if (mobileCatalog) {
     for (const key of registered) {
       if (mobileCatalog.has(key)) continue;
-      V('mobile-catalog-missing-key', key,
-        `'${key}' is a registered backend feature key but the mobile app's registry `
+      V('mobile-catalog-missing-key', key, `'${key}' is a registered backend feature key but the mobile app's registry `
         + '(namastepos_flutter/lib/constants/feature_keys.dart) does not list it. The app '
         + 'cannot gate — or even name — a key it does not know. Add it there with its '
         + 'MobileSurface, or remove it here.');
     }
     for (const key of mobileCatalog) {
       if (registered.has(key)) continue;
-      V('mobile-catalog-extra-key', key,
-        `the mobile app's registry lists '${key}' but it is not in `
+      V('mobile-catalog-extra-key', key, `the mobile app's registry lists '${key}' but it is not in `
         + 'src/config/featureRegistry.js, so the admin console cannot grant it and no plan '
         + 'will ever carry it. Register it on the backend, or drop it from the app.');
     }

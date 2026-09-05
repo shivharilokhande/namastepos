@@ -14,9 +14,20 @@ import { Label } from '@/components/ui/label';
 import { ffApi } from '@/api/namastepos';
 import { apiError } from '@/api/client';
 import { formatINR } from '@/lib/utils';
+import { usePlan } from '@/hooks/usePlan';
+import { FeatureUpgradeCard } from '@/components/RequireFeature';
 
 export function BillTemplatePage() {
   const qc = useQueryClient();
+  // D-11 (2026-09-05): PUT /bill-template is requireFeature('custom_branding')
+  // (Enterprise or the Custom-branding add-on). GET stays open so saved
+  // templates keep printing after a downgrade. The form used to be fully
+  // editable for every plan and only the Save 402'd — the same "editable
+  // form whose save is a 402" class the variants bug was. Now: read-only
+  // with an upgrade note until the plan includes the key.
+  const plan = usePlan();
+  const canEdit = plan.has('custom_branding');
+  const ro = plan.loaded && !canEdit;
   const { data: template } = useQuery({
     queryKey: ['bill-template'], queryFn: ffApi.getBillTemplate,
   });
@@ -65,19 +76,31 @@ export function BillTemplatePage() {
             Customize how your receipts look. Changes apply to all future bills + reprints.
           </p>
         </div>
-        <Button onClick={() => save.mutate()} disabled={save.isPending}>
-          <Save className="mr-2 h-4 w-4" /> {save.isPending ? 'Saving…' : 'Save'}
-        </Button>
+        {canEdit && (
+          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+            <Save className="mr-2 h-4 w-4" /> {save.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        )}
       </div>
+
+      {ro && (
+        <FeatureUpgradeCard
+          feature="custom_branding"
+          compact
+          title="Editing the receipt template needs Custom branding"
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6">
         {/* Editor */}
         <Card>
           <CardHeader>
             <CardTitle>Edit</CardTitle>
-            <CardDescription>Fill in only the bits you want shown.</CardDescription>
+            <CardDescription>{ro ? 'Read-only on your plan — shown as it prints today.' : 'Fill in only the bits you want shown.'}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            {/* D-11: one fieldset disables every input below when read-only. */}
+            <fieldset disabled={ro} className="space-y-3 disabled:opacity-70">
             <div>
               <Label>Logo URL (optional)</Label>
               <Input value={f.logoUrl} onChange={(e) => set('logoUrl', e.target.value)}
@@ -133,6 +156,7 @@ export function BillTemplatePage() {
                 </label>
               </div>
             </div>
+            </fieldset>
           </CardContent>
         </Card>
 

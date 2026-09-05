@@ -111,9 +111,40 @@ async function resolveTierKind(businessId) {
 }
 
 /**
+ * May `fallbackTierKind` be used as a plan_features lookup key when a plan has
+ * no rows of its own?
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * THE TIER-CODE TRAP, IN THIS FILE (2026-09-05, entitlements review E1)
+ * ══════════════════════════════════════════════════════════════════════════
+ * plan_features.tier_kind has held plan CODES since migration 040, but the
+ * "fall back to the kind's defaults" branch below still queries it with a
+ * KIND. The kind 'pro' is Growth (Rs 299); the CODE 'pro' is ENTERPRISE
+ * (Rs 1,999). So a Growth plan saved with zero features in the admin console
+ * — or any new plan created at kind 'pro' before its features are ticked —
+ * silently resolved to Enterprise's full row set, while the console (which
+ * passes no fallback) showed "Features (0)". The fallback is only legitimate
+ * when the kind string is NOT also some plan's code: then the rows it finds
+ * are genuine legacy kind-defaults and not another plan's matrix. We check
+ * both the documented live codes (planTiers) and the plans table, because
+ * super-admin can mint arbitrary codes (migration 039).
+ */
+async function _fallbackKindIsSafe(fallbackTierKind, planTier) {
+  if (!fallbackTierKind || fallbackTierKind === planTier) return false;
+  if (Object.prototype.hasOwnProperty.call(planTiers.LIVE_PLAN_CODE_TO_KIND, fallbackTierKind)) {
+    return false;
+  }
+  const r = await query('SELECT 1 FROM plans WHERE tier = $1 LIMIT 1', [fallbackTierKind]);
+  return r.rowCount === 0;
+}
+
+/**
  * The feature keys for a given plan tier code. Push 18b — looks up by
  * plan.tier first (per-plan features); falls back to tier_kind defaults
- * if no plan-specific rows exist (legacy compat / brand-new plans).
+ * if no plan-specific rows exist (legacy compat / brand-new plans) — but
+ * NEVER when that kind string is also a plan code (see _fallbackKindIsSafe).
+ * A plan with no rows and no safe fallback resolves to the EMPTY set: an
+ * unconfigured plan grants nothing, it does not grant Enterprise.
  */
 async function featuresFor(planTier, fallbackTierKind) {
   // Per-plan rows take precedence.
@@ -121,8 +152,8 @@ async function featuresFor(planTier, fallbackTierKind) {
     'SELECT feature_key FROM plan_features WHERE tier_kind = $1',
     [planTier],
   );
-  if (r.rowCount === 0 && fallbackTierKind && fallbackTierKind !== planTier) {
-    // Fall back to tier_kind defaults
+  if (r.rowCount === 0 && await _fallbackKindIsSafe(fallbackTierKind, planTier)) {
+    // Fall back to genuine tier_kind defaults
     r = await query(
       'SELECT feature_key FROM plan_features WHERE tier_kind = $1',
       [fallbackTierKind],
@@ -138,13 +169,26 @@ async function _load(businessId) {
   // "loyalty" addon picks up the `loyalty` feature flag in /auth/me even
   // if their plan doesn't grant it. Status filter mirrors the active states
   // used elsewhere in the codebase (active / trialing).
+  //
+  // 2026-09-05 (entitlements review A7): ALSO require the paid period to be
+  // running. Nothing flips an expired one-time addon's status — the nightly
+  // scan only sends a push, and Razorpay webhooks fire only for gateway
+  // subscriptions, which addon orders never create — so a 30-day addon's
+  // grants_features stayed in hasFeature()/auth/me forever after expiry while
+  // addonService.hasAddon (which does check the period) said no. Same
+  // predicate as hasAddon now; NULL period end = open-ended comp, still valid.
+  // The nearest period end also caps the cache entry below, exactly as the
+  // trial / grace deadline does, so the feature goes away AT expiry, not up to
+  // a TTL later.
+  let nearestAddonEndMs = null;
   try {
     const addons = await query(
-      `SELECT a.slug, a.grants_features
+      `SELECT a.slug, a.grants_features, ba.current_period_end
          FROM business_addons ba
          JOIN addons a ON a.id = ba.addon_id
         WHERE ba.business_id = $1
           AND ba.status IN ('active', 'trialing')
+          AND (ba.current_period_end IS NULL OR ba.current_period_end > NOW())
           AND a.is_active = TRUE`,
       [businessId],
     );
@@ -156,6 +200,12 @@ async function _load(businessId) {
       // 'whatsapp_marketing' routes, not just the slug pseudo-key.
       for (const key of row.grants_features || []) {
         if (key) features.add(key);
+      }
+      if (row.current_period_end) {
+        const endMs = new Date(row.current_period_end).getTime();
+        if (Number.isFinite(endMs) && (nearestAddonEndMs === null || endMs < nearestAddonEndMs)) {
+          nearestAddonEndMs = endMs;
+        }
       }
     }
   } catch (_) { /* fail open — plan features still apply */ }
@@ -189,6 +239,10 @@ async function _load(businessId) {
   let expires = now + TTL_MS;
   if (typeof resolved.expiresAtMs === 'number' && resolved.expiresAtMs > now) {
     expires = Math.min(expires, resolved.expiresAtMs);
+  }
+  // 2026-09-05 (A7): an addon grant is true only UNTIL its period end.
+  if (typeof nearestAddonEndMs === 'number' && nearestAddonEndMs > now) {
+    expires = Math.min(expires, nearestAddonEndMs);
   }
   const entry = {
     expires,
@@ -417,16 +471,58 @@ async function listFeatureCatalogDetailed() {
   return rows.sort((a, b) => a.key.localeCompare(b.key));
 }
 
+/**
+ * Reject feature keys the product does not know about — ONE helper for EVERY
+ * admin write path that grants a key (2026-09-05, entitlements review F1).
+ *
+ * Until now only PUT /admin/tier-features validated its keys; per-business
+ * overrides, custom-plan extraFeatureKeys and addon grants_features accepted
+ * any string. A typo'd key on any of those paths is written to the database,
+ * shows as granted in the console, and gates nothing — a sold-and-not-
+ * delivered feature made by a slip of the keyboard, which is precisely the
+ * class of bug the registry + drift audit exist to end. The allowed set is the
+ * catalog (registry ∪ whatever plan_features already holds), the same set the
+ * console's pickers are rendered from, so re-saving a legacy plan unchanged
+ * still works.
+ *
+ * Throws BadRequest (400) listing every offending key in
+ * `details.unknownFeatureKeys`; returns the de-duplicated string keys otherwise.
+ * Non-string / empty entries are dropped rather than rejected, mirroring
+ * setTierFeatures' own filter.
+ */
+async function assertKnownFeatureKeys(featureKeys, { what = 'feature key(s)' } = {}) {
+  const keys = Array.from(new Set(
+    (featureKeys || []).filter((k) => typeof k === 'string' && k.length > 0),
+  ));
+  if (keys.length === 0) return keys;
+  const allowed = new Set(await listFeatureCatalog());
+  const unknown = keys.filter((k) => !allowed.has(k));
+  if (unknown.length) {
+    // Lazy require: utils/errors has no dependencies, but keep the service's
+    // top-of-file imports about data, not HTTP.
+    const { BadRequest } = require('../utils/errors');
+    throw new BadRequest(
+      `Unknown ${what}: ${unknown.join(', ')}. Grantable keys come from `
+      + 'GET /v1/admin/feature-catalog; a new key must be added to '
+      + 'src/config/featureRegistry.js first.',
+      { unknownFeatureKeys: unknown },
+    );
+  }
+  return keys;
+}
+
 async function listTierFeatures(planTier, fallbackTierKind) {
   // Same precedence as featuresFor: per-plan rows first, then tier_kind
   // defaults. Without the fallback, a brand-new plan that hasn't been
   // edited yet would render with zero features.
+  // 2026-09-05 (E1): same guard as featuresFor — the fallback must never read
+  // another plan's matrix because its kind string doubles as that plan's code.
   let r = await query(
     `SELECT feature_key FROM plan_features
       WHERE tier_kind = $1 ORDER BY feature_key`,
     [planTier],
   );
-  if (r.rowCount === 0 && fallbackTierKind && fallbackTierKind !== planTier) {
+  if (r.rowCount === 0 && await _fallbackKindIsSafe(fallbackTierKind, planTier)) {
     r = await query(
       `SELECT feature_key FROM plan_features
         WHERE tier_kind = $1 ORDER BY feature_key`,
@@ -486,4 +582,5 @@ module.exports = {
   listFeatureCatalog,
   listTierFeatures,
   setTierFeatures,
+  assertKnownFeatureKeys,
 };

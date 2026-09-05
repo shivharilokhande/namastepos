@@ -235,7 +235,10 @@ class OrderRepo {
           if (pointsToRedeem > 0) 'pointsToRedeem': pointsToRedeem,
           'customerPhone': customerPhone,
           'customerName': customerName,
-          'tax': tax,
+          // `tax` deliberately OMITTED (2026-09-05, review #2). The `tax`
+          // parameter above is the app's ESTIMATE and only feeds the local
+          // row; an absent field tells orderService to compute GST from the
+          // menu's own slabs, whereas a literal 0 means "client says zero".
           'discount': discount,
           if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
           'paymentMethod': paymentMethod.name,
@@ -246,9 +249,41 @@ class OrderRepo {
       // just now (online). Mark the local row synced so it doesn't linger as a
       // phantom "pending" order until the next full load() reconciles it.
       if (sentNow != null) {
-        await db.update('orders', {'synced': 1},
-            where: 'id = ?', whereArgs: [orderId]);
-        order = order.copyWith(synced: true);
+        // 2026-09-05 (review #2): the server's persisted row is authoritative
+        // for tax/cgst/sgst/total (and the order number). Adopt it so the
+        // receipt printed a moment later shows what the server recorded, not
+        // the app's estimate — and write those figures back over the local
+        // row so a later offline read agrees. Parse defensively: a response
+        // we cannot read falls back to the old "mark synced" behaviour.
+        Order? serverRow;
+        try {
+          final data = sentNow.data;
+          final raw = data is Map ? (data['order'] ?? data) : null;
+          if (raw is Map) {
+            final parsed = Order.fromBackend(raw.cast<String, dynamic>());
+            // Same order (id == clientId) — anything else is not ours.
+            if (parsed.id == orderId) serverRow = parsed;
+          }
+        } catch (_) { /* fall back to local row */ }
+        if (serverRow != null) {
+          await db.update('orders', {
+            'synced': 1,
+            'orderNo': serverRow.orderNo,
+            'subtotal': serverRow.subtotal,
+            'tax': serverRow.tax,
+            'discount': serverRow.discount,
+            'total': serverRow.total,
+          }, where: 'id = ?', whereArgs: [orderId]);
+          // Keep the local item rows (server items may carry ids we do not
+          // store); everything money-related comes from the server.
+          order = serverRow.items.isEmpty
+              ? _withItems(serverRow, order.items)
+              : serverRow;
+        } else {
+          await db.update('orders', {'synced': 1},
+              where: 'id = ?', whereArgs: [orderId]);
+          order = order.copyWith(synced: true);
+        }
       }
     } catch (e) {
       // H4 fix (2026-08-23): 4xx rejections now rethrow from the outbox —
@@ -268,6 +303,45 @@ class OrderRepo {
 
     return order;
   }
+
+  /// A server order row whose `items` array came back empty, re-attached to
+  /// the lines we just posted, so the receipt still lists the dishes.
+  static Order _withItems(Order o, List<OrderItem> items) => Order(
+        id: o.id,
+        businessId: o.businessId,
+        orderNo: o.orderNo,
+        items: items,
+        source: o.source,
+        tableNo: o.tableNo,
+        customerPhone: o.customerPhone,
+        customerName: o.customerName,
+        subtotal: o.subtotal,
+        tax: o.tax,
+        discount: o.discount,
+        total: o.total,
+        paymentMethod: o.paymentMethod,
+        status: o.status,
+        cancelReason: o.cancelReason,
+        printed: o.printed,
+        synced: true,
+        createdAt: o.createdAt,
+        updatedAt: o.updatedAt,
+        readyAt: o.readyAt,
+        collectedAt: o.collectedAt,
+        refundedInr: o.refundedInr,
+        cgst: o.cgst,
+        sgst: o.sgst,
+        igst: o.igst,
+        loyaltyDiscountInr: o.loyaltyDiscountInr,
+        serviceChargeInr: o.serviceChargeInr,
+        roundOffInr: o.roundOffInr,
+        pointsRedeemed: o.pointsRedeemed,
+        paymentBreakdown: o.paymentBreakdown,
+        isBill: o.isBill,
+        tableSessionId: o.tableSessionId,
+        displayNo: o.displayNo,
+        kots: o.kots,
+      );
 
   Future<List<Order>> list(String businessId,
       {OrderStatus? status, DateTime? day}) async {

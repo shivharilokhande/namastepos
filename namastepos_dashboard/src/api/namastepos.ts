@@ -215,6 +215,54 @@ export interface MyOutlet {
   current: boolean;
 }
 
+// ── /auth/me (D-20, 2026-09-05) ──────────────────────────────────────────
+// Mirrors authController.me + featureService.planSummary. `plan` is null when
+// the user has no active business OR when planSummary threw server-side —
+// usePlan() treats both as "nothing granted" (fail-closed). `permissions` is
+// null for the owner (= all) and an explicit allow-list for staff.
+export interface MePlan {
+  tier?: string; // plan CODE (free/basic/pro_plan/advanced/pro) — display only, never gate on it
+  tierKind: string;
+  tierLabel?: string;
+  nextTierKind?: string | null;
+  nextTierLabel?: string | null;
+  features: string[];
+  planVersion?: string | number | null;
+}
+// 2026-09-05 — the declared GST scheme (migration 092) rides on the business
+// block of /auth/me (authService.serializeBusiness → `gstScheme`, 'regular'
+// for every business that has not answered yet). The POS reads it to decide
+// whether to show/collect GST at all: a composition dealer issues a bill of
+// supply and charges the diner nothing. Index signature keeps every other
+// consumer of the (previously `any`) business block compiling unchanged.
+export type GstScheme = 'regular' | 'composition' | 'specified_premises';
+export interface MeBusiness {
+  id: string;
+  gstScheme?: GstScheme | string | null;
+  [key: string]: any;
+}
+export interface MeResponse {
+  user: any;
+  business: MeBusiness;
+  role: string | null;
+  memberships: { businessId: string; role: string }[];
+  plan: MePlan | null;
+  permissions: string[] | null;
+  hasPassword?: boolean;
+}
+
+// ── Gift cards (FF-1005 canonical ledger, payments.routes.js) ─────────────
+// Row shape is the raw `gift_cards` table row: money columns are paise.
+export interface GiftCardRow {
+  id: string;
+  code: string;
+  face_value_paise: number;
+  balance_paise: number;
+  issued_to_phone: string | null;
+  expires_at: string | null;
+  created_at?: string;
+}
+
 export interface SwitchBusinessResult {
   token: string;
   // Blank in cookie-auth mode (the backend Set-Cookie's `ff_refresh`
@@ -319,7 +367,7 @@ export const ffApi = {
     api.post('/auth/login', { email, password }).then((r) => r.data),
   register: (body: { email: string; password: string; name?: string; businessName?: string; referralCode?: string; plan?: string }) =>
     postTolerantOfPlan('/auth/register', body),
-  me: () => api.get('/auth/me').then((r) => r.data),
+  me: (): Promise<MeResponse> => api.get('/auth/me').then((r) => r.data as MeResponse),
   patchMe: (patch: any) => api.patch('/auth/me', patch).then((r) => r.data),
 
   // Image upload
@@ -533,9 +581,21 @@ export const ffApi = {
   updateMembership: (id: string, body: any) => { const b = getBusinessCache(); return api.put(`/businesses/${b.id}/memberships/${id}`, body).then((r) => r.data.membership); },
   deleteMembership: (id: string) => { const b = getBusinessCache(); return api.delete(`/businesses/${b.id}/memberships/${id}`).then((r) => r.data); },
   membershipSubscribers: () => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/memberships/subscribers`).then((r) => r.data.subscribers); },
-  listGiftCards: () => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/gift-cards`).then((r) => r.data.giftCards); },
-  issueGiftCard: (body: any) => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/gift-cards`, body).then((r) => r.data.giftCard); },
-  redeemGiftCard: (code: string, body: any) => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/gift-cards/${code}/redeem`, body).then((r) => r.data); },
+  // D-03 (2026-09-05): aligned to payments.routes.js (FF-1005 canonical
+  // ledger). The previous helpers were written against the retired dual-
+  // ledger API: they read `r.data.giftCards` (server sends `{ cards }`),
+  // posted `amountInr/purchaserPhone` (server Joi requires `faceValueInr`
+  // and rejects unknown fields → 400 on every issue), unwrapped
+  // `r.data.giftCard` (server returns the raw row), and called
+  // POST /gift-cards/:code/redeem, which does not exist — redemption
+  // happens through the order/settle flow (wallet legs), not a standalone
+  // route, so there is no redeem helper here.
+  listGiftCards: (): Promise<GiftCardRow[]> => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/gift-cards`).then((r) => (r.data.cards || []) as GiftCardRow[]); },
+  issueGiftCard: (body: { faceValueInr: number; issuedToPhone?: string | null; expiresAt?: string | null }): Promise<GiftCardRow> => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/gift-cards`, body).then((r) => r.data as GiftCardRow);
+  },
+  lookupGiftCard: (code: string) => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/gift-cards/lookup/${encodeURIComponent(code)}`).then((r) => r.data.card as { code: string; balance: number; expiresAt: string | null } | null); },
   recordTip: (body: any) => { const b = getBusinessCache(); return api.post(`/businesses/${b.id}/tips`, body).then((r) => r.data.tip); },
   tipReport: (params?: any) => { const b = getBusinessCache(); return api.get(`/businesses/${b.id}/tips/report`, { params }).then((r) => r.data.report); },
   // Printers
@@ -749,7 +809,7 @@ export const ffApi = {
       `/businesses/${b.id}/tax-invoices/${invoiceId}/pdf`,
       { responseType: 'blob' }
     );
-    const safe = (invoiceNo || invoiceId).replace(/[\/\\]/g, '_');
+    const safe = (invoiceNo || invoiceId).replace(/[/\\]/g, '_');
     _triggerBlobDownload(r.data, `tax_invoice_${safe}.pdf`);
   },
   // Returns a blob URL the caller is responsible for revoking — useful

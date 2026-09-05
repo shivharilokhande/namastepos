@@ -6,6 +6,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const qr = require('../services/qrService');
 const orderService = require('../services/orderService');
+const tableService = require('../services/tableService');
 const otpService = require('../services/otpService');
 const env = require('../config/env');
 // FF-250 needs these for the guest Razorpay checkout endpoints.
@@ -286,6 +287,18 @@ const placeOrder = [
     // for THIS business + phone accompanies the order (2026-08-30 security fix).
     const allowMemberBenefits = _benefitTokenValid(req.body.benefitToken, businessId, req.body.customerPhone);
 
+    // 2026-09-05 (review #6, P1): the guest path is NOT a trusted aggregator
+    // channel. `trustedChannel:true` used to switch off the protections the
+    // comments above still promised: 86'd (sold_out_until) dishes were
+    // orderable, the in-txn OUT_OF_STOCK row-lock check was skipped (the
+    // pre-flight above was the only stock check — last-unit oversell), and
+    // the order was saved with tax=0 "settled at counter" even though the
+    // online checkout charges exactly orders.total — so an online-paid QR
+    // order never collected GST and its invoice showed none. Now: server
+    // price, server GST (tax omitted → menu-derived figure adopted), 86 and
+    // stock lock all apply. The ONLY carve-out the guest keeps is the
+    // required-modifier-group waiver, because this payload cannot express
+    // modifiers (opts.exemptRequiredModifiers).
     const order = await orderService.create(businessId, {
       clientId: req.body.clientId,
       // Bug fix (B2): 'qr' is not a member of the order_source enum
@@ -298,9 +311,10 @@ const placeOrder = [
       customerPhone: req.body.customerPhone,
       customerName: req.body.customerName,
       items: req.body.items,
-      paymentMethod: 'unpaid', // settle later at the counter
+      // `tax` deliberately OMITTED (not 0): orderService adopts the server GST.
+      paymentMethod: 'unpaid', // settle later at the counter / online checkout
       allowMemberBenefits,
-    }, { trustedChannel: true }); // NP-112: server-routed guest flow — tax settled at counter
+    }, { exemptRequiredModifiers: true });
 
     // Link the order to the session + table (orderService doesn't know about these)
     await query(
@@ -436,7 +450,7 @@ const getRunningSession = asyncHandler(async (req, res) => {
   const sess = await query(
     `SELECT ts.id, ts.opened_at, ts.customer_phone, ts.customer_name
        FROM table_sessions ts
-      WHERE ts.business_id = $1 AND ts.table_id = $2 AND ts.closed_at IS NULL
+      WHERE ts.business_id = $1 AND ts.table_id = $2 AND ts.closed_at IS NULL AND ts.status = 'open'
       ORDER BY ts.opened_at DESC LIMIT 1`,
     [businessId, tableId],
   );
@@ -507,7 +521,7 @@ const paySession = asyncHandler(async (req, res) => {
        FROM table_sessions ts
   LEFT JOIN orders o ON o.table_session_id = ts.id
                     AND o.status NOT IN ('cancelled','collected')
-      WHERE ts.business_id = $1 AND ts.table_id = $2 AND ts.closed_at IS NULL
+      WHERE ts.business_id = $1 AND ts.table_id = $2 AND ts.closed_at IS NULL AND ts.status = 'open'
       GROUP BY ts.id
       ORDER BY ts.opened_at DESC LIMIT 1`,
     [businessId, tableId],
@@ -561,7 +575,7 @@ const confirmSessionPayment = [
          FROM table_sessions ts
     LEFT JOIN orders o ON o.table_session_id = ts.id
                       AND o.status NOT IN ('cancelled','collected')
-        WHERE ts.business_id = $1 AND ts.id = $2 AND ts.closed_at IS NULL
+        WHERE ts.business_id = $1 AND ts.id = $2 AND ts.closed_at IS NULL AND ts.status = 'open'
         GROUP BY ts.id`,
       [businessId, req.body.sessionId],
     );
@@ -571,38 +585,34 @@ const confirmSessionPayment = [
     if (Number(rzOrder.amount) !== duePaise) {
       throw new BadRequest('Payment amount does not match the outstanding bill — refresh and try again');
     }
-    // Mark all unpaid orders in this session collected + close session.
-    await query(
-      `UPDATE orders
-          SET payment_method = 'upi', status = 'collected',
-              collected_at = NOW(), updated_at = NOW()
-        WHERE business_id = $1 AND table_session_id = $2
-          AND status NOT IN ('cancelled','collected')`,
-      [businessId, req.body.sessionId],
-    );
-    // Record the payment for exactly the amount charged (= the validated
-    // outstanding due). Bug fix (2026-08-30 review): the old version re-summed
-    // ALL orders in the session, so if part of the session had been settled in
-    // an earlier partial payment the recorded amount overstated what was
-    // actually charged. `duePaise` already == rzOrder.amount (asserted above).
-    await query(
-      `INSERT INTO payments (business_id, method, amount_paise, status,
-                              razorpay_payment_id, notes)
-       VALUES ($1, 'upi', $2, 'captured', $3,
-               jsonb_build_object('sessionId', $4::text, 'source', 'guest-qr-session'))`,
-      [businessId, duePaise, req.body.razorpayPaymentId, req.body.sessionId],
-    );
-    await query(
-      `UPDATE table_sessions SET closed_at = NOW()
-        WHERE id = $1 AND business_id = $2`,
-      [req.body.sessionId, businessId],
-    );
-    // Free the table.
-    await query(
-      `UPDATE tables SET status = 'available'
-        WHERE business_id = $1
-          AND id = (SELECT table_id FROM table_sessions WHERE id = $2)`,
-      [businessId, req.body.sessionId],
+    // 2026-09-05 (review #3, P1): settle through tableService.closeSession —
+    // the SAME path the staff "Settle" button takes — instead of hand-rolled
+    // UPDATEs. The old code set `closed_at` but never `status='closed'` nor
+    // cleared `tables.current_session_id`, so the table stayed logically
+    // occupied forever: `uq_open_session` blocked staff from opening a new
+    // session (409), the next diner's QR order attached to the already-paid
+    // session, and no combined invoice / loyalty earn ever fired.
+    // closeSession does, in ONE transaction: flip every unpaid order to
+    // paid+collected, close the session (status + closed_at + total_paise),
+    // free the table(s), and — via afterSettleInTx — record this Razorpay
+    // payment for exactly the amount charged (= the validated outstanding
+    // due; `duePaise` already == rzOrder.amount). Post-commit it issues the
+    // combined GST invoice and earns loyalty, exactly like a counter settle.
+    // Method 'upi' matches confirmPayment above; the webhook reconciles the
+    // real instrument within seconds.
+    const settleOpts = {
+      afterSettleInTx: async (client) => {
+        await client.query(
+          `INSERT INTO payments (business_id, method, amount_paise, status,
+                                  razorpay_payment_id, notes)
+           VALUES ($1, 'upi', $2, 'captured', $3,
+                   jsonb_build_object('sessionId', $4::text, 'source', 'guest-qr-session'))`,
+          [businessId, duePaise, req.body.razorpayPaymentId, req.body.sessionId],
+        );
+      },
+    };
+    await tableService.closeSession(
+      businessId, req.body.sessionId, null, 'upi', 0, null, 0, false, null, 0, settleOpts,
     );
     res.json({ ok: true });
   }),

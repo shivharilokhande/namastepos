@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../models/order.dart';
 import '../../models/expense.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/expenses_provider.dart';
 import '../../providers/orders_provider.dart';
 import '../../utils/formatters.dart';
@@ -42,6 +43,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget build(BuildContext context) {
     final orders = context.watch<OrdersProvider>();
     final expenses = context.watch<ExpensesProvider>();
+    // 2026-09-05 (review #12): the KPI drill-downs are staff-permission
+    // gated server-side (`income_register`, `pnl_statement`) — a cashier
+    // tapping Profit got a 403 error page. Mirror the drawer's `_can` checks:
+    // no permission → the card stays informative but does not navigate.
+    final auth = context.watch<AuthProvider>();
+    final canIncomeRegister = auth.canDo('income_register');
+    final canExpenseRegister = auth.canDo('expense_register');
+    final canPnl = auth.canDo('pnl_statement');
 
     // FB-04 (2026-09-01): order.createdAt is parsed from a Z-suffixed ISO string
     // → a UTC DateTime. Bucket on the LOCAL (IST) calendar day, else a 00:30 IST
@@ -145,14 +154,14 @@ class _ReportsScreenState extends State<ReportsScreen> {
               KpiCard(
                 label: 'Revenue', value: AppFmt.money(revenue),
                 icon: Icons.trending_up_rounded, color: AppColors.success,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
+                onTap: !canIncomeRegister ? null : () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => RegisterReportsScreen.income(),
                 )),
               ),
               KpiCard(
                 label: 'Expenses', value: AppFmt.money(expensesTotal),
                 icon: Icons.receipt_rounded, color: AppColors.warning,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
+                onTap: !canExpenseRegister ? null : () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => RegisterReportsScreen.expense(),
                 )),
               ),
@@ -160,7 +169,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 label: 'Profit', value: AppFmt.money(profit),
                 icon: Icons.account_balance_wallet_rounded,
                 color: profit >= 0 ? AppColors.success : AppColors.error,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
+                onTap: !canPnl ? null : () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => const IncomeStatementScreen(),
                 )),
               ),

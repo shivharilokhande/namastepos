@@ -9,7 +9,7 @@ import App from './App';
 import './index.css';
 import { initSentry } from './lib/sentry';
 import { initAnalytics, setIdentityProvider } from './lib/analytics';
-import { getBusinessCache } from './api/client';
+import { getBusinessCache, onPlanVersionChange } from './api/client';
 
 // FF-211: initialise Sentry before React mounts so unhandled errors
 // during render are captured. No-op when VITE_SENTRY_DSN is unset.
@@ -38,14 +38,25 @@ export const queryClient = new QueryClient({
 setIdentityProvider(() => {
   const b = getBusinessCache();
   if (!b?.id) return null;
-  const me = queryClient.getQueryData<any>(['me'])
-    || queryClient.getQueryData<any>(['plan-summary']);
+  // D-19 (2026-09-05): ['me'] is now the ONLY /auth/me query key
+  // (usePlan/useMe + Layout share it); the old ['plan-summary'] twin is gone.
+  const me = queryClient.getQueryData<any>(['me']);
   return {
     businessId: String(b.id),
     signupAt: b.createdAt || null,
     planTier: me?.plan?.tierKind || null,
   };
 });
+
+// Entitlement sync (2026-09-05): when any API response reports a new
+// X-Plan-Version, refetch /auth/me so nav locks, route guards and in-page
+// gates follow an admin-side plan change within one request instead of
+// waiting for the 60s poll. Add-ons live in the same version, so the
+// marketplace state is refreshed too.
+onPlanVersionChange(() => Promise.all([
+  queryClient.invalidateQueries({ queryKey: ['me'] }),
+  queryClient.invalidateQueries({ queryKey: ['my-addons'] }),
+]));
 
 // Lazy: schedules the gtag load on the first idle callback after paint, and
 // only if VITE_GA4_ID is set AND analytics consent has been granted. Hard

@@ -120,6 +120,20 @@ class ReceiptPdf {
 
   // ── Documents ───────────────────────────────────────────────────────
 
+  /// Tax lines for one order — mirrors `PrinterService._buildReceipt`.
+  static List<pw.Widget> _taxRows(Order order, String Function(double) money) {
+    final est = order.synced ? '' : ' (est.)';
+    if (order.cgst > 0 || order.sgst > 0) {
+      return [
+        _row('CGST$est', money(order.cgst)),
+        _row('SGST$est', money(order.sgst)),
+      ];
+    }
+    if (order.igst > 0) return [_row('IGST$est', money(order.igst))];
+    if (order.tax > 0) return [_row('Tax$est', money(order.tax))];
+    return const [];
+  }
+
   /// One order's receipt. Mirrors `PrinterService._buildReceipt`, including
   /// the composition-dealer heading and declaration (backend migration 092).
   static Future<Uint8List> orderReceipt({
@@ -143,7 +157,10 @@ class ReceiptPdf {
       // `tax` is 0 for a composition dealer because the SERVER refuses to put
       // GST on their orders; this renderer deliberately does not try to
       // second-guess the stored order row.
-      if (order.tax > 0) _row('Tax', money(order.tax)),
+      // 2026-09-05 (review #2): CGST/SGST (or IGST) split when the server row
+      // carries it; "(est.)" on an order still waiting in the offline queue.
+      ..._taxRows(order, money),
+      if (order.discount > 0) _row('Discount', '-${money(order.discount)}'),
       _row('TOTAL', money(order.total), bold: true),
       if (composition) ...[
         pw.SizedBox(height: 4),

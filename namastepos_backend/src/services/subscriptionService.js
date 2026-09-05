@@ -1,7 +1,9 @@
 // NamastePOS backend - subscription + plan-limit service
 
 const { query } = require('../config/db');
-const { Forbidden, NotFound } = require('../utils/errors');
+const {
+  Forbidden, NotFound, Conflict, HttpError,
+} = require('../utils/errors');
 const entitlement = require('./planEntitlement');
 // Ordered tier-kind ladder + rank helpers. Single source of truth — read the
 // header of that file before touching anything tier-related.
@@ -243,7 +245,7 @@ function serializePlan(p) {
   };
 }
 
-function serializeSubscription(s, plan) {
+function serializeSubscription(s, plan, { pendingPlan = null } = {}) {
   return {
     id: s.id,
     businessId: s.business_id,
@@ -256,7 +258,60 @@ function serializeSubscription(s, plan) {
     cancelledAt: s.cancelled_at,
     // FF-402c — cadence lives on the sub row now (not on the plan).
     billingPeriod: s.billing_period || 'monthly',
+    // 2026-09-05 (A3) — a downgrade to a free plan is SCHEDULED for the end of
+    // the paid period, not applied on the spot. `pendingPlan` names where the
+    // tenant lands on `currentPeriodEnd`; null in the normal case. Additive —
+    // clients that do not know the key ignore it.
+    pendingPlan: pendingPlan ? serializePlan(pendingPlan) : null,
+    // 2026-09-05 (A1/A4) — a re-checkout has been opened and the row flips
+    // back to full service only when its first charge lands.
+    reactivationPending: !!s.reactivation_rzp_subscription_id,
+    // 2026-09-05 (A6) — admin suspension timestamp (null unless suspended).
+    suspendedAt: s.status === 'suspended' ? (s.suspended_at || null) : null,
   };
+}
+
+/**
+ * True when a plan is free — decided on PRICE, never on the tier code.
+ *
+ * 2026-09-05 (A9). `tier === 'free'` literals worked only because 'free'
+ * happens to be Starter's code today; a second ₹0 plan created in admin would
+ * have been routed to Razorpay checkout (no razorpay_plan_id → 400). Accepts
+ * a raw `plans` row or a serialized plan.
+ */
+function isFreePlan(plan) {
+  if (!plan) return false;
+  const paise = plan.price_inr_paise ?? plan.priceInrPaise ?? 0;
+  return !(Number(paise) > 0);
+}
+
+/**
+ * The shared, public ₹0 plan tenants fall back to / downgrade onto. Same
+ * definition effectivePlan() uses for a lapsed subscription, so "the free
+ * plan" is one query everywhere.
+ */
+async function freePlanRow() {
+  const p = await query(
+    `SELECT * FROM plans
+      WHERE is_active = TRUE AND business_id IS NULL AND price_inr_paise = 0
+      ORDER BY created_at ASC LIMIT 1`,
+  );
+  return p.rows[0] || null;
+}
+
+/**
+ * 403 ACCOUNT_SUSPENDED for an admin-suspended row (2026-09-05, A6).
+ *
+ * `suspended` is an admin decision and nothing the tenant can do on their own
+ * — resume, pause, change plan, checkout — may lift it. Distinct code and copy
+ * from the owner's own pause on purpose: "resume from Billing" would be a lie.
+ */
+function assertNotSuspended(row) {
+  if (row?.status !== 'suspended') return;
+  const err = new Forbidden('Account suspended — contact support.');
+  err.code = 'ACCOUNT_SUSPENDED';
+  err.details = { status: 'suspended', suspendedAt: row.suspended_at || null };
+  throw err;
 }
 
 // ── Plans ────────────────────────────────────────────────────────────────
@@ -437,7 +492,12 @@ async function get(businessId) {
   // Split joined row
   const row = r.rows[0];
   const plan = await getPlanByTier(row.tier);
-  return serializeSubscription(row, plan);
+  let pendingPlan = null;
+  if (row.pending_plan_id) {
+    const pp = await query('SELECT * FROM plans WHERE id = $1 LIMIT 1', [row.pending_plan_id]);
+    pendingPlan = pp.rows[0] || null;
+  }
+  return serializeSubscription(row, plan, { pendingPlan });
 }
 
 // X2 (2026-08-28) — proration on a mid-cycle UPGRADE. Returns the pro-rated
@@ -474,7 +534,6 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
     || (plan.business_id != null && String(plan.business_id) !== String(businessId))
     || (plan.is_public === false && plan.business_id == null);
   if (notAvailable) {
-    const { HttpError } = require('../utils/errors');
     throw new HttpError(
       400,
       'This plan is not available',
@@ -490,19 +549,87 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
     [businessId],
   );
   const curRow = curQ.rows[0] || null;
+  // A6: nothing the tenant does on their own lifts an admin suspension.
+  assertNotSuspended(curRow);
   const cadence = billingPeriod || curRow?.billing_period || 'monthly';
   const prorationPaise = curRow
     ? computeProrationPaise(curRow, curRow, plan, cadence)
     : 0;
+
+  // ── A3 (2026-09-05): downgrade to a ₹0 plan while a PAID period is running
+  // on a gateway mandate → SCHEDULE it for period end instead of applying it.
+  //
+  // Applying it on the spot left the Razorpay mandate live, and the next
+  // `subscription.charged` webhook (isCancelled false, nothing had set
+  // cancel_at_period_end) put the tenant straight back on the paid plan — and
+  // charged them for it. Cancel-at-cycle-end semantics are also the fair
+  // answer: they paid through current_period_end, so they keep the plan until
+  // then; plan_id flips when the gateway's cancelled/completed webhook lands
+  // or the nightly sweep sees the period has passed
+  // (applyPendingDowngrade). Undo = POST /billing/resume (clears the flag and
+  // the pending plan). Decided on PRICE, not tier code (A9).
+  const scheduleDowngrade = isFreePlan(plan)
+    && curRow
+    && curRow.status === 'active'
+    && Number(curRow.price_inr_paise) > 0
+    && String(curRow.plan_id) !== String(plan.id)
+    && !!curRow.razorpay_subscription_id
+    && curRow.current_period_end
+    && new Date(curRow.current_period_end).getTime() > Date.now();
+  if (scheduleDowngrade) {
+    try {
+      await require('./razorpayService').cancelSubscription(businessId, { atCycleEnd: true });
+    } catch (e) {
+      // Best-effort, same as cancelAtPeriodEnd: the local cancel_at_period_end
+      // flag is what stops _onChargeSuccess from re-activating the paid plan.
+      require('../config/logger').warn(`[changePlan] gateway cancel-at-cycle-end failed for ${businessId}: ${e.message}`);
+    }
+    const sched = await query(
+      `UPDATE subscriptions
+          SET cancel_at_period_end = TRUE,
+              pending_plan_id = $2,
+              updated_at = NOW()
+        WHERE business_id = $1
+        RETURNING *`,
+      [businessId, plan.id],
+    );
+    try {
+      await require('./crmService').logActivity({
+        businessId,
+        kind: 'plan_change',
+        title: `Downgrade to ${plan.name} scheduled for ${new Date(curRow.current_period_end).toLocaleDateString('en-IN')}`,
+        meta: {
+          fromTier: curRow.cur_tier, toTier: newTier, scheduled: true, effectiveAt: curRow.current_period_end,
+        },
+        actorType: 'system',
+      });
+    } catch (_) { /* non-fatal */ }
+    const cur = await query('SELECT * FROM plans WHERE id = $1 LIMIT 1', [curRow.plan_id]);
+    const out = serializeSubscription(sched.rows[0], cur.rows[0] || null, { pendingPlan: plan });
+    out.prorationInr = 0;
+    out.scheduled = true;
+    out.effectiveAt = curRow.current_period_end;
+    out.message = `You keep ${cur.rows[0]?.name || 'your current plan'} until `
+      + `${new Date(curRow.current_period_end).toLocaleDateString('en-IN')}, then move to `
+      + `${plan.name}. No further charge will be taken.`;
+    return out;
+  }
+
   // billingPeriod (2026-08-24): when set (manual/beta path with no Razorpay),
   // persist the cadence and roll the period forward so the UI doesn't show a
   // stale "renews on <past date>". Left NULL → cadence unchanged (e.g. 'free').
   const period = billingPeriod === 'yearly' ? 'yearly'
     : billingPeriod === 'monthly' ? 'monthly' : null;
+  // A10 (2026-09-05): a ₹0 plan has nothing to trial — its status is 'active'.
+  // Leaving an expired trial 'trialing' on the free plan made /billing say
+  // "trial expired" on a plan that never expires. Paid targets keep the
+  // existing rule (a running trial stays a trial until it converts).
+  const free = isFreePlan(plan);
   const r = await query(
     `UPDATE subscriptions
         SET plan_id = $1,
-            status = CASE WHEN status = 'trialing' THEN 'trialing'::subscription_status
+            status = CASE WHEN $4::boolean THEN 'active'::subscription_status
+                          WHEN status = 'trialing' THEN 'trialing'::subscription_status
                           ELSE 'active'::subscription_status END,
             billing_period = COALESCE($3, billing_period),
             current_period_start = CASE WHEN $3 IS NULL THEN current_period_start ELSE NOW() END,
@@ -511,24 +638,21 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
               WHEN $3 = 'yearly' THEN NOW() + INTERVAL '1 year'
               ELSE NOW() + INTERVAL '1 month' END,
             cancel_at_period_end = FALSE,
+            pending_plan_id = NULL,
             updated_at = NOW()
       WHERE business_id = $2
       RETURNING *`,
-    [plan.id, businessId, period],
+    [plan.id, businessId, period, free],
   );
   if (r.rowCount === 0) throw new NotFound('No subscription on this business');
-  // Invalidate the in-process feature cache so the new tier kicks in immediately.
-  try { require('./featureService').clearCache(businessId); } catch (_) {}
-  // Push 14e — on plan change auto-prune over-limit staff so the business
-  // doesn't sit in an "over-limit but can't add new staff" deadlock.
-  try {
-    await require('./staffService').complyStaffLimit(businessId);
-  } catch (e) {
-    // eslint-disable-next-line no-console
-    console.warn('[changePlan] complyStaffLimit failed:', e?.message);
-  }
+  await _afterPlanChange(businessId, newTier);
   // X2 — log the pro-rated upgrade charge on the tenant timeline so it's
   // auditable and the dashboard can show "₹X due now for the upgrade".
+  // NOTE (A5, 2026-09-05): this figure is only ever computed on THIS manual
+  // (non-gateway) path. The production upgrade goes through
+  // razorpayService.createSubscription and charges the full new-plan price
+  // with no credit — that response carries no `prorationInr`, so nothing
+  // claims a credit that is not applied.
   if (prorationPaise > 0) {
     try {
       await require('./crmService').logActivity({
@@ -539,6 +663,28 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
         actorType: 'system',
       });
     } catch (_) { /* non-fatal */ }
+  }
+  const out = serializeSubscription(r.rows[0], plan);
+  out.prorationInr = prorationPaise / 100;
+  return out;
+}
+
+/**
+ * Everything that must follow a plan_id write, in one place (2026-09-05):
+ * feature-cache bust, over-limit staff prune, outlet sync, addon revocation.
+ * Shared by changePlan and applyPendingDowngrade so a downgrade that lands via
+ * the webhook/sweep does exactly what an immediate one does.
+ */
+async function _afterPlanChange(businessId, newTier) {
+  // Invalidate the in-process feature cache so the new tier kicks in immediately.
+  try { require('./featureService').clearCache(businessId); } catch (_) {}
+  // Push 14e — on plan change auto-prune over-limit staff so the business
+  // doesn't sit in an "over-limit but can't add new staff" deadlock.
+  try {
+    await require('./staffService').complyStaffLimit(businessId);
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.warn('[changePlan] complyStaffLimit failed:', e?.message);
   }
   // 2026-09-03 — if this business is a group HQ, push the same entitlement to
   // every outlet so branches never lag behind the plan the owner paid for.
@@ -565,9 +711,87 @@ async function changePlan(businessId, newTier, { billingPeriod = null } = {}) {
     // eslint-disable-next-line no-console
     console.warn('[changePlan] revokeIneligibleAddons failed:', e?.message);
   }
-  const out = serializeSubscription(r.rows[0], plan);
-  out.prorationInr = prorationPaise / 100;
-  return out;
+}
+
+/**
+ * Land a scheduled downgrade (A3): plan_id ← pending_plan_id, status 'active'
+ * on the (free) target, cancel flag cleared. Called by the gateway
+ * cancelled/completed webhook and by the nightly sweep; idempotent — a row
+ * with no pending plan is left alone and `{ applied: false }` is returned.
+ */
+async function applyPendingDowngrade(businessId, { via = 'sweep' } = {}) {
+  const r = await query(
+    `UPDATE subscriptions s
+        SET plan_id = s.pending_plan_id,
+            pending_plan_id = NULL,
+            status = 'active',
+            cancel_at_period_end = FALSE,
+            cancelled_at = NULL,
+            current_period_start = NOW(),
+            updated_at = NOW()
+      WHERE s.business_id = $1 AND s.pending_plan_id IS NOT NULL
+      RETURNING s.*`,
+    [businessId],
+  );
+  if (r.rowCount === 0) return { applied: false };
+  const p = await query('SELECT tier, name FROM plans WHERE id = $1 LIMIT 1', [r.rows[0].plan_id]);
+  const tier = p.rows[0]?.tier || null;
+  await _afterPlanChange(businessId, tier);
+  try {
+    await require('./crmService').logActivity({
+      businessId,
+      kind: 'plan_change',
+      title: `Scheduled downgrade applied: now on ${p.rows[0]?.name || tier}`,
+      meta: { toTier: tier, via },
+      actorType: 'system',
+    });
+  } catch (_) { /* non-fatal */ }
+  return { applied: true, tier, row: r.rows[0] };
+}
+
+/**
+ * Nightly backstop for the two period-end transitions the gateway webhook
+ * normally drives (2026-09-05, A3):
+ *   1. scheduled downgrades whose paid period has ended → applyPendingDowngrade;
+ *   2. cancel-at-period-end rows the `subscription.cancelled` webhook never
+ *      reached (dropped delivery, gateway cancel that failed) → 'cancelled'.
+ * Without (2) an `active` + cancel_at_period_end row lived forever: the
+ * self-heal excludes it, nothing else touched it, and entitledSql says active.
+ * Three days of slack so a late webhook or a scheduled re-checkout charge
+ * (createSubscription start_at) still arrives first; a charge that lands after
+ * this has run still reactivates through the reactivation marker.
+ */
+async function sweepPeriodEndTransitions() {
+  const due = await query(
+    `SELECT business_id FROM subscriptions
+      WHERE pending_plan_id IS NOT NULL AND current_period_end < NOW()
+      LIMIT 500`,
+  );
+  let downgraded = 0;
+  for (const row of due.rows) {
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await applyPendingDowngrade(row.business_id, { via: 'sweep' });
+      if (r.applied) downgraded += 1;
+    } catch (e) {
+      require('../config/logger').warn(`[period-end sweep] downgrade failed for ${row.business_id}: ${e.message}`);
+    }
+  }
+  const lapsed = await query(
+    `UPDATE subscriptions
+        SET status = 'cancelled',
+            cancelled_at = COALESCE(cancelled_at, NOW()),
+            updated_at = NOW()
+      WHERE status = 'active'
+        AND cancel_at_period_end = TRUE
+        AND pending_plan_id IS NULL
+        AND current_period_end < NOW() - INTERVAL '3 days'
+      RETURNING business_id`,
+  );
+  for (const row of lapsed.rows) {
+    try { require('./featureService').clearCache(row.business_id); } catch (_) { /* non-fatal */ }
+  }
+  return { downgraded, cancelled: lapsed.rowCount };
 }
 
 async function cancelAtPeriodEnd(businessId) {
@@ -595,18 +819,98 @@ async function cancelAtPeriodEnd(businessId) {
   return r.rows[0];
 }
 
+/**
+ * Undo a cancel-at-period-end (2026-09-05, A1 rewrite).
+ *
+ * The old body was `UPDATE ... SET status = 'active' WHERE business_id = $1`
+ * with no status guard: any owner whose row was `trialing` (every signup trials
+ * a PAID plan), `past_due`, `cancelled` or `expired` could POST /billing/resume
+ * and become `active` on that paid plan with no payment — and `active` never
+ * lapses because the nightly self-heal rolls its period forward. One POST,
+ * permanent free paid plan.
+ *
+ * Resume is now ONLY an undo-cancel:
+ *   • allowed when status='active' AND cancel_at_period_end=TRUE → the flag
+ *     (and any scheduled downgrade, A3) is cleared and the period is kept;
+ *   • 'suspended' → 403 ACCOUNT_SUSPENDED (A6);
+ *   • any other status → 409 RESUME_NOT_ALLOWED, pointing at change-plan
+ *     checkout, which is the only path that collects money.
+ *
+ * Re-arming billing: cancelAtPeriodEnd also cancelled the Razorpay mandate at
+ * cycle end, and Razorpay has no "un-cancel" call (the raw-HTTPS client here
+ * has no SDK; the REST API offers cancel/pause/resume — resume is for PAUSED
+ * gateway subs only). So when a gateway is configured and the row has a
+ * gateway subscription, the undo returns `{ requiresCheckout: true, ... }` with
+ * a fresh createSubscription payload whose first charge is scheduled at the
+ * current period end (start_at) so the days already paid for are not billed
+ * twice. The DB flag stays TRUE until `_onChargeSuccess` sees the first charge
+ * on that new subscription (reactivation marker) — a dismissed checkout
+ * changes nothing. Without a gateway (non-prod manual mode, or no gateway sub
+ * on the row) the flag is simply cleared, as before.
+ */
 async function resume(businessId) {
+  const cur = await query(
+    `SELECT s.*, p.price_inr_paise, p.tier AS cur_tier
+       FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+      WHERE s.business_id = $1 LIMIT 1`,
+    [businessId],
+  );
+  const row = cur.rows[0];
+  if (!row) throw new NotFound('No subscription');
+  assertNotSuspended(row);
+  const undoable = row.status === 'active' && row.cancel_at_period_end === true;
+  if (!undoable) {
+    const err = new Conflict(
+      row.status === 'active'
+        ? 'Nothing to resume — this subscription is active and not scheduled to cancel.'
+        : `A ${row.status} subscription cannot be resumed. Choose a plan from Billing to `
+          + 'start it again — payment is collected at checkout.',
+    );
+    err.code = 'RESUME_NOT_ALLOWED';
+    err.details = { status: row.status, upgradePath: '/billing' };
+    throw err;
+  }
+
+  const rzp = require('./razorpayService');
+  const paid = Number(row.price_inr_paise) > 0;
+  const mode = rzp.checkoutMode({ requireLive: true }); // plan-level rule
+  if (paid && row.razorpay_subscription_id && mode === 'unavailable') {
+    throw rzp.paymentsUnavailableError();
+  }
+  if (paid && row.razorpay_subscription_id && mode === 'gateway') {
+    // The mandate is gone at cycle end; the owner has to authorise a new one.
+    // Clearing the local flag here would be the A1 hole in a new shape (free
+    // forever once the old period lapses), so the row is left exactly as it
+    // is and flips in _onChargeSuccess.
+    const checkout = await rzp.createSubscription(businessId, row.cur_tier, {
+      billingPeriod: row.billing_period || 'monthly',
+      startAt: row.current_period_end,
+    });
+    return {
+      ...row,
+      requiresCheckout: true,
+      resumed: false,
+      checkout,
+      message: checkout.firstChargeAt
+        ? `Your plan is set to end on ${new Date(row.current_period_end).toLocaleDateString('en-IN')}. `
+          + 'Set up the payment mandate again to keep it — nothing is charged until that date.'
+        : 'Set up the payment mandate again to keep your plan.',
+    };
+  }
+
   const r = await query(
     `UPDATE subscriptions
         SET cancel_at_period_end = FALSE,
             cancelled_at = NULL,
-            status = 'active'
-      WHERE business_id = $1
+            pending_plan_id = NULL,
+            updated_at = NOW()
+      WHERE business_id = $1 AND status = 'active' AND cancel_at_period_end = TRUE
       RETURNING *`,
     [businessId],
   );
   if (r.rowCount === 0) throw new NotFound('No subscription');
-  return r.rows[0];
+  try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
+  return { ...r.rows[0], resumed: true, requiresCheckout: false };
 }
 
 // ── Plan-limit enforcement ───────────────────────────────────────────────
@@ -774,10 +1078,19 @@ function blockIfPaused() {
     if (!businessId) return next();
     try {
       const r = await query(
-        'SELECT status, pause_ends_at FROM subscriptions WHERE business_id = $1 LIMIT 1',
+        'SELECT status, pause_ends_at, suspended_at FROM subscriptions WHERE business_id = $1 LIMIT 1',
         [businessId],
       );
       const row = r.rows[0];
+      if (row && row.status === 'suspended') {
+        // A6 (2026-09-05): an admin suspension blocks new bills like a pause
+        // does, but with its own code and copy — "resume from Billing" is not
+        // something the tenant can do here.
+        const err = new Forbidden('Account suspended — contact support.');
+        err.code = 'ACCOUNT_SUSPENDED';
+        err.details = { status: 'suspended', suspendedAt: row.suspended_at || null };
+        return next(err);
+      }
       if (!row || row.status !== 'paused') return next();
       const until = row.pause_ends_at
         ? new Date(row.pause_ends_at).toISOString().slice(0, 10)
@@ -1173,6 +1486,13 @@ module.exports = {
   cancelAtPeriodEnd,
   resume,
   serializeSubscription,
+  // 2026-09-05 (billing review A3/A6/A9) — scheduled downgrades, the nightly
+  // period-end backstop, price-based "is free", and the suspension guard.
+  applyPendingDowngrade,
+  sweepPeriodEndTransitions,
+  isFreePlan,
+  freePlanRow,
+  assertNotSuspended,
   enforceLimit,
   // 2026-09-05 (churn batch) — new bills only; reads stay open while paused.
   blockIfPaused,

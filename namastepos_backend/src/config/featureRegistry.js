@@ -248,14 +248,25 @@ const FEATURES = Object.freeze([
     key: 'captain_mode',
     label: 'Captain ordering',
     group: 'Kitchen & ops',
-    enforcement: 'route',
+    enforcement: 'client',
+    clients: ['dashboard', 'mobile'],
+    note: '2026-09-05 (entitlements review B6): was declared route-enforced by a '
+      + "featureGate rule on '/captain/' — a path NO route has ever had (the captain "
+      + 'screens call the ordinary /ops/tables and /sessions APIs, which Starter needs '
+      + 'too). The dead rule is gone; the real gates are the dashboard nav entry '
+      + '(components/Layout.tsx) and the mobile drawer tile + Tables tab '
+      + '(lib/constants/feature_keys.dart). There is no server surface to gate.',
   },
   {
     key: 'voice_pos',
     label: 'Voice POS (speak an order)',
     group: 'Kitchen & ops',
     enforcement: 'client',
-    clients: ['mobile'],
+    // 2026-09-05 (dashboard review D-06): the web POS also has a mic
+    // (components/NewOrderDialog.tsx) and it was ungated on every plan — the
+    // same bug on a second client. It now checks plan.has('voice_pos'); the
+    // drift audit scans namastepos_dashboard/src for that call.
+    clients: ['mobile', 'dashboard'],
     note: 'THE 2026-09-05 BUG. Granted on Enterprise since migration 031 and, until that '
       + 'day, gated by NOTHING: speech recognition runs on-device so there is no route to '
       + 'gate, and the mic button was gated on device readiness alone. Removing the key in '
@@ -426,7 +437,16 @@ const FEATURES = Object.freeze([
     key: 'recurring_invoices',
     label: 'Recurring invoices',
     group: 'Billing & accounting',
-    enforcement: 'route',
+    enforcement: 'client',
+    clients: ['dashboard'],
+    note: '2026-09-05 (entitlements review B1 / dashboard D-01): NO IMPLEMENTATION EXISTS. '
+      + "The featureGate rule on '/recurring-invoice' matched zero routes (deleted); no "
+      + 'route reads or writes recurring_invoices rows and the cron only bumps next_run_at. '
+      + 'The ONLY thing this key controls is the dashboard nav entry for '
+      + 'pages/RecurringInvoicesPage.tsx, a placeholder. Sold on Advanced and Enterprise. '
+      + 'Founder decision pending: build it or pull it from the plan cards. It is declared '
+      + "'client' rather than 'ungated' only because that nav check exists and the audit "
+      + 'would (rightly) refuse an ungated declaration for a key a client checks.',
   },
   {
     key: 'accounting_pnl_bs',
@@ -467,7 +487,14 @@ const FEATURES = Object.freeze([
     key: 'marketplace_addons',
     label: 'Add-on marketplace',
     group: 'Advanced',
-    enforcement: 'route',
+    enforcement: 'ungated',
+    why: '2026-09-05 (entitlements review B8): the featureGate rule on \'/marketplace\' '
+      + 'matched no route and is deleted. The add-on marketplace itself is /addons, which '
+      + 'featureGate exempts ON PURPOSE — gating the checkout that grants features would '
+      + 'lock a tenant out of buying their way in. services/marketplaceService.js '
+      + '(Amazon/Flipkart listings) has no route. Neither client checks this key (the '
+      + 'mobile registry declares it ungatedByDesign). It differentiates plan cards only; '
+      + 'either wire a real surface to it or stop granting it.',
   },
   {
     key: 'api_access',

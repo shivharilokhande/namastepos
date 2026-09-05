@@ -60,6 +60,14 @@ class DashboardScreen extends StatelessWidget {
     final marginPct = revenue == 0 ? 0.0 : (profit / revenue) * 100;
     final pendingOrders = orders.ofStatus(OrderStatus.pending);
     final lowStock = menu.lowStockItems;
+    // 2026-09-05 (review #6): revenue / profit / margin / collections are
+    // MONEY and computed client-side from OrdersProvider, so no server 403
+    // protects them. Only a reporting permission (or the owner) may see
+    // them; expense figures need the expense permission. HomeScreen already
+    // keeps captains/waiters off this tab — this covers every other route in.
+    final canSeeMoney = auth.canSeeMoney;
+    final canSeeExpenses = auth.canDo('expenses') || auth.canDo('expense_register');
+    final canAddExpense = auth.canDo('expenses');
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -117,6 +125,7 @@ class DashboardScreen extends StatelessWidget {
               sliver: SliverList(
                 delegate: SliverChildListDelegate.fixed([
                   // KPI cards
+                  if (canSeeMoney || canSeeExpenses)
                   GridView.count(
                     crossAxisCount: 2,
                     shrinkWrap: true,
@@ -134,6 +143,7 @@ class DashboardScreen extends StatelessWidget {
                     // Reports tab uses. P&L needs the plan feature — we
                     // fall back to the monthly report when locked.
                     children: [
+                      if (canSeeMoney)
                       KpiCard(
                         label: "Today's Revenue",
                         value: AppFmt.money(revenue),
@@ -144,6 +154,7 @@ class DashboardScreen extends StatelessWidget {
                                 ? const IncomeStatementScreen(todayDefault: true)
                                 : const MonthlyReportScreen())),
                       ),
+                      if (canSeeExpenses)
                       KpiCard(
                         label: 'Expenses',
                         value: AppFmt.money(expense),
@@ -152,6 +163,7 @@ class DashboardScreen extends StatelessWidget {
                         onTap: () => Navigator.push(context, MaterialPageRoute(
                             builder: (_) => const ExpensesScreen())),
                       ),
+                      if (canSeeMoney)
                       KpiCard(
                         label: 'Profit',
                         value: AppFmt.money(profit),
@@ -162,6 +174,7 @@ class DashboardScreen extends StatelessWidget {
                                 ? const IncomeStatementScreen(todayDefault: true)
                                 : const MonthlyReportScreen())),
                       ),
+                      if (canSeeMoney)
                       KpiCard(
                         label: 'Margin',
                         value: '${marginPct.toStringAsFixed(0)}%',
@@ -220,17 +233,21 @@ class DashboardScreen extends StatelessWidget {
                                 MaterialPageRoute(builder: (_) => const NewOrderScreen())),
                           ),
                         ),
-                        Container(width: 1, height: 36, color: AppColors.divider),
-                        Expanded(
-                          child: _quickAction(
-                            context,
-                            icon: Icons.money_off_rounded,
-                            label: 'Expense',
-                            color: AppColors.warning,
-                            onTap: () => Navigator.push(context,
-                                MaterialPageRoute(builder: (_) => const AddExpenseScreen())),
+                        // Review #6: booking an expense needs the `expenses`
+                        // permission (server-enforced via requireStaffPerm).
+                        if (canAddExpense) ...[
+                          Container(width: 1, height: 36, color: AppColors.divider),
+                          Expanded(
+                            child: _quickAction(
+                              context,
+                              icon: Icons.money_off_rounded,
+                              label: 'Expense',
+                              color: AppColors.warning,
+                              onTap: () => Navigator.push(context,
+                                  MaterialPageRoute(builder: (_) => const AddExpenseScreen())),
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   ),
@@ -240,7 +257,7 @@ class DashboardScreen extends StatelessWidget {
                   // Collections today — where the money actually came from
                   // (2026-09-01, founder). Wallet is prepaid, so it's shown
                   // apart from cash-in-drawer; points are a discount, not cash.
-                  const _CollectionsCard(),
+                  if (canSeeMoney) const _CollectionsCard(),
                 ]),
               ),
             ),

@@ -1,6 +1,12 @@
 // NamastePOS — plan tier + feature list returned by backend /auth/me.
 
 class PlanInfo {
+  /// [tierKind] while entitlements are not [loaded] (2026-09-05, review #13).
+  /// Used to read 'starter', which told analytics a business was on the free
+  /// plan when the truth was "we have not asked yet" — and left a tier-code
+  /// default lying around for someone to branch on.
+  static const String unknownTierKind = 'unknown';
+
   /// The plan's KIND — its position on the upgrade ladder. The live ladder is
   /// 'starter' | 'pro' | 'pro_plan' | 'advanced' | 'enterprise'
   /// (backend services/planTiers.js, the single source of truth).
@@ -80,9 +86,12 @@ class PlanInfo {
   /// (and from secure storage instantly on any device that has logged in
   /// before), so the deny window is a frame, not a session.
   factory PlanInfo.unknown() => PlanInfo(
-        tierKind: 'starter',
+        tierKind: unknownTierKind,
         features: const <String>{},
       );
+
+  /// True once the server has told us which kind this business is on.
+  bool get tierKnown => loaded && tierKind != unknownTierKind;
 
   Map<String, dynamic> toMap() => {
         'tierKind': tierKind,

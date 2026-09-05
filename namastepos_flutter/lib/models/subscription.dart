@@ -23,8 +23,6 @@ class Plan {
     required this.features,
   });
 
-  bool get isFree => tier == 'free';
-
   factory Plan.fromMap(Map<String, dynamic> m) {
     // Tolerant coercion (2026-08-23): backend has historically sent
     // limits as ints OR numeric strings — `(v as num)` crashed the

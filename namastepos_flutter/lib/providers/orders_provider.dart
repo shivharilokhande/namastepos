@@ -6,6 +6,7 @@ import '../models/cart_item.dart';
 import '../models/menu_item.dart';
 import '../models/order.dart';
 import '../utils/formatters.dart';
+import '../utils/gst.dart';
 import 'package:uuid/uuid.dart';
 import 'package:dio/dio.dart';
 import '../services/api_service.dart';
@@ -63,6 +64,31 @@ class OrdersProvider extends ChangeNotifier {
 
   double get cartSubtotal =>
       _cart.fold<double>(0, (sum, ci) => sum + ci.lineTotal);
+
+  /// GST the SERVER will put on this cart (2026-09-05, review #2) — the same
+  /// `computeGstBreakdown` it runs, over the same line amounts the app sends
+  /// (unit price × [priceMultiplier], rounded to paise like the order body)
+  /// and each item's own `gst_pct`. A composition dealer gets zero, because
+  /// orderService refuses to tax their bills at all. This is an ESTIMATE for
+  /// the confirm screen, split sizing and offline receipts; the persisted
+  /// order row returned by the server is what gets printed when online.
+  GstBreakdown cartGst({
+    double priceMultiplier = 1.0,
+    String? gstScheme,
+    bool isInterState = false,
+  }) {
+    if (gstSchemeChargesNoGst(gstScheme)) return GstBreakdown.zero;
+    final m = priceMultiplier <= 0 ? 1.0 : priceMultiplier;
+    final fallbackPct = defaultGstPctForScheme(gstScheme);
+    return computeGstBreakdown(
+      _cart.map((c) => GstLine(
+            price: round2(c.unitPrice * m),
+            qty: c.qty.toDouble(),
+            gstPct: c.item.gstPct ?? fallbackPct,
+          )),
+      isInterState: isInterState,
+    );
+  }
   int get cartItemCount =>
       _cart.fold<int>(0, (sum, ci) => sum + ci.qty);
 
@@ -322,6 +348,12 @@ class OrdersProvider extends ChangeNotifier {
     String? customerPhone,
     String? customerName,
     PaymentMethod paymentMethod = PaymentMethod.cash,
+    // 2026-09-05 (review #2): the app's GST ESTIMATE for this cart (see
+    // [cartGst]). It is NOT sent to the server — the create body omits `tax`
+    // entirely so orderService computes GST from the menu's own slabs and the
+    // returned order row carries the authoritative tax/cgst/sgst/total. The
+    // estimate only feeds the LOCAL sqflite row, i.e. what an offline-queued
+    // order shows and prints until the outbox drains.
     double tax = 0,
     double discount = 0,
     // Applied food-coupon code (2026-09-01) — forwarded so the server records
@@ -432,7 +464,9 @@ class OrdersProvider extends ChangeNotifier {
         if (pointsToRedeem > 0) 'pointsToRedeem': pointsToRedeem,
         'customerPhone': customerPhone,
         'customerName': customerName,
-        'tax': tax,
+        // `tax` deliberately OMITTED (2026-09-05, review #2): an absent field
+        // tells the server "compute GST from the menu"; a literal 0 would be
+        // read as "the client computed zero tax". Never send 0 here.
         'discount': discount,
         if (couponCode != null && couponCode.isNotEmpty) 'couponCode': couponCode,
         'paymentMethod': paymentMethod.name,
@@ -475,12 +509,14 @@ class OrdersProvider extends ChangeNotifier {
       pointsToRedeem: pointsToRedeem,
     );
     _cart.clear();
-    // Push 13.8: mobile generates the local UUID, backend mints a new one
-    // on insert. If we just push the locally-created order into _orders
-    // and never re-sync, every later updateStatus on it 404s because
-    // backend's ID is different. Re-pull from backend so the in-memory
-    // list reflects the backend's UUID for the new row. Failure here is
-    // non-fatal (we still have the local copy in _orders).
+    // The order id IS the clientId (offline-sync fix): the backend honours it
+    // on insert, so status updates on the local row resolve server-side too.
+    // We still re-pull below because the SERVER's row is the truth for
+    // everything the app only estimated — tax/cgst/sgst/total, order number,
+    // points burned, session grouping. When the POST went through just now,
+    // OrderRepo.create already returned that server row; the re-pull covers
+    // the offline-queued case and anything the outbox drains later. Failure
+    // here is non-fatal (we still have the local copy in _orders).
     _orders.insert(0, order);
     notifyListeners();
     // Fire-and-forget refresh — UI shows the optimistic row immediately,

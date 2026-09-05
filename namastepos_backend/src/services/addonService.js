@@ -386,7 +386,14 @@ async function subscribe(businessId, slug) {
   );
   const alreadyActive = existing.rowCount > 0
       && ['trialing', 'active', 'past_due'].includes(existing.rows[0].status);
-  const razorpayConfigured = !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+  // 2026-09-05 (billing review): one shared gateway/manual/unavailable
+  // decision (razorpayService.checkoutMode). Production without a live key
+  // used to fall into the free instant-activation branch below for PAID
+  // addons; it is now a 503 like the plan-change path.
+  const rzLazy = require('./razorpayService'); // lazy: avoids require cycle
+  const mode = rzLazy.checkoutMode();
+  if (addon.price_inr_paise > 0 && mode === 'unavailable') throw rzLazy.paymentsUnavailableError();
+  const razorpayConfigured = mode === 'gateway';
   // 2026-09-03 (plans/addons audit #4a): re-purchasing an ACTIVE paid addon
   // is now a RENEWAL, not a conflict — the paid branch below returns a fresh
   // Razorpay order and confirmPayment() stacks the new period on top of the
@@ -615,18 +622,84 @@ async function detach(businessId, slug) {
   return serializeActivation(r.rows[0], addon);
 }
 
+/**
+ * Resume a cancelled addon (2026-09-05, A2 rewrite).
+ *
+ * The old body set `status='active', current_period_end = NOW() + 100 years`
+ * for ANY row — buy a paid addon for one month, cancel it, resume it: a
+ * century of the feature for ₹0. It also resurrected addons revoked by
+ * revokeIneligibleAddons after a downgrade. That comment dated from the free
+ * instant-activation era, which ended when paid checkout landed (2026-08-25).
+ *
+ * Now:
+ *   • the plan-eligibility gate runs again (same one subscribe() uses), so an
+ *     addon revoked because the current plan cannot hold it stays refused —
+ *     403, with the plan that would unlock it;
+ *   • a row that is already live is returned as-is (idempotent);
+ *   • PAID addon + gateway configured → the SAME path as a purchase:
+ *     subscribe() returns the Razorpay order, nothing is activated here;
+ *   • PAID addon + production without a gateway → 503, never free;
+ *   • FREE addon → reopened (there is nothing to honour or to bill);
+ *   • PAID addon in non-prod manual mode → reopened only within the period
+ *     that was already granted; a period already ended is 409
+ *     ADDON_EXPIRED_REBUY (call /subscribe, which activates instantly there).
+ */
 async function resume(businessId, slug) {
   const addon = await getBySlug(slug);
+  const cur = await query(
+    'SELECT * FROM business_addons WHERE business_id = $1 AND addon_id = $2 LIMIT 1',
+    [businessId, addon.id],
+  );
+  const row = cur.rows[0];
+  if (!row) throw new NotFound('Addon not subscribed');
+
+  // Revoked-by-downgrade rows carry the same cancel marks as an owner cancel;
+  // what distinguishes them is that the plan still cannot hold the addon.
+  const gate = await checkPlanEligibility(businessId, addon);
+  if (!gate.ok) {
+    throw new Forbidden(
+      `This addon requires a ${planTiers.labelOf(gate.requiredKind)} plan or higher `
+      + `(this customer is on ${gate.currentPlanName || planTiers.labelOf(gate.currentKind)}).`,
+    );
+  }
+
+  const live = ['trialing', 'active', 'past_due'].includes(row.status)
+    && !row.cancel_at_period_end
+    && new Date(row.current_period_end).getTime() > Date.now();
+  if (live) return serializeActivation(row, addon);
+
+  const paid = Number(addon.price_inr_paise) > 0;
+  const rz = require('./razorpayService'); // lazy: avoids require cycle
+  const mode = rz.checkoutMode();
+  if (paid && mode === 'unavailable') throw rz.paymentsUnavailableError();
+  if (paid && mode === 'gateway') {
+    // Money first. subscribe() sees a non-live row and returns the one-time
+    // Razorpay order; confirmPayment() reopens the row with a REAL period.
+    return subscribe(businessId, slug);
+  }
+
+  const periodEnd = new Date(row.current_period_end).getTime();
+  if (paid && !(periodEnd > Date.now())) {
+    const err = new Conflict(
+      'This add-on\'s paid period has ended. Subscribe again to switch it back on.',
+    );
+    err.code = 'ADDON_EXPIRED_REBUY';
+    err.details = { slug: addon.slug, currentPeriodEnd: row.current_period_end };
+    throw err;
+  }
+
   const r = await query(
     `UPDATE business_addons
         SET cancel_at_period_end = FALSE, cancelled_at = NULL,
             status = 'active'::addon_status,
-            -- 2026-08-24: cancel now ends the period immediately, so on resume
-            -- push it back out (free instant-activation model = far future).
-            current_period_end = NOW() + INTERVAL '100 years'
+            -- Free/comped: nothing to bill, reopen far out (same window the
+            -- free branch of subscribe() grants). Paid (manual mode): the
+            -- ORIGINAL period end stands — never extended here.
+            current_period_end = CASE WHEN $3::boolean THEN current_period_end
+                                      ELSE NOW() + INTERVAL '100 years' END
       WHERE business_id = $1 AND addon_id = $2
       RETURNING *`,
-    [businessId, addon.id],
+    [businessId, addon.id, paid],
   );
   if (r.rowCount === 0) throw new NotFound('Addon not subscribed');
   try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }

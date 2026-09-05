@@ -98,7 +98,17 @@ class _RegisterReportsScreenState extends State<RegisterReportsScreen>
     } catch (e) { _errExpense = e.toString(); }
     finally { if (mounted) setState(() => _loadingExpense = false); }
   }
+  /// Review #3 (2026-09-05): the Invoices tab is a second door into tax
+  /// invoices and must honour `tax_invoices`, not just this screen's
+  /// `registers` gate — on a custom plan or addon grant the two can differ.
+  /// `read`, not `watch`: called from initState / tab listener / export
+  /// callbacks. The build method uses [PlanGate.allows] so it re-renders when
+  /// the plan changes.
+  bool get _invoicesUnlocked =>
+      context.read<AuthProvider>().has(Features.taxInvoices);
+
   Future<void> _loadInvoice() async {
+    if (!_invoicesUnlocked) return; // locked tab renders the upgrade page
     final biz = context.read<AuthProvider>().business;
     if (biz == null) return;
     setState(() { _loadingInvoice = true; _errInvoice = null; });
@@ -131,6 +141,7 @@ class _RegisterReportsScreenState extends State<RegisterReportsScreen>
   }
 
   Future<void> _export(String format) async {
+    if (_tabs.index == 2 && !_invoicesUnlocked) return; // review #3
     final biz = context.read<AuthProvider>().business;
     if (biz == null) return;
     setState(() => _exporting = format);
@@ -237,7 +248,15 @@ class _RegisterReportsScreenState extends State<RegisterReportsScreen>
               children: [
                 _IncomeTab(loading: _loadingIncome, error: _errIncome, data: _income, onRetry: _loadIncome),
                 _ExpenseTab(loading: _loadingExpense, error: _errExpense, data: _expense, onRetry: _loadExpense),
-                _InvoiceTab(loading: _loadingInvoice, error: _errInvoice, data: _invoice, onRetry: _loadInvoice),
+                // Review #3: locked → PlanGate's upgrade page in place of
+                // the register. The tab itself stays so the TabController's
+                // fixed length and the `.invoices()` deep-link keep working.
+                PlanGate.allows(context, Features.taxInvoices)
+                    ? _InvoiceTab(loading: _loadingInvoice, error: _errInvoice, data: _invoice, onRetry: _loadInvoice)
+                    : const PlanGate(
+                        featureKey: Features.taxInvoices,
+                        child: SizedBox.shrink(),
+                      ),
               ],
             ),
           ),
@@ -369,6 +388,12 @@ class _IncomeDetailSheetState extends State<_IncomeDetailSheet> {
   }
 
   Future<void> _findInvoice() async {
+    // Review #3 (2026-09-05): no tax-invoice lookup (and no "Open tax
+    // invoice" button) without the key; the detail screen is gated too.
+    if (!context.read<AuthProvider>().has(Features.taxInvoices)) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     try {
       // List endpoint by order date range — narrow to today by default,
       // since most owners look up recent orders. If not found we just

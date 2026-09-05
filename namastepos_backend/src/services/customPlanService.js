@@ -129,9 +129,15 @@ async function upsertForBusiness(businessId, body) {
   const baseTier = body.basePlanTier || null;
   const base = await _basePlanRow(baseTier);
   if (baseTier && !base) throw new NotFound(`Base plan '${baseTier}' not found or not public`);
-  const extras = Array.from(new Set(
+  // 2026-09-05 (entitlements review F1): reject unknown keys BEFORE any row is
+  // written. Until now a typo'd extra went straight into plan_features (via
+  // setTierFeatures below, which this service calls directly, bypassing the
+  // admin controller's check) and surfaced in the console as an
+  // `unregistered` grant. Same helper, same 400, as the plan matrix editor.
+  const extras = await features.assertKnownFeatureKeys(
     (body.extraFeatureKeys || body.featureKeys || []).filter(Boolean),
-  ));
+    { what: 'custom plan feature key(s)' },
+  );
   const inherited = base ? await features.listTierFeatures(base.tier, base.tier_kind) : [];
   const effective = Array.from(new Set([...inherited, ...extras]));
 

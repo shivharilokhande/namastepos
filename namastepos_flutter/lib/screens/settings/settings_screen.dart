@@ -28,6 +28,12 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final biz = auth.business;
+    // 2026-09-05 (review #14): this screen is now also the More tab for a
+    // `staff_manager` (it used to be owner-only, so the tiles never asked).
+    // Owner-only surfaces stay owner-only; everything else follows the same
+    // staff permissions the drawer uses. `canDo` is true for the owner.
+    final isOwner = auth.role == 'business_owner';
+    bool can(String area) => auth.canDo(area);
 
     return Scaffold(
       appBar: AppBar(leading: (ModalRoute.of(context)?.isFirst ?? true) ? const HomeDrawerButton() : null, title: const Text('Settings')),
@@ -79,38 +85,47 @@ class SettingsScreen extends StatelessWidget {
             ),
 
           _group('Business', [
-            _tile(context, icon: Icons.store_outlined, title: 'Business info',
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const BusinessInfoScreen()))),
+            // Business profile: PATCH /me is open to owner + manager
+            // server-side (owner-only fields stay owner-only there).
+            if (isOwner || auth.role == 'staff_manager')
+              _tile(context, icon: Icons.store_outlined, title: 'Business info',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const BusinessInfoScreen()))),
             // C2 fix (2026-08-23): route to the backend-connected editor —
             // the legacy MenuScreen saved locally only and edits were
             // silently wiped on the next sync.
-            _tile(context, icon: Icons.restaurant_menu_outlined, title: 'Menu',
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const MenuEditorScreen()))),
-            _tile(context, icon: Icons.favorite_rounded, title: 'Customers',
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const CustomersScreen()))),
-            _tile(context, icon: Icons.grid_view_rounded, title: 'Tables',
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const TablesScreen()))),
-            _tile(context, icon: Icons.savings_outlined, title: 'Expenses',
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const ExpensesScreen()))),
+            if (can('menu_editor'))
+              _tile(context, icon: Icons.restaurant_menu_outlined, title: 'Menu',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const MenuEditorScreen()))),
+            if (can('customers'))
+              _tile(context, icon: Icons.favorite_rounded, title: 'Customers',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const CustomersScreen()))),
+            // Floors & tables editing is an owner surface (drawer agrees).
+            if (isOwner)
+              _tile(context, icon: Icons.grid_view_rounded, title: 'Tables',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const TablesScreen()))),
+            if (can('expenses') || can('expense_register'))
+              _tile(context, icon: Icons.savings_outlined, title: 'Expenses',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const ExpensesScreen()))),
           ]),
 
-          _group('Hardware', [
-            // "Thermal printer" promises a thermal printer, which an iPhone
-            // cannot drive (Apple blocks classic Bluetooth). There the screen
-            // is about printing in general — AirPrint / share — so name it
-            // for what it does on this device.
-            _tile(context, icon: Icons.print_outlined,
-                title: PrinterService.supportsBluetoothPrinting
-                    ? 'Thermal printer'
-                    : 'Printing',
-                onTap: () => Navigator.push(context, MaterialPageRoute(
-                    builder: (_) => const PrinterSetupScreen()))),
-          ]),
+          if (can('thermal_printer'))
+            _group('Hardware', [
+              // "Thermal printer" promises a thermal printer, which an iPhone
+              // cannot drive (Apple blocks classic Bluetooth). There the screen
+              // is about printing in general — AirPrint / share — so name it
+              // for what it does on this device.
+              _tile(context, icon: Icons.print_outlined,
+                  title: PrinterService.supportsBluetoothPrinting
+                      ? 'Thermal printer'
+                      : 'Printing',
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const PrinterSetupScreen()))),
+            ]),
 
           // Push 17c — Aggregators row + Auto-WhatsApp toggle only render
           // when the active plan has the matching feature. Owners on
@@ -118,7 +133,7 @@ class SettingsScreen extends StatelessWidget {
           // feature to their tier the row appears on next plan refresh.
           if (auth.has(Features.aggregators) || auth.has(Features.autoWhatsappOrder))
             _group('Integrations', [
-              if (auth.has(Features.aggregators))
+              if (auth.has(Features.aggregators) && can('aggregators'))
                 _tile(context, icon: Icons.delivery_dining_outlined,
                     title: 'Aggregators (Zomato, Swiggy)',
                     onTap: () => Navigator.push(context, MaterialPageRoute(

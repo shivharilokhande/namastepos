@@ -359,6 +359,16 @@ describe('past_due keeps features inside the grace window', () => {
                '{"menu_items": 500, "monthly_orders": 5000}'::jsonb)`,
       [business.id],
     );
+    // 2026-09-05 (review E1): a plan with NO plan_features rows no longer
+    // inherits rows by tier_kind when that kind string is also a live plan
+    // CODE ('pro' is Enterprise's code) — that fallback was how an empty plan
+    // silently became Enterprise. Give the plan its own rows, as every real
+    // plan has since migration 040.
+    await query(
+      `INSERT INTO plan_features (tier_kind, feature_key)
+       SELECT 'custom-grace', feature_key FROM plan_features WHERE tier_kind = 'pro'
+       ON CONFLICT DO NOTHING`,
+    );
     await query(
       `INSERT INTO subscriptions (business_id, plan_id, status, current_period_end)
        VALUES ($1, $2, 'active', NOW() + INTERVAL '30 days')`,

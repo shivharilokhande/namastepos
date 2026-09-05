@@ -58,6 +58,8 @@ const BUSINESS_KEY = 'ff_dash_business';
 // bootstrapAuth() silently mints a new access token from that cookie, so
 // keeping the access token out of storage costs the user nothing.
 let accessToken: string | null = null;
+// Last X-Plan-Version seen for the current session (see notePlanVersion).
+let lastPlanVersion: string | null = null;
 
 export function setSession(token: string | null, _refresh?: string | null) {
   // Task-99: `_refresh` argument kept for call-site compatibility but
@@ -67,6 +69,10 @@ export function setSession(token: string | null, _refresh?: string | null) {
   // persist the refresh — subsequent silent-refresh calls will send
   // whatever cookie the server set (or 401 → force login).
   accessToken = token;
+  // A new session (login, outlet switch, logout) is a new business context;
+  // its first X-Plan-Version must seed a fresh baseline, not be compared to
+  // the previous tenant's. See notePlanVersion().
+  lastPlanVersion = null;
   if (token === null) localStorage.removeItem(BUSINESS_KEY);
   // Legacy hygiene: purge any tokens a previous release persisted so a
   // stale value can never be picked up (and so old localStorage tokens
@@ -239,10 +245,112 @@ api.interceptors.request.use((cfg) => {
   return cfg;
 });
 
+// ── Entitlement sync: X-Plan-Version (2026-09-05) ────────────────────────
+// Every business-scoped response may carry `X-Plan-Version` — a value that
+// changes whenever the tenant's plan / overrides / add-ons change
+// (featureService.planVersion). Until today the dashboard never read it and
+// relied on the 60s /auth/me poll, so an admin toggling a key took up to a
+// minute to show. Now: the FIRST value seen seeds the baseline; any later
+// DIFFERENT value fires the registered listener (main.tsx invalidates the
+// ['me'] query). In-flight invalidations are deduped so a burst of ten
+// responses with the new version triggers one refetch, not ten.
+//
+// Registered from main.tsx rather than importing the QueryClient here, so
+// api/client.ts keeps its "imports nothing from the app" rule (no cycle).
+let planVersionListener: (() => void | Promise<unknown>) | null = null;
+let planVersionSyncInFlight = false;
+
+export function onPlanVersionChange(fn: (() => void | Promise<unknown>) | null) {
+  planVersionListener = fn;
+}
+
+function notePlanVersion(headers: unknown) {
+  try {
+    const h = headers as Record<string, unknown> | undefined;
+    const raw = h?.['x-plan-version'];
+    if (raw === undefined || raw === null || raw === '') return;
+    const v = String(raw);
+    if (lastPlanVersion === null) { lastPlanVersion = v; return; }
+    if (v === lastPlanVersion) return;
+    lastPlanVersion = v;
+    if (planVersionSyncInFlight || !planVersionListener) return;
+    planVersionSyncInFlight = true;
+    Promise.resolve(planVersionListener())
+      .catch(() => { /* a failed refetch is retried by the poll */ })
+      .finally(() => { planVersionSyncInFlight = false; });
+  } catch { /* never let sync bookkeeping mask a response */ }
+}
+
+// ── In-app navigation from non-React code (2026-09-05) ────────────────────
+// The FEATURE_LOCKED toast below needs a "View plans" action, but this module
+// has no router. Layout listens for this event and calls navigate(); if no
+// listener claims it (e.g. a public page), fall back to a full navigation.
+export const NAVIGATE_EVENT = 'np:navigate';
+export function requestNavigate(path: string) {
+  try {
+    const ev = new CustomEvent(NAVIGATE_EVENT, { detail: { path }, cancelable: true });
+    const unhandled = window.dispatchEvent(ev);
+    if (unhandled) window.location.assign(path);
+  } catch {
+    window.location.assign(path);
+  }
+}
+
+// ── ONE global 402 FEATURE_LOCKED handler (D-10, 2026-09-05) ─────────────
+// Server body: { error:'FEATURE_LOCKED', feature, currentTierLabel,
+// requiredTierLabel, message, upgradeUrl:'/billing' }. Previously nothing
+// intercepted this: list queries silently rendered empty tables and only
+// mutations with an onError toasted a raw "FEATURE_LOCKED: …". Now every
+// locked call surfaces one toast per feature per ~10s with the server's own
+// message and a "View plans" action. Pages that already render their own
+// upsell card keep working (they still receive the rejected promise); a
+// caller can opt out of the toast per request with `silentFeatureLock: true`
+// in the axios config.
+const FEATURE_LOCK_TOAST_TTL_MS = 10_000;
+const featureLockToastAt = new Map<string, number>();
+
+export interface FeatureLockedBody {
+  error: 'FEATURE_LOCKED';
+  feature?: string;
+  currentTier?: string;
+  requiredTier?: string | null;
+  currentTierLabel?: string;
+  requiredTierLabel?: string | null;
+  message?: string;
+  upgradeUrl?: string;
+}
+
+export function isFeatureLocked(err: unknown): FeatureLockedBody | null {
+  if (!axios.isAxiosError(err)) return null;
+  const d = err.response?.data as Partial<FeatureLockedBody> | undefined;
+  if (err.response?.status !== 402 || d?.error !== 'FEATURE_LOCKED') return null;
+  return d as FeatureLockedBody;
+}
+
+function toastFeatureLocked(body: FeatureLockedBody) {
+  try {
+    const feature = body.feature || 'feature';
+    const now = Date.now();
+    const last = featureLockToastAt.get(feature) || 0;
+    if (now - last < FEATURE_LOCK_TOAST_TTL_MS) return;
+    featureLockToastAt.set(feature, now);
+    const upgradeUrl = body.upgradeUrl || '/billing';
+    toast.warning(
+      body.message || `This feature is not included in your ${body.currentTierLabel || 'current'} plan.`,
+      {
+        id: `feature-locked-${feature}`,
+        description: body.requiredTierLabel ? `Included from the ${body.requiredTierLabel} plan.` : undefined,
+        action: { label: 'View plans', onClick: () => requestNavigate(upgradeUrl) },
+      },
+    );
+  } catch { /* a toast must never mask the API error */ }
+}
+
 let refreshing: Promise<void> | null = null;
 
 api.interceptors.response.use(
   (r) => {
+    notePlanVersion(r.headers);
     // Activation funnel (2026-09-04, decision 5) — `plan_limit_hit` on a SOFT
     // breach, i.e. a request that SUCCEEDED past the plan's included volume.
     //
@@ -283,6 +391,17 @@ api.interceptors.response.use(
     };
   }>) => {
     const orig = err.config!;
+    // Error responses carry X-Plan-Version too — a 402 is precisely the
+    // moment the client is most likely to be holding a stale plan.
+    notePlanVersion(err.response?.headers);
+
+    // D-10 (2026-09-05): single global FEATURE_LOCKED surface (see above).
+    {
+      const locked = isFeatureLocked(err);
+      if (locked && !(orig as { silentFeatureLock?: boolean }).silentFeatureLock) {
+        toastFeatureLocked(locked);
+      }
+    }
 
     // Activation funnel (2026-09-04) — `plan_limit_hit`.
     //

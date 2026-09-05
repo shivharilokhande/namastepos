@@ -135,7 +135,8 @@ Future<void> main() async {
               () => AnalyticsIdentity(
                 businessId: auth.business?.id,
                 signupAt: auth.business?.createdAt,
-                planTier: auth.plan.tierKind,
+                // Review #13: null (not 'starter') until the plan is known.
+                planTier: auth.plan.tierKnown ? auth.plan.tierKind : null,
               ),
             );
             return auth;

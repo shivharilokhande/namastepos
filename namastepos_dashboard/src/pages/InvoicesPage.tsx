@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { ffApi } from '@/api/namastepos';
 import { api, apiError, getBusinessCache } from '@/api/client';
 import { formatINR } from '@/lib/utils';
+import { usePlan } from '@/hooks/usePlan';
 import { escapeHtml, formatIstDateTime } from '@/lib/receiptPrint';
 
 // WHY (2026-08-25): founder — "IRN generated · 580ce2… but where do those
@@ -216,6 +217,7 @@ function taxInvoiceHtml(inv: any): string {
 
 export function InvoicesPage() {
   const qc = useQueryClient();
+  const plan = usePlan(); // D-12: gates the /einvoice IRN fetch
   const firstOfMonth = new Date(); firstOfMonth.setDate(1);
   const [startDate, setStartDate] = useState(firstOfMonth.toISOString().slice(0, 10));
   const [endDate,   setEndDate]   = useState(new Date().toISOString().slice(0, 10));
@@ -241,6 +243,9 @@ export function InvoicesPage() {
       const r = await api.get(`/businesses/${b.id}/einvoice`);
       return (r.data.irns || []) as IrnRecord[];
     },
+    // D-12 (2026-09-05): only plans with `einvoice_gst` may read /einvoice;
+    // everyone else was paying a 402 (+retry) on every Invoices visit.
+    enabled: plan.has('einvoice_gst'),
     staleTime: 60 * 1000, // IRNs are immutable once generated
   });
   const irnByOrder = useMemo(() => {

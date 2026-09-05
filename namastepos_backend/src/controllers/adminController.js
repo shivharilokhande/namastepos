@@ -381,8 +381,25 @@ const listPlans = asyncHandler(async (_req, res) => {
 // the columns it will write, so this schema only has to constrain tier_kind
 // (unknown keys are allowed through and ignored downstream, preserving every
 // existing caller).
+//
+// 2026-09-05 (entitlements review F3): `limits` was `Joi.object()` — any key,
+// any value. subscriptionService.enforceLimit does `Number(limit)` and treats
+// NaN as "uncapped" (fail-open), so `{ staff: "ten" }` or `{ staf: 5 }` (typo)
+// silently removed the cap. Each known metric is now an integer >= -1 (-1 =
+// unlimited) and unknown metric names are rejected — the custom-plan body
+// already did this for five of them; this is the same list plus `businesses`
+// (the outlet cap), which the custom-plan schema omitted. One schema, both
+// plan bodies.
+const PLAN_LIMIT_KEYS = ['staff', 'floors', 'tables', 'menu_items', 'monthly_orders', 'businesses'];
+const planLimitsSchema = Joi.object(
+  Object.fromEntries(PLAN_LIMIT_KEYS.map((k) => [k, Joi.number().integer().min(-1)])),
+).unknown(false).messages({
+  'object.unknown': '{{#label}} is not a plan limit. Known limits: '
+    + `${PLAN_LIMIT_KEYS.join(', ')}`,
+});
 const updatePlanBody = Joi.object({
   tier_kind: Joi.string().valid(...planTiers.TIER_KIND_LADDER),
+  limits: planLimitsSchema,
 }).unknown(true);
 const updatePlan = [
   validate({ body: updatePlanBody }),
@@ -438,7 +455,7 @@ const createPlanBody = Joi.object({
   price_yearly_paise: Joi.number().integer().min(0).allow(null),
   billing_period: Joi.string().valid('monthly', 'yearly').default('monthly'),
   is_active: Joi.boolean().default(true),
-  limits: Joi.object().default({}),
+  limits: planLimitsSchema.default({}),
   features: Joi.object().default({}),
   razorpay_plan_id: Joi.string().allow(null, ''),
   razorpay_plan_id_yearly: Joi.string().allow(null, ''),
@@ -488,19 +505,36 @@ const setTierFeatures = [
     // on the plan card — while gating nothing, because no gate and no client
     // ever asks for it. That is a sold-and-not-delivered feature created by a
     // slip of the keyboard, and it is precisely the class of bug this audit
-    // exists to end. The catalog is registry ∪ whatever plan_features already
-    // holds, so re-saving a legacy plan unchanged still works.
-    const allowed = new Set(await features.listFeatureCatalog());
-    const unknown = req.body.features.filter((k) => !allowed.has(k));
-    if (unknown.length) {
+    // exists to end. 2026-09-05 (F1): the check moved into
+    // featureService.assertKnownFeatureKeys so overrides, custom plans and
+    // addon grants use the SAME helper instead of none.
+    const keys = await features.assertKnownFeatureKeys(req.body.features);
+
+    // 2026-09-05 (entitlements review F2). `:tierKind` is really a plan CODE
+    // (plan_features.tier_kind has held codes since migration 040). Writing
+    // rows for a code no plan has is harmless but invisible — the console
+    // would show a matrix nothing can ever resolve to — so refuse it. And
+    // `pos` is the product itself: every client's home screen assumes it, so
+    // a plan without it is a plan that sells nothing. Refuse that too.
+    const plan = await query(
+      'SELECT 1 FROM plans WHERE tier = $1 LIMIT 1',
+      [req.params.tierKind],
+    );
+    if (plan.rowCount === 0) {
       throw new BadRequest(
-        `Unknown feature key(s): ${unknown.join(', ')}. Grantable keys come from `
-        + 'GET /v1/admin/feature-catalog; a new key must be added to '
-        + 'src/config/featureRegistry.js first.',
-        { unknownFeatureKeys: unknown },
+        `No plan has the tier code '${req.params.tierKind}'. Create the plan first `
+        + '(POST /v1/admin/plans), then set its features.',
+        { tier: req.params.tierKind },
       );
     }
-    const next = await features.setTierFeatures(req.params.tierKind, req.body.features);
+    if (!keys.includes('pos')) {
+      throw new BadRequest(
+        "'pos' cannot be removed from a plan — it is the POS itself; a plan without it "
+        + 'sells nothing. Keep pos in the feature list.',
+        { missingFeatureKeys: ['pos'] },
+      );
+    }
+    const next = await features.setTierFeatures(req.params.tierKind, keys);
     res.json({ tierKind: req.params.tierKind, features: next });
   }),
 ];
@@ -861,6 +895,10 @@ const setFeatureOverridesBody = Joi.object({
 const setFeatureOverrides = [
   validate({ body: setFeatureOverridesBody }),
   asyncHandler(async (req, res) => {
+    // 2026-09-05 (F1): unknown keys are rejected (400) inside
+    // featureFlagsService.replaceAll via featureService.assertKnownFeatureKeys
+    // — the same helper the plan matrix editor uses — so every caller of the
+    // service, not just this route, gets the check.
     const overrides = await featureFlags.replaceAll(req.params.businessId, req.body.overrides, { adminId: req.user?.id });
     res.json({ overrides });
   }),
@@ -888,13 +926,10 @@ const putCustomPlanBody = Joi.object({
   // Optional now (inherited from the base plan when omitted).
   priceInrPaise: Joi.number().integer().min(0),
   priceYearlyPaise: Joi.number().integer().min(0).allow(null),
-  limits: Joi.object({
-    staff: Joi.number().integer().min(-1),
-    tables: Joi.number().integer().min(-1),
-    floors: Joi.number().integer().min(-1),
-    menu_items: Joi.number().integer().min(-1),
-    monthly_orders: Joi.number().integer().min(-1),
-  }).unknown(true).default({}),
+  // 2026-09-05 (F3): the shared plan-limits schema — adds `businesses` (the
+  // outlet cap the console's custom-plan editor could not set, admin review
+  // F-06) and rejects unknown metric names instead of passing them through.
+  limits: planLimitsSchema.default({}),
   // Legacy flat list (pre-base-plan callers) — treated as extras.
   featureKeys: Joi.array().items(Joi.string().min(1).max(60)).max(100),
   // DERIVED from planTiers.TIER_KIND_LADDER — never a literal list. This was

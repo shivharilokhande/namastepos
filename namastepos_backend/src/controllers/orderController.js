@@ -57,7 +57,13 @@ const createBody = Joi.object({
   // /discount-approvals) for discounts above the per-business threshold —
   // behaviour is gated by the ORDER_TAX_ENFORCE env ('log' default,
   // 'enforce' to override/403). Kept in the schema for back-compat.
-  tax: Joi.number().min(0).default(0),
+  //
+  // 2026-09-05 (code review #1 / mobile GST): NO `.default(0)`. An OMITTED
+  // tax now reaches orderService as undefined, which it reads as "the client
+  // did not compute GST — use the server figure from the menu" in every mode.
+  // An explicit 0 keeps today's behaviour (a deliberate client assertion).
+  // The mobile app relies on this: it stopped sending `tax: 0` on 2026-09-05.
+  tax: Joi.number().min(0).allow(null),
   discount: Joi.number().min(0).default(0),
   // Food-coupon code applied at POS (2026-09-01). The discount amount rides in
   // `discount` (previewed via /food-coupons/apply); this lets create() record

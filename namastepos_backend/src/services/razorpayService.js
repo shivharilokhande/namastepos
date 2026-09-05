@@ -76,6 +76,48 @@ function rzCall(method, path, body) {
   });
 }
 
+// ── Checkout mode: the ONE answer to "do we collect money here?" ─────────
+//
+// 2026-09-05 (billing review A1-A4). Three call sites used to decide this on
+// their own — billingController.changePlan (live key + webhook secret, 503 in
+// prod otherwise), addonService (any key), churnService (never asked). Their
+// answers disagreed, which is how a "resume" could hand a paid plan out with
+// no mandate behind it. Every money-collecting path now asks this:
+//
+//   'gateway'     — Razorpay is configured; a paid plan/addon is granted ONLY
+//                   after a verified charge (webhook or checkout signature).
+//   'manual'      — non-production without a usable gateway: activate
+//                   instantly so local dev, CI and the demo tenant keep
+//                   working. Never in prod.
+//   'unavailable' — production without a LIVE key + webhook secret. Refuse
+//                   (503 PAYMENTS_UNAVAILABLE) rather than activate for free.
+//
+// `requireLive` — PLAN subscriptions activate only via the `subscription.charged`
+// webhook, so outside production they are 'gateway' only with a LIVE key AND
+// the webhook secret (a test key cannot complete charge→webhook→activate;
+// this is the rule billingController.changePlan has had since 2026-08-26).
+// Addon one-time orders complete through the checkout signature and need any
+// key, so they call this with the default.
+function checkoutMode({ requireLive = false } = {}) {
+  const configured = !!(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET);
+  const live = configured
+    && String(env.RAZORPAY_KEY_ID).startsWith('rzp_live_')
+    && !!env.RAZORPAY_WEBHOOK_SECRET;
+  if (env.isProd()) return live ? 'gateway' : 'unavailable';
+  if (requireLive) return live ? 'gateway' : 'manual';
+  return configured ? 'gateway' : 'manual';
+}
+
+/** 503 for the 'unavailable' mode — same wire shape billingController used. */
+function paymentsUnavailableError() {
+  const { HttpError } = require('../utils/errors');
+  return new HttpError(
+    503,
+    'Payments are temporarily unavailable. Please try again shortly.',
+    'PAYMENTS_UNAVAILABLE',
+  );
+}
+
 // ── Plans (called once at setup) ─────────────────────────────────────────
 
 /**
@@ -189,7 +231,7 @@ async function syncOnePlan(planId) {
 
 // ── Create subscription for a business ───────────────────────────────────
 
-async function createSubscription(businessId, tier, { billingPeriod = 'monthly' } = {}) {
+async function createSubscription(businessId, tier, { billingPeriod = 'monthly', startAt = null } = {}) {
   const plan = (await query('SELECT * FROM plans WHERE tier = $1', [tier])).rows[0];
   if (!plan) throw new NotFound('Plan not found');
   // FF-402c — pick the right Razorpay plan id + price for the cadence.
@@ -205,17 +247,58 @@ async function createSubscription(businessId, tier, { billingPeriod = 'monthly' 
   // Reuse existing razorpay_customer_id if present
   const sub = (await query('SELECT * FROM subscriptions WHERE business_id = $1', [businessId])).rows[0];
 
+  // 2026-09-05 (A1 undo-cancel): when the tenant has already PAID through
+  // `startAt`, the new mandate's first charge is scheduled there instead of
+  // now, so re-subscribing does not bill the days they already own. Razorpay
+  // authorises the mandate at checkout and charges at `start_at`. Only a
+  // future instant is passed; anything else means "charge now".
+  const startAtSec = startAt ? Math.floor(new Date(startAt).getTime() / 1000) : null;
+  const scheduleFirstCharge = Number.isFinite(startAtSec)
+    && startAtSec > Math.floor(Date.now() / 1000) + 3600;
+
   const created = await rzCall('POST', '/v1/subscriptions', {
     plan_id: razorpayPlanId,
     customer_notify: 1,
     total_count: totalCount,
+    ...(scheduleFirstCharge ? { start_at: startAtSec } : {}),
     notes: { businessId, billingPeriod: useYearly ? 'yearly' : 'monthly' },
   });
 
-  // P0 fix (2026-08-30): cancel the PREVIOUS Razorpay subscription before we
-  // repoint the business at the new one. Without this, a plan/cadence change
-  // (or a re-checkout) left the old gateway subscription authorised and still
-  // charging the customer's mandate — double billing — and its future
+  // Persist the cadence up-front so subsequent UI reads reflect it
+  // even before the webhook fires.
+  await query(
+    'UPDATE subscriptions SET billing_period = $1 WHERE business_id = $2',
+    [useYearly ? 'yearly' : 'monthly', businessId],
+  );
+
+  // SECURITY FIX (Push 13.1): the previous version flipped plan_id and
+  // status here, BEFORE the customer paid. That meant tapping "Upgrade to
+  // Pro" granted Pro features even if they dismissed the Razorpay modal or
+  // their card was declined. Now we only persist the Razorpay subscription
+  // pointer — actual plan_id + status flips live in _onChargeSuccess,
+  // which fires on the verified `subscription.charged` webhook.
+  //
+  // 2026-09-05 (A1/A4): `reactivation_rzp_subscription_id` names THIS new
+  // gateway subscription as the one whose first charge may reactivate a
+  // cancelled / cancel-at-period-end / paused row. The 2026-08-30 guard in
+  // _onChargeSuccess stays for every other id (stray charges on the OLD
+  // mandate), but a checkout the customer explicitly opened and paid must
+  // activate — before this, a tenant who cancelled and later re-subscribed
+  // was charged and never got the plan back. The pointer is repointed BEFORE
+  // the old sub is cancelled below so a fast `subscription.cancelled` webhook
+  // for the old id cannot match this row any more.
+  await query(
+    `UPDATE subscriptions
+        SET razorpay_subscription_id = $1::text,
+            reactivation_rzp_subscription_id = $1::text
+      WHERE business_id = $2`,
+    [created.id, businessId],
+  );
+
+  // P0 fix (2026-08-30): cancel the PREVIOUS Razorpay subscription once we
+  // have repointed the business at the new one. Without this, a plan/cadence
+  // change (or a re-checkout) left the old gateway subscription authorised and
+  // still charging the customer's mandate — double billing — and its future
   // `subscription.charged` webhooks hit "unknown subscription" and were
   // dropped. Best-effort: a gateway failure here must not block the upgrade
   // the customer just paid for; the old sub is also caught by the
@@ -232,32 +315,15 @@ async function createSubscription(businessId, tier, { billingPeriod = 'monthly' 
     }
   }
 
-  // Persist the cadence up-front so subsequent UI reads reflect it
-  // even before the webhook fires.
-  await query(
-    'UPDATE subscriptions SET billing_period = $1 WHERE business_id = $2',
-    [useYearly ? 'yearly' : 'monthly', businessId],
-  );
-
-  // SECURITY FIX (Push 13.1): the previous version flipped plan_id and
-  // status here, BEFORE the customer paid. That meant tapping "Upgrade to
-  // Pro" granted Pro features even if they dismissed the Razorpay modal or
-  // their card was declined. Now we only persist the Razorpay subscription
-  // pointer — actual plan_id + status flips live in _onChargeSuccess,
-  // which fires on the verified `subscription.charged` webhook.
-  await query(
-    `UPDATE subscriptions
-        SET razorpay_subscription_id = $1
-      WHERE business_id = $2`,
-    [created.id, businessId],
-  );
-
   const chargedPaise = useYearly
     ? (plan.price_yearly_paise || plan.price_inr_paise * 10)
     : plan.price_inr_paise;
   return {
     subscriptionId: created.id,
     razorpayKeyId: env.RAZORPAY_KEY_ID,
+    // When the first charge is scheduled (undo-cancel of a period already
+    // paid for) the client can say so: "mandate set up now, first debit on X".
+    firstChargeAt: scheduleFirstCharge ? new Date(startAtSec * 1000).toISOString() : null,
     plan: {
       tier: plan.tier,
       name: plan.name,
@@ -375,31 +441,39 @@ async function handleWebhook(payload, headerEventId) {
       }
       case 'subscription.activated': {
         const sub = payload.payload.subscription.entity;
-        await query(
-          'UPDATE subscriptions SET status = \'active\' WHERE razorpay_subscription_id = $1',
+        // 2026-09-05 (A4/A6): `activated` used to flip ANY row to active. A
+        // paused row awaiting re-checkout, a cancelled row, or an
+        // admin-suspended row must not be reopened by a gateway status event —
+        // only the verified first charge on the re-checkout subscription
+        // (`_onChargeSuccess` + reactivation marker) may do that.
+        const r = await query(
+          `UPDATE subscriptions SET status = 'active', updated_at = NOW()
+            WHERE razorpay_subscription_id = $1
+              AND status NOT IN ('paused', 'suspended', 'cancelled')
+            RETURNING business_id`,
           [sub.id],
         );
+        _clearCacheFor(r.rows); // A8
         await require('./dunningService').onRecovered(sub.id);
         break;
       }
       case 'subscription.completed':
       case 'subscription.cancelled': {
         const sub = payload.payload.subscription.entity;
-        await query(
-          `UPDATE subscriptions
-              SET status = 'cancelled', cancelled_at = NOW()
-            WHERE razorpay_subscription_id = $1`,
-          [sub.id],
-        );
+        await _onGatewaySubscriptionEnded(sub.id, event);
         break;
       }
       case 'subscription.paused': {
         // A deliberate pause (owner/admin action) — not a payment failure.
+        // A6: never demote an admin suspension to a self-resumable pause.
         const sub = payload.payload.subscription.entity;
-        await query(
-          'UPDATE subscriptions SET status = \'paused\' WHERE razorpay_subscription_id = $1',
+        const r = await query(
+          `UPDATE subscriptions SET status = 'paused', updated_at = NOW()
+            WHERE razorpay_subscription_id = $1 AND status <> 'suspended'
+            RETURNING business_id`,
           [sub.id],
         );
+        _clearCacheFor(r.rows); // A8
         break;
       }
       case 'subscription.halted': {
@@ -521,6 +595,58 @@ async function cancelSubscription(businessId, { atCycleEnd = true } = {}) {
   return { cancelled: true, razorpaySubscriptionId: rzId };
 }
 
+/** A8 (2026-09-05): bust the feature cache for every row a status write touched. */
+function _clearCacheFor(rows) {
+  for (const row of rows || []) {
+    if (!row?.business_id) continue;
+    try { require('./featureService').clearCache(row.business_id); } catch (_) { /* non-fatal */ }
+  }
+}
+
+/**
+ * `subscription.cancelled` / `subscription.completed` for one gateway sub.
+ *
+ * 2026-09-05 (A3/A4). This used to be one blind UPDATE to 'cancelled'. Now the
+ * row's own state decides:
+ *   • pending_plan_id set  → the owner scheduled a downgrade to a free plan and
+ *     the paid period has now run out at the gateway: apply the downgrade
+ *     (subscriptionService.applyPendingDowngrade) instead of cancelling them.
+ *   • paused               → expected: pause cancelled the mandate at cycle end.
+ *     The row STAYS paused (the owner resumes through checkout later); flipping
+ *     it to 'cancelled' was outcome (a) of finding A4 — the resumed customer
+ *     lost the plan they had just "resumed".
+ *   • suspended            → an admin decision; the gateway does not override it.
+ *   • anything else        → cancelled, as before.
+ */
+async function _onGatewaySubscriptionEnded(rzpSubId, event) {
+  const r = await query(
+    `SELECT id, business_id, status, pending_plan_id
+       FROM subscriptions WHERE razorpay_subscription_id = $1 LIMIT 1`,
+    [rzpSubId],
+  );
+  const row = r.rows[0];
+  if (!row) {
+    logger.info(`${event} for unknown/repointed gateway subscription ${rzpSubId}`);
+    return;
+  }
+  if (row.pending_plan_id) {
+    await require('./subscriptionService').applyPendingDowngrade(row.business_id, { via: event });
+    return; // applyPendingDowngrade clears the cache itself
+  }
+  if (row.status === 'paused' || row.status === 'suspended') {
+    logger.info(`${event} on ${row.status} subscription ${row.id}; leaving status as-is`);
+    return;
+  }
+  const upd = await query(
+    `UPDATE subscriptions
+        SET status = 'cancelled', cancelled_at = COALESCE(cancelled_at, NOW()), updated_at = NOW()
+      WHERE id = $1
+      RETURNING business_id`,
+    [row.id],
+  );
+  _clearCacheFor(upd.rows); // A8
+}
+
 async function _onChargeSuccess(sub, pay) {
   // Find our subscription row
   const r = await query(
@@ -533,6 +659,14 @@ async function _onChargeSuccess(sub, pay) {
   }
   const sr = r.rows[0];
 
+  // 2026-09-05 (A1/A4): a charge on the gateway subscription the customer
+  // explicitly created through a re-checkout (undo-cancel, resume-from-pause,
+  // re-subscribe after cancelling) IS allowed to reactivate the row. That id
+  // is stamped by createSubscription and consumed (cleared) by the UPDATE
+  // below, so it authorises exactly one reactivation.
+  const reactivating = !!sr.reactivation_rzp_subscription_id
+    && sr.reactivation_rzp_subscription_id === sub.id;
+
   // P0 fix (2026-08-30): never resurrect a cancelled subscription. A sub that
   // the owner cancelled (cancel_at_period_end/cancelled) — or an orphaned
   // gateway sub left over from a plan change — must not be flipped back to
@@ -540,9 +674,18 @@ async function _onChargeSuccess(sub, pay) {
   // payment below (they were charged, so it belongs in the ledger) but we do
   // not re-activate. This pairs with the gateway-cancel in createSubscription
   // and cancelAtPeriodEnd so the mandate stops charging in the first place.
-  const isCancelled = sr.cancel_at_period_end === true
+  const isCancelled = !reactivating && (
+    sr.cancel_at_period_end === true
     || sr.status === 'cancelled'
-    || sr.cancelled_at != null;
+    || sr.cancelled_at != null
+  );
+  // A4: a charge on a PAUSED row that is not the re-checkout sub is a stray
+  // debit on the old mandate (its cycle-end cancel failed or raced). The owner
+  // asked for a pause; record the money, keep the pause.
+  const isPausedStray = !reactivating && sr.status === 'paused';
+  // A6: an admin suspension is never lifted by money arriving. Recorded, not
+  // reactivated — support decides.
+  const isSuspended = sr.status === 'suspended';
 
   // Look up which of OUR plans this Razorpay plan corresponds to. The
   // webhook payload carries Razorpay's plan_id (e.g. `plan_QXabcdef`)
@@ -584,19 +727,47 @@ async function _onChargeSuccess(sub, pay) {
       logger.info(`Charge ${pay.id} already recorded; skipping invoice/payment`);
       return;
     }
-    if (!isCancelled) {
+    if (!isCancelled && !isPausedStray && !isSuspended) {
+      // The reactivation path also clears every "on the way out" marker:
+      // cancel flag, scheduled downgrade, pause parking columns. A paid charge
+      // on a subscription the customer just re-authorised means they are
+      // staying, on the plan the gateway just billed.
       await client.query(
         `UPDATE subscriptions
             SET plan_id = $1,
                 status = 'active',
                 current_period_start = NOW(),
                 current_period_end = $2,
+                cancel_at_period_end = FALSE,
+                cancelled_at = NULL,
+                pending_plan_id = NULL,
+                reactivation_rzp_subscription_id = NULL,
+                paused_at = NULL,
+                pause_ends_at = NULL,
+                pause_plan_id = NULL,
+                pause_billing_period = NULL,
+                pause_months = NULL,
                 updated_at = NOW()
           WHERE id = $3`,
         [newPlanId, periodEnd, sr.id],
       );
+      if (reactivating && (sr.status === 'paused' || sr.cancel_at_period_end || sr.status === 'cancelled')) {
+        // Audit trail for the resume that this charge completes (churn batch
+        // convention: every lifecycle transition writes one row).
+        try {
+          await require('./churnService').logLifecycle(client, {
+            businessId: sr.business_id,
+            subscriptionId: sr.id,
+            event: sr.status === 'paused' ? 'resumed' : 'uncancelled',
+            fromStatus: sr.status,
+            toStatus: 'active',
+            meta: { via: 'subscription.charged', razorpaySubscriptionId: sub.id, paymentId: pay.id },
+          });
+        } catch (_) { /* trail is non-fatal */ }
+      }
     } else {
-      logger.warn(`Charge on cancelled subscription ${sr.id} (rzp ${sub.id}); recording payment but NOT reactivating`);
+      const why = isSuspended ? 'suspended' : (isPausedStray ? 'paused' : 'cancelled');
+      logger.warn(`Charge on ${why} subscription ${sr.id} (rzp ${sub.id}); recording payment but NOT reactivating`);
     }
 
     // Collision-safe invoice number: a per-year DB sequence guarantees
@@ -672,6 +843,9 @@ function verifyCheckoutSignature({ orderId, paymentId, signature }) {
 module.exports = {
   syncPlans,
   syncOnePlan, // 2026-09-03 custom plans
+  // 2026-09-05 (billing review) — the one gateway/manual/unavailable decision.
+  checkoutMode,
+  paymentsUnavailableError,
   createSubscription,
   verifyWebhookSignature,
   handleWebhook,

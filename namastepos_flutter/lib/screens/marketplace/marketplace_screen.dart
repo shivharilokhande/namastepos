@@ -25,6 +25,7 @@ import '../../constants/colors.dart';
 import '../../utils/error_humanizer.dart';
 import '../../utils/formatters.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/subscription_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
@@ -63,6 +64,20 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     // leaks on Android and crashes the next open.
     _razorpay.clear();
     super.dispose();
+  }
+
+  /// 2026-09-05 (review #1): `SubscriptionProvider` caches the purchased
+  /// addon list for the whole session and nothing here refreshed it, so a
+  /// newly activated (or cancelled) addon was invisible to every screen that
+  /// reads `hasAddon(...)` until the next app resume. Reload it alongside the
+  /// plan refresh; the addon's feature keys already arrive via refreshPlan.
+  Future<void> _refreshAddonState() async {
+    if (!mounted) return;
+    final biz = context.read<AuthProvider>().business;
+    if (biz == null) return;
+    try {
+      await context.read<SubscriptionProvider>().load(biz.id);
+    } catch (_) { /* best-effort — the plan refresh already carried the keys */ }
   }
 
   Future<void> _load() async {
@@ -148,6 +163,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       // newly-granted feature key.
       if (!mounted) return;
       await context.read<AuthProvider>().refreshPlan();
+      await _refreshAddonState();
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -203,6 +219,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       );
       if (!mounted) return;
       await context.read<AuthProvider>().refreshPlan();
+      await _refreshAddonState();
       await _load();
       _showSnack('Activated $slug');
     } catch (e) {
@@ -267,6 +284,7 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           .post('/businesses/${biz.id}/addons/$slug/cancel');
       if (!mounted) return;
       await context.read<AuthProvider>().refreshPlan();
+      await _refreshAddonState();
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -93,9 +93,17 @@ router.post(
 );
 
 // ── FF-314 GSTR-1 / GSTR-3B CSV ─────────────────────────────────────────
+// 2026-09-05 (review #2): the period is REQUIRED and must be a calendar date —
+// a missing/garbage `from`/`to` used to reach Postgres as `NULL::date` /
+// 22007 and surface as a 500; now it is a 400 with the field named.
+const gstrQuery = Joi.object({
+  from: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required(),
+  to: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required(),
+});
 router.get(
   '/reports/gstr1.csv',
   canTax,
+  validate({ query: gstrQuery }),
   asyncHandler(async (req, res) => {
     const csv = await gstr.gstr1(req.params.businessId, req.query.from, req.query.to);
     res.type('text/csv').attachment(`gstr1-${req.query.from}-to-${req.query.to}.csv`).send(csv);
@@ -104,6 +112,7 @@ router.get(
 router.get(
   '/reports/gstr3b.csv',
   canTax,
+  validate({ query: gstrQuery }),
   asyncHandler(async (req, res) => {
     const csv = await gstr.gstr3b(req.params.businessId, req.query.from, req.query.to);
     res.type('text/csv').attachment(`gstr3b-${req.query.from}-to-${req.query.to}.csv`).send(csv);

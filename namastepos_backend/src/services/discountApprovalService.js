@@ -31,21 +31,77 @@ async function setThreshold(businessId, inr) {
   );
 }
 
+// 2026-09-05 (review #8, P2): brute-force lockout for the manager discount
+// PIN. A 4-digit PIN with no lockout and only the global 600/min/IP limiter
+// was ~17 minutes from being guessed, and a guessed PIN mints approvals that
+// orderService.create honours under ORDER_TAX_ENFORCE=enforce. This reuses
+// the PERSISTENT counters the staff login PIN already keeps on the manager's
+// own business_users row (pin_fail_count / pin_first_fail_at /
+// pin_locked_until, migration 057 — S4 fix): shared across workers, survives
+// restarts, atomic. Both PINs authenticate the same person on the same row,
+// so one lockout state per (business, manager) is the intended behaviour —
+// five wrong discount PINs also lock that manager's login PIN for 15 min,
+// which is the right response to a till being attacked.
+const MAX_PIN_ATTEMPTS = 5;
+const PIN_WINDOW_MS = 15 * 60 * 1000; // sliding window for the counter
+const PIN_LOCKOUT_MS = 15 * 60 * 1000; // lock after the cap
+
 async function verifyManagerPin(businessId, managerUserId, pin) {
   // Manager PINs live on business_users.discount_pin_hash (lazy column add).
   const r = await query(
-    `SELECT discount_pin_hash FROM business_users
+    `SELECT discount_pin_hash, pin_locked_until FROM business_users
       WHERE business_id = $1 AND user_id = $2
         AND role IN ('business_owner','staff_manager')
         AND is_active = TRUE LIMIT 1`,
     [businessId, managerUserId],
   );
   if (r.rowCount === 0) throw new Forbidden('Not a manager for this business');
-  const hash = r.rows[0].discount_pin_hash;
+  const row = r.rows[0];
+  // Read-only lock check first — a locked row rejects before bcrypt runs.
+  const lockedUntil = row.pin_locked_until ? new Date(row.pin_locked_until).getTime() : 0;
+  if (lockedUntil > Date.now()) {
+    const mins = Math.ceil((lockedUntil - Date.now()) / 60000);
+    throw new Unauthorized(`Too many wrong PINs. Try again in ${mins} min.`);
+  }
+  const hash = row.discount_pin_hash;
   if (!hash) throw new BadRequest('Manager has not set a PIN');
   const ok = await bcrypt.compare(pin, hash);
-  if (!ok) throw new Unauthorized('Invalid PIN');
-  return true;
+  if (ok) {
+    await query(
+      `UPDATE business_users
+          SET pin_fail_count = 0, pin_first_fail_at = NULL, pin_locked_until = NULL
+        WHERE business_id = $1 AND user_id = $2`,
+      [businessId, managerUserId],
+    );
+    return true;
+  }
+  // Failure — one atomic statement (same shape as staffService.verifyPin) so
+  // concurrent workers cannot race past the cap.
+  const upd = await query(
+    `UPDATE business_users
+        SET pin_first_fail_at = CASE
+              WHEN pin_first_fail_at IS NULL
+                OR NOW() - pin_first_fail_at > ($3 || ' milliseconds')::interval
+              THEN NOW() ELSE pin_first_fail_at END,
+            pin_fail_count = CASE
+              WHEN pin_first_fail_at IS NULL
+                OR NOW() - pin_first_fail_at > ($3 || ' milliseconds')::interval
+              THEN 1 ELSE pin_fail_count + 1 END,
+            pin_locked_until = CASE
+              WHEN (CASE
+                      WHEN pin_first_fail_at IS NULL
+                        OR NOW() - pin_first_fail_at > ($3 || ' milliseconds')::interval
+                      THEN 1 ELSE pin_fail_count + 1 END) >= $4
+              THEN NOW() + ($5 || ' milliseconds')::interval ELSE NULL END
+      WHERE business_id = $1 AND user_id = $2
+      RETURNING pin_fail_count, pin_locked_until`,
+    [businessId, managerUserId, String(PIN_WINDOW_MS), MAX_PIN_ATTEMPTS, String(PIN_LOCKOUT_MS)],
+  );
+  const st = upd.rows[0] || {};
+  if (st.pin_locked_until) {
+    throw new Unauthorized('Too many wrong PINs. Locked for 15 min.');
+  }
+  throw new Unauthorized('Invalid PIN');
 }
 
 async function setMyPin(businessId, userId, pin) {

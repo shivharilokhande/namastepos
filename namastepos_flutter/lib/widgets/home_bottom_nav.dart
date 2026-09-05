@@ -45,6 +45,20 @@ List<int> planAwareVisibleTabs(AuthProvider auth) {
     ...RolePerms.visibleTabs(auth.role, permissions: auth.permissions),
   ];
   if (!auth.has(Features.captainMode)) visible.remove(3);
+  // 2026-09-05 (review #6): the Home tab is the MONEY dashboard (or the KDS
+  // board for kitchen-shaped access). A captain / waiter holds `home` but
+  // neither a reporting permission nor `kds`, so there is nothing for that
+  // tab to show them — drop it and HomeScreen's Push-16j fallback lands them
+  // on the first tab they do have (POS). Owner keeps every tab. A user with
+  // ONLY Home + More (e.g. a driver, whose work lives behind a drawer tile)
+  // keeps Home, which then renders the neutral welcome screen rather than
+  // having POS forced in by the >= 2 fallback below.
+  if (auth.role != 'business_owner' &&
+      !auth.canSeeMoney &&
+      !auth.canDo('kds') &&
+      visible.length > 2) {
+    visible.remove(0);
+  }
   // Never leave the bar with nothing to draw (NavigationBar asserts >= 2).
   if (visible.length < 2) {
     for (final fallback in [1, 5]) {

@@ -18,6 +18,7 @@ import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
 import '../../constants/feature_keys.dart';
+import '../../utils/checkout_gates.dart';
 import '../../utils/error_humanizer.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/customer.dart' show LoyaltySettingsLite;
@@ -27,6 +28,7 @@ import '../../services/printer_service.dart';
 import '../../utils/formatters.dart';
 import '../tables/bill_split_screen.dart';
 import '../pos/new_order_screen.dart';
+import '../../widgets/error_snackbar.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/membership_offer_dialog.dart';
 import '../../widgets/home_drawer_button.dart';
@@ -217,9 +219,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
       _load();
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(humanizeError(e)), backgroundColor: Colors.red),
-      );
+      showApiErrorSnackBar(context, e); // 402 → "View plans" (review #11)
     }
   }
 
@@ -455,14 +455,13 @@ class _CaptainScreenState extends State<CaptainScreen> {
       );
       session = (r.data['session'] as Map).cast<String, dynamic>();
     } catch (e) {
-      // Surface the real error so we can tell whether it's a 402 (feature
-      // gate not removed yet — backend not restarted), 404 (table thinks
-      // it has a session that no longer exists), or something else.
-      debugPrint('Session load failed for ${t['currentSessionId']}: $e');
-      String hint = '$e';
-      if (e is DioException) {
-        hint = 'HTTP ${e.response?.statusCode} · ${e.response?.data}';
-      }
+      // The raw status + body go to the debug log for diagnosis (402 = gate,
+      // 404 = stale session pointer); the cashier gets the humanised line
+      // like every other screen (FF-220; review #9, 2026-09-05 — this used to
+      // dump the backend JSON payload into the SnackBar).
+      debugPrint('Session load failed for ${t['currentSessionId']}: $e'
+          '${e is DioException ? ' · HTTP ${e.response?.statusCode} · ${e.response?.data}' : ''}');
+      final hint = humanizeError(e);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Could not load running bill — $hint')),
@@ -805,7 +804,12 @@ class _CaptainScreenState extends State<CaptainScreen> {
     // like Pay & place. Both ride along the same lookup round-trip.
     LoyaltySettingsLite? loyaltySettings;
     int customerPoints = 0;
-    if (customerPhone != null && customerPhone.isNotEmpty) {
+    // 2026-09-05 (review #1): the SAME plan-key gates Pay & Place uses
+    // (CheckoutGates) — this path used to look the customer up and offer
+    // points / wallet / membership unconditionally, so the two checkouts
+    // disagreed whenever the plan lacked a key.
+    final gates = CheckoutGates.of(context.read<AuthProvider>());
+    if (customerPhone != null && customerPhone.isNotEmpty && gates.customers) {
       try {
         final data = await ApiService.instance
             .lookupCustomer(widget.businessId, customerPhone);
@@ -814,12 +818,14 @@ class _CaptainScreenState extends State<CaptainScreen> {
             (data?['expiredMembership'] as Map?)?.cast<String, dynamic>();
         final custId = ((data?['customer'] as Map?)?['id'])?.toString();
         customerId = custId;
-        final st = data?['loyaltySettings'];
+        final Object? st = gates.loyalty ? (data?['loyaltySettings']) : null;
         if (st != null) {
           loyaltySettings = LoyaltySettingsLite.fromMap((st as Map).cast<String, dynamic>());
         }
-        customerPoints = (((data?['customer'] as Map?)?['pointsBalance']) as num?)?.toInt() ?? 0;
-        if (mem == null && custId != null && mounted) {
+        customerPoints = gates.loyalty
+            ? (((data?['customer'] as Map?)?['pointsBalance']) as num?)?.toInt() ?? 0
+            : 0;
+        if (gates.memberships && mem == null && custId != null && mounted) {
           final fee = await showMembershipOfferDialog(
             context,
             customerId: custId,
@@ -831,7 +837,8 @@ class _CaptainScreenState extends State<CaptainScreen> {
       } catch (_) { /* offer is best-effort — never block settling */ }
       // Wallet balance for the 'wallet' split-leg option. Any error (402 =
       // loyalty addon missing) just hides wallet — same as the dashboard.
-      if (customerId != null) {
+      // Skipped outright without the `loyalty` key (no guaranteed 402).
+      if (customerId != null && gates.loyalty) {
         try {
           final w = await ApiService.instance
               .walletFor(widget.businessId, customerId);
@@ -1462,10 +1469,9 @@ class _CaptainScreenState extends State<CaptainScreen> {
       await _load(); // refresh — table will flip to 'available'
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(humanizeError(e)),
-        backgroundColor: Colors.red,
-      ));
+      // Settle failures: a 402 (e.g. bill_split / wallet not in the plan)
+      // gets a "View plans" action (review #11, 2026-09-05).
+      showApiErrorSnackBar(context, e);
     }
   }
 

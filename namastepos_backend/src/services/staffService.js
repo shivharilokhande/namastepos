@@ -578,6 +578,24 @@ async function updateStaffWithPin(businessId, userId, patch) {
     throw new BadRequest('Nothing to update');
   }
 
+  // SECURITY (2026-09-05, review #4 — cross-tenant write on `users`): when
+  // the patch only touched `users` columns (phone / display name) the
+  // tenant-scoped business_users UPDATE below was skipped entirely and the
+  // `UPDATE users … WHERE id = $userId` ran with NO membership check — any
+  // owner could null out or hijack the login phone of ANY user whose UUID
+  // they knew, including another tenant's owner (users.phone is the identity
+  // for /auth/staff-resolve). Verify membership FIRST — the target must be a
+  // non-owner member of THIS business — before either statement runs.
+  const member = await query(
+    `SELECT 1 FROM business_users
+      WHERE business_id = $1 AND user_id = $2 AND role <> 'business_owner'
+      LIMIT 1`,
+    [businessId, userId],
+  );
+  if (member.rowCount === 0) {
+    throw new NotFound('Staff member not found (owner cannot be edited here)');
+  }
+
   if (sets.length > 0) {
     const r = await query(
       `UPDATE business_users SET ${sets.join(', ')}
@@ -596,10 +614,15 @@ async function updateStaffWithPin(businessId, userId, patch) {
 
   if (userSets.length > 0) {
     try {
+      // Belt and braces: the membership is re-asserted INSIDE the statement,
+      // so the write cannot outrun a concurrent removal from the business.
       await query(
         `UPDATE users SET ${userSets.join(', ')}
-          WHERE id = $${uidx++}`,
-        [...userValues, userId],
+          WHERE id = $${uidx++}
+            AND EXISTS (SELECT 1 FROM business_users bu
+                         WHERE bu.business_id = $${uidx++} AND bu.user_id = users.id
+                           AND bu.role <> 'business_owner')`,
+        [...userValues, userId, businessId],
       );
     } catch (err) {
       if (err.code === '23505') {

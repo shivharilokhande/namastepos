@@ -229,16 +229,23 @@ async function verifyToken(token) {
 
 // ── Guest menu (cached-friendly) ───────────────────────────────────────
 async function guestMenu(businessId) {
-  // Push 16c — guests only see in-stock items. NULL stock = untracked
-  // (always available); positive stock = available; zero/negative =
-  // hidden. Owners who want an item permanently shown should leave its
-  // stock NULL or positive; an item at 0/-N means "ran out".
+  // Push 16c — guests only see items they can actually order.
+  //
+  // 2026-09-05 (review #6d, P1): the filter used to be `stock IS NULL OR
+  // stock > 0`, but menu_items.stock is NOT NULL DEFAULT 0 and, since
+  // migration 084, `track_stock = FALSE` means "unlimited" — so a freshly
+  // created menu (nobody ever typed a stock count) was INVISIBLE to every QR
+  // diner while the cashier rang the same items up fine. Now: untracked
+  // items always show; tracked items show while stock > 0. And an item that
+  // is 86'd (sold_out_until in the future) is hidden — previously it was
+  // both visible and orderable from the QR menu.
   const r = await query(
     `SELECT id, name, description, category, price, unit, is_veg, image_url, stock
        FROM menu_items
       WHERE business_id = $1
         AND is_active = TRUE
-        AND (stock IS NULL OR stock > 0)
+        AND (track_stock IS NOT TRUE OR stock > 0)
+        AND (sold_out_until IS NULL OR sold_out_until < NOW())
       ORDER BY category ASC, name ASC`,
     [businessId],
   );
@@ -261,10 +268,13 @@ async function ensureGuestSession({
 }) {
   // Tie to an existing open table_session if there is one (so the QR order
   // joins the same bill the dine-in family is already running up).
+  // 2026-09-05 (review #3/#5): business-scoped like every other id lookup.
+  // Only an OPEN session may be joined — a paid (closed) session must never
+  // collect the next diner's KOTs.
   const existing = await query(
     `SELECT id FROM table_sessions
-      WHERE table_id = $1 AND status = 'open' LIMIT 1`,
-    [tableId],
+      WHERE table_id = $1 AND business_id = $2 AND status = 'open' LIMIT 1`,
+    [tableId, businessId],
   );
   let tableSessionId = existing.rows[0]?.id || null;
 
@@ -278,8 +288,8 @@ async function ensureGuestSession({
     tableSessionId = ins.rows[0].id;
     await query(
       `UPDATE tables SET status = 'occupied'::table_status, current_session_id = $1
-        WHERE id = $2`,
-      [tableSessionId, tableId],
+        WHERE id = $2 AND business_id = $3`,
+      [tableSessionId, tableId, businessId],
     );
   }
 

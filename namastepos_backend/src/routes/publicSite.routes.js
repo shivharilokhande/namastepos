@@ -20,7 +20,10 @@ router.get('/:slug/menu', asyncHandler(async (req, res) => {
   const items = await query(
     `SELECT id, name, description, category, price, image_url, is_veg
        FROM menu_items
-      WHERE business_id = $1 AND is_active = TRUE AND sold_out_until IS NULL
+      WHERE business_id = $1 AND is_active = TRUE
+        -- 2026-09-05 (review #12): a TIMED 86 must come back when it expires;
+        -- a bare sold_out_until IS NULL hid the dish on the public site forever.
+        AND (sold_out_until IS NULL OR sold_out_until < NOW())
       ORDER BY category, display_order, name`,
     [s.business_id],
   );

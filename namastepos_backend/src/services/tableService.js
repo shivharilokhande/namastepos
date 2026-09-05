@@ -445,7 +445,14 @@ async function unjoinTable(businessId, sessionId, tableId) {
 //     wallet movement (reason 'shortfall') so the debt lives on the
 //     customer's wallet and is visible on their card. Requires an
 //     identified customer on the session.
-async function closeSession(businessId, sessionId, closedByUserId, paymentMethod = 'cash', discountInr = 0, paymentBreakdown = null, shortfallInr = 0, autoWallet = false, walletCapInr = null, pointsToRedeem = 0) {
+//   opts.afterSettleInTx — 2026-09-05 (review #3): optional `async (client,
+//     closedSessionRow) => {}` that runs INSIDE the settle transaction after
+//     the session row has closed. The guest "pay whole bill" path uses it to
+//     record the Razorpay payment atomically with the settle, so the table
+//     can never end up half-closed (orders paid, session still open — the
+//     exact state that used to block staff from reopening the table and made
+//     the next diner's QR scan attach to an already-paid bill).
+async function closeSession(businessId, sessionId, closedByUserId, paymentMethod = 'cash', discountInr = 0, paymentBreakdown = null, shortfallInr = 0, autoWallet = false, walletCapInr = null, pointsToRedeem = 0, opts = {}) {
   return withTransaction(async (client) => {
     // Settle-time discount (2026-08-22, founder request): applied starting
     // at the HEAD order (smallest order_no) of the session so it's auditable
@@ -527,8 +534,8 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
           if (headRow.rowCount > 0 && custId) {
             const sumQ = await client.query(
               `SELECT COALESCE(SUM(total), 0) AS total FROM orders
-                WHERE table_session_id = $1 AND status <> 'cancelled'`,
-              [sessionId],
+                WHERE table_session_id = $1 AND business_id = $2 AND status <> 'cancelled'`,
+              [sessionId, businessId],
             );
             const sessionTotalPaise = Math.round(parseFloat(sumQ.rows[0].total) * 100);
             const headTotalPaise = Math.round(parseFloat(headRow.rows[0].total) * 100);
@@ -569,12 +576,15 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
       }
     }
 
-    // Compute the session total from orders attached to it
+    // Compute the session total from orders attached to it.
+    // 2026-09-05 (review #5): tenant-scoped — orderService now refuses a
+    // foreign tableSessionId, and this filter is the belt to that brace, so
+    // a stray row from another business can never inflate this settle.
     const totals = await client.query(
       `SELECT COALESCE(SUM(total), 0) AS total
          FROM orders
-        WHERE table_session_id = $1 AND status <> 'cancelled'`,
-      [sessionId],
+        WHERE table_session_id = $1 AND business_id = $2 AND status <> 'cancelled'`,
+      [sessionId, businessId],
     );
     const totalPaise = Math.round(parseFloat(totals.rows[0].total) * 100);
 
@@ -745,13 +755,15 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
       || (allowedPM.includes(paymentMethod) ? paymentMethod : 'cash');
 
     // (a) Payment method — applies to every non-cancelled order
+    //     (2026-09-05, review #5: business_id-scoped like every other id
+    //     lookup — a foreign order must never be flipped by our settle).
     await client.query(
       `UPDATE orders
           SET payment_method = $1::payment_method
-        WHERE table_session_id = $2
+        WHERE table_session_id = $2 AND business_id = $3
           AND status <> 'cancelled'::order_status
           AND payment_method = 'unpaid'::payment_method`,
-      [pm, sessionId],
+      [pm, sessionId, businessId],
     );
 
     // (b) Status / collected_at — applies only to orders still in
@@ -761,10 +773,10 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
       `UPDATE orders
           SET status = 'collected'::order_status,
               collected_at = COALESCE(collected_at, NOW())
-        WHERE table_session_id = $1
+        WHERE table_session_id = $1 AND business_id = $2
           AND status NOT IN ('cancelled'::order_status, 'collected'::order_status)
         RETURNING id, customer_id, total, points_earned`,
-      [sessionId],
+      [sessionId, businessId],
     );
 
     // Free the table
@@ -776,6 +788,11 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
     );
 
     const closed = upd.rows[0];
+    // 2026-09-05 (review #3): caller-supplied work that must commit WITH the
+    // settle (the guest path records the online payment here).
+    if (typeof opts.afterSettleInTx === 'function') {
+      await opts.afterSettleInTx(client, closed);
+    }
     closed._settledOrders = flipped.rows; // internal — earn after commit
     return closed;
   }).then(async (closed) => {
@@ -846,8 +863,8 @@ async function abandonSession(businessId, sessionId, closedByUserId) {
   return withTransaction(async (client) => {
     const orders = await client.query(
       `SELECT id FROM orders
-        WHERE table_session_id = $1 AND status <> 'cancelled'`,
-      [sessionId],
+        WHERE table_session_id = $1 AND business_id = $2 AND status <> 'cancelled'`,
+      [sessionId, businessId],
     );
     if (orders.rowCount > 0) {
       throw new BadRequest(

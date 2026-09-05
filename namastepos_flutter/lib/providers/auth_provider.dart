@@ -117,6 +117,21 @@ class AuthProvider extends ChangeNotifier {
   /// An empty list is "no explicit grants", never "all grants".
   bool canDo(String permission) =>
       RolePerms.can(role, permission, permissions: _permissions);
+
+  /// May this user see MONEY — today's revenue, profit, margin, cash in
+  /// drawer, register/P&L drill-downs? (2026-09-05, review #6.)
+  ///
+  /// Owner always; staff only with a reporting permission. Mirrors the
+  /// backend's `staffService.DEFAULT_PERMS_BY_ROLE` comment ("Captain → NO
+  /// reports / no invoices / no P&L"): captains and waiters hold none of
+  /// these keys, so the Home tab must not land them on the dashboard's KPIs.
+  /// Goes through [canDo] so an explicit per-staff list and the role
+  /// fallback map are both honoured.
+  bool get canSeeMoney =>
+      role == 'business_owner' ||
+      canDo('reports') ||
+      canDo('pnl_statement') ||
+      canDo('income_register');
   bool get loading => _loading;
   String? get error => _error;
 

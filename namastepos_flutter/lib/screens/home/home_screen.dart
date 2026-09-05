@@ -257,10 +257,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// "welcome" placeholder. This way a kitchen cook the owner has
   /// stripped of Home permission lands on the kitchen board they
   /// actually need.
-  List<Widget> _screensFor(String role, List<String> perms) {
+  List<Widget> _screensFor(AuthProvider auth) {
+    final role = auth.role;
     if (role == 'business_owner') return _defaultScreens;
-    final hasHome = perms.contains('home');
-    final hasKds = perms.contains('kds');
+    // 2026-09-05 (review #6): go through `canDo`, not `perms.contains` — the
+    // raw list is EMPTY when the server sent none (offline first frame), and
+    // `contains` on it denied everything while the drawer, using the same
+    // role's fallback map, granted it. Same oracle everywhere.
+    final hasHome = auth.canDo('home');
+    final hasKds = auth.canDo('kds');
     // NP-201: DashboardScreen is a MONEY screen — today's revenue, COGS,
     // profit, margin %, expenses and cash-in-drawer, plus an Add-expense
     // action. A `staff_kitchen` cook's default grants are ['home','kds'], so
@@ -268,15 +273,19 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // kitchen user to the P&L dashboard and left the KDS board reachable
     // only through the drawer — the opposite of this method's own stated
     // intent. Kitchen-shaped access (kds, and no reports permission) now
-    // lands on the KDS board. Manager/cashier keep the dashboard via
-    // `reports`; captain/waiter (no kds) are unaffected.
-    final canSeeMoney = perms.contains('reports') ||
-        perms.contains('pnl_statement') ||
-        perms.contains('income_register') ||
-        perms.contains('expense_register');
+    // lands on the KDS board.
+    //
+    // Review #6 (2026-09-05): captain / waiter were "unaffected" — i.e. they
+    // still landed on the money dashboard because `home` alone unlocked it.
+    // The dashboard now needs [AuthProvider.canSeeMoney] (a reporting
+    // permission). For everyone else `planAwareVisibleTabs` drops the Home
+    // tab altogether, so they land on POS (Push 16j fallback); the neutral
+    // welcome screen here is only what an unexpected route into slot 0 would
+    // see. The dashboard's own KPI cards are hidden for them too.
+    final canSeeMoney = auth.canSeeMoney;
     final Widget homeTab = (hasKds && !canSeeMoney)
         ? const _KitchenTab()
-        : hasHome
+        : (hasHome && canSeeMoney)
             ? const DashboardScreen()
             : hasKds
                 ? const _KitchenTab()
@@ -287,7 +296,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       const OrdersScreen(),
       const _CaptainTab(),
       const ReportsScreen(),
-      const _MinimalMoreTab(),
+      // Review #14 (2026-09-05): a manager holds the settings-shaped
+      // permissions server-side (business profile via PATCH /me, aggregators,
+      // thermal_printer, menu, customers) but got the kitchen's stripped
+      // "More" tab and could reach none of it on mobile. The real Settings
+      // screen filters its own tiles by permission + plan key.
+      role == 'staff_manager' ? const SettingsScreen() : const _MinimalMoreTab(),
     ];
   }
 
@@ -977,7 +991,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   context: context,
                   removeTop: true,
                   child: Builder(builder: (_) {
-                    final screens = _screensFor(role, perms);
+                    final screens = _screensFor(auth);
                     // Push 16j — if Home isn't in this user's visible tabs
                     // (e.g. captain without 'home' perm), fall back to the
                     // first tab they DO have access to (typically POS).

@@ -70,7 +70,11 @@ describe('feature registry — the enforced / grantable / granted sets agree', (
     // featureGate throws at require() if this is false, so reaching this line
     // is already most of the proof; the explicit assertion states the contract
     // for anyone reading the test rather than the middleware.
-    const gated = ['/kds/', '/loyalty', '/outlets', '/einvoice', '/tds-tcs']
+    // 2026-09-05: '/outlets' was in this list — a rule that matched no route
+    // (outlets live at /v1/outlet-groups, outside the gate) and is now gone.
+    // Real paths only; featureRuleCoverage2026.test.js proves every rule
+    // matches a mounted route.
+    const gated = ['/kds/', '/loyalty', '/retail/skus', '/einvoice', '/tds-tcs']
       .map((p) => featureGate.requiredFeature(p));
     for (const key of gated) {
       expect(registry.isKnown(key)).toBe(true);

@@ -57,7 +57,12 @@ async function createCustomer({
       [planTier],
     );
     if (plan.rowCount === 0) throw new NotFound(`Plan ${planTier} not found`);
-    const status = planTier === 'free' ? 'trialing' : 'active';
+    // A9/A10 (2026-09-05): was `planTier === 'free' ? 'trialing' : 'active'`.
+    // A ₹0 plan has nothing to trial — it is simply 'active' (matches
+    // changePlan and the trial-expiry downgrade); a manually assigned paid
+    // plan is 'active' too (the admin is deliberately granting it). No tier
+    // code is consulted.
+    const status = 'active';
     await client.query(
       `INSERT INTO subscriptions
          (business_id, plan_id, status, trial_ends_at, current_period_end)
@@ -107,16 +112,29 @@ async function updateCustomer(businessId, patch) {
 // ── Trial / plan manual change ──────────────────────────────────────────
 
 async function extendTrial(businessId, additionalDays) {
+  // F4 (2026-09-05): only a TRIALING subscription can have its trial extended.
+  // This used to set status='trialing' unconditionally, so "extend trial" on
+  // an active paying tenant moved them to trialing (wrong MRR, wrong
+  // changePlan CASE branch, and a paid plan now time-boxed by trial_ends_at).
   const r = await query(
     `UPDATE subscriptions
         SET trial_ends_at = COALESCE(trial_ends_at, NOW()) + ($1 || ' days')::interval,
             current_period_end = current_period_end + ($1 || ' days')::interval,
-            status = 'trialing'::subscription_status
-      WHERE business_id = $2
+            updated_at = NOW()
+      WHERE business_id = $2 AND status = 'trialing'
       RETURNING *`,
     [additionalDays, businessId],
   );
-  if (r.rowCount === 0) throw new NotFound('No subscription');
+  if (r.rowCount === 0) {
+    const cur = await query('SELECT status FROM subscriptions WHERE business_id = $1', [businessId]);
+    if (cur.rowCount === 0) throw new NotFound('No subscription');
+    const err = new Conflict(
+      `Only a trialing subscription can be extended (this one is ${cur.rows[0].status}).`,
+    );
+    err.code = 'NOT_TRIALING';
+    throw err;
+  }
+  try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
   return r.rows[0];
 }
 
@@ -145,7 +163,11 @@ async function setPlanManually(businessId, tier, { billingPeriod } = {}) {
   // this is the safe manual-admin fallback for the common case where
   // support toggles a plan without a real payment.
   const cadence = billingPeriod === 'yearly' ? 'yearly' : 'monthly';
-  const rollForward = tier !== 'free';
+  // A9/A10 (2026-09-05): "is this the free plan" is a PRICE question, not the
+  // tier code 'free'; and a ₹0 target is 'active' (nothing to trial), not
+  // 'trialing' — the old CASE left a free-plan tenant as a perpetual trial.
+  const isFree = require('./subscriptionService').isFreePlan(plan.rows[0]);
+  const rollForward = !isFree;
   const dateSets = rollForward
     ? `, current_period_start = NOW(),
        current_period_end   = NOW() + INTERVAL '${cadence === 'yearly' ? '1 year' : '1 month'}',
@@ -154,15 +176,19 @@ async function setPlanManually(businessId, tier, { billingPeriod } = {}) {
   const r = await query(
     `UPDATE subscriptions
         SET plan_id = $1,
-            status = CASE WHEN $2 = 'free' THEN 'trialing'::subscription_status
-                          ELSE 'active'::subscription_status END
-            ${setBillingPeriod ? ', billing_period = $4' : ''}
+            -- A6: assigning a plan is not "restore"; a suspended row stays
+            -- suspended (with pre_suspend_status intact) until restore().
+            status = CASE WHEN status = 'suspended' THEN status
+                          ELSE 'active'::subscription_status END,
+            pending_plan_id = NULL,
+            updated_at = NOW()
+            ${setBillingPeriod ? ', billing_period = $3' : ''}
             ${dateSets}
-      WHERE business_id = $3
+      WHERE business_id = $2
       RETURNING *`,
     setBillingPeriod
-      ? [plan.rows[0].id, tier, businessId, billingPeriod]
-      : [plan.rows[0].id, tier, businessId],
+      ? [plan.rows[0].id, businessId, billingPeriod]
+      : [plan.rows[0].id, businessId],
   );
   if (r.rowCount === 0) throw new NotFound('No subscription');
   // Push 4: Invalidate the in-process tier cache so the next /auth/me or

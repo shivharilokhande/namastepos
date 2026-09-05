@@ -156,7 +156,7 @@ async function _subFor(businessId, client = null) {
  * `save: false` means we are deliberately NOT trying to save them. The
  * dashboard renders those branches without a "stay" button.
  */
-function offerFor(reason, sub) {
+function offerFor(reason, sub, { freeTier = 'free' } = {}) {
   const meta = CANCEL_REASONS[reason];
   if (!meta) throw new BadRequest('Unknown cancellation reason');
   const kind = meta.offer;
@@ -169,7 +169,9 @@ function offerFor(reason, sub) {
     if (!onFreePlan) {
       options.push({
         action: 'downgrade',
-        tier: 'free',
+        // A9 (2026-09-05): the ₹0 plan's code is looked up by PRICE by the
+        // caller (subscriptionService.freePlanRow), not assumed to be 'free'.
+        tier: freeTier,
         title: 'Move to Starter, free',
         detail: 'Billing, KOT, QR ordering and offline keep working, with no expiry. '
           + 'Nothing is deleted. Your paid plan switches back on whenever you want it.',
@@ -268,7 +270,12 @@ async function startCancel(businessId, { reason, note = null, userId = null } = 
 
   const sub = await _subFor(businessId);
   if (!sub) throw new NotFound('No subscription');
-  const offer = offerFor(reason, sub);
+  let freeTier = 'free';
+  try {
+    const fp = await require('./subscriptionService').freePlanRow();
+    if (fp?.tier) freeTier = fp.tier;
+  } catch (_) { /* fall back to the historical code */ }
+  const offer = offerFor(reason, sub, { freeTier });
 
   const r = await query(
     `INSERT INTO cancellation_surveys
@@ -421,6 +428,9 @@ async function pause(businessId, { months = 1, userId = null, reason = null } = 
   const n = _monthsOk(months);
   const before = await _subFor(businessId);
   if (!before) throw new NotFound('No subscription');
+  // A6 (2026-09-05): a suspended tenant cannot re-label the suspension as a
+  // pause (which would make it self-resumable).
+  require('./subscriptionService').assertNotSuspended(before);
   if (before.status === 'paused') {
     // Already paused — say so, do nothing. Not an error: the owner tapping
     // twice on a slow connection must not produce two pauses.
@@ -515,14 +525,79 @@ function serializePause(s) {
  * they were not already paying for. `WHERE status = 'paused'` makes it
  * idempotent, and a non-paused subscription falls through to the ordinary
  * `subscriptionService.resume` (un-cancel) it always had.
+ *
+ * MONEY (2026-09-05, A4). Pause cancelled the Razorpay mandate at cycle end,
+ * so there is nothing left at the gateway to bill the resumed plan. The old
+ * body set `status = 'active'` with a fresh month anyway — which meant either
+ * the gateway's later `subscription.cancelled` webhook knocked the resumed
+ * customer back off their plan, or (webhook missed) a paid plan ran unbilled
+ * forever. Now, when the parked plan is PAID and a gateway is configured, the
+ * owner gets a Razorpay checkout (`requiresCheckout: true`) and the row STAYS
+ * paused until `_onChargeSuccess` sees the first charge on that new
+ * subscription — the same rule every other paid activation follows. Free
+ * plans, and non-prod with no gateway (manual mode), restore immediately as
+ * before. The nightly auto-resume cannot open a checkout for the owner, so in
+ * gateway mode it sends the "your pause has ended" nudge instead and asks
+ * again in a week.
  */
 async function resume(businessId, { userId = null, auto = false } = {}) {
   const before = await _subFor(businessId);
   if (!before) throw new NotFound('No subscription');
+  // A6: an admin suspension is not a pause and the tenant cannot lift it.
+  require('./subscriptionService').assertNotSuspended(before);
   if (before.status !== 'paused') {
-    // Not paused — this is the plain "undo cancel-at-period-end" path.
+    // Not paused — this is the plain "undo cancel-at-period-end" path
+    // (guarded: only active + cancel_at_period_end rows qualify, see A1).
     const row = await require('./subscriptionService').resume(businessId);
-    return { resumed: true, wasPaused: false, status: row.status };
+    return {
+      resumed: !!row.resumed,
+      wasPaused: false,
+      status: row.status,
+      requiresCheckout: !!row.requiresCheckout,
+      ...(row.requiresCheckout ? { checkout: row.checkout, message: row.message } : {}),
+    };
+  }
+
+  // Which plan comes back, and what it costs — read from the parked columns.
+  const parked = await query(
+    'SELECT id, tier, name, price_inr_paise FROM plans WHERE id = $1 LIMIT 1',
+    [before.pause_plan_id || before.plan_id],
+  );
+  const parkedPlan = parked.rows[0] || null;
+  const paid = Number(parkedPlan?.price_inr_paise) > 0;
+  const rzp = require('./razorpayService');
+  const mode = rzp.checkoutMode({ requireLive: true }); // plan-level rule
+  if (paid && mode === 'unavailable') throw rzp.paymentsUnavailableError();
+  if (paid && mode === 'gateway') {
+    if (auto) {
+      // The cron cannot authorise a mandate on the owner's behalf. Tell them,
+      // once a week, and keep the pause in place until they act.
+      await _nudgeResumeCheckout(businessId, before, parkedPlan);
+      return { resumed: false, wasPaused: true, status: 'paused', requiresCheckout: true, nudged: true };
+    }
+    const checkout = await rzp.createSubscription(businessId, parkedPlan.tier, {
+      billingPeriod: before.pause_billing_period || before.billing_period || 'monthly',
+    });
+    await _logLifecycle(null, {
+      businessId,
+      subscriptionId: before.id,
+      event: 'resume_checkout_started',
+      fromStatus: 'paused',
+      toStatus: 'paused',
+      planTier: parkedPlan.tier,
+      actorUserId: userId,
+      meta: { razorpaySubscriptionId: checkout.subscriptionId },
+    });
+    return {
+      resumed: false,
+      wasPaused: true,
+      status: 'paused',
+      requiresCheckout: true,
+      planTier: parkedPlan.tier,
+      checkout,
+      message: `Set up the payment mandate to bring ${parkedPlan.name} back. Your account stays `
+        + 'paused until the first payment goes through.',
+    };
   }
 
   const restored = await withTransaction(async (client) => {
@@ -573,6 +648,40 @@ async function resume(businessId, { userId = null, auto = false } = {}) {
     planTier: restored.tier,
     currentPeriodEnd: restored.row.current_period_end,
   };
+}
+
+/**
+ * Gateway mode, pause has run its course, nobody is at the keyboard: tell the
+ * owner their pause has ended and that one tap in Billing brings the plan back,
+ * then push `pause_ends_at` a week out so the sweep asks again rather than
+ * every night. The row stays paused; nothing is activated.
+ */
+async function _nudgeResumeCheckout(businessId, sub, plan) {
+  const upd = await query(
+    `UPDATE subscriptions
+        SET pause_ends_at = NOW() + INTERVAL '7 days', updated_at = NOW()
+      WHERE business_id = $1 AND status = 'paused'
+      RETURNING id`,
+    [businessId],
+  );
+  if (upd.rowCount === 0) return;
+  try {
+    await require('./pushService').sendToBusinessOwners(businessId, {
+      title: 'Your pause has ended',
+      body: `${plan?.name || 'Your plan'} is ready to come back. Open Billing and tap Resume to `
+        + 'set up the payment mandate again — nothing is charged until you do.',
+      data: { kind: 'pause_ended_resume', path: '/billing' },
+    });
+  } catch (_) { /* push is best-effort */ }
+  await _logLifecycle(null, {
+    businessId,
+    subscriptionId: sub.id,
+    event: 'auto_resume_checkout_required',
+    fromStatus: 'paused',
+    toStatus: 'paused',
+    planTier: plan?.tier || null,
+    meta: { nextNudgeAt: 'NOW()+7d' },
+  });
 }
 
 /**
@@ -707,4 +816,7 @@ module.exports = {
   exportAccount,
   serializeSurvey,
   BILLING_URL,
+  // 2026-09-05 (A4): razorpayService writes the 'resumed'/'uncancelled' trail
+  // row when the re-checkout charge lands, through this same helper.
+  logLifecycle: _logLifecycle,
 };

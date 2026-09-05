@@ -37,16 +37,30 @@ class RolePerms {
   }
 
   /// Each role's allowed areas. Used by the drawer + bottom-nav filter.
+  ///
+  /// 2026-09-05 (review #8): re-synced with the backend's
+  /// `staffService.DEFAULT_PERMS_BY_ROLE`, which is the authority. Keys that
+  /// exist ONLY on mobile ('settings' = the More tab, 'reviews' and
+  /// 'memberships' = drawer areas the backend gates by role, not by key) are
+  /// kept and marked; everything else must match the server list exactly.
   static const _MAP = <String, Set<String>>{
     'staff_manager': {
-      'home', 'pos', 'orders', 'tables', 'reports', 'settings',
+      'home', 'pos', 'orders', 'tables', 'reports',
+      // review #8: the manager's reporting + compliance keys the server
+      // grants by default and the mobile fallback lacked.
+      'pnl_statement', 'income_register', 'expense_register',
+      'invoice_register', 'tax_invoices',
       'menu_editor', 'modifier_groups', 'customers', 'reservations',
-      'reviews', 'wastage', 'daily_closing', 'kds', 'captain', 'driver',
-      'memberships', 'surge', 'qr_codes', 'bill_template',
-      // NP-201: mirror staffService.DEFAULT_PERMS_BY_ROLE — a manager books
-      // and reviews expenses. Only used when the server sends no explicit
-      // list, but the two tables must not disagree.
-      'expenses', 'expense_register',
+      'wastage', 'daily_closing', 'kds', 'captain', 'driver',
+      'surge', 'qr_codes', 'bill_template',
+      // review #8: also missing vs the server list.
+      'thermal_printer', 'aggregators',
+      'whatsapp_marketing', 'auto_whatsapp_order',
+      // NP-201: a manager books and reviews expenses. Only used when the
+      // server sends no explicit list, but the two tables must not disagree.
+      'expenses',
+      // mobile-only area keys (no backend equivalent):
+      'settings', 'reviews', 'memberships',
       // Manager CAN'T do plans & billing (money decisions) or staff create.
     },
     'staff_captain': {
@@ -59,6 +73,9 @@ class RolePerms {
     },
     'staff_cashier': {
       'home', 'pos', 'orders', 'reports',
+      // review #8 (2026-09-05): cashier handles bills + tax invoices
+      // server-side ("gets reports but NOT P&L") — was missing here.
+      'tax_invoices', 'invoice_register',
       'customers', 'bill_template',
       // Sync-fix (2026-08-22): backend FF-332 grants cashiers the
       // Expenses button (they book petty cash at the register). Was

@@ -239,14 +239,18 @@ async function findOrdersWithInventoryError({ limit = LIST_LIMIT } = {}) {
  * marker simply clears.
  */
 async function repairInventoryEffects({ limit = LIST_LIMIT } = {}) {
-  const addons = require('./addonService');
+  const featureService = require('./featureService');
   const recipes = require('./recipeService');
   const rows = await findOrdersWithInventoryError({ limit });
   let repaired = 0; let cleared = 0; let stillStuck = 0;
   for (const row of rows) {
     try {
+      // 2026-09-05 (entitlements review D1): the same FEATURE-KEY gate the
+      // order path uses — plan-granted `recipe_costing` or the addon's
+      // grants_features — otherwise a Pro tenant's stuck orders would be
+      // "cleared" as not entitled and never deducted.
       // eslint-disable-next-line no-await-in-loop
-      const entitled = await addons.hasAddon(row.business_id, 'recipe-costing');
+      const entitled = await featureService.hasFeature(row.business_id, 'recipe_costing');
       if (!entitled) {
         // eslint-disable-next-line no-await-in-loop
         await query('UPDATE orders SET inventory_error = NULL WHERE id = $1', [row.id]);

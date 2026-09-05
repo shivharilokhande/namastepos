@@ -269,6 +269,12 @@ describe('NP-302 — inventory deductions are no longer swallowed', () => {
        ON CONFLICT DO NOTHING`,
       [biz.id, addon.rows[0].id],
     );
+    // 2026-09-05 (review D1): the deduction branch now asks
+    // featureService.hasFeature('recipe_costing') — which the addon grants via
+    // grants_features (migration 074) — instead of addonService.hasAddon. The
+    // entitlement cache may already hold this tenant's pre-addon answer from
+    // the earlier describes, so drop it.
+    require('../../src/services/featureService').clearAllCaches();
     const ing = await query(
       `INSERT INTO ingredients (business_id, name, unit, stock, cost_per_unit_paise)
        VALUES ($1, 'Rice Batter', 'g', 10000, 2) RETURNING id`,
@@ -333,8 +339,9 @@ describe('NP-302 — inventory deductions are no longer swallowed', () => {
   });
 
   it('records a NON-critical entitlement-lookup failure for repair instead of dropping it', async () => {
-    const addons = require('../../src/services/addonService');
-    jest.spyOn(addons, 'hasAddon').mockRejectedValue(new Error('addon cache down'));
+    // 2026-09-05 (review D1): the lookup is now featureService.hasFeature.
+    const features = require('../../src/services/featureService');
+    jest.spyOn(features, 'hasFeature').mockRejectedValue(new Error('entitlement cache down'));
 
     const o = await orderService.create(biz.id, body([
       { menuItemId: dosaId, name: 'Masala Dosa', price: 80, qty: 1 },

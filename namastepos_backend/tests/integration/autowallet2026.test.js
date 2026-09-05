@@ -46,10 +46,14 @@ async function legs(orderId) {
 }
 
 const cart = (itemId) => ([{ menuItemId: itemId, name: 'Item', price: 100, qty: 3 }]);
+// 2026-09-05: an omitted `tax` now means "server computes GST from the menu".
+// These tests reason about a ₹300 tax-free bill, so the items are created on
+// the 0% slab rather than the 5% default.
+const create0 = (name) => menuService.create(biz.id, { name, price: 100, gstPct: 0 });
 
 describe('Wallet auto-apply after membership', () => {
   it('wallet partially covers the residual; rest to cash', async () => {
-    const item = await menuService.create(biz.id, { name: 'Item A', price: 100 });
+    const item = await create0('Item A');
     const cid = await seedMember('9700000001', item.id, 6000); // ₹60 wallet
     const order = await orderService.create(biz.id, {
       source: 'takeaway',
@@ -65,7 +69,7 @@ describe('Wallet auto-apply after membership', () => {
   });
 
   it('wallet fully covers the residual; balance left over; no cash leg', async () => {
-    const item = await menuService.create(biz.id, { name: 'Item B', price: 100 });
+    const item = await create0('Item B');
     const cid = await seedMember('9700000002', item.id, 30000); // ₹300 wallet
     const order = await orderService.create(biz.id, {
       source: 'takeaway',
@@ -80,7 +84,7 @@ describe('Wallet auto-apply after membership', () => {
   });
 
   it('respects the cashier cap', async () => {
-    const item = await menuService.create(biz.id, { name: 'Item C', price: 100 });
+    const item = await create0('Item C');
     const cid = await seedMember('9700000003', item.id, 30000);
     const order = await orderService.create(biz.id, {
       source: 'takeaway',

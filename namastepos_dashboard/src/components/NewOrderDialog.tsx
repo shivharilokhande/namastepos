@@ -17,6 +17,11 @@
 //     points balance chip + "Redeem N pts" toggle (pointsToRedeem),
 //     membership offer card (sell cheapest plan inline), and split payments
 //     (2-3 legs incl. wallet-as-tender with live balance + remaining meter)
+//   • GST (2026-09-05, review P0): NO manual tax input. The estimate shown
+//     (CGST + SGST) is computed from each cart line's `gstPct` (lib/gstEstimate,
+//     a port of the server's computeGstBreakdown) and `tax` is OMITTED from the
+//     create body so the server computes and persists GST from
+//     menu_items.gst_pct. Composition-scheme businesses see no GST rows.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -38,6 +43,8 @@ import { api, apiError, getBusinessCache } from '@/api/client';
 import { trackFirstKot, trackFirstBill } from '@/lib/activation';
 import { formatINR } from '@/lib/utils';
 import { VoiceCommand, parseSpokenOrder } from '@/components/VoiceCommand';
+import { usePlan, useMe } from '@/hooks/usePlan';
+import { estimateGst, schemeChargesNoGst } from '@/lib/gstEstimate';
 
 // ── Pay-step endpoints without ffApi bindings (2026-08-25, founder) ──────
 // This dialog is currently their only dashboard consumer, so they live
@@ -77,6 +84,11 @@ type CartLine = {
   name: string;
   price: number;            // already includes variant + modifier deltas per unit
   qty: number;
+  // 2026-09-05: the menu item's GST slab (menu_items.gst_pct via the API's
+  // `gstPct`). Variants share the parent's slab — the server applies
+  // `mi.gst_pct` to the variant+modifier line price, so a variant line must
+  // carry the PARENT's pct. null/undefined → 0% (matches server parseFloat(gst_pct||0)).
+  gstPct?: number | null;
   variantId?: string | null;
   variantLabel?: string | null;
   modifierLines?: ModLine[];
@@ -114,6 +126,19 @@ export function NewOrderDialog({
   previousItems = [], previousSubtotalInr = 0,
 }: Props) {
   const qc = useQueryClient();
+  // D-06 (2026-09-05): `voice_pos` is a plan feature (registry: client-gated).
+  // Speech recognition runs on-device so there is no route for the server to
+  // 402 — this check IS the gate on web. Fail-closed: no mic until /auth/me
+  // says the plan includes it.
+  const plan = usePlan();
+  // GST scheme (2026-09-05, migration 092): from the shared /auth/me query,
+  // falling back to the business cache (same payload, persisted) so the
+  // first render after a reload does not flash GST rows at a composition
+  // dealer. Unknown/null → 'regular', exactly what the server assumes.
+  const { data: me } = useMe();
+  const gstScheme: string =
+    me?.business?.gstScheme ?? getBusinessCache()?.gstScheme ?? 'regular';
+  const billsWithoutGst = schemeChargesNoGst(gstScheme);
 
   // ── State ──────────────────────────────────────────────────────────────
   const [source, setSource] = useState<'dineIn' | 'takeaway'>('dineIn');
@@ -131,7 +156,8 @@ export function NewOrderDialog({
   const [noteOpen, setNoteOpen] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState<CartLine[]>([]);
-  const [tax, setTax] = useState(0);
+  // 2026-09-05: the manual `tax` state is gone — see header. GST is derived
+  // from the cart (`gst` memo below) and never sent to the server.
   const [discount, setDiscount] = useState(0);
   const [discountIsPreTax, setDiscountIsPreTax] = useState(true);
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'upi' | 'card' | 'unpaid'>(
@@ -276,7 +302,10 @@ export function NewOrderDialog({
       setConfiguring(item);
       return;
     }
-    _addLine({ menuItemId: item.id, name: item.name, price: parseFloat(item.price), qty: 1 });
+    _addLine({
+      menuItemId: item.id, name: item.name, price: parseFloat(item.price), qty: 1,
+      gstPct: item.gstPct == null ? null : Number(item.gstPct),
+    });
   };
 
   const bump = (lineKey: string, delta: number) => {
@@ -298,9 +327,24 @@ export function NewOrderDialog({
 
   // Subtotal from cart
   const subtotal = useMemo(() => cart.reduce((s, l) => s + l.price * l.qty, 0), [cart]);
-  let total: number;
-  if (discountIsPreTax) total = Math.max(0, subtotal - Number(discount) + Number(tax));
-  else total = Math.max(0, subtotal + Number(tax) - Number(discount));
+  // GST estimate (2026-09-05): mirrors orderService — the server applies
+  // menu_items.gst_pct to the RAW line amounts (before the cashier discount)
+  // and, because `tax` is omitted from the body, adds that figure to
+  // max(0, subtotal − discount). Composition scheme → all zeros. Rounding is
+  // identical to computeGstBreakdown so split legs summed against this total
+  // land within the server's ±₹0.01 tolerance.
+  const gst = useMemo(
+    () => estimateGst(
+      cart.map((l) => ({ price: l.price, qty: l.qty, gstPct: l.gstPct })),
+      gstScheme,
+    ),
+    [cart, gstScheme],
+  );
+  const tax = gst.totalGst;
+  // `discountIsPreTax` no longer changes this number (GST is added on top
+  // either way, exactly as the server does when `tax` is omitted); it is
+  // still sent so the server's discount-eligibility check keeps its meaning.
+  const total = Math.max(0, +(Math.max(0, subtotal - Number(discount)) + tax).toFixed(2));
 
   // ── Points redemption math (2026-08-25, founder) ──────────────────────
   // Client-side mirror of loyaltyService.maxRedeemablePoints: min(balance,
@@ -447,7 +491,13 @@ export function NewOrderDialog({
           // (singular, ≤500 chars, allows null) — same field mobile sends.
           note: l.note?.trim() || null,
         })),
-        tax, discount,
+        // 2026-09-05 (review P0): `tax` is deliberately OMITTED — not sent as
+        // 0. The server treats a missing tax as "compute GST from
+        // menu_items.gst_pct" (orderService `taxOmitted`), whereas an explicit
+        // 0 is honoured as a client assertion of ₹0 GST, which is exactly the
+        // bug this fixes. The GST shown above is only an estimate for the
+        // cashier; the persisted figure is the server's.
+        discount,
         discountIsPreTax,
         paymentMethod: mode === 'kot' ? 'unpaid' : paymentMethod,
         clientId: typeof crypto !== 'undefined' && crypto.randomUUID
@@ -504,7 +554,23 @@ export function NewOrderDialog({
           lines: cart.map((l) => ({ name: l.name, price: l.price })),
         });
       }
-      toast.success(mode === 'kot' ? `KOT #${o.orderNo} sent` : `Order #${o.orderNo} placed`);
+      // 2026-09-05: the SERVER's order is authoritative for money — it now
+      // carries the persisted tax/cgst/sgst/total. Surface its total, and
+      // flag the (rare) case where the client estimate the cashier collected
+      // against differs from what was billed (menu edited mid-order, scheme
+      // changed, server-side membership bundle) so they can reconcile the
+      // drawer instead of trusting the pre-create number.
+      const serverTotal = Number(o?.total);
+      const estimated = existingSession ? previousSubtotalInr + payableTotal : payableTotal;
+      toast.success(mode === 'kot'
+        ? `KOT #${o.orderNo} sent`
+        : `Order #${o.orderNo} placed — ${formatINR(Number.isFinite(serverTotal) ? serverTotal : estimated)}`);
+      if (mode === 'pay' && !existingSession && Number.isFinite(serverTotal)
+          && Math.abs(serverTotal - payableTotal) > 0.01) {
+        toast.warning(
+          `Billed total is ${formatINR(serverTotal)} (estimate was ${formatINR(payableTotal)}) — collect the billed amount`,
+        );
+      }
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['ops-tables'] });
       // Wallet may have been debited (wallet split leg) and points redeemed.
@@ -522,7 +588,7 @@ export function NewOrderDialog({
         <DialogHeader className="px-6 py-4 border-b">
           <DialogTitle className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-2"><ShoppingCart className="h-5 w-5 text-primary" /> Take new order</span>
-            <VoiceCommand onText={onVoice} />
+            {plan.has('voice_pos') && <VoiceCommand onText={onVoice} />}
           </DialogTitle>
         </DialogHeader>
 
@@ -763,9 +829,10 @@ export function NewOrderDialog({
             </div>
 
             <div className="border-t bg-card p-4 space-y-3">
+              {/* 2026-09-05 (review P0): the manual "Tax (₹)" input that
+                  defaulted to 0 is gone — GST is computed from the menu's
+                  slabs (rows below) and persisted by the server. */}
               <div className="grid grid-cols-2 gap-2">
-                <div><Label className="text-xs">Tax (₹)</Label>
-                  <Input type="number" min={0} value={tax} onChange={(e) => setTax(Math.max(0, +e.target.value || 0))} className="h-8 mt-1" /></div>
                 <div><Label className="text-xs">Discount (₹)</Label>
                   {/* 2026-08-25 (founder): capped at the subtotal so a fat-
                       fingered discount can't zero-out tax or go negative —
@@ -773,6 +840,11 @@ export function NewOrderDialog({
                   <Input type="number" min={0} max={subtotal} value={discount}
                     onChange={(e) => setDiscount(Math.min(Math.max(0, +e.target.value || 0), subtotal))}
                     className="h-8 mt-1" /></div>
+                <div className="text-xs text-muted-foreground self-end pb-1.5">
+                  {billsWithoutGst
+                    ? 'Composition scheme — bill of supply, no GST'
+                    : 'GST is added from each item’s slab'}
+                </div>
               </div>
               {discount > 0 && (
                 <label className="flex items-center gap-2 text-xs">
@@ -942,8 +1014,22 @@ export function NewOrderDialog({
 
               <div className="border-t pt-2 text-sm space-y-1">
                 <div className="flex justify-between"><span>Subtotal</span><span>{formatINR(subtotal)}</span></div>
-                {tax > 0 && <div className="flex justify-between text-muted-foreground"><span>Tax</span><span>+ {formatINR(tax)}</span></div>}
                 {discount > 0 && <div className="flex justify-between text-emerald-700"><span>Discount</span><span>− {formatINR(discount)}</span></div>}
+                {/* GST estimate rows (2026-09-05). Intra-state CGST+SGST split
+                    is the restaurant default (isInterState is never sent from
+                    this dialog). "est." because the server's persisted figure
+                    is authoritative — see onSuccess. Hidden entirely for a
+                    composition dealer (gst = zeros). */}
+                {tax > 0 && (
+                  <>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>CGST <span className="text-[10px]">(est.)</span></span><span>+ {formatINR(gst.cgst)}</span>
+                    </div>
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>SGST <span className="text-[10px]">(est.)</span></span><span>+ {formatINR(gst.sgst)}</span>
+                    </div>
+                  </>
+                )}
                 {/* Points redemption line (2026-08-25) — mirrors the server-
                     side deduction so the printed total matches the charge. */}
                 {redeemValue > 0 && (
@@ -1113,6 +1199,9 @@ function ItemConfigDialog({
               name: item.name,
               price: +unitPrice.toFixed(2),
               qty: 1,
+              // 2026-09-05: variants/modifiers inherit the PARENT item's slab
+              // (server: `gstPct: parseFloat(mi.gst_pct)` on every line).
+              gstPct: item.gstPct == null ? null : Number(item.gstPct),
               variantId: variant.id || null,
               variantLabel: variant.label || null,
               // Bug fix (2026-08-20): the caller types this field as

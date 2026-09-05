@@ -1,179 +1,21 @@
 import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { ffApi } from '@/api/namastepos';
 import {
-  LayoutDashboard, Menu as MenuIcon, ShoppingCart, Receipt, BarChart3,
-  Users, CreditCard, Settings, LogOut, Utensils, Package, Heart,
-  ChefHat, LayoutGrid, QrCode, Carrot, Menu as Hamburger, X,
-  ReceiptText, Truck, ClipboardCheck, CalendarPlus, Trash2 as TrashIcon,
-  Bike, Crown, Globe, FileSpreadsheet, ShoppingBag,
-  Activity, TrendingUp, Star, BookOpen, Ticket, Calendar as CalIcon,
-  MessageSquare, Upload, Landmark, FileText, Repeat, Zap,
-  ShieldCheck, Inbox, TrendingDown, HelpCircle, Undo2, ChevronDown,
-  LifeBuoy, Gift, ArrowRightLeft, Building2,
+  LogOut, Utensils, Menu as Hamburger, X, MessageSquare, ChevronDown, Lock,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { PlanLimitBanner } from './PlanLimitBanner';
 import { OutletSwitcher } from './OutletSwitcher';
-import { api, setSession, setBusinessCache, getBusinessCache } from '@/api/client';
+import { api, setSession, setBusinessCache, getBusinessCache, NAVIGATE_EVENT } from '@/api/client';
 import { cn } from '@/lib/utils';
-import { usePlan } from '@/hooks/usePlan';
+import { usePlan, useMe } from '@/hooks/usePlan';
 import { useAddons } from '@/hooks/useAddons';
-import { Lock } from 'lucide-react';
-
-// `feature` is the plan_features key the route requires. `null` = always on
-// (Starter-tier baseline). `addon` is an optional add-on slug that must
-// also be active for the item to unlock — used for sections like
-// /customers that are gated by the Loyalty & Cashback addon. Locked
-// items still render so users see what they'd unlock — clicking them
-// routes to /billing (or /marketplace for addon-gated entries).
-type NavItem = { to: string; icon: any; label: string; feature: string | null; addon?: string };
-
-// Founder feedback (2026-08-25): the flat sidebar had grown to 47 entries
-// and was unscannable. Restructured into collapsible task-based groups
-// ("Sales", "Money", ...) instead of the old plan-tier ordering — the old
-// `// Pro` / `// Enterprise` / `// Always-on` section markers are gone,
-// but each item's feature gate still carries its tier. Every entry, icon,
-// gate, and the lock-badge behavior is unchanged; only grouping moved.
-// `navTop` and `navBottom` stay ungrouped/always visible: Overview and
-// Action Center are the daily landing spots, and Plans & Billing is the
-// monetization surface that must never hide inside a collapsed group.
-const navTop: NavItem[] = [
-  { to: '/',          icon: LayoutDashboard, label: 'Overview',         feature: null },
-  { to: '/action-center', icon: Inbox,       label: 'Action Center',    feature: null },
-];
-
-const navGroups: { name: string; items: NavItem[] }[] = [
-  {
-    name: 'Sales',
-    items: [
-      { to: '/orders',    icon: ShoppingCart,    label: 'Orders',           feature: 'orders' },
-      // Delivery board (2026-09-04): the accept→hand-over lifecycle for live
-      // delivery orders. Deliberately UNGATED (feature: null) — it is not the
-      // `aggregators` integration and not the `driver_mode` rider fleet; a
-      // Starter cafe taking its own phone/WhatsApp delivery orders needs this
-      // to promise a prep time and mark the handover, so gating it would just
-      // send the daily-use screen to /billing.
-      { to: '/delivery',  icon: Bike,            label: 'Delivery board',   feature: null },
-      { to: '/tables',    icon: LayoutGrid,      label: 'Tables',           feature: 'tables_single_floor' },
-      { to: '/kot',       icon: ChefHat,         label: 'Kitchen (KOT)',    feature: 'kds' },
-      { to: '/kds',       icon: ChefHat,         label: 'KDS',              feature: 'kds' },
-      { to: '/captain',   icon: ChefHat,         label: 'Captain',          feature: 'captain_mode' },
-      { to: '/reservations', icon: CalendarPlus, label: 'Reservations',     feature: 'reservations' },
-      { to: '/reservation-widget', icon: CalIcon, label: 'Booking widget',  feature: 'reservations' },
-      { to: '/qr-codes',  icon: QrCode,          label: 'QR codes',         feature: 'qr_ordering' },
-    ],
-  },
-  {
-    name: 'Catalog',
-    items: [
-      { to: '/menu',      icon: MenuIcon,        label: 'Menu',             feature: 'menu_basic' },
-      // Founder bug #16 + gap-ports (2026-08-25): every shipped feature must
-      // be reachable from the sidebar (locked or not). Inventory/Printers/
-      // Modifier groups are the mobile-parity ports; Marketplace existed as
-      // a route but was never listed. (Printers now lives under "Team &
-      // setup" and Marketplace under "Growth" per the 2026-08-25 regroup.)
-      { to: '/modifier-groups', icon: MenuIcon,  label: 'Modifier groups',  feature: 'menu_variants_modifiers' },
-      { to: '/inventory', icon: Package,         label: 'Inventory',        feature: 'menu_basic' },
-      { to: '/ingredients', icon: Carrot,        label: 'Ingredients',      feature: 'recipe_costing' },
-      { to: '/wastage',   icon: TrashIcon,       label: 'Wastage',          feature: 'wastage' },
-    ],
-  },
-  {
-    name: 'Money',
-    items: [
-      { to: '/reports',   icon: BarChart3,       label: 'Reports',          feature: 'reports_basic' },
-      { to: '/leakage',   icon: TrendingDown,    label: 'Revenue leakage',  feature: 'reports_basic' },
-      { to: '/invoices',  icon: ReceiptText,     label: 'Tax invoices',     feature: 'invoice_basic' },
-      { to: '/refunds',   icon: Undo2,           label: 'Refunds',          feature: 'orders' },
-      { to: '/expenses',  icon: Receipt,         label: 'Expenses',         feature: 'expenses' },
-      { to: '/daily-closing', icon: ClipboardCheck, label: 'Daily closing', feature: 'daily_closing' },
-      { to: '/accounting', icon: FileSpreadsheet, label: 'Accounting',      feature: 'accounting_pnl_bs' },
-      { to: '/accounting-reports', icon: BookOpen, label: 'P&L reports',    feature: 'accounting_pnl_bs' },
-      { to: '/bank-reconcile', icon: Landmark,   label: 'Bank reconcile',   feature: 'bank_reconcile' },
-      { to: '/recurring-invoices', icon: Repeat, label: 'Recurring inv',    feature: 'recurring_invoices' },
-      { to: '/b2b-invoice-template', icon: FileText, label: 'B2B template', feature: 'b2b_invoice' },
-      { to: '/surge',     icon: Zap,             label: 'Surge pricing',    feature: 'surge_pricing' },
-    ],
-  },
-  {
-    name: 'Customers',
-    items: [
-      // Sync-fix (2026-08-25 founder bug): the backend customer-list route
-      // (customers.routes.js) gates ONLY on requireAddon('loyalty') — it does
-      // NOT require the customers_basic plan feature (featureGate has no
-      // /customers rule). The nav previously required customers_basic AND the
-      // addon, an extra gate the API doesn't enforce: a business with the
-      // loyalty addon but a plan lacking customers_basic would see this locked
-      // while the API returned 200 (nav-locked-but-API-works mismatch). Gate on
-      // the loyalty addon alone so nav === backend exactly. The addon is still
-      // required (paid or admin-comped via forceActivate), so the CRM stays
-      // behind the loyalty addon business model.
-      { to: '/customers',   icon: Heart,           label: 'Customers',        feature: null, addon: 'loyalty' },
-      // Sync-fix (2026-08-22): were both gated on `customers_basic`, which
-      // meant Starter plans (which include customers_basic) saw them
-      // unlocked and got a 402 on click because backend middleware gates
-      // /memberships on `memberships` and /reviews on `reviews`. Aligned.
-      { to: '/memberships', icon: Heart,           label: 'Memberships',      feature: 'memberships', addon: 'loyalty' },
-      { to: '/reviews',     icon: MessageSquare,   label: 'Reviews',          feature: 'reviews' },
-      { to: '/food-coupons', icon: Ticket,       label: 'Coupons',          feature: 'loyalty' },
-      { to: '/campaigns', icon: MessageSquare,   label: 'Campaigns',        feature: 'whatsapp_marketing' },
-    ],
-  },
-  {
-    name: 'Growth',
-    items: [
-      { to: '/online-site', icon: Globe,         label: 'Online site',      feature: 'qr_ordering' },
-      { to: '/marketplace', icon: ShoppingBag,   label: 'Marketplace',      feature: null },
-      { to: '/aggregators', icon: Truck,         label: 'Aggregators',      feature: 'aggregators' },
-      // Delivery/driver is Enterprise-only per Sprint 12 brainstorm — most
-      // small cafes rely on Zomato/Swiggy for delivery, so exposing this on
-      // lower tiers just clutters the sidebar. The feature_key gate makes
-      // it lock-visible on Pro/Advanced and unlocked on Enterprise.
-      // Sync-fix: was `multi_outlet` (Enterprise-only) — but backend
-      // middleware and mobile drawer both gate this on `driver_mode` (Pro).
-      // Pro owners were seeing this locked despite being entitled.
-      { to: '/drivers',   icon: Bike,            label: 'In-house delivery', feature: 'driver_mode' },
-      { to: '/forecast',   icon: TrendingUp,     label: 'Forecast',         feature: 'forecast' },
-      { to: '/heat-map',   icon: Activity,       label: 'Heat map',         feature: 'heat_map' },
-      { to: '/retail',     icon: ShoppingBag,    label: 'Retail',           feature: 'multi_outlet' },
-    ],
-  },
-  {
-    name: 'Team & setup',
-    items: [
-      // Outlets (2026-09-03): manage/switch outlets + the consolidated group
-      // rollup. Gated on `multi_outlet` exactly like the backend's
-      // /outlet-groups router (only its /my-outlets feed is exempt, which is
-      // what powers the always-visible switcher above the nav).
-      { to: '/outlets',   icon: Building2,       label: 'Outlets',          feature: 'multi_outlet' },
-      { to: '/staff',     icon: Users,           label: 'Staff',            feature: 'staff_lite' },
-      { to: '/printers',  icon: ReceiptText,     label: 'Printers',         feature: null },
-      { to: '/bill-template', icon: ReceiptText, label: 'Receipt template', feature: null },
-      // Gate change (2026-08-25): was `bulk_import` — a parallel backend
-      // change made bulk imports available on ALL plans, so the sidebar
-      // must not show a lock the API no longer enforces. `null` = always on.
-      { to: '/bulk-import', icon: Upload,        label: 'Bulk import',      feature: null },
-      // Migration wizard (2026-09-03): step-by-step "bring your data from
-      // your old POS" flow. Ungated — switchers migrate before picking a
-      // plan, so this must be visible to every tenant.
-      { to: '/migrate',   icon: ArrowRightLeft,  label: 'Switch to NamastePOS', feature: null },
-      // DPDP: always-on entry point — every user must be able to reach
-      // their privacy controls in at most one click. Cannot be plan-gated.
-      { to: '/privacy',   icon: ShieldCheck,     label: 'Privacy',          feature: null },
-      { to: '/settings',  icon: Settings,        label: 'Settings',         feature: null },
-      { to: '/help',      icon: HelpCircle,      label: 'Help',             feature: null },
-    ],
-  },
-];
-
-const navBottom: NavItem[] = [
-  { to: '/billing',   icon: CreditCard,      label: 'Plans & Billing',  feature: null },
-  { to: '/refer',     icon: Gift,            label: 'Refer & earn',     feature: null },
-  { to: '/support',   icon: LifeBuoy,        label: 'Support',          feature: null },
-];
+import {
+  navTop, navGroups, navBottom, allNavItems, canSeeNavItem, type NavItem,
+} from '@/lib/navConfig';
 
 export function Layout() {
   const navigate = useNavigate();
@@ -194,7 +36,9 @@ export function Layout() {
   // also checks: if the account has ANY menu items OR tables, flip
   // the flag silently and skip the wizard — we never want to shove
   // a real cafe with data through a "create your first table" flow.
-  const meQ = useQuery({ queryKey: ['me'], queryFn: () => ffApi.me(), staleTime: 60_000 });
+  // D-19 (2026-09-05): shares the single ['me'] query with usePlan() —
+  // previously this was a second, identical /auth/me under its own key.
+  const meQ = useMe();
   useEffect(() => {
     const biz = meQ.data?.business;
     if (!biz || biz.onboarded !== false) return;
@@ -237,11 +81,38 @@ export function Layout() {
   const plan = usePlan();
   const addons = useAddons();
 
+  // "View plans" action on the global FEATURE_LOCKED toast (api/client.ts
+  // has no router). Claim the event so the fallback full-page navigation
+  // does not fire.
+  useEffect(() => {
+    const onNav = (e: Event) => {
+      const path = (e as CustomEvent<{ path?: string }>).detail?.path;
+      if (!path) return;
+      e.preventDefault();
+      navigate(path);
+    };
+    window.addEventListener(NAVIGATE_EVENT, onNav);
+    return () => window.removeEventListener(NAVIGATE_EVENT, onNav);
+  }, [navigate]);
+
+  // D-09: a staffer who deep-links (or lands after login) on a page their
+  // permissions do not cover is sent to their first visible nav item instead
+  // of a page of 403 toasts. Owner is never redirected. Only routes that are
+  // nav items are considered; unknown paths are left to their own page.
+  const location = useLocation();
+  useEffect(() => {
+    if (plan.isLoading || !plan.role || plan.role === 'business_owner') return;
+    const current = allNavItems.find((it) => it.to !== '/' && (location.pathname === it.to || location.pathname.startsWith(it.to + '/')))
+      || (location.pathname === '/' ? navTop[0] : undefined);
+    if (!current || canSeeNavItem(current, plan.role, plan.permissions)) return;
+    const first = allNavItems.find((it) => canSeeNavItem(it, plan.role, plan.permissions));
+    if (first && first.to !== location.pathname) navigate(first.to, { replace: true });
+  }, [plan.isLoading, plan.role, plan.permissions, location.pathname, navigate]);
+
   // Sidebar regroup (2026-08-25): per-group expand/collapse, persisted per
   // group (key `np_nav_group_<name>`) so an owner's preferred layout
   // survives reloads. A MISSING key means expanded — existing users see
   // everything until they deliberately collapse, and new groups default open.
-  const location = useLocation();
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
     for (const g of navGroups) init[g.name] = localStorage.getItem(`np_nav_group_${g.name}`) !== '0';
@@ -281,16 +152,24 @@ export function Layout() {
   // the desktop sidebar and the mobile drawer render the same
   // `sidebarBody`, the drawer gets grouping + locks for free.
   const renderNavItem = (item: NavItem) => {
+    // D-09: staff only see what their permissions cover (owner sees all).
+    if (!canSeeNavItem(item, plan.role, plan.permissions)) return null;
     const featureOk = item.feature === null || plan.has(item.feature);
-    // Addon-gated items: while the addon list is loading we
-    // optimistically treat them as unlocked (existing-subscriber
-    // case) so the sidebar doesn't briefly flash a lock icon.
-    const addonOk = !item.addon || addons.isLoading || addons.has(item.addon);
-    const unlocked = featureOk && addonOk;
-    // Send addon-locked clicks to /marketplace (where they can
-    // buy it) and feature-locked clicks to /billing (where they
-    // can upgrade their plan).
-    const lockedTarget = !featureOk ? '/billing' : '/marketplace';
+    // D-05: an add-on is an ALTERNATIVE unlock, not an extra requirement.
+    // While the add-on list is still loading we optimistically treat
+    // add-on-capable items as unlocked (existing-subscriber case) so the
+    // sidebar doesn't briefly flash a lock icon.
+    const addonOk = !!item.addon && (addons.isLoading || addons.has(item.addon));
+    // D-15: before /auth/me has answered we do not know the plan, so we draw
+    // NO lock badge and link to the real route — RequireFeature holds the
+    // page behind a spinner and decides once the plan is known. (The whole
+    // nav is a skeleton while the first load is in flight; this covers the
+    // plan===null case where the server could not compute a summary.)
+    const unlocked = !plan.loaded || featureOk || addonOk;
+    // Feature-locked clicks go to /billing (upgrade the plan). Only when the
+    // plan cannot unlock it at all — i.e. the item is add-on-only — do we
+    // send them to /marketplace.
+    const lockedTarget = item.feature ? '/billing' : '/marketplace';
     return (
       <NavLink
         key={item.to}
@@ -331,7 +210,9 @@ export function Layout() {
           my-outlets feed is ungated); single-outlet owners get the one row
           plus "+ Create new outlet", which upsells on a 402 FEATURE_LOCKED. */}
       <OutletSwitcher onNavigate={() => setMobileOpen(false)} />
-      {/* Plan badge — tap to upgrade */}
+      {/* Plan badge — tap to upgrade. Owner-only (Billing is owner-only,
+          D-09) and only once the plan is actually known (D-15). */}
+      {plan.loaded && plan.role === 'business_owner' && (
       <NavLink
         to="/billing"
         onClick={() => setMobileOpen(false)}
@@ -348,9 +229,21 @@ export function Layout() {
         </span>
         {!plan.isEnterprise && <span className="text-primary font-semibold">View plans</span>}
       </NavLink>
+      )}
+      {/* D-15 (2026-09-05): no nav until /auth/me has answered. Rendering
+          items before the plan + role are known would either flash lock
+          icons (fail-open default) or show a staffer the owner's sidebar for
+          a beat. A short skeleton is the honest state. */}
+      {plan.isLoading ? (
+        <nav className="flex-1 space-y-2 px-3 pt-2" aria-busy="true" aria-label="Loading navigation">
+          {Array.from({ length: 10 }).map((_, i) => (
+            <div key={i} className="h-7 rounded-md bg-muted animate-pulse" style={{ width: `${70 + ((i * 13) % 30)}%` }} />
+          ))}
+        </nav>
+      ) : (
       <nav className="flex-1 space-y-1">
         {navTop.map(renderNavItem)}
-        {navGroups.map((group) => (
+        {navGroups.filter((group) => group.items.some((it) => canSeeNavItem(it, plan.role, plan.permissions))).map((group) => (
           <div key={group.name}>
             {/* Group header (2026-08-25): small uppercase muted text per the
                 founder's spec; ChevronDown rotates -90° when collapsed so
@@ -371,6 +264,7 @@ export function Layout() {
         ))}
         {navBottom.map(renderNavItem)}
       </nav>
+      )}
       {/* FF-221 — WhatsApp support link. Hardcode-audit fix (2026-08-24):
           number now comes from VITE_SUPPORT_WHATSAPP (digits incl. country
           code, e.g. 91XXXXXXXXXX) instead of a personal number in source.

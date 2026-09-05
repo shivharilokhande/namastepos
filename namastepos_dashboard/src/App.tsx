@@ -9,6 +9,8 @@ import { getToken, bootstrapAuth } from './api/client';
 // always-mounted widgets) stays EAGER so the login path is instant; every
 // routed page is now React.lazy so it downloads only when its route is hit.
 import { Layout } from './components/Layout';
+import { featureForRoute } from './lib/navConfig';
+import { RequireFeature } from './components/RequireFeature';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { NotFoundPage } from './pages/NotFoundPage';
@@ -83,6 +85,17 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// D-10 (2026-09-05): route-level plan gate. The feature key comes from the
+// SAME nav table Layout draws its lock icons from (featureForRoute), so a
+// route is guarded exactly when its sidebar entry is lockable — one list,
+// no drift. Always-on routes (feature null) and add-on-capable routes
+// (Customers, which handles its own 402) render straight through.
+function Gated({ path, children }: { path: string; children: React.ReactNode }) {
+  const feature = featureForRoute(`/${path}`);
+  if (!feature) return <>{children}</>;
+  return <RequireFeature feature={feature}>{children}</RequireFeature>;
+}
+
 // Lightweight fallback shown while a lazy page chunk downloads. Deliberately
 // tiny (no extra deps) so it never adds to the eager bundle it's meant to
 // shrink.
@@ -128,58 +141,58 @@ export default function App() {
 
       <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
         <Route index element={<DashboardPage />} />
-        <Route path="menu"     element={<MenuPage />} />
-        <Route path="orders"   element={<OrdersPage />} />
-        <Route path="kot"      element={<KotPage />} />
-        <Route path="tables"   element={<TablesPage />} />
-        <Route path="qr-codes" element={<QrCodesPage />} />
-        <Route path="ingredients" element={<IngredientsPage />} />
-        <Route path="inventory" element={<InventoryPage />} />
-        <Route path="printers" element={<PrintersPage />} />
-        <Route path="modifier-groups" element={<ModifierGroupsPage />} />
-        <Route path="expenses" element={<ExpensesPage />} />
-        <Route path="reports"  element={<ReportsPage />} />
-        <Route path="invoices" element={<InvoicesPage />} />
-        <Route path="refunds"  element={<RefundsPage />} />
-        <Route path="staff"    element={<StaffPage />} />
-        <Route path="outlets"  element={<OutletsPage />} />
-        <Route path="customers"   element={<CustomersPage />} />
-        <Route path="memberships" element={<MembershipsPage />} />
-        <Route path="reviews"     element={<ReviewsPage />} />
-        <Route path="marketplace" element={<MarketplacePage />} />
-        <Route path="billing"  element={<BillingPage />} />
-        <Route path="settings" element={<SettingsPage />} />
-        <Route path="bill-template" element={<BillTemplatePage />} />
-        <Route path="aggregators" element={<AggregatorsPage />} />
-        <Route path="daily-closing" element={<DailyClosingPage />} />
-        <Route path="reservations" element={<ReservationsPage />} />
-        <Route path="wastage" element={<WastagePage />} />
-        <Route path="drivers" element={<DriversPage />} />
-        <Route path="delivery" element={<DeliveryBoardPage />} />
-        <Route path="online-site" element={<OnlineSitePage />} />
-        <Route path="accounting" element={<AccountingPage />} />
-        <Route path="retail" element={<RetailPage />} />
-        <Route path="heat-map" element={<HeatMapPage />} />
-        <Route path="forecast" element={<ForecastPage />} />
-        <Route path="kds" element={<KdsPage />} />
-        <Route path="captain" element={<CaptainPage />} />
-        <Route path="accounting-reports" element={<AccountingReportsPage />} />
-        <Route path="food-coupons" element={<CouponsPage />} />
-        <Route path="reservation-widget" element={<ReservationWidgetPage />} />
-        <Route path="campaigns" element={<CampaignsPage />} />
-        <Route path="bulk-import" element={<BulkImportPage />} />
-        <Route path="migrate" element={<MigrationPage />} />
-        <Route path="bank-reconcile" element={<BankReconcilePage />} />
-        <Route path="b2b-invoice-template" element={<B2BInvoiceTemplatePage />} />
-        <Route path="recurring-invoices" element={<RecurringInvoicesPage />} />
-        <Route path="surge" element={<SurgePage />} />
-        <Route path="privacy" element={<PrivacyPage />} />
+        <Route path="menu"     element={<Gated path="menu"><MenuPage /></Gated>} />
+        <Route path="orders"   element={<Gated path="orders"><OrdersPage /></Gated>} />
+        <Route path="kot"      element={<Gated path="kot"><KotPage /></Gated>} />
+        <Route path="tables"   element={<Gated path="tables"><TablesPage /></Gated>} />
+        <Route path="qr-codes" element={<Gated path="qr-codes"><QrCodesPage /></Gated>} />
+        <Route path="ingredients" element={<Gated path="ingredients"><IngredientsPage /></Gated>} />
+        <Route path="inventory" element={<Gated path="inventory"><InventoryPage /></Gated>} />
+        <Route path="printers" element={<Gated path="printers"><PrintersPage /></Gated>} />
+        <Route path="modifier-groups" element={<Gated path="modifier-groups"><ModifierGroupsPage /></Gated>} />
+        <Route path="expenses" element={<Gated path="expenses"><ExpensesPage /></Gated>} />
+        <Route path="reports"  element={<Gated path="reports"><ReportsPage /></Gated>} />
+        <Route path="invoices" element={<Gated path="invoices"><InvoicesPage /></Gated>} />
+        <Route path="refunds"  element={<Gated path="refunds"><RefundsPage /></Gated>} />
+        <Route path="staff"    element={<Gated path="staff"><StaffPage /></Gated>} />
+        <Route path="outlets"  element={<Gated path="outlets"><OutletsPage /></Gated>} />
+        <Route path="customers"   element={<Gated path="customers"><CustomersPage /></Gated>} />
+        <Route path="memberships" element={<Gated path="memberships"><MembershipsPage /></Gated>} />
+        <Route path="reviews"     element={<Gated path="reviews"><ReviewsPage /></Gated>} />
+        <Route path="marketplace" element={<Gated path="marketplace"><MarketplacePage /></Gated>} />
+        <Route path="billing"  element={<Gated path="billing"><BillingPage /></Gated>} />
+        <Route path="settings" element={<Gated path="settings"><SettingsPage /></Gated>} />
+        <Route path="bill-template" element={<Gated path="bill-template"><BillTemplatePage /></Gated>} />
+        <Route path="aggregators" element={<Gated path="aggregators"><AggregatorsPage /></Gated>} />
+        <Route path="daily-closing" element={<Gated path="daily-closing"><DailyClosingPage /></Gated>} />
+        <Route path="reservations" element={<Gated path="reservations"><ReservationsPage /></Gated>} />
+        <Route path="wastage" element={<Gated path="wastage"><WastagePage /></Gated>} />
+        <Route path="drivers" element={<Gated path="drivers"><DriversPage /></Gated>} />
+        <Route path="delivery" element={<Gated path="delivery"><DeliveryBoardPage /></Gated>} />
+        <Route path="online-site" element={<Gated path="online-site"><OnlineSitePage /></Gated>} />
+        <Route path="accounting" element={<Gated path="accounting"><AccountingPage /></Gated>} />
+        <Route path="retail" element={<Gated path="retail"><RetailPage /></Gated>} />
+        <Route path="heat-map" element={<Gated path="heat-map"><HeatMapPage /></Gated>} />
+        <Route path="forecast" element={<Gated path="forecast"><ForecastPage /></Gated>} />
+        <Route path="kds" element={<Gated path="kds"><KdsPage /></Gated>} />
+        <Route path="captain" element={<Gated path="captain"><CaptainPage /></Gated>} />
+        <Route path="accounting-reports" element={<Gated path="accounting-reports"><AccountingReportsPage /></Gated>} />
+        <Route path="food-coupons" element={<Gated path="food-coupons"><CouponsPage /></Gated>} />
+        <Route path="reservation-widget" element={<Gated path="reservation-widget"><ReservationWidgetPage /></Gated>} />
+        <Route path="campaigns" element={<Gated path="campaigns"><CampaignsPage /></Gated>} />
+        <Route path="bulk-import" element={<Gated path="bulk-import"><BulkImportPage /></Gated>} />
+        <Route path="migrate" element={<Gated path="migrate"><MigrationPage /></Gated>} />
+        <Route path="bank-reconcile" element={<Gated path="bank-reconcile"><BankReconcilePage /></Gated>} />
+        <Route path="b2b-invoice-template" element={<Gated path="b2b-invoice-template"><B2BInvoiceTemplatePage /></Gated>} />
+        <Route path="recurring-invoices" element={<Gated path="recurring-invoices"><RecurringInvoicesPage /></Gated>} />
+        <Route path="surge" element={<Gated path="surge"><SurgePage /></Gated>} />
+        <Route path="privacy" element={<Gated path="privacy"><PrivacyPage /></Gated>} />
         {/* Wave 2 + support additions */}
-        <Route path="action-center" element={<ActionCenterPage />} />
-        <Route path="leakage"       element={<RevenueLeakagePage />} />
-        <Route path="help"          element={<HelpCenterPage />} />
-        <Route path="support"       element={<SupportPage />} />
-        <Route path="refer"         element={<ReferPage />} />
+        <Route path="action-center" element={<Gated path="action-center"><ActionCenterPage /></Gated>} />
+        <Route path="leakage"       element={<Gated path="leakage"><RevenueLeakagePage /></Gated>} />
+        <Route path="help"          element={<Gated path="help"><HelpCenterPage /></Gated>} />
+        <Route path="support"       element={<Gated path="support"><SupportPage /></Gated>} />
+        <Route path="refer"         element={<Gated path="refer"><ReferPage /></Gated>} />
       </Route>
       {/* Bug fix (2026-08-20): the old catch-all silently redirected to
           "/", turning any typo or stale bookmark into a fake Overview

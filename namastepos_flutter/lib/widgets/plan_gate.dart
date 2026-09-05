@@ -124,8 +124,16 @@ class PlanGate extends StatelessWidget {
             // "open" internally — when the pushed screen later pops
             // (e.g. user taps another bottom-nav tab), the drawer
             // re-appears on HomeScreen, looking like "More opens
-            // hamburger". Pop the drawer FIRST in both branches.
-            Navigator.of(ctx).pop();
+            // hamburger". Close the drawer FIRST in both branches.
+            //
+            // 2026-09-05 (review #5): close it via the ScaffoldState, NOT
+            // `Navigator.pop`. HomeScreen fixed the same crash for its own
+            // tiles on 2026-08-23 (`_closeDrawer`): on a double-tap, tap #1
+            // popped the drawer's local history entry and tap #2 popped the
+            // ROOT route — black screen. Every plan-gated tile still did the
+            // pop. `closeDrawer()` can never pop a route, and is a no-op when
+            // the tile is not inside an open drawer.
+            closeEnclosingDrawer(ctx);
             if (unlocked) { onTap(); return; }
             Navigator.push(ctx, MaterialPageRoute(
               builder: (_) => const billing.BillingScreen(),
@@ -133,6 +141,14 @@ class PlanGate extends StatelessWidget {
           },
         );
       });
+}
+
+/// Close the drawer that contains [ctx] without touching the route stack.
+/// The Drawer is built in the Scaffold's own subtree, so `Scaffold.maybeOf`
+/// from a tile inside it finds HomeScreen's ScaffoldState.
+void closeEnclosingDrawer(BuildContext ctx) {
+  final s = Scaffold.maybeOf(ctx);
+  if (s != null && s.isDrawerOpen) s.closeDrawer();
 }
 
 class _LockedBadge extends StatelessWidget {

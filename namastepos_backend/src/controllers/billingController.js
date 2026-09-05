@@ -92,11 +92,15 @@ module.exports = {
     // launch, so the paused banner needs no new endpoint and no new polling.
     // Null whenever the account is not paused, which is the normal case.
     let pause = null;
+    // 2026-09-05 (A6) — an admin suspension has its OWN block, never the
+    // friendly pause banner: the tenant cannot resume it from Billing.
+    let suspension = null;
     try {
       const entitlement = require('../services/planEntitlement');
       const r = await query(
         `SELECT s.status, s.trial_ends_at, s.past_due_at, s.last_dunning_at,
                 s.paused_at, s.pause_ends_at, s.pause_months, s.dunning_step,
+                s.suspended_at,
                 p.price_inr_paise, p.price_yearly_paise, s.billing_period
            FROM subscriptions s
            LEFT JOIN plans p ON p.id = s.plan_id
@@ -114,6 +118,13 @@ module.exports = {
             + 'everything you have billed. New bills resume when you do.',
         };
       }
+      if (row && row.status === 'suspended') {
+        suspension = {
+          suspended: true,
+          suspendedAt: row.suspended_at || null,
+          message: 'Account suspended — contact support.',
+        };
+      }
       if (row) {
         const paise = row.billing_period === 'yearly'
           ? (row.price_yearly_paise || row.price_inr_paise || 0)
@@ -129,7 +140,11 @@ module.exports = {
     } catch (e) {
       require('../config/logger').warn(`[billing] overage read failed for ${businessId}: ${e.message}`);
     }
-    res.json({ subscription: { ...subscription, usage, grace, overage, pause } });
+    res.json({
+      subscription: {
+        ...subscription, usage, grace, overage, pause, suspension,
+      },
+    });
   }),
 
   // Change plan (initiates Razorpay flow for paid plans, immediate for free)
@@ -137,8 +152,21 @@ module.exports = {
     validate({ body: changeBody }),
     asyncHandler(async (req, res) => {
       const { tier, billingPeriod } = req.body;
-      if (tier === 'free') {
-        const subscription = await sub.changePlan(req.params.businessId, 'free');
+      // A9 (2026-09-05): free vs paid is decided on the plan's PRICE, not on
+      // the literal tier code 'free' (a second ₹0 plan would otherwise have
+      // been sent to Razorpay checkout and 400'd on a missing plan id).
+      const target = await sub.getPlanByTier(tier); // 404 for unknown tiers
+      // A6: a suspended tenant cannot buy their way out of a suspension.
+      const cur = await query(
+        'SELECT status, suspended_at FROM subscriptions WHERE business_id = $1 LIMIT 1',
+        [req.params.businessId],
+      );
+      sub.assertNotSuspended(cur.rows[0]);
+      if (sub.isFreePlan(target)) {
+        // A3: when a paid period is running on a gateway mandate the service
+        // SCHEDULES the downgrade for period end (subscription.pendingPlan +
+        // scheduled/effectiveAt/message) instead of flipping the plan now.
+        const subscription = await sub.changePlan(req.params.businessId, tier);
         return res.json({ subscription });
       }
       // Fix (2026-08-24): plan changes used to ALWAYS go through Razorpay, so
@@ -147,31 +175,17 @@ module.exports = {
       // configured, fall back to an immediate manual plan change (mirrors how
       // addons activate for free in this phase). When real keys ARE set, we
       // still route through Razorpay so production collects payment.
-      const env = require('../config/env');
-      // Only route through Razorpay when configured with a LIVE key. Blank or
-      // test keys (rzp_test_) — and, in this beta, a missing webhook secret —
-      // can't complete the charge→webhook→activate loop, so we activate the
-      // plan immediately (no charge) instead of throwing a Razorpay error.
-      const razorpayReady = !!(env.RAZORPAY_KEY_ID
-        && env.RAZORPAY_KEY_SECRET
-        && env.RAZORPAY_KEY_ID.startsWith('rzp_live_')
-        // A live charge is worthless without the webhook secret that
-        // completes charge→webhook→activate, so require it too.
-        && env.RAZORPAY_WEBHOOK_SECRET);
-      if (!razorpayReady) {
-        // SECURITY (2026-08-26): the free "manual activation" fallback is a
-        // BETA-only convenience. In production a missing/mis-set/rotated key
-        // must NEVER silently hand out a paid plan for free — fail loudly so
-        // the misconfig is caught instead of leaking revenue. The fallback is
-        // therefore gated to non-production environments only.
-        if (env.isProd()) {
-          const { HttpError } = require('../utils/errors');
-          throw new HttpError(
-            503,
-            'Payments are temporarily unavailable. Please try again shortly.',
-            'PAYMENTS_UNAVAILABLE',
-          );
-        }
+      //
+      // 2026-09-05: the gateway/manual/unavailable decision now lives in ONE
+      // place — razorpayService.checkoutMode() — shared with the resume paths,
+      // with exactly the semantics this controller had:
+      //   'gateway'     LIVE key + webhook secret (requireLive: a test key
+      //                 cannot complete charge→webhook→activate);
+      //   'manual'      non-production otherwise → instant activation, no charge;
+      //   'unavailable' production without a live key → 503, never free.
+      const mode = razorpay.checkoutMode({ requireLive: true });
+      if (mode === 'unavailable') throw razorpay.paymentsUnavailableError();
+      if (mode === 'manual') {
         const subscription = await sub.changePlan(req.params.businessId, tier, { billingPeriod: billingPeriod || 'monthly' });
         return res.json({
           subscription,
@@ -236,6 +250,14 @@ module.exports = {
 
   // Resume: un-pause (restoring the same plan) or un-cancel. One button for
   // the owner; churnService decides which of the two it is from the row.
+  //
+  // 2026-09-05 (A1/A4): for a PAID plan with a gateway configured the reply is
+  // `{ requiresCheckout: true, checkout: {...createSubscription payload} }` and
+  // NOTHING has changed yet — the client opens Razorpay Checkout with
+  // `checkout.checkoutOptions` and the row flips when the first charge lands.
+  // `resumed: true` means the change is already in effect. A `trialing` /
+  // `past_due` / `cancelled` row is 409 RESUME_NOT_ALLOWED (choose a plan
+  // instead); `suspended` is 403 ACCOUNT_SUSPENDED.
   resume: asyncHandler(async (req, res) => {
     const out = await churn.resume(req.params.businessId, {
       userId: req.user?.id || req.user?.sub || null,

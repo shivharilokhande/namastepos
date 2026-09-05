@@ -12,12 +12,14 @@ import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../utils/error_humanizer.dart';
 import '../../utils/formatters.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
+import '../../widgets/plan_gate.dart';
 
 class TaxInvoicesScreen extends StatefulWidget {
   const TaxInvoicesScreen({super.key});
@@ -101,6 +103,16 @@ class _TaxInvoicesScreenState extends State<TaxInvoicesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // 2026-09-05 (review #3): `tax_invoices` is a client-enforced key and the
+    // drawer tile was its only gate — the Registers screen's Invoices tab and
+    // its income-row sheet pushed straight in. Gate the DESTINATION, same
+    // pattern as P&L / Registers, so every door has to pass it.
+    if (!PlanGate.allows(context, Features.taxInvoices)) {
+      return const PlanGate(
+        featureKey: Features.taxInvoices,
+        child: SizedBox.shrink(),
+      );
+    }
     final fmt = AppFmt.inr2;
     final dateFmt = DateFormat('dd MMM, hh:mm a');
 
@@ -298,6 +310,13 @@ class _TaxInvoiceDetailScreenState extends State<TaxInvoiceDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Review #3 (2026-09-05): destination gate — see TaxInvoicesScreen.
+    if (!PlanGate.allows(context, Features.taxInvoices)) {
+      return const PlanGate(
+        featureKey: Features.taxInvoices,
+        child: SizedBox.shrink(),
+      );
+    }
     final fmt = AppFmt.inr2;
     return Scaffold(
       appBar: AppBar(

@@ -231,6 +231,18 @@ async function _runOnce() {
       // parked in `pause_plan_id` — it can never promote anyone.
       await _track('pause-auto-resume', () => churn.autoResumeDue())
         .catch((e) => logger.warn(`[pause-auto-resume] ${e.message}`));
+      // 2026-09-05 (billing review A3) — period-end transitions the gateway
+      // webhook normally drives: land scheduled downgrades to the free plan
+      // once the paid period has ended, and close cancel-at-period-end rows
+      // whose `subscription.cancelled` never arrived. Runs BEFORE the
+      // self-heal below, which must never roll a row that is on its way out.
+      await _track('period-end-sweep', () => require('./subscriptionService').sweepPeriodEndTransitions())
+        .then((r) => {
+          if (r && (r.downgraded > 0 || r.cancelled > 0)) {
+            logger.info(`[period-end-sweep] downgraded ${r.downgraded}, cancelled ${r.cancelled}`);
+          }
+        })
+        .catch((e) => logger.warn(`[period-end-sweep] ${e.message}`));
       // FF-402f — self-heal stale billing periods. If an active sub's
       // `current_period_end` is in the past (Razorpay webhook dropped,
       // support toggled a plan without rolling forward, etc.) we push

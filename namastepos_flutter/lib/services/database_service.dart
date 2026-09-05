@@ -18,7 +18,10 @@ class DatabaseService {
   // v3 (NP-137, 2026-09-03): expenses.clientKey — idempotency tag sent with
   // the create POST so offline-queued expenses can be retried/reconciled
   // without ghost duplicates.
-  static const int _dbVersion = 3;
+  // v4 (2026-09-05, review #2): menu_items.gstPct — the item's GST slab, so
+  // the offline menu cache can estimate tax on a queued order the same way
+  // the server will. Additive; old rows read back null → scheme default.
+  static const int _dbVersion = 4;
 
   Database? _db;
 
@@ -79,6 +82,7 @@ class DatabaseService {
         isActive INTEGER NOT NULL DEFAULT 1,
         isVeg INTEGER NOT NULL DEFAULT 1,
         imageUrl TEXT,
+        gstPct REAL,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL
       );
@@ -242,6 +246,12 @@ class DatabaseService {
     // POST carries so offline-queued rows can be re-posted/reconciled safely.
     if (oldV < 3) {
       await db.execute('ALTER TABLE expenses ADD COLUMN clientKey TEXT');
+    }
+    // v4 (review #2, 2026-09-05): additive column — the GST slab of each
+    // cached menu item. The next MenuProvider.load() refills it from the
+    // backend; until then a null slab falls back to the scheme default.
+    if (oldV < 4) {
+      await db.execute('ALTER TABLE menu_items ADD COLUMN gstPct REAL');
     }
   }
 

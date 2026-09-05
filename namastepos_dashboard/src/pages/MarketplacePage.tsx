@@ -82,7 +82,7 @@ export function MarketplacePage() {
     onSuccess: () => {
       toast.success('Add-on activated');
       qc.invalidateQueries({ queryKey: ['my-addons'] });
-      qc.invalidateQueries({ queryKey: ['plan-summary'] });
+      qc.invalidateQueries({ queryKey: ['me'] }); // D-19 (2026-09-05): plan lives under ['me'] now
     },
     onError: (e: any) => {
       if (e?.message === 'PAYMENT_CANCELLED') {
@@ -102,7 +102,7 @@ export function MarketplacePage() {
     onSuccess: () => {
       toast.success('Add-on cancelled');
       qc.invalidateQueries({ queryKey: ['my-addons'] });
-      qc.invalidateQueries({ queryKey: ['plan-summary'] });
+      qc.invalidateQueries({ queryKey: ['me'] }); // D-19 (2026-09-05): plan lives under ['me'] now
     },
     onError: (e) => toast.error(apiError(e)),
   });
@@ -112,7 +112,7 @@ export function MarketplacePage() {
     onSuccess: () => {
       toast.success('Resumed');
       qc.invalidateQueries({ queryKey: ['my-addons'] });
-      qc.invalidateQueries({ queryKey: ['plan-summary'] });
+      qc.invalidateQueries({ queryKey: ['me'] }); // D-19 (2026-09-05): plan lives under ['me'] now
     },
     onError: (e) => toast.error(apiError(e)),
   });

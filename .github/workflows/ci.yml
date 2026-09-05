@@ -96,6 +96,12 @@ jobs:
       - name: Type-check dashboard
         working-directory: namastepos_dashboard
         run: npx tsc --noEmit -p .
+      # 2026-09-05 code review (D-17): the dashboard had no eslint config, so
+      # `npm run lint` had never run anywhere. Errors block; warnings are the
+      # 549-item baseline and do not.
+      - name: Lint dashboard
+        working-directory: namastepos_dashboard
+        run: npm run lint
       - name: Build dashboard
         working-directory: namastepos_dashboard
         run: npm run build

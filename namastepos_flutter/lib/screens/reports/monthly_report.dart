@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
 import '../../models/order.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/expenses_provider.dart';
 import '../../providers/orders_provider.dart';
 import '../../utils/formatters.dart';
@@ -41,6 +42,12 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
   Widget build(BuildContext context) {
     final orders = context.watch<OrdersProvider>().orders;
     final expenses = context.watch<ExpensesProvider>().expenses;
+    // 2026-09-05 (review #12): mirror the drawer's staff-permission checks on
+    // the drill-downs (see reports_screen.dart).
+    final auth = context.watch<AuthProvider>();
+    final canIncomeRegister = auth.canDo('income_register');
+    final canExpenseRegister = auth.canDo('expense_register');
+    final canPnl = auth.canDo('pnl_statement');
     final daysInMonth = DateUtils.getDaysInMonth(_month.year, _month.month);
 
     final daily = List<double>.filled(daysInMonth, 0);
@@ -112,14 +119,14 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
               KpiCard(
                 label: 'Revenue', value: AppFmt.money(totalRevenue),
                 icon: Icons.trending_up_rounded, color: AppColors.success,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
+                onTap: !canIncomeRegister ? null : () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => RegisterReportsScreen.income(),
                 )),
               ),
               KpiCard(
                 label: 'Expenses', value: AppFmt.money(totalExpense),
                 icon: Icons.receipt_rounded, color: AppColors.warning,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
+                onTap: !canExpenseRegister ? null : () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => RegisterReportsScreen.expense(),
                 )),
               ),
@@ -127,7 +134,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
                 label: 'Profit', value: AppFmt.money(profit),
                 icon: Icons.account_balance_wallet_rounded,
                 color: profit >= 0 ? AppColors.success : AppColors.error,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
+                onTap: !canPnl ? null : () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => const IncomeStatementScreen(),
                 )),
               ),
@@ -136,7 +143,7 @@ class _MonthlyReportScreenState extends State<MonthlyReportScreen> {
                 value: totalRevenue == 0
                     ? '0%' : '${(profit / totalRevenue * 100).toStringAsFixed(0)}%',
                 icon: Icons.pie_chart_rounded, color: AppColors.info,
-                onTap: () => Navigator.push(context, MaterialPageRoute(
+                onTap: !canPnl ? null : () => Navigator.push(context, MaterialPageRoute(
                   builder: (_) => const IncomeStatementScreen(),
                 )),
               ),

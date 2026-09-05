@@ -11,7 +11,6 @@ const { NotFound, BadRequest, Conflict, HttpError } = require('../utils/errors')
 const sub = require('./subscriptionService');
 const customers = require('./customerService');
 const loyalty = require('./loyaltyService');
-const addons = require('./addonService');
 const kot = require('./kotService');
 const recipes = require('./recipeService');
 const { computeGstBreakdown } = require('./gstService2');
@@ -22,6 +21,57 @@ const { computeGstBreakdown } = require('./gstService2');
 // total can drift a sub-paise off subtotal+tax−discount. round2() rounds to the
 // nearest paise; the +EPSILON nudges exact .5-at-paise cases up deterministically.
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+/**
+ * 2026-09-05 (review #1, P0): split the order's FINAL tax across its lines.
+ *
+ * `orders.tax` is the figure the bill carries (server-computed, or the
+ * client's under ORDER_TAX_ENFORCE=log). The tax invoice (taxInvoiceService)
+ * and the GSTR exports are built from `order_items.gst_pct / gst_amount`, and
+ * until today create() never wrote those columns — so every auto-issued GST
+ * invoice showed ₹0 GST. Allocation is done in integer paise, weighted by
+ * each line's taxable amount × its slab (so a 5% and an 18% line on one bill
+ * split correctly; with one slab this degenerates to plain proportional), and
+ * the rounding remainder lands on the heaviest line so the lines ALWAYS sum
+ * to `orders.tax` exactly. Falls back to taxable-amount weights when every
+ * slab is 0 but a tax figure was still recorded (legacy client behaviour).
+ *
+ * Returns [{ gstPct, gstAmountInr }] aligned with `lines`.
+ *   gstPct       — the effective slab: the menu's (server) when the line is
+ *                  mapped, else the client's per-item gst if it sent one,
+ *                  else null. Composition scheme → 0 for every line.
+ */
+function allocateLineGst(lines, clientItems, taxInr, { billsWithoutGst = false } = {}) {
+  const taxPaise = Math.max(0, Math.round(Number(taxInr || 0) * 100));
+  const pcts = lines.map((l, ix) => {
+    if (billsWithoutGst) return 0;
+    if (l.menuItemId) return Number.isFinite(Number(l.gstPct)) ? Number(l.gstPct) : null;
+    const ci = clientItems[ix] || {};
+    const raw = ci.gst_pct ?? ci.gstPct;
+    return raw == null || !Number.isFinite(Number(raw)) ? null : Number(raw);
+  });
+  const taxable = lines.map((l) => Math.round(Number(l.price) * Number(l.qty) * 100));
+  let weights = lines.map((_, ix) => taxable[ix] * (pcts[ix] || 0));
+  if (weights.every((w) => w <= 0)) weights = taxable.map((t) => Math.max(0, t));
+  const wSum = weights.reduce((s, w) => s + w, 0);
+  const shares = lines.map(() => 0);
+  if (taxPaise > 0 && wSum > 0) {
+    let allocated = 0;
+    for (let ix = 0; ix < lines.length; ix += 1) {
+      shares[ix] = Math.floor((taxPaise * weights[ix]) / wSum);
+      allocated += shares[ix];
+    }
+    let heaviest = 0;
+    for (let ix = 1; ix < lines.length; ix += 1) {
+      if (weights[ix] > weights[heaviest]) heaviest = ix;
+    }
+    shares[heaviest] += taxPaise - allocated; // remainder → largest line
+  }
+  return lines.map((_, ix) => ({
+    gstPct: pcts[ix],
+    gstAmountInr: shares[ix] / 100,
+  }));
+}
 
 function serializeOrder(row, items = []) {
   if (!row) return null;
@@ -86,6 +136,10 @@ function serializeOrder(row, items = []) {
       variantId: it.variant_id,
       variantLabel: it.variant_label,
       modifierLines: it.modifier_lines || null,
+      // 2026-09-05 (review #1): per-line GST as persisted at create — the
+      // slab actually applied and this line's share of orders.tax (INR).
+      gstPct: it.gst_pct == null ? null : parseFloat(it.gst_pct),
+      gstAmount: it.gst_amount == null ? null : parseFloat(it.gst_amount),
     })),
   };
 }
@@ -192,8 +246,19 @@ async function create(businessId, body, opts = {}) {
   } = body;
   // P0: `tax` is mutable — item-GST branch below may replace it.
   let tax = body.tax || 0;
+  // 2026-09-05 (review #1 / NP-112 follow-up): "the client did not compute
+  // tax" and "the client computed ₹0 tax" are different statements. An
+  // OMITTED tax (undefined/null) means the app is deferring to the server
+  // and the server figure is adopted below regardless of ORDER_TAX_ENFORCE;
+  // an explicit 0 keeps today's log/enforce behaviour (it IS a disagreement).
+  const taxOmitted = body.tax === undefined || body.tax === null;
 
   if (!items || items.length === 0) throw new BadRequest('Order must have at least one item');
+  // 2026-09-05 (review #6): guest QR payloads cannot express modifiers, so
+  // the required-group (min_select) rule is waived for them — but NOTHING
+  // else a trusted aggregator gets (unmapped lines, platform price, platform
+  // tax, 86/stock bypass). Server-side callers only; never body-derived.
+  const exemptRequiredModifiers = trustedChannel || opts.exemptRequiredModifiers === true;
 
   // Push 13.4: the mobile POS only knows the table LABEL (e.g. "1", "A1"),
   // not its UUID. Resolve tableNo → tableId so the auto-session logic
@@ -228,34 +293,30 @@ async function create(businessId, body, opts = {}) {
     if (ownTable.rowCount === 0) resolvedTableId = null;
   }
 
-  // Auto-open a session if dine-in + table + no session
-  let resolvedSessionId = tableSessionId;
-  if (!resolvedSessionId && resolvedTableId && source === 'dineIn') {
-    // Business-scoped (2026-08-25, finding #2): never attach to / reuse an
-    // open session that belongs to another tenant's table.
-    const existing = await query(
-      'SELECT id FROM table_sessions WHERE table_id = $1 AND business_id = $2 AND status = \'open\' LIMIT 1',
-      [resolvedTableId, businessId],
+  // SECURITY (2026-09-05, review #5 — tenant isolation): a client-supplied
+  // `tableSessionId` used to be copied straight onto the order. A session id
+  // is obtainable by any diner from the public guest bill endpoint, so an
+  // order in business A could be hung on business B's open session and
+  // poison B's settle total. It must belong to THIS business and still be
+  // open — anything else is a 400 (a closed session cannot take a KOT; an
+  // offline device replaying against a since-settled table must re-open it).
+  if (tableSessionId) {
+    const ownSession = await query(
+      `SELECT id FROM table_sessions
+        WHERE id = $1 AND business_id = $2 AND status = 'open' LIMIT 1`,
+      [tableSessionId, businessId],
     );
-    if (existing.rowCount > 0) {
-      resolvedSessionId = existing.rows[0].id;
-    } else {
-      const opened = await query(
-        `INSERT INTO table_sessions
-           (business_id, table_id, guest_count, customer_phone, customer_name)
-         VALUES ($1, $2, 2, $3, $4) RETURNING id`,
-        [businessId, resolvedTableId, customerPhone, customerName],
-      );
-      resolvedSessionId = opened.rows[0].id;
-      // Flip the table to occupied
-      await query(
-        `UPDATE tables SET status = 'occupied'::table_status,
-                            current_session_id = $1
-          WHERE business_id = $2 AND id = $3`,
-        [resolvedSessionId, businessId, resolvedTableId],
-      );
+    if (ownSession.rowCount === 0) {
+      throw new HttpError(400, 'Table session not found or not open', 'INVALID_SESSION');
     }
   }
+  // Auto-open a session if dine-in + table + no session. 2026-09-05 (review
+  // #9): the INSERT/UPDATE moved INSIDE the order transaction below — it used
+  // to run first on the pool, so an order that then failed validation
+  // (OUT_OF_STOCK, DISCOUNT_EXCEEDS_BILL, MODIFIER_*) left the table
+  // 'occupied' with an empty open session that staff had to abandon by hand.
+  let resolvedSessionId = tableSessionId;
+  const wantsAutoSession = !resolvedSessionId && resolvedTableId && source === 'dineIn';
 
   // Resolve loyalty addon + customer + redemption discount BEFORE the order txn
   let loyaltyActive = false;
@@ -289,6 +350,37 @@ async function create(businessId, body, opts = {}) {
   }
 
   return withTransaction(async (client) => {
+    // Dine-in auto-session (see `wantsAutoSession` above). Runs FIRST in the
+    // txn, before the menu row locks, so the acquisition order (session /
+    // table row → menu_items → variants) is the same for every concurrent
+    // order on the same table. Rolls back with the order.
+    if (wantsAutoSession) {
+      // Business-scoped (2026-08-25, finding #2): never attach to / reuse an
+      // open session that belongs to another tenant's table.
+      const existing = await client.query(
+        'SELECT id FROM table_sessions WHERE table_id = $1 AND business_id = $2 AND status = \'open\' LIMIT 1',
+        [resolvedTableId, businessId],
+      );
+      if (existing.rowCount > 0) {
+        resolvedSessionId = existing.rows[0].id;
+      } else {
+        const opened = await client.query(
+          `INSERT INTO table_sessions
+             (business_id, table_id, guest_count, customer_phone, customer_name)
+           VALUES ($1, $2, 2, $3, $4) RETURNING id`,
+          [businessId, resolvedTableId, customerPhone, customerName],
+        );
+        resolvedSessionId = opened.rows[0].id;
+        // Flip the table to occupied
+        await client.query(
+          `UPDATE tables SET status = 'occupied'::table_status,
+                              current_session_id = $1
+            WHERE business_id = $2 AND id = $3`,
+          [resolvedSessionId, businessId, resolvedTableId],
+        );
+      }
+    }
+
     // P0-13 partial fix: bulk-lock all menu rows in one query at the start
     // of the txn. This both (a) avoids N+1 SELECTs for stock check, and
     // (b) acquires all row locks in a deterministic order to avoid
@@ -579,7 +671,10 @@ async function create(businessId, body, opts = {}) {
       // or badly-stale payloads. Trusted channels are EXEMPT: the aggregator
       // and guest-QR payload schemas cannot express modifiers at all, so
       // enforcing it there would reject perfectly good orders.
-      if (!trustedChannel) {
+      // 2026-09-05: the guest path is no longer a trusted channel (review #6)
+      // but still cannot express modifiers — it opts into ONLY this waiver
+      // via opts.exemptRequiredModifiers.
+      if (!exemptRequiredModifiers) {
         for (const [gid, meta] of attachedGroups) {
           const minSelect = meta.min_select == null ? 0 : Number(meta.min_select);
           if (minSelect > 0 && (perGroupCount.get(gid) || 0) < minSelect) {
@@ -883,7 +978,18 @@ async function create(businessId, body, opts = {}) {
         });
       }
     }
-    if (serverGst && Math.abs(Number(tax) - serverGst.totalGst) > 1) {
+    if (serverGst && taxOmitted) {
+      // 2026-09-05 (review #1): the client sent NO tax figure at all — it is
+      // not disagreeing with the server, it is deferring to it. Adopt the
+      // menu-derived GST in every mode (log/enforce) and for every source,
+      // so a POS build that stops computing tax client-side still bills and
+      // invoices GST correctly. `total` was built with a 0 tax component
+      // (body.tax undefined → 0), so add the server figure in.
+      total = Math.max(0, round2(total + serverGst.totalGst));
+      tax = serverGst.totalGst;
+      gstBreakdown = serverGst.breakdown;
+      cgst = serverGst.cgst; sgst = serverGst.sgst; igst = serverGst.igst;
+    } else if (serverGst && Math.abs(Number(tax) - serverGst.totalGst) > 1) {
       const logger = require('../config/logger');
       if (taxEnforceMode === 'enforce' && !channelTaxAuthoritative) {
         logger.warn(
@@ -1145,16 +1251,21 @@ async function create(businessId, body, opts = {}) {
     // the authoritative line price, the variant label read off
     // menu_item_variants, and modifier lines carrying DB deltas. Receipts,
     // KOTs and the e-invoice therefore print what was actually charged.
+    // 2026-09-05 (review #1): persist the slab + this line's share of the
+    // FINAL `tax` so the invoice/GSTR read the same GST the bill charged.
+    const lineGst = allocateLineGst(lines, items, tax, { billsWithoutGst });
     const itemRows = [];
-    for (const it of lines) {
+    for (let lx = 0; lx < lines.length; lx += 1) {
+      const it = lines[lx];
       const ins = await client.query(
         `INSERT INTO order_items
            (order_id, menu_item_id, name, price, qty, note,
-            variant_id, variant_label, modifier_lines)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+            variant_id, variant_label, modifier_lines, gst_pct, gst_amount)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
         [orderRow.id, it.menuItemId, it.name, it.price, it.qty, it.note,
           it.variantId, it.variantLabel,
-          it.modifierLines ? JSON.stringify(it.modifierLines) : null],
+          it.modifierLines ? JSON.stringify(it.modifierLines) : null,
+          lineGst[lx].gstPct, lineGst[lx].gstAmountInr],
       );
       itemRows.push(ins.rows[0]);
 
@@ -1296,7 +1407,7 @@ async function create(businessId, body, opts = {}) {
       },
     });
 
-    // ── Recipe-based ingredient deduction (gated by 'recipe-costing' addon) ─
+    // ── Recipe-based ingredient deduction (gated by the recipe_costing feature) ─
     // NP-302 (2026-09-04): this was `catch (_) {}` too, so a failed deduction
     // left sales correct and stock / food-cost wrong — silently. Split by
     // criticality:
@@ -1306,13 +1417,18 @@ async function create(businessId, body, opts = {}) {
     //     returns `{orderFoodCostPaise: 0}` for that case without throwing —
     //     so the legitimate empty case is already distinguished from a broken
     //     one, and only the broken one aborts.
-    //   • The ENTITLEMENT lookup (`hasAddon`, a pool read, not part of this
+    //   • The ENTITLEMENT lookup (`hasFeature`, a pool read, not part of this
     //     txn) is non-critical: if it fails we cannot tell whether to deduct,
     //     so we skip and STAMP the order for the repair sweep instead of
     //     dropping the fact on the floor.
     let hasRecipes = false;
     try {
-      hasRecipes = await addons.hasAddon(businessId, 'recipe-costing');
+      // 2026-09-05 (entitlements review D1): gate on the FEATURE KEY, not the
+      // addon slug. Pro/Advanced/Enterprise plans grant `recipe_costing`
+      // outright, and the paid 'recipe-costing' addon grants the same key via
+      // addons.grants_features (migration 074) — so plan tenants start
+      // deducting and addon buyers keep working.
+      hasRecipes = await require('./featureService').hasFeature(businessId, 'recipe_costing');
     } catch (e) {
       hasRecipes = null; // unknown — do not guess, record for repair
       // SAVEPOINT for the same reason NP-201 uses one above: a database that
@@ -1975,7 +2091,8 @@ async function updateStatus(businessId, orderId, status, reason = null, reasonCo
       // would have ingredient stock ADDED on every cancel. Best-effort via
       // SAVEPOINT so a recipe/ingredient miss can't poison the cancel txn.
       try {
-        if (await addons.hasAddon(businessId, 'recipe-costing')) {
+        // 2026-09-05 (D1): same feature-key gate as the deduction at create.
+        if (await require('./featureService').hasFeature(businessId, 'recipe_costing')) {
           await client.query('SAVEPOINT cancel_ingredients');
           try {
             await recipes.restoreForOrder(client, {
@@ -2359,6 +2476,8 @@ module.exports = {
   serializeOrder,
   resolveServiceMode,
   ORDER_TRANSITIONS,
+  allocateLineGst, // 2026-09-05 — exported for tests
+
   // Migration wizard (2026-09-03): the sales-history import inserts
   // aggregate orders directly (deliberately skipping create()'s side
   // effects) but must allocate order_no through the same atomic counter.

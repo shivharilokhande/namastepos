@@ -156,8 +156,8 @@ const Map<String, FeatureSurface> kMobileSurfaces = <String, FeatureSurface>{
       FeatureSurface(MobileSurface.ungatedByDesign, 'Headcount claim; enforced by plans.limits.staff.'),
 
   // ── Gated surfaces ──────────────────────────────────────────────────────
-  Features.customersBasic:
-      FeatureSurface(MobileSurface.gated, 'customers/customers_screen.dart'),
+  Features.customersBasic: FeatureSurface(MobileSurface.gated,
+      'customers/customers_screen.dart + utils/checkout_gates.dart (customer attach at both checkouts)'),
   Features.menuVariantsModifiers: FeatureSurface(MobileSurface.gated,
       'home_screen drawer (Modifier groups) + menu_editor_screen variants block'),
   Features.kds: FeatureSurface(MobileSurface.gated,
@@ -166,8 +166,8 @@ const Map<String, FeatureSurface> kMobileSurfaces = <String, FeatureSurface>{
       'home_screen drawer tile AND the Tables bottom-nav tab'),
   Features.driverMode:
       FeatureSurface(MobileSurface.gated, 'home_screen drawer tile'),
-  Features.loyalty:
-      FeatureSurface(MobileSurface.gated, 'home_screen drawer (Coupons)'),
+  Features.loyalty: FeatureSurface(MobileSurface.gated,
+      'home_screen drawer (Coupons) + utils/checkout_gates.dart (points/wallet at Pay & Place and captain settle)'),
   Features.aggregators:
       FeatureSurface(MobileSurface.gated, 'settings_screen'),
   Features.reservations:
@@ -179,27 +179,27 @@ const Map<String, FeatureSurface> kMobileSurfaces = <String, FeatureSurface>{
   Features.qrOrdering:
       FeatureSurface(MobileSurface.gated, 'home_screen drawer tile'),
   Features.autoWhatsappOrder: FeatureSurface(MobileSurface.gated,
-      'settings_screen + confirm_order_screen + orders_screen'),
+      'settings_screen + confirm_order_screen + orders_screen + order_detail_screen WhatsApp button'),
   Features.billSplit: FeatureSurface(MobileSurface.gated,
       'captain_screen Split button'),
   Features.voicePos: FeatureSurface(MobileSurface.gated,
       'pos/new_order_screen mic (device readiness AND this key)'),
   Features.inventoryTracking:
       FeatureSurface(MobileSurface.gated, 'home_screen drawer tile'),
-  Features.taxInvoices:
-      FeatureSurface(MobileSurface.gated, 'home_screen drawer tile'),
+  Features.taxInvoices: FeatureSurface(MobileSurface.gated,
+      'home_screen drawer tile + tax_invoices_screen DESTINATION gate (list + detail) + register_reports_screen Invoices tab'),
   Features.pnlStatement: FeatureSurface(MobileSurface.gated,
       'home_screen drawer tile + dashboard_screen KPI taps'),
   Features.registers:
       FeatureSurface(MobileSurface.gated, 'home_screen drawer tile'),
   Features.memberships: FeatureSurface(MobileSurface.gated,
-      'home_screen drawer tile + membership_offer_dialog'),
+      'home_screen drawer tile + membership_offer_dialog + utils/checkout_gates.dart (offer at both checkouts)'),
   Features.reviews:
       FeatureSurface(MobileSurface.gated, 'home_screen drawer tile'),
   Features.einvoiceGst:
       FeatureSurface(MobileSurface.gated, 'orders_screen IRN action'),
-  Features.surgePricing:
-      FeatureSurface(MobileSurface.gated, 'home_screen drawer tile'),
+  Features.surgePricing: FeatureSurface(MobileSurface.gated,
+      'home_screen drawer tile + confirm_order_screen (skip /surge/current fetch)'),
   Features.customBranding:
       FeatureSurface(MobileSurface.gated, 'home_screen drawer (Bill template)'),
 

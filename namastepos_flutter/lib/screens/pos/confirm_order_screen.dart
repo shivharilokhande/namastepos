@@ -12,14 +12,16 @@ import '../../models/order.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/orders_provider.dart';
 import '../../providers/settings_provider.dart';
-import '../../providers/subscription_provider.dart';
 import '../../services/analytics_service.dart';
 import '../../services/api_service.dart';
 import '../../services/printer_service.dart';
 // PaperSize is now re-exported from our local stub, no longer from esc_pos_utils.
 import '../../services/whatsapp_service.dart';
+import '../../utils/checkout_gates.dart';
 import '../../utils/error_humanizer.dart';
 import '../../utils/formatters.dart';
+import '../../utils/gst.dart';
+import '../../widgets/error_snackbar.dart';
 import '../../widgets/membership_offer_dialog.dart';
 import '../../widgets/primary_button.dart';
 import '../captain/captain_screen.dart' show pendingCaptainSession;
@@ -114,8 +116,13 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
 
   Future<void> _loadSurge() async {
     try {
-      final biz = context.read<AuthProvider>().business;
+      final auth = context.read<AuthProvider>();
+      final biz = auth.business;
       if (biz == null) return;
+      // 2026-09-05 (review #10): /surge/ is route-gated on `surge_pricing`
+      // (Advanced+). Asking anyway bought one guaranteed 402 per bill on
+      // every lower plan and left a stale `surge_pricing` upsell hint behind.
+      if (!auth.has(Features.surgePricing)) return;
       final r = await ApiService.instance.dio
           .get('/businesses/${biz.id}/surge/current');
       final s = (r.data['surge'] as Map?)?.cast<String, dynamic>();
@@ -146,8 +153,12 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
   Future<void> _lookupCustomer() async {
     final phone = _phone.text.trim();
     if (phone.length < 10) return;
-    final hasLoyalty = context.read<SubscriptionProvider>().hasAddon('loyalty');
-    if (!hasLoyalty) return;
+    // 2026-09-05 (review #1): plan KEYS, not the marketplace addon slug —
+    // see CheckoutGates. Customer attach needs `customers_basic`; points,
+    // rules and the wallet tender need `loyalty`; the offer needs
+    // `memberships`. The captain settle reads the same class.
+    final gates = CheckoutGates.of(context.read<AuthProvider>());
+    if (!gates.customers) return;
 
     setState(() => _looking = true);
     final biz = context.read<AuthProvider>().business!;
@@ -165,16 +176,21 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         return;
       }
       final cu = data['customer'];
-      final st = data['loyaltySettings'];
-      final mem = (data['membership'] as Map?)?.cast<String, dynamic>();
-      final expired =
-          (data['expiredMembership'] as Map?)?.cast<String, dynamic>();
+      // Loyalty-only bits are dropped when the plan lacks the key, even if
+      // the server happened to include them in the lookup payload.
+      final st = gates.loyalty ? data['loyaltySettings'] : null;
+      final mem = gates.memberships
+          ? (data['membership'] as Map?)?.cast<String, dynamic>()
+          : null;
+      final expired = gates.memberships
+          ? (data['expiredMembership'] as Map?)?.cast<String, dynamic>()
+          : null;
       // Wallet balance ride-along (2026-08-25): fetched here (not lazily in
       // the split sheet) so the sheet can render the balance synchronously.
       // Best-effort — a failure just hides the wallet tender.
       double walletBal = 0;
       bool walletOk = false;
-      if (cu != null) {
+      if (cu != null && gates.loyalty) {
         try {
           final w = await ApiService.instance
               .walletFor(biz.id, (cu as Map)['id'].toString());
@@ -212,6 +228,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
   Future<void> _maybeOfferMembership() async {
     if (_membershipOfferShown) return;
     if (_customer == null || _membership != null) return;
+    if (!CheckoutGates.of(context.read<AuthProvider>()).memberships) return;
     _membershipOfferShown = true;
     final fee = await showMembershipOfferDialog(
       context,
@@ -282,6 +299,10 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         businessId: biz.id,
         source: _source,
         clientId: _pendingClientId,
+        // 2026-09-05 (review #2): the app's GST estimate. Feeds ONLY the
+        // local row (offline receipt); the request body omits `tax` so the
+        // server computes it from the menu and returns the real figures.
+        tax: _gst(orders, auth).totalGst,
         tableNo: _source == OrderSource.dineIn ? _table.text.trim() : null,
         customerPhone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         paymentMethod: kotOnly ? PaymentMethod.unpaid : _payment,
@@ -391,10 +412,9 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
       // Order-create failure — surface a humanised error and let the
       // owner retry. Do NOT show the "Order placed" dialog.
       if (mounted) {
-        messenger.showSnackBar(SnackBar(
-          content: Text('Could not place order: ${humanizeError(e)}'),
-          backgroundColor: AppColors.error,
-        ));
+        // A 402 here gets a "View plans" action (review #11).
+        showApiErrorSnackBar(context, e,
+            prefix: 'Could not place order: ', messenger: messenger);
         setState(() => _saving = false);
       }
       return;
@@ -541,16 +561,39 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         _splits = null;
       });
 
+  /// GST the server will add to this cart (2026-09-05, review #2) — same
+  /// arithmetic as orderService (see utils/gst.dart), zero for a composition
+  /// dealer. Used for the tax rows, the total, split sizing and the local
+  /// estimate on an offline-queued order.
+  GstBreakdown _gst(OrdersProvider orders, AuthProvider auth) => orders.cartGst(
+        priceMultiplier: _surgeMultiplier,
+        gstScheme: auth.business?.gstScheme,
+      );
+
+  /// What the customer pays: subtotal + GST − every discount. Mirrors the
+  /// server's `total = subtotal + tax − discount` (pre-tax discount default;
+  /// GST is computed on the undiscounted lines, as orderService does).
+  double _payable(OrdersProvider orders, AuthProvider auth,
+      {required double discount, required double loyaltyDiscount}) {
+    final subtotal = orders.cartSubtotal * _surgeMultiplier;
+    final tax = _gst(orders, auth).totalGst;
+    return (subtotal + tax - discount - loyaltyDiscount - _couponDiscount)
+        .clamp(0, double.infinity)
+        .toDouble();
+  }
+
   @override
   Widget build(BuildContext context) {
     final orders = context.watch<OrdersProvider>();
+    final auth = context.watch<AuthProvider>();
     final subtotal = orders.cartSubtotal * _surgeMultiplier;
     final discount = double.tryParse(_discount.text.trim()) ?? 0;
     final loyaltyDiscount = _loyaltySettings != null
         ? (_pointsToRedeem * _loyaltySettings!.redemptionValuePaise) / 100
         : 0.0;
-    final total = (subtotal - discount - loyaltyDiscount - _couponDiscount)
-        .clamp(0, double.infinity);
+    final gst = _gst(orders, auth);
+    final total = _payable(orders, auth,
+        discount: discount, loyaltyDiscount: loyaltyDiscount);
 
     return Scaffold(
       // Bug fix (2026-08-20): make the back-arrow explicit + always pop
@@ -800,9 +843,11 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                           // payable total (incl. loyalty redemption), not
                           // subtotal-minus-discount — legs were forced to
                           // overshoot when points were redeemed.
-                          final subtotalNow =
-                              context.read<OrdersProvider>().cartSubtotal *
-                                  _surgeMultiplier;
+                          // 2026-09-05 (review #2): the target now INCLUDES
+                          // GST — the server sizes legs against its own total
+                          // (subtotal + tax − discounts, ±₹0.01), so legs that
+                          // ignored tax would be rejected the moment the
+                          // server started computing it.
                           final discountNow = double.tryParse(_discount.text.trim()) ?? 0;
                           final loyaltyNow = _loyaltySettings != null
                               ? (_pointsToRedeem * _loyaltySettings!.redemptionValuePaise) / 100
@@ -811,9 +856,12 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                             context: context,
                             isScrollControlled: true,
                             builder: (_) => _SplitTenderSheet(
-                              total: (subtotalNow - discountNow - loyaltyNow - _couponDiscount)
-                                  .clamp(0, double.infinity)
-                                  .toDouble(),
+                              total: _payable(
+                                context.read<OrdersProvider>(),
+                                context.read<AuthProvider>(),
+                                discount: discountNow,
+                                loyaltyDiscount: loyaltyNow,
+                              ),
                               // Wallet-as-tender (2026-08-25): option only
                               // renders for a matched customer, with the
                               // live balance on the label.
@@ -945,6 +993,17 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                       Text(AppFmt.money(subtotal, decimals: true)),
                     ],
                   ),
+                  // GST rows (2026-09-05, review #2). Intra-state → CGST +
+                  // SGST halves; inter-state → IGST. Nothing for a
+                  // composition dealer (their bill carries no GST).
+                  if (!gst.isZero) ...[
+                    if (gst.isInterState)
+                      _taxRow('IGST', gst.igst)
+                    else ...[
+                      _taxRow('CGST', gst.cgst),
+                      _taxRow('SGST', gst.sgst),
+                    ],
+                  ],
                   const SizedBox(height: 4),
                   Row(
                     children: [
@@ -1029,6 +1088,17 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
       ),
     );
   }
+
+  Widget _taxRow(String label, double amount) => Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: Row(
+          children: [
+            Text(label, style: const TextStyle(color: AppColors.textSecondary)),
+            const Spacer(),
+            Text(AppFmt.money(amount, decimals: true)),
+          ],
+        ),
+      );
 
   String _sourceLabel(OrderSource s) {
     switch (s) {

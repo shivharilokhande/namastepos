@@ -17,6 +17,7 @@ import { FloorCanvas } from '@/components/FloorCanvas';
 import { ffApi } from '@/api/namastepos';
 import { api, apiError, getBusinessCache } from '@/api/client';
 import { trackFirstBill } from '@/lib/activation';
+import { usePlan } from '@/hooks/usePlan';
 import { formatINR, formatDateTime } from '@/lib/utils';
 
 // ── Joined tables API (2026-08-25, founder request) ─────────────────────
@@ -614,6 +615,11 @@ function printSessionBill(session: any, mergedLines: MergedBillLine[]) {
 
 function SessionDialog({ sessionId, onClose, onClosed }: any) {
   const qc = useQueryClient();
+  // D-07 (2026-09-05): "Split bill" creates bill_splits via POST
+  // /sessions/:id/split, which is gated server-side on `bill_split`. Showing
+  // the button to a plan without the key let Starter create splits it could
+  // then never pay (the pay leg 402'd) — a stuck session. Hide it instead.
+  const plan = usePlan();
   const { data: session, error: sessionError } = useQuery({
     queryKey: ['session', sessionId],
     queryFn: () => ffApi.sessionDetail(sessionId),
@@ -1383,6 +1389,7 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
             >
               <Printer className="mr-1 h-4 w-4" /> Print bill
             </Button>
+            {plan.has('bill_split') && (
             <Button
               variant="outline"
               onClick={() => setSplitting(true)}
@@ -1390,6 +1397,7 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
             >
               <Users className="mr-1 h-4 w-4" /> Split bill
             </Button>
+            )}
             {/* 2026-08-25: split mode gates Settle until the legs balance;
                 a shortfall without an identified customer is blocked (the
                 server would refuse the wallet debt anyway). */}

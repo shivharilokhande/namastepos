@@ -253,11 +253,35 @@ class PrinterService {
         styles: const PosStyles(align: PosAlign.right),
       ),
     ]));
-    if (tax > 0) {
+    // 2026-09-05 (review #2): print the CGST/SGST (or IGST) split when the
+    // server row carries it; a plain "Tax" line otherwise. An order that has
+    // not reached the server yet (offline queue) only has the app's estimate,
+    // so it is labelled as such — the server may settle on a different figure
+    // when the outbox drains.
+    final est = order.synced ? '' : ' (est.)';
+    void taxLine(String label, double amt) {
       bytes.addAll(generator.row([
-        PosColumn(text: 'Tax', width: 8),
+        PosColumn(text: '$label$est', width: 8),
         PosColumn(
-          text: AppFmt.moneyPlain(tax),
+          text: AppFmt.moneyPlain(amt),
+          width: 4,
+          styles: const PosStyles(align: PosAlign.right),
+        ),
+      ]));
+    }
+    if (order.cgst > 0 || order.sgst > 0) {
+      taxLine('CGST', order.cgst);
+      taxLine('SGST', order.sgst);
+    } else if (order.igst > 0) {
+      taxLine('IGST', order.igst);
+    } else if (tax > 0) {
+      taxLine('Tax', tax);
+    }
+    if (order.discount > 0) {
+      bytes.addAll(generator.row([
+        PosColumn(text: 'Discount', width: 8),
+        PosColumn(
+          text: '-${AppFmt.moneyPlain(order.discount)}',
           width: 4,
           styles: const PosStyles(align: PosAlign.right),
         ),

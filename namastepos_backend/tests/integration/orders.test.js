@@ -43,6 +43,10 @@ describe('Orders', () => {
           { menuItemId: dosaId, name: 'Masala Dosa', price: 80, qty: 2 },
           { menuItemId: chaiId, name: 'Chai', price: 15, qty: 3 },
         ],
+        // 2026-09-05: an OMITTED tax now means "server computes GST from the
+        // menu" (5% default slab). This test asserts tax-free arithmetic, so
+        // it asserts tax explicitly — the way a till that computed 0 would.
+        tax: 0,
         paymentMethod: 'upi',
       });
     expect(r.status).toBe(201);

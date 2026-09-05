@@ -68,14 +68,57 @@ function _stateFromGstin(gstin) {
 }
 
 /**
- * Build the line items + HSN summary from the order's order_items.
- * The order_items table already has gst_pct + gst_amount per line; we
- * freeze that here so the printed invoice is reproducible.
+ * Split `totalPaise` across `weights` in integer paise; the rounding
+ * remainder lands on the heaviest entry so the parts always re-sum exactly.
  */
-function _buildItemsAndHsn(orderItemRows, isInterstate) {
+function _allocatePaise(weights, totalPaise) {
+  const out = weights.map(() => 0);
+  const wSum = weights.reduce((s, w) => s + w, 0);
+  if (totalPaise <= 0 || wSum <= 0) return out;
+  let allocated = 0;
+  for (let i = 0; i < weights.length; i += 1) {
+    out[i] = Math.floor((totalPaise * weights[i]) / wSum);
+    allocated += out[i];
+  }
+  let heaviest = 0;
+  for (let i = 1; i < weights.length; i += 1) if (weights[i] > weights[heaviest]) heaviest = i;
+  out[heaviest] += totalPaise - allocated;
+  return out;
+}
+
+/**
+ * Build the line items + HSN summary from the order's order_items.
+ * order_items carries gst_pct + gst_amount per line (written by
+ * orderService.create since 2026-09-05); we freeze that here so the printed
+ * invoice is reproducible.
+ *
+ * 2026-09-05 (review #1, P0): orders created BEFORE that date have NULL line
+ * GST columns although `orders.tax` was charged — every invoice for them read
+ * ₹0 GST. When `legacyGstPaise` is given (= the order's persisted tax, in
+ * paise) and NO line carries a gst_amount, that tax is allocated across the
+ * lines weighted by taxable × slab (slab = the line's gst_pct, else the menu
+ * item's current gst_pct, else equal by taxable amount), so the invoice
+ * reconciles to what the customer actually paid.
+ */
+function _buildItemsAndHsn(orderItemRows, isInterstate, { legacyGstPaise = null } = {}) {
   const items = [];
   const hsnMap = new Map();
-  for (const row of orderItemRows) {
+  const anyLineGst = orderItemRows.some((r) => r.gst_amount != null);
+  let legacyShares = null;
+  if (!anyLineGst && legacyGstPaise != null && legacyGstPaise > 0) {
+    const taxable = orderItemRows.map(
+      (r) => Math.round(parseFloat(r.qty) * Math.round(parseFloat(r.price) * 100)),
+    );
+    const pctOf = (r) => {
+      const p = r.gst_pct ?? r.menu_gst_pct;
+      return p == null || !Number.isFinite(Number(p)) ? 0 : Number(p);
+    };
+    let weights = orderItemRows.map((r, i) => taxable[i] * pctOf(r));
+    if (weights.every((w) => w <= 0)) weights = taxable.map((t) => Math.max(0, t));
+    legacyShares = _allocatePaise(weights, legacyGstPaise);
+  }
+  for (let ix = 0; ix < orderItemRows.length; ix += 1) {
+    const row = orderItemRows[ix];
     const qty = parseFloat(row.qty);
     const unitPaise = Math.round(parseFloat(row.price) * 100);
     // qty is NUMERIC(10,2) — fractional quantities (e.g. 0.5 kg) are valid, so
@@ -83,8 +126,10 @@ function _buildItemsAndHsn(orderItemRows, isInterstate) {
     // unit price yields a non-integer that Postgres rejects for the bigint
     // paise columns, 500-ing the whole invoice transaction.
     const linePaise = Math.round(qty * unitPaise);
-    const gstPct = parseFloat(row.gst_pct || 0);
-    const gstPaise = Math.round(parseFloat(row.gst_amount || 0) * 100);
+    const gstPct = parseFloat(row.gst_pct ?? (legacyShares ? row.menu_gst_pct : null) ?? 0) || 0;
+    const gstPaise = legacyShares
+      ? legacyShares[ix]
+      : Math.round(parseFloat(row.gst_amount || 0) * 100);
     // Split CGST/SGST equally; or assign full to IGST for interstate
     const cgstPaise = isInterstate ? 0 : Math.floor(gstPaise / 2);
     const sgstPaise = isInterstate ? 0 : gstPaise - cgstPaise;
@@ -139,25 +184,65 @@ function _formatInvoiceNo(fyShort, seq) {
 }
 
 /**
+ * All the money figures of an invoice, for one order or a whole session.
+ *
  * NP-123 (2026-09-03): the invoice total used to force-round to a whole
- * rupee (Math.round(beforeRound/100)*100) regardless of the business's
- * round-off setting — under mode 'none' the customer paid ₹99.75 but the
- * statutory invoice said ₹100.00, and under 'down' the invoice could
- * overstate by up to 50p. The order already persists the round-off that
- * was ACTUALLY applied at billing time (orders.round_off_paise, migration
- * 014 — 0 under 'none', ≤0 under 'down', ±50p under 'nearest'), so reuse
- * it: invoice total = beforeRound + the order's persisted round-off, which
- * equals the amount actually collected. Orders from before migration 014
- * (or rows missing the column value) fall back to the legacy whole-rupee
- * behaviour.
+ * rupee regardless of the business's round-off setting. The order persists
+ * the round-off ACTUALLY applied (orders.round_off_paise, migration 014), so
+ * that is what the invoice carries.
+ *
+ * 2026-09-05 (review #1, P0): the invoice total is now pinned to what the
+ * customer paid — Σ orders.total in paise. Previously it was rebuilt from
+ * lines + service − discount ± round-off, which (a) omitted GST entirely
+ * because the line GST columns were never written and (b) ignored the
+ * loyalty redemption (orders.loyalty_discount_paise), so it disagreed with
+ * the bill. Now:
+ *   • GST comes from the line columns, or from orders.tax for legacy rows
+ *     (see _buildItemsAndHsn);
+ *   • discount_paise = cashier/settle discount + loyalty redemption (the
+ *     invoice schema has one discount column; both reduce the consideration);
+ *   • total_paise = Σ orders.total; if the components do not re-add to it
+ *     (a pre-014 order, or a hand-edited row) the residual is booked into
+ *     round_off_paise and logged, so the printed invoice always foots.
  */
-function _applyOrderRoundOff(beforeRound, persistedRoundOffPaise) {
-  if (persistedRoundOffPaise === null || persistedRoundOffPaise === undefined) {
-    const totalPaise = Math.round(beforeRound / 100) * 100; // legacy fallback
-    return { totalPaise, roundOff: totalPaise - beforeRound };
+function _invoiceFigures(orderRows, itemRows, isInterstate) {
+  const sum = (fn) => orderRows.reduce((s, o) => s + (fn(o) || 0), 0);
+  const inrToPaise = (v) => Math.round(parseFloat(v || 0) * 100);
+  const gstFromOrdersPaise = sum((o) => inrToPaise(o.tax));
+  const { items, hsn_summary } = _buildItemsAndHsn(itemRows, isInterstate, {
+    legacyGstPaise: gstFromOrdersPaise,
+  });
+  const subtotalPaise = items.reduce((s, i) => s + i.lineTaxablePaise, 0);
+  const cgstPaise = items.reduce((s, i) => s + i.cgstPaise, 0);
+  const sgstPaise = items.reduce((s, i) => s + i.sgstPaise, 0);
+  const igstPaise = items.reduce((s, i) => s + i.igstPaise, 0);
+  const servicePaise = sum((o) => parseInt(o.service_charge_paise, 10) || 0);
+  const discountPaise = sum((o) => inrToPaise(o.discount))
+    + sum((o) => parseInt(o.loyalty_discount_paise, 10) || 0);
+  let roundOff = sum((o) => parseInt(o.round_off_paise, 10) || 0);
+  const totalPaise = sum((o) => inrToPaise(o.total));
+  const computed = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise
+    - discountPaise + roundOff;
+  if (computed !== totalPaise) {
+    require('../config/logger').warn(
+      `[taxInvoice] components ₹${(computed / 100).toFixed(2)} ≠ collected `
+      + `₹${(totalPaise / 100).toFixed(2)} for order(s) ${orderRows.map((o) => o.id).join(',')} `
+      + '— residual booked to round-off',
+    );
+    roundOff += totalPaise - computed;
   }
-  const roundOff = parseInt(persistedRoundOffPaise, 10) || 0;
-  return { totalPaise: beforeRound + roundOff, roundOff };
+  return {
+    items,
+    hsn_summary,
+    subtotalPaise,
+    cgstPaise,
+    sgstPaise,
+    igstPaise,
+    servicePaise,
+    discountPaise,
+    roundOff,
+    totalPaise,
+  };
 }
 
 // ── Issue ────────────────────────────────────────────────────────────────
@@ -192,7 +277,7 @@ async function issueFromOrder(businessId, orderId, opts = {}) {
     const o = oRes.rows[0];
 
     const itemsRes = await client.query(
-      `SELECT oi.*, mi.hsn_code AS hsn
+      `SELECT oi.*, mi.hsn_code AS hsn, mi.gst_pct AS menu_gst_pct
          FROM order_items oi
     LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
         WHERE oi.order_id = $1
@@ -208,17 +293,10 @@ async function issueFromOrder(businessId, orderId, opts = {}) {
       || '00';
     const isInterstate = !!(o.biz_state && placeOfSupply !== o.biz_state);
 
-    const { items, hsn_summary } = _buildItemsAndHsn(itemsRes.rows, isInterstate);
-
-    const subtotalPaise = items.reduce((s, i) => s + i.lineTaxablePaise, 0);
-    const cgstPaise = items.reduce((s, i) => s + i.cgstPaise, 0);
-    const sgstPaise = items.reduce((s, i) => s + i.sgstPaise, 0);
-    const igstPaise = items.reduce((s, i) => s + i.igstPaise, 0);
-    const servicePaise = parseInt(o.service_charge_paise, 10) || 0;
-    const discountPaise = Math.round(parseFloat(o.discount || 0) * 100);
-    const beforeRound = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise - discountPaise;
-    // NP-123: honour the round-off actually applied on the order (see helper).
-    const { totalPaise, roundOff } = _applyOrderRoundOff(beforeRound, o.round_off_paise);
+    const {
+      items, hsn_summary, subtotalPaise, cgstPaise, sgstPaise, igstPaise,
+      servicePaise, discountPaise, roundOff, totalPaise,
+    } = _invoiceFigures([o], itemsRes.rows, isInterstate);
 
     const fy = _financialYear(new Date());
     const fyShort = fy.short;
@@ -315,7 +393,7 @@ async function issueFromSession(businessId, sessionId, opts = {}) {
 
     const orderIds = ordersRes.rows.map((o) => o.id);
     const itemsRes = await client.query(
-      `SELECT oi.*, mi.hsn_code AS hsn
+      `SELECT oi.*, mi.hsn_code AS hsn, mi.gst_pct AS menu_gst_pct
          FROM order_items oi
     LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
         WHERE oi.order_id = ANY($1)
@@ -330,30 +408,14 @@ async function issueFromSession(businessId, sessionId, opts = {}) {
       || '00';
     const isInterstate = !!(head.biz_state && placeOfSupply !== head.biz_state);
 
-    const { items, hsn_summary } = _buildItemsAndHsn(itemsRes.rows, isInterstate);
-
-    const subtotalPaise = items.reduce((s, i) => s + i.lineTaxablePaise, 0);
-    const cgstPaise = items.reduce((s, i) => s + i.cgstPaise, 0);
-    const sgstPaise = items.reduce((s, i) => s + i.sgstPaise, 0);
-    const igstPaise = items.reduce((s, i) => s + i.igstPaise, 0);
     // Aggregate across every order in the session (settle-time discounts
-    // land on the head order, per-KOT discounts on their own orders).
-    const servicePaise = ordersRes.rows.reduce((s, o) => s + (parseInt(o.service_charge_paise, 10) || 0), 0);
-    const discountPaise = ordersRes.rows.reduce((s, o) => s + Math.round(parseFloat(o.discount || 0) * 100), 0);
-    const beforeRound = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise - discountPaise;
-    // NP-123: sum the round-off actually applied per order (each order's
-    // total already carries its own round-off, so the collected session
-    // total = Σ pre-round + Σ round_off_paise). If ANY order predates the
-    // round_off_paise column, fall back to legacy whole-rupee rounding.
-    const anyMissingRoundOff = ordersRes.rows.some(
-      (o) => o.round_off_paise === null || o.round_off_paise === undefined,
-    );
-    const { totalPaise, roundOff } = _applyOrderRoundOff(
-      beforeRound,
-      anyMissingRoundOff
-        ? null
-        : ordersRes.rows.reduce((s, o) => s + (parseInt(o.round_off_paise, 10) || 0), 0),
-    );
+    // land on the head order, per-KOT discounts on their own orders; each
+    // order carries its own round-off, so the collected session total is
+    // simply Σ orders.total).
+    const {
+      items, hsn_summary, subtotalPaise, cgstPaise, sgstPaise, igstPaise,
+      servicePaise, discountPaise, roundOff, totalPaise,
+    } = _invoiceFigures(ordersRes.rows, itemsRes.rows, isInterstate);
 
     const fy = _financialYear(new Date());
     const seq = await _nextSeq(client, businessId, fy.short);
@@ -437,7 +499,7 @@ async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
   if (oRes.rowCount === 0) throw new NotFound('Order not found');
   const o = oRes.rows[0];
   const itemsRes = await client.query(
-    `SELECT oi.*, mi.hsn_code AS hsn
+    `SELECT oi.*, mi.hsn_code AS hsn, mi.gst_pct AS menu_gst_pct
        FROM order_items oi
   LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
       WHERE oi.order_id = $1 ORDER BY oi.id`,
@@ -448,16 +510,10 @@ async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
   const placeOfSupply = opts.placeOfSupply
     || _stateFromGstin(opts.recipientGstin) || o.biz_state || '00';
   const isInterstate = !!(o.biz_state && placeOfSupply !== o.biz_state);
-  const { items, hsn_summary } = _buildItemsAndHsn(itemsRes.rows, isInterstate);
-  const subtotalPaise = items.reduce((s, i) => s + i.lineTaxablePaise, 0);
-  const cgstPaise = items.reduce((s, i) => s + i.cgstPaise, 0);
-  const sgstPaise = items.reduce((s, i) => s + i.sgstPaise, 0);
-  const igstPaise = items.reduce((s, i) => s + i.igstPaise, 0);
-  const servicePaise = parseInt(o.service_charge_paise, 10) || 0;
-  const discountPaise = Math.round(parseFloat(o.discount || 0) * 100);
-  const beforeRound = subtotalPaise + cgstPaise + sgstPaise + igstPaise + servicePaise - discountPaise;
-  // NP-123: honour the round-off actually applied on the order (see helper).
-  const { totalPaise, roundOff } = _applyOrderRoundOff(beforeRound, o.round_off_paise);
+  const {
+    items, hsn_summary, subtotalPaise, cgstPaise, sgstPaise, igstPaise,
+    servicePaise, discountPaise, roundOff, totalPaise,
+  } = _invoiceFigures([o], itemsRes.rows, isInterstate);
   const fy = _financialYear(new Date());
   const seq = await _nextSeq(client, businessId, fy.short);
   const invoiceNo = _formatInvoiceNo(fy.short, seq);

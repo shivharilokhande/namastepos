@@ -465,6 +465,31 @@ async function handleWebhookEvent(businessId, provider, payload, { headers = {} 
     || Array.isArray(payload?.order?.items)
     || Array.isArray(payload?.order_items);
   if (NEW_ORDER_EVENTS.includes(event) || (!event && looksLikeOrder)) {
+    // 2026-09-05 (entitlements review B12): the webhook is mounted at
+    // /v1/aggregator-webhooks, OUTSIDE the /businesses/:id featureGate, so a
+    // tenant whose plan lost 'aggregators' kept ingesting orders — only the
+    // config routes 402'd. Check the plan feature before creating an order.
+    // PARK, do not reject: we return { parked } (the route answers 202) so the
+    // aggregator does not 4xx-retry-storm us, and we deliberately do NOT mark
+    // the inbound event `handled`, so the stored payload stays replayable and
+    // a provider retry after the tenant upgrades is processed normally.
+    // Lifecycle events for orders that already exist (cancel / rider /
+    // delivered above) are NOT gated: an order we accepted must be allowed to
+    // finish, whatever the plan says today.
+    const entitled = await require('./featureService').hasFeature(businessId, 'aggregators');
+    if (!entitled) {
+      logger.warn(
+        `[aggregator-in] ${provider} order ${externalId || '(no id)'} PARKED: business `
+        + `${businessId} plan does not include 'aggregators'`,
+      );
+      return {
+        event,
+        parked: true,
+        reason: 'FEATURE_LOCKED',
+        feature: 'aggregators',
+        externalId: externalId ? String(externalId) : null,
+      };
+    }
     const result = await processIncomingOrder(businessId, provider, payload);
     // Put it on the delivery board as `placed` so staff can accept/reject it.
     if (result?.orderId || result?.id) {

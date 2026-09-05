@@ -4,6 +4,7 @@ const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const addons = require('../services/addonService');
+const features = require('../services/featureService');
 
 // ── Public catalog ──────────────────────────────────────────────────────
 const catalog = asyncHandler(async (_req, res) => {
@@ -37,7 +38,13 @@ const cancel = asyncHandler(async (req, res) => {
 
 const resume = asyncHandler(async (req, res) => {
   const a = await addons.resume(req.params.businessId, req.params.slug);
-  res.json({ activation: a });
+  // 2026-09-05 (billing review A2): a PAID addon's resume no longer
+  // reactivates for free — the service returns the same checkout payload
+  // `subscribe()` does ({ requiresPayment: true, order, ... }). Ship it in
+  // the shape the client already handles for subscribe, not wrapped in
+  // `activation`.
+  if (a && a.requiresPayment) return res.json(a);
+  return res.json({ activation: a });
 });
 
 const updateSettings = asyncHandler(async (req, res) => {
@@ -74,18 +81,29 @@ const adminCreateBody = Joi.object({
 });
 
 // Normalise grantsFeatures (camel) → grants_features (snake) for the service.
-function _normalizeGrants(body) {
+//
+// 2026-09-05 (entitlements review F1): also reject grants the product does not
+// know about. A paid addon whose grants_features holds a typo'd key unlocks
+// NOTHING for the customer who bought it — the 2026-09-03 "slug is not the
+// key" bug in a new coat. Same helper, same 400 (details.unknownFeatureKeys),
+// as the plan matrix editor, overrides and custom plans.
+async function _normalizeGrants(body) {
   if (body.grantsFeatures !== undefined && body.grants_features === undefined) {
     body.grants_features = body.grantsFeatures;
   }
   delete body.grantsFeatures;
+  if (body.grants_features !== undefined) {
+    body.grants_features = await features.assertKnownFeatureKeys(
+      body.grants_features, { what: 'addon grants_features key(s)' },
+    );
+  }
   return body;
 }
 
 const adminCreate = [
   validate({ body: adminCreateBody }),
   asyncHandler(async (req, res) => {
-    const a = await addons.createAddon(_normalizeGrants(req.body));
+    const a = await addons.createAddon(await _normalizeGrants(req.body));
     res.status(201).json({ addon: a });
   }),
 ];
@@ -112,7 +130,7 @@ const adminUpdateBody = Joi.object({
 const adminUpdate = [
   validate({ body: adminUpdateBody }),
   asyncHandler(async (req, res) => {
-    const a = await addons.updateAddon(req.params.slug, _normalizeGrants(req.body));
+    const a = await addons.updateAddon(req.params.slug, await _normalizeGrants(req.body));
     res.json({ addon: a });
   }),
 ];

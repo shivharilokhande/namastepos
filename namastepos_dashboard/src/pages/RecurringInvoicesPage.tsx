@@ -1,14 +1,13 @@
 // Recurring invoices (R16)
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { Repeat } from 'lucide-react';
+//
+// D-01 (2026-09-05): the previous placeholder told owners to "use the API"
+// and POST to /retail/quotations "with frequency metadata" — no such API
+// exists (no recurring-invoice route in the backend; the cron only logs due
+// rows and bumps next_run_at, it issues nothing). Telling a paying Advanced
+// owner to call a non-existent endpoint is worse than saying the truth:
+// this feature is not available yet. No fake instructions here.
+import { Repeat, Clock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-
-// Service does not have a list endpoint yet — we use a placeholder.
-// Backend cron worker already picks due rows, so creation flow is the
-// remaining piece.
 
 export function RecurringInvoicesPage() {
   return (
@@ -17,23 +16,19 @@ export function RecurringInvoicesPage() {
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
           <Repeat className="h-6 w-6 text-primary" /> Recurring invoices
         </h1>
-        <p className="text-muted-foreground text-sm">Auto-generate invoices on a schedule. Cron runs every minute and fires due templates.</p>
+        <p className="text-muted-foreground text-sm">Auto-generate invoices for regular B2B customers on a schedule.</p>
       </div>
-      <Card>
+      <Card className="max-w-xl">
         <CardHeader>
-          <CardTitle>How it works</CardTitle>
-          <CardDescription>The backend already auto-runs due recurring invoices nightly.</CardDescription>
+          <CardTitle className="flex items-center gap-2"><Clock className="h-4 w-4 text-muted-foreground" /> Coming soon — not yet available</CardTitle>
+          <CardDescription>
+            Recurring invoices are still being built. There is nothing to set up here yet — no templates can be created
+            from the dashboard, the app or the API, and no invoices are generated automatically today.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="text-sm space-y-2">
-          <p>
-            Use the API to set up a template (the dashboard form for this is the next UI sprint).
-            Send a POST to <code>/v1/businesses/:id/retail/quotations</code> with frequency metadata
-            and the cron worker will issue invoices on schedule.
-          </p>
-          <p className="text-xs text-muted-foreground">
-            Tables: <code>recurring_invoices</code> (already in migration 027). Worker code in
-            <code> cronWorker.js → dueRecurringInvoices()</code>.
-          </p>
+        <CardContent className="text-sm text-muted-foreground">
+          When it ships you will define a template (customer, items, frequency) and NamastePOS will raise the
+          invoice on schedule. Until then, raise B2B invoices manually from Retail.
         </CardContent>
       </Card>
     </div>

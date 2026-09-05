@@ -14,6 +14,7 @@ import { NewOrderDialog } from '@/components/NewOrderDialog';
 import { ffApi } from '@/api/namastepos';
 import { api, apiError, getBusinessCache } from '@/api/client';
 import { trackFirstBill } from '@/lib/activation';
+import { usePlan } from '@/hooks/usePlan';
 import { formatINR, formatDateTime } from '@/lib/utils';
 import { printReceipt } from '@/lib/receiptPrint';
 
@@ -42,6 +43,7 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
 };
 
 export function OrdersPage() {
+  const plan = usePlan(); // D-12: gates the e-invoice fetch + button
   const [status, setStatus] = useState('pending');
   const [channel, setChannel] = useState<'all' | 'online' | 'offline'>('all');
   const [page, setPage] = useState(0);
@@ -181,7 +183,11 @@ export function OrdersPage() {
         orderId: string; irn: string; status?: string; isStub?: boolean;
       }>;
     },
-    enabled: status === 'collected',
+    // D-12 (2026-09-05): /einvoice is gated on `einvoice_gst` (Advanced+).
+    // Fetching it for every plan produced a 402 (+1 retry) on every Orders
+    // visit for three of the five plans. Skip the fetch — and the button
+    // below — unless the plan includes the key.
+    enabled: status === 'collected' && plan.has('einvoice_gst'),
     staleTime: 60 * 1000, // IRNs are immutable once generated; no live polling needed
   });
   const irnByOrder = useMemo(() => {
@@ -478,6 +484,7 @@ export function OrdersPage() {
                   // undefined isStub (older payload) counts as a stub too.
                   const filed = rec ? rec.isStub === false : false;
                   if (!hasIrn) {
+                    if (!plan.has('einvoice_gst')) return null; // D-12: paid feature, not in this plan
                     return (
                       <Button size="sm" variant="ghost" className="mt-2 w-full"
                         onClick={() => einvoice.mutate(o.id)} disabled={einvoice.isPending}>

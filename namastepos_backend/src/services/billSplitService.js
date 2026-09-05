@@ -16,11 +16,13 @@ async function splitSession(businessId, sessionId, body) {
       [businessId, sessionId],
     );
     if (s.rowCount === 0) throw new NotFound('Session not found');
-    // Use live SUM for open sessions
+    // Use live SUM for open sessions. 2026-09-05 (review #5 class):
+    // business_id-scoped — a foreign order hung on this session id (now
+    // refused by orderService, but defence in depth) must not size the split.
     const liveTotal = await client.query(
       `SELECT COALESCE(SUM(total), 0)::float AS t FROM orders
-        WHERE table_session_id = $1 AND status <> 'cancelled'`,
-      [sessionId],
+        WHERE table_session_id = $1 AND business_id = $2 AND status <> 'cancelled'`,
+      [sessionId, businessId],
     );
     const totalPaise = Math.round(parseFloat(liveTotal.rows[0].t) * 100);
 
@@ -58,8 +60,8 @@ async function splitSession(businessId, sessionId, body) {
       const items = await client.query(
         `SELECT oi.id, oi.price, oi.qty FROM order_items oi
            JOIN orders o ON o.id = oi.order_id
-          WHERE o.table_session_id = $1 AND o.status <> 'cancelled'`,
-        [sessionId],
+          WHERE o.table_session_id = $1 AND o.business_id = $2 AND o.status <> 'cancelled'`,
+        [sessionId, businessId],
       );
       const byId = new Map(items.rows.map((r) => [r.id, r]));
       // Every non-cancelled line must be fully allocated across guests —

@@ -36,6 +36,36 @@ function errorHandler(err, req, res, _next) {
     });
   }
 
+  // 2026-09-05 (review #13): pg 22P02 invalid_text_representation — a
+  // malformed uuid/number in a path or query param (`GET /orders/abc`) is the
+  // CALLER's error, not ours; it used to surface as 500 INTERNAL_ERROR and
+  // page on-call for a typo. Same for 22007/22008 (bad date/time literals).
+  if (err && ['22P02', '22007', '22008'].includes(err.code)) {
+    return res.status(400).json({
+      error: 'INVALID_INPUT',
+      message: 'A parameter has an invalid format',
+      ...(env.isProd() ? {} : { details: err.message }),
+    });
+  }
+
+  // 2026-09-05 (review #13): multer rejections. Its own typed errors
+  // (LIMIT_FILE_SIZE, LIMIT_UNEXPECTED_FILE, …) carry name 'MulterError';
+  // the fileFilter/destination callbacks in uploads.routes.js throw plain
+  // Errors with fixed messages. Both are client faults → 400, matched on the
+  // exact known messages so a genuine storage failure still 500s.
+  const MULTER_FILTER_MESSAGES = new Set([
+    'Only JPEG / PNG / WebP / GIF images are allowed',
+    'Invalid businessId',
+    'Path traversal blocked',
+  ]);
+  if (err && (err.name === 'MulterError' || MULTER_FILTER_MESSAGES.has(err.message))) {
+    return res.status(400).json({
+      error: 'UPLOAD_REJECTED',
+      message: err.message || 'Upload rejected',
+      ...(err.name === 'MulterError' && err.code ? { code: err.code } : {}),
+    });
+  }
+
   // Unknown
   logger.error('Unhandled error', {
     err: err.message, stack: err.stack, path: req.path,

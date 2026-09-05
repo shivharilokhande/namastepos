@@ -33,8 +33,11 @@ class TrialBanner extends StatelessWidget {
         // ('pro_plan' = the plan named Pro, 'advanced'), so paying Pro and
         // Advanced tenants were still shown a trial banner. "Paid" is simply
         // "not the free bottom kind" — no list of kinds to keep in sync.
-        final tier = context.watch<AuthProvider>().plan.tierKind;
-        final onPaidTier = tier.isNotEmpty && tier != 'starter';
+        final plan = context.watch<AuthProvider>().plan;
+        final tier = plan.tierKind;
+        // Review #13 (2026-09-05): an UNKNOWN kind is not a paid kind — until
+        // /auth/me answers, let the subscription row decide on its own.
+        final onPaidTier = plan.tierKnown && tier != 'starter';
         if (onPaidTier || s == null || !s.isTrialing || s.trialExpired) {
           return const SizedBox.shrink();
         }

@@ -57,6 +57,14 @@ class MenuItem {
   // means "sold out until restocked". Transient (backend-only) — not
   // persisted into the local sqflite cache.
   final DateTime? soldOutUntil;
+  // GST slab from `menu_items.gst_pct` (0 / 5 / 12 / 18 / 28), 2026-09-05
+  // (review #2). The server prices and taxes every order from ITS menu; this
+  // copy exists so the confirm screen can show the cashier the same tax the
+  // server is about to compute, split legs can be sized against the real
+  // total, and an offline-queued order can print an estimate. Null only on a
+  // sqflite row cached before the column existed (or an older backend) —
+  // callers fall back to `defaultGstPctForScheme(business.gstScheme)`.
+  final double? gstPct;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -77,6 +85,7 @@ class MenuItem {
     this.isVeg = true,
     this.imageUrl,
     this.soldOutUntil,
+    this.gstPct,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -112,6 +121,7 @@ class MenuItem {
     bool? isActive,
     bool? isVeg,
     String? imageUrl,
+    double? gstPct,
   }) {
     return MenuItem(
       id: id,
@@ -131,6 +141,7 @@ class MenuItem {
       imageUrl: imageUrl ?? this.imageUrl,
       // Local-only field, not persisted in sqflite — keep it across copies.
       soldOutUntil: soldOutUntil,
+      gstPct: gstPct ?? this.gstPct,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );
@@ -154,6 +165,8 @@ class MenuItem {
         isActive: (m['isActive'] as int? ?? 1) == 1,
         isVeg: (m['isVeg'] as int? ?? 1) == 1,
         imageUrl: m['imageUrl'] as String?,
+        // sqflite column added in DB v4 — null on rows cached before that.
+        gstPct: (m['gstPct'] as num?)?.toDouble(),
         createdAt: DateTime.tryParse(m['createdAt']?.toString() ?? '') ??
             DateTime.now(),
         updatedAt: DateTime.tryParse(m['updatedAt']?.toString() ?? '') ??
@@ -187,6 +200,12 @@ class MenuItem {
         soldOutUntil: m['soldOutUntil'] != null
             ? DateTime.tryParse(m['soldOutUntil'].toString())
             : null,
+        // menuService serialises `gstPct` as a number (or null when the row's
+        // column is somehow null). Tolerate a numeric string from older
+        // builds too; anything unparseable stays null → scheme default.
+        gstPct: m['gstPct'] is num
+            ? (m['gstPct'] as num).toDouble()
+            : double.tryParse(m['gstPct']?.toString() ?? ''),
         createdAt: DateTime.tryParse(m['createdAt']?.toString() ?? '') ??
             DateTime.now(),
         updatedAt: DateTime.tryParse(m['updatedAt']?.toString() ?? '') ??
@@ -208,6 +227,7 @@ class MenuItem {
         'isActive': isActive ? 1 : 0,
         'isVeg': isVeg ? 1 : 0,
         'imageUrl': imageUrl,
+        'gstPct': gstPct,
         'createdAt': createdAt.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
       };

@@ -466,7 +466,6 @@ function ItemCard({
       {/* Image / placeholder */}
       <div className="relative aspect-[4/3] bg-muted">
         {item.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
           <img src={fullImageUrl(item.imageUrl)} alt={item.name} className="absolute inset-0 h-full w-full object-cover" />
         ) : (
           <div className="absolute inset-0 grid place-items-center text-muted-foreground">

@@ -71,7 +71,6 @@ export function useOutletSwitch() {
       // usePlan()/useAddons()/me observers refetch as they re-subscribe.
       // Invalidating explicitly keeps that true if clear() ever narrows.
       queryClient.invalidateQueries({ queryKey: ['me'] });
-      queryClient.invalidateQueries({ queryKey: ['plan-summary'] });
       queryClient.invalidateQueries({ queryKey: ['my-addons'] });
       queryClient.invalidateQueries({ queryKey: MY_OUTLETS_KEY });
       toast.success(`Switched to ${outlet.outletLabel || outlet.name}`);

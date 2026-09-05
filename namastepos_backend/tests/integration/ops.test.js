@@ -81,7 +81,9 @@ describe('Reservations', () => {
 describe('QR token', () => {
   it('returns 404 for non-existent table id', async () => {
     const r = await request(app).get(url('/ops/tables/00000000-0000-0000-0000-000000000000/qr')).set(auth());
-    expect([200, 404, 400, 403]).toContain(r.status);
+    // 402 added 2026-09-05: /ops/tables/:id/qr is now plan-gated on
+    // qr_ordering (review B5) and this fixture's tenant may not hold the key.
+    expect([200, 404, 400, 403, 402]).toContain(r.status);
   });
 });
 

@@ -57,6 +57,9 @@ describe('Reports', () => {
       .set(auth())
       .send({
         items: [{ menuItemId: itemId, name: 'Idli', price: 50, qty: 4 }],
+        // 2026-09-05: omitted tax = server-computed GST; this P&L test wants
+        // a tax-free ₹200 revenue figure, so assert 0 explicitly.
+        tax: 0,
         paymentMethod: 'cash',
       });
   });

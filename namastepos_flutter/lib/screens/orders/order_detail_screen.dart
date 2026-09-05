@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../models/order.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/orders_provider.dart';
@@ -237,7 +238,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   label: const Text('Reprint'),
                 )),
               ),
-              if (order.customerPhone != null) ...[
+              // 2026-09-05 (review #4): never a WhatsApp action on a dine-in
+              // order (founder rule — the waiter serves at the table; see
+              // orders_screen / confirm_order_screen), and only when the plan
+              // carries `auto_whatsapp_order`, like the other two surfaces.
+              if (order.customerPhone != null &&
+                  order.source != OrderSource.dineIn &&
+                  auth.has(Features.autoWhatsappOrder)) ...[
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton.icon(

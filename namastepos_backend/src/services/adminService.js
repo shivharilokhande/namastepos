@@ -216,18 +216,56 @@ async function outletSiblings(businessId) {
   }));
 }
 
+/**
+ * Admin suspension (2026-09-05, A6 rewrite).
+ *
+ * `suspend` used to write status='paused' — the same value the owner's own
+ * churn pause uses — so the tenant saw the friendly "paused, resume from
+ * Billing" banner and POST /billing/resume undid the suspension. `restore`
+ * wrote 'active' unconditionally, so restoring a trialing / lapsed / free
+ * tenant activated whatever paid plan_id was on the row, for free.
+ *
+ * Now: a distinct `suspended` status (enum value added in migration 094) that
+ * entitlement (planEntitlement.entitledSql allow-lists active/trialing/
+ * past_due only → falls to Starter), blockIfPaused (403 ACCOUNT_SUSPENDED),
+ * churn pause/resume, billing resume, plan change and even an incoming
+ * gateway charge all refuse to lift. The prior status is parked in
+ * `pre_suspend_status` and `restore` returns to exactly that. Both are
+ * idempotent (guarded WHERE) and both drop the feature cache so the gates
+ * change with the row rather than 60 s later.
+ *
+ * NOTE: suspend does NOT touch the Razorpay mandate — an admin hold is not a
+ * cancellation, and refunding/pausing billing during a hold is a founder
+ * decision (see fix report).
+ */
 async function suspend(businessId) {
-  await query(
-    'UPDATE subscriptions SET status = \'paused\' WHERE business_id = $1',
+  const r = await query(
+    `UPDATE subscriptions
+        SET pre_suspend_status = status::text,
+            suspended_at = NOW(),
+            status = 'suspended',
+            updated_at = NOW()
+      WHERE business_id = $1 AND status <> 'suspended'
+      RETURNING id, business_id, status, pre_suspend_status, suspended_at`,
     [businessId],
   );
+  try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
+  return r.rows[0] || null;
 }
 
 async function restore(businessId) {
-  await query(
-    'UPDATE subscriptions SET status = \'active\' WHERE business_id = $1',
+  const r = await query(
+    `UPDATE subscriptions
+        SET status = COALESCE(pre_suspend_status, 'active')::subscription_status,
+            pre_suspend_status = NULL,
+            suspended_at = NULL,
+            updated_at = NOW()
+      WHERE business_id = $1 AND status = 'suspended'
+      RETURNING id, business_id, status`,
     [businessId],
   );
+  try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
+  return r.rows[0] || null;
 }
 
 // ── Platform metrics ─────────────────────────────────────────────────────

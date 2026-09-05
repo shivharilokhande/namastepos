@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Crown, Gift, Plus, Pencil, Trash2 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -112,17 +112,25 @@ export function MembershipsPage() {
       {tab === 'gifts' && (
         <Card>
           <CardContent className="p-0">
+            {/* D-03 (2026-09-05): columns follow the canonical gift_cards row
+                (face_value_paise / balance_paise / issued_to_phone). Cards are
+                redeemed at the bill — the cashier types the code as a payment
+                leg on settle — so there is no redeem action on this list. */}
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-muted-foreground border-b">
-                <tr><th className="p-3">Code</th><th>Issued</th><th>Remaining</th><th>Buyer</th></tr>
+                <tr><th className="p-3">Code</th><th>Face value</th><th>Balance</th><th>Issued to</th><th>Expires</th></tr>
               </thead>
               <tbody>
-                {cards.map((c: any) => (
+                {cards.length === 0 && (
+                  <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">No gift cards yet — issue one and the customer redeems it at the bill.</td></tr>
+                )}
+                {cards.map((c) => (
                   <tr key={c.id} className="border-b">
                     <td className="p-3 font-mono">{c.code}</td>
-                    <td>{formatINR(c.initial_paise / 100)}</td>
-                    <td className="font-bold">{formatINR(c.remaining_paise / 100)}</td>
-                    <td className="text-xs text-muted-foreground">{c.purchaser_phone || '—'}</td>
+                    <td>{formatINR((c.face_value_paise ?? 0) / 100)}</td>
+                    <td className="font-bold">{formatINR((c.balance_paise ?? 0) / 100)}</td>
+                    <td className="text-xs text-muted-foreground">{c.issued_to_phone || '—'}</td>
+                    <td className="text-xs text-muted-foreground">{c.expires_at ? new Date(c.expires_at).toLocaleDateString('en-IN') : '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -228,22 +236,33 @@ function NewPlanDialog({ onClose, onCreated, existing }: any) {
   );
 }
 function NewGiftDialog({ onClose, onCreated }: any) {
-  const [f, setF] = useState({ amountInr: 500, purchaserPhone: '', recipientPhone: '' });
+  // D-03 (2026-09-05): body matches the payments.routes.js Joi schema exactly
+  // — { faceValueInr, issuedToPhone, expiresAt }. The old dialog posted
+  // amountInr/purchaserPhone/recipientPhone and 400'd on every attempt.
+  const [f, setF] = useState({ faceValueInr: 500, issuedToPhone: '', expiresAt: '' });
   const issue = useMutation({
-    mutationFn: () => ffApi.issueGiftCard(f),
-    onSuccess: (g: any) => { toast.success(`Card ${g.code} issued`); onCreated(); },
+    mutationFn: () => ffApi.issueGiftCard({
+      faceValueInr: f.faceValueInr,
+      issuedToPhone: f.issuedToPhone.trim() || null,
+      // <input type="date"> yields YYYY-MM-DD; the server wants ISO — send end
+      // of that day so a card "valid till 31 Dec" still works on the 31st.
+      expiresAt: f.expiresAt ? new Date(`${f.expiresAt}T23:59:59`).toISOString() : null,
+    }),
+    onSuccess: (g) => { toast.success(`Card ${g.code} issued`); onCreated(); },
     onError: (e) => toast.error(apiError(e)),
   });
+  const valid = Number.isFinite(f.faceValueInr) && f.faceValueInr > 0;
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader><DialogTitle><Gift className="inline h-4 w-4 mr-1" />Issue gift card</DialogTitle></DialogHeader>
         <div className="space-y-3">
-          <div><Label>Amount (₹) *</Label><Input type="number" value={f.amountInr} onChange={(e) => setF({ ...f, amountInr: +e.target.value })} /></div>
-          <div><Label>Buyer phone</Label><Input value={f.purchaserPhone} onChange={(e) => setF({ ...f, purchaserPhone: e.target.value })} /></div>
-          <div><Label>Recipient phone</Label><Input value={f.recipientPhone} onChange={(e) => setF({ ...f, recipientPhone: e.target.value })} /></div>
+          <div><Label>Face value (₹) *</Label><Input type="number" min={1} step="0.01" value={f.faceValueInr} onChange={(e) => setF({ ...f, faceValueInr: +e.target.value })} /></div>
+          <div><Label>Issued to (phone, optional)</Label><Input value={f.issuedToPhone} maxLength={20} onChange={(e) => setF({ ...f, issuedToPhone: e.target.value })} placeholder="98765 43210" /></div>
+          <div><Label>Expires on (optional)</Label><Input type="date" value={f.expiresAt} onChange={(e) => setF({ ...f, expiresAt: e.target.value })} /></div>
+          <p className="text-xs text-muted-foreground">The card code is generated on issue. Customers redeem it at the bill as a payment method.</p>
         </div>
-        <DialogFooter><Button onClick={() => issue.mutate()}>Issue</Button></DialogFooter>
+        <DialogFooter><Button onClick={() => issue.mutate()} disabled={!valid || issue.isPending}>{issue.isPending ? 'Issuing…' : 'Issue'}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

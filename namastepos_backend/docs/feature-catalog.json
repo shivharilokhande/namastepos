@@ -154,7 +154,11 @@
       "key": "captain_mode",
       "label": "Captain ordering",
       "group": "Kitchen & ops",
-      "enforcement": "route"
+      "enforcement": "client",
+      "clients": [
+        "dashboard",
+        "mobile"
+      ]
     },
     {
       "key": "voice_pos",
@@ -162,7 +166,8 @@
       "group": "Kitchen & ops",
       "enforcement": "client",
       "clients": [
-        "mobile"
+        "mobile",
+        "dashboard"
       ]
     },
     {
@@ -316,7 +321,10 @@
       "key": "recurring_invoices",
       "label": "Recurring invoices",
       "group": "Billing & accounting",
-      "enforcement": "route"
+      "enforcement": "client",
+      "clients": [
+        "dashboard"
+      ]
     },
     {
       "key": "accounting_pnl_bs",
@@ -352,7 +360,7 @@
       "key": "marketplace_addons",
       "label": "Add-on marketplace",
       "group": "Advanced",
-      "enforcement": "route"
+      "enforcement": "ungated"
     },
     {
       "key": "api_access",

@@ -21,7 +21,13 @@
 const { query, withTransaction } = require('../config/db');
 const featureService = require('./featureService');
 
+// 2026-09-05 (entitlements review F1): both write paths reject keys the
+// product does not know about, through the SAME helper the plan matrix editor
+// uses. An override on an unknown key is a comp that delivers nothing (or a
+// kill that kills nothing), shown in the console as if it worked. 400 with the
+// offending keys listed in details.unknownFeatureKeys.
 async function override(businessId, featureKey, enabled, { reason, adminId } = {}) {
+  await featureService.assertKnownFeatureKeys([featureKey], { what: 'feature override key(s)' });
   await query(
     `INSERT INTO business_feature_overrides
        (business_id, feature_key, enabled, reason, set_by_admin)
@@ -42,6 +48,10 @@ async function override(businessId, featureKey, enabled, { reason, adminId } = {
  */
 async function replaceAll(businessId, overrides, { adminId } = {}) {
   const rows = (overrides || []).filter((o) => o && o.featureKey);
+  await featureService.assertKnownFeatureKeys(
+    rows.map((o) => o.featureKey),
+    { what: 'feature override key(s)' },
+  );
   await withTransaction(async (client) => {
     await client.query(
       'DELETE FROM business_feature_overrides WHERE business_id = $1',
