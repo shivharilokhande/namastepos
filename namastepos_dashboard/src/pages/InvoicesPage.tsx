@@ -26,6 +26,12 @@ import { escapeHtml, formatIstDateTime } from '@/lib/receiptPrint';
 // always null. We join IRNs onto invoices client-side via orderId using
 // the new GET /businesses/:id/einvoice (ONE fetch, shared react-query
 // cache with OrdersPage — never per-row).
+// 2026-09-05 — `isStub` is not decoration. NamastePOS is not connected to a
+// GSP/IRP, so every IRN generated so far was produced locally and has never
+// been filed with the government. The API now says so on every record
+// (isStub / filedWithIrp / notice) and this UI must never render a stub as a
+// final document: no "e-invoiced" tick, no one-tap copy that lands in a
+// return, and a DEMO banner on the printed invoice.
 type IrnRecord = {
   orderId: string | null;
   irn: string;
@@ -33,6 +39,9 @@ type IrnRecord = {
   ackDate?: string | null;
   status?: string | null;
   createdAt?: string | null;
+  isStub?: boolean;
+  filedWithIrp?: boolean;
+  notice?: string | null;
 };
 
 // Invoice money is ALWAYS 2 decimals (2026-08-25 founder bug "invoices not
@@ -145,6 +154,10 @@ function taxInvoiceHtml(inv: any): string {
             einvoice_irns when the invoice row itself carries none. 64 hex
             chars — break-all so it wraps inside the meta column. */''}
       ${inv.irn ? `<div>IRN: <span class="mono" style="word-break:break-all">${escapeHtml(inv.irn)}</span></div>` : ''}
+      ${/* 2026-09-05: a locally generated IRN must be unmistakable ON THE
+            DOCUMENT too — the printout is the artefact an owner hands to an
+            accountant. irnIsStub is passed by print() from the API record. */''}
+      ${inv.irn && inv.irnIsStub !== false ? '<div style="margin-top:4px;border:1px solid #b45309;color:#7c2d12;padding:4px 6px;font-weight:700">DEMO IRN - NOT FILED WITH THE GOVERNMENT IRP. Not valid in a GST return.</div>' : ''}
     </div>
   </div>
 
@@ -269,7 +282,13 @@ export function InvoicesPage() {
       // Back-fill the IRN from einvoice_irns (tax_invoices.irn is never
       // written — 2026-08-25) so a generated IRN prints on the document.
       w.document.open();
-      w.document.write(taxInvoiceHtml({ ...inv, irn: irnForInvoice(inv)?.irn || null }));
+      const rec = irnForInvoice(inv);
+      w.document.write(taxInvoiceHtml({
+        ...inv,
+        irn: rec?.irn || null,
+        // undefined (an older payload) counts as a stub — see IrnRecord.
+        irnIsStub: rec ? rec.isStub !== false : false,
+      }));
       w.document.close();
       w.focus();
       w.print();
@@ -365,11 +384,19 @@ export function InvoicesPage() {
                       {/* WHY (2026-08-25): founder lost track of generated
                           IRNs — flag e-invoiced rows right in the list. */}
                       {irnForInvoice(i) && (
-                        <span
-                          title="E-invoice IRN generated — open the invoice to view or copy it"
-                          className="ml-1.5 inline-flex items-center rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px] font-semibold">
-                          e-inv
-                        </span>
+                        irnForInvoice(i)!.isStub === false ? (
+                          <span
+                            title="E-invoice IRN filed with the IRP — open the invoice to view or copy it"
+                            className="ml-1.5 inline-flex items-center rounded-full bg-emerald-100 text-emerald-700 px-2 py-0.5 text-[10px] font-semibold">
+                            e-inv
+                          </span>
+                        ) : (
+                          <span
+                            title="DEMO IRN — generated locally, never filed with the government IRP. Not valid in a GST return."
+                            className="ml-1.5 inline-flex items-center rounded-full bg-amber-100 text-amber-800 px-2 py-0.5 text-[10px] font-semibold">
+                            e-inv DEMO
+                          </span>
+                        )
                       )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{inr2(i.totalInr)}</TableCell>
@@ -568,24 +595,38 @@ function InvoiceDialog({
             chars, mono + break-all), one-tap copy for GST portal lookups,
             generated timestamp in IST, and stored status when present. */}
         {irnRec && (
-          <div className="border rounded-md p-3 bg-muted/20 space-y-1.5">
-            <div className="text-sm font-semibold">E-invoice</div>
+          <div className={`border rounded-md p-3 space-y-1.5 ${irnRec.isStub === false ? 'bg-muted/20' : 'border-amber-300 bg-amber-50'}`}>
+            <div className="text-sm font-semibold">
+              {irnRec.isStub === false ? 'E-invoice' : 'E-invoice (DEMO — not filed)'}
+            </div>
+            {/* 2026-09-05 honesty gate: a locally generated IRN must never be
+                presented as a filed one. The banner names the consequence, and
+                the copy button is withheld so the number cannot go straight
+                into a return with one tap. */}
+            {irnRec.isStub !== false && (
+              <div className="text-xs text-amber-900">
+                {irnRec.notice
+                  || 'DEMO ONLY — generated locally and never filed with the government IRP. This number does not exist on any GST portal and must not be used in a return.'}
+              </div>
+            )}
             <div className="flex items-start gap-2">
               <div className="font-mono text-xs break-all flex-1">{irnRec.irn}</div>
-              <Button
-                size="sm" variant="outline" className="shrink-0"
-                title="Copy IRN"
-                onClick={async () => {
-                  try {
-                    await navigator.clipboard.writeText(irnRec.irn);
-                    toast.success('IRN copied');
-                  } catch {
-                    toast.error('Could not copy — select the IRN text manually');
-                  }
-                }}
-              >
-                <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy IRN
-              </Button>
+              {irnRec.isStub === false && (
+                <Button
+                  size="sm" variant="outline" className="shrink-0"
+                  title="Copy IRN"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(irnRec.irn);
+                      toast.success('IRN copied');
+                    } catch {
+                      toast.error('Could not copy — select the IRN text manually');
+                    }
+                  }}
+                >
+                  <Copy className="mr-1.5 h-3.5 w-3.5" /> Copy IRN
+                </Button>
+              )}
             </div>
             <div className="text-xs text-muted-foreground">
               {/* ackDate is when the IRP acknowledged; createdAt is our row

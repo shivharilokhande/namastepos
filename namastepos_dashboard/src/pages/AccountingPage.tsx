@@ -47,7 +47,9 @@ export function AccountingPage() {
           <FileSpreadsheet className="h-6 w-6 text-primary" /> Accounting exports
         </h1>
         <p className="text-muted-foreground text-sm">
-          Push sales into Tally, Zoho Books, or QuickBooks. E-invoice + E-way bill from the order page.
+          Push sales into Tally, Zoho Books, or QuickBooks. E-invoice and e-way bill numbers
+          are generated for demo only until a GSP/IRP connection is configured — they are
+          not filed with the government.
         </p>
       </div>
 

@@ -113,7 +113,13 @@ class _BillingScreenState extends State<BillingScreen> {
     'marketplace_addons': 'Marketplace add-ons',
     'multi_outlet': 'Multi-outlet management',
     'accounting_pnl_bs': 'P&L · Balance Sheet · TB',
-    'einvoice_gst': 'GST e-invoice (IRN)',
+    // 2026-09-05: was 'GST e-invoice (IRN)', which reads as a working IRN.
+    // It is not one — the IRP gateway is a stub (irpGateway.js issues
+    // DEMO-NOT-A-VALID-IRN- strings) and the backend refuses to mint one in
+    // production at all until a real GSP is wired up. The website copy was
+    // corrected to the same wording today; this was the last place in the app
+    // still claiming the capability outright.
+    'einvoice_gst': 'GST e-invoice ready (GSP connection required)',
     'recurring_invoices': 'Recurring invoices',
     'bank_reconcile': 'Bank reconciliation',
     'heat_map': 'Heat map',

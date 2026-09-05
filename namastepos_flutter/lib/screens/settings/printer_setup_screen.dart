@@ -1,10 +1,20 @@
-// NamastePOS - Printer setup (Bluetooth ESC/POS).
+// NamastePOS - Printer setup.
 //
-// User pairs their thermal printer in OS Bluetooth Settings; this
-// screen lists the paired printers, lets the user pick one, tests it,
-// and remembers the choice across launches.
+// ANDROID: the user pairs their thermal printer in OS Bluetooth Settings;
+// this screen lists the paired printers, lets the user pick one, tests it,
+// and remembers the choice across launches. Unchanged — it is the main path.
+//
+// iOS (2026-09-05): this screen used to show that exact same UI on an iPhone,
+// where it cannot work. Apple does not permit classic Bluetooth to normal
+// apps, so `pairedBluetooths` always came back empty and the owner was told
+// "no paired printers found — go pair one in Bluetooth settings", forever.
+// The honest read of that screen is "this app is broken". So on iOS we do not
+// offer the pairing flow at all: we say plainly why, and offer the print route
+// that does work on an iPhone (the OS print sheet — AirPrint, Files, WhatsApp)
+// with a test button so the owner can prove it before a customer is waiting.
 
 import 'dart:io' show Platform;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -13,6 +23,7 @@ import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/printer_service.dart';
+import '../../services/receipt_pdf.dart';
 
 class PrinterSetupScreen extends StatefulWidget {
   const PrinterSetupScreen({super.key});
@@ -38,6 +49,12 @@ class _PrinterSetupScreenState extends State<PrinterSetupScreen> {
     await PrinterService.instance.restore();
     _selected = PrinterService.instance.selected;
     _paper    = PrinterService.instance.paperSize;
+    if (!PrinterService.supportsBluetoothPrinting) {
+      // No permission prompt and no scan on a platform that cannot connect —
+      // asking for Bluetooth access we will never use is its own small lie.
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
     await _refresh();
   }
 
@@ -103,8 +120,161 @@ class _PrinterSetupScreenState extends State<PrinterSetupScreen> {
     setState(() => _paper = size);
   }
 
+  // ── iOS: the routes that actually work here ─────────────────────────
+
+  Future<Uint8List> _testPdf() =>
+      ReceiptPdf.testPage(context.read<AuthProvider>().business);
+
+  Future<void> _systemPrint() async {
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    try {
+      await ReceiptPdf.openPrintSheet(await _testPdf(), name: 'NamastePOS test');
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text("Couldn't open the print sheet - $e"),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
+
+  Future<void> _sharePdf() async {
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    try {
+      await ReceiptPdf.share(await _testPdf(),
+          filename: 'namastepos_test_receipt.pdf');
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(
+        content: Text("Couldn't share the receipt - $e"),
+        backgroundColor: AppColors.error,
+      ));
+    }
+  }
+
+  Widget _iosBody() => ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.warning.withValues(alpha: 0.5)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: const [
+                  Icon(Icons.info_outline_rounded, color: AppColors.warning),
+                  SizedBox(width: 8),
+                  Expanded(child: Text(
+                    'Bluetooth printers do not work on iPhone',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  )),
+                ]),
+                const SizedBox(height: 8),
+                Text(
+                  PrinterService.instance.platformNote,
+                  style: const TextStyle(fontSize: 13, height: 1.35),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  'Nothing you change on the phone will make one appear, so '
+                  'there is no printer list on this screen.',
+                  style: TextStyle(fontSize: 13, height: 1.35),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(4, 4, 4, 8),
+            child: Text('Print from this iPhone',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13,
+                                 color: AppColors.textSecondary)),
+          ),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Bills open in the iPhone print sheet. From there you can '
+                  'print on any AirPrint printer on your restaurant Wi-Fi, '
+                  'save the bill to Files, or send it to the customer on '
+                  'WhatsApp.',
+                  style: TextStyle(fontSize: 13, height: 1.35),
+                ),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.print_rounded, size: 16),
+                      label: const Text('Print test'),
+                      onPressed: _systemPrint,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.ios_share_rounded, size: 16),
+                      label: const Text('Share PDF'),
+                      onPressed: _sharePdf,
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 20),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(4, 4, 4, 8),
+            child: Text('Keeping your thermal printer',
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13,
+                                 color: AppColors.textSecondary)),
+          ),
+          // Deliberately NOT a button. The print agent is real and running
+          // (namastepos_print_agent polls /print-jobs and prints kitchen
+          // tickets for orders placed on ANY device, iPhone included), but
+          // nothing in the app or the dashboard issues the long-lived token it
+          // needs, so there is no self-serve setup to link to. Describing it
+          // and pointing at support is the truth; a button here would not be.
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.background,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: const Text(
+              'Two options that keep your existing printer:\n\n'
+              '1. Use an Android phone or tablet for billing. It can drive '
+              'the Bluetooth printer directly.\n\n'
+              '2. Ask us to set up the NamastePOS print agent. It is a small '
+              'program on a computer in your restaurant with the printer '
+              'attached; kitchen tickets for orders you take on this iPhone '
+              'then print there automatically. Setup is not self-serve yet - '
+              'contact support and we will do it with you.',
+              style: TextStyle(fontSize: 13, height: 1.4),
+            ),
+          ),
+        ],
+      );
+
   @override
   Widget build(BuildContext context) {
+    if (!PrinterService.supportsBluetoothPrinting) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Printing')),
+        body: _iosBody(),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Thermal printer'),

@@ -13,6 +13,7 @@ import '../../providers/orders_provider.dart';
 import '../../providers/settings_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/printer_service.dart';
+import '../../services/receipt_pdf.dart';
 import '../../services/whatsapp_service.dart';
 import '../../widgets/home_drawer_button.dart';
 import '../../widgets/home_bottom_nav.dart';
@@ -391,9 +392,24 @@ class _OrderCard extends StatelessWidget {
                     tooltip: 'Reprint',
                     onPressed: () async {
                       final auth = context.read<AuthProvider>();
-                      if (auth.business != null) {
-                        await PrinterService.instance.printToken(order, auth.business!);
+                      if (auth.business == null) return;
+                      // iOS cannot reach a classic-BT printer, so send the
+                      // receipt to the OS print sheet (AirPrint / Files /
+                      // WhatsApp) instead of calling a path that returns
+                      // false and shows the user nothing at all.
+                      if (!PrinterService.supportsBluetoothPrinting) {
+                        await ReceiptPdf.openPrintSheet(
+                          await ReceiptPdf.orderReceipt(
+                            business: auth.business!,
+                            order: order,
+                            title: 'TAX INVOICE',
+                            duplicate: true,
+                          ),
+                          name: 'Order #${order.orderNo}',
+                        );
+                        return;
                       }
+                      await PrinterService.instance.printToken(order, auth.business!);
                     },
                   ),
                   if (order.status == OrderStatus.collected)

@@ -35,6 +35,12 @@
     <!-- Camera (receipt photos) -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Voice ordering (re-enabled 2026-09-05). RECORD_AUDIO is a runtime
+         permission; speech_to_text requests it on the first mic tap, never
+         at screen open. Audio goes to the OS SpeechRecognizer only — the app
+         writes no audio file and uploads nothing. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application
         android:label="NamastePOS"
         android:name="${applicationName}"
@@ -91,5 +97,16 @@
         <!-- WhatsApp deep link -->
         <package android:name="com.whatsapp" />
         <package android:name="com.whatsapp.w4b" />
+        <!-- Voice ordering. Android 11+ package visibility hides the speech
+             recogniser unless we declare that we look for it; without these
+             two, SpeechRecognizer.isRecognitionAvailable() answers false on
+             phones that do have one, and the mic button would (correctly but
+             wrongly) never be offered. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
     </queries>
 </manifest>

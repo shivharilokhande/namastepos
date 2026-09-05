@@ -167,7 +167,10 @@ const FEATURE_LABELS: Record<string, string> = {
   marketplace_addons: 'Marketplace add-ons',
   multi_outlet: 'Multi-outlet management',
   accounting_pnl_bs: 'P&L · Balance Sheet · TB',
-  einvoice_gst: 'GST e-invoice (IRN)',
+  // 2026-09-05 — the capability is the IRN/e-invoice document pipeline; the
+  // filing leg needs a GSP/IRP connection NamastePOS does not have yet. The
+  // label must not read as "you can file from here".
+  einvoice_gst: 'E-invoice ready (GSP connection required)',
   recurring_invoices: 'Recurring invoices',
   bank_reconcile: 'Bank reconciliation',
   heat_map: 'Heat map',

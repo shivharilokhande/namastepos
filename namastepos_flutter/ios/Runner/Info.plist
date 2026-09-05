@@ -95,6 +95,17 @@
 	<string>NamastePOS can connect to thermal printers on your local network.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Location is required to discover Bluetooth printers nearby.</string>
+	<!-- Voice ordering (re-enabled 2026-09-05). Two separate grants on iOS:
+	     the microphone itself, and Speech (SFSpeechRecognizer) which turns
+	     the audio into text. Apple rejects vague strings, and these are also
+	     what the restaurant owner reads on the prompt, so both say exactly
+	     when it happens (only while the mic button is held on the New Order
+	     screen) and exactly what is done with it (matched to their own menu;
+	     nothing recorded, stored or uploaded by NamastePOS). -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>NamastePOS uses the microphone only when you tap the mic on the New Order screen, so you can say an order like "two masala dosa" instead of tapping it in. Nothing is recorded or saved.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>NamastePOS sends what you say at the mic button to Apple's speech recognition to turn it into text, then matches that text to items on your own menu. The text is shown to you for confirmation before anything is added to a bill, and it is never stored or shared.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>NamastePOS can save receipts to your photo library.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

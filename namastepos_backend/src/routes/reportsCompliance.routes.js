@@ -80,7 +80,11 @@ router.post(
     vehicleNo: Joi.string().max(20).allow('', null),
     transporterId: Joi.string().max(30).allow('', null),
   }) }),
-  asyncHandler(async (req, res) => res.status(201).json(await eway.generate(req.params.businessId, req.body))),
+  asyncHandler(async (req, res) => {
+    const bill = await eway.generate(req.params.businessId, req.body);
+    // `stub` on the envelope for the same reason as the IRN route above.
+    res.status(201).json({ ...bill, stub: bill.isStub });
+  }),
 );
 router.post(
   '/eway-bills/:id/cancel',
@@ -151,10 +155,19 @@ router.get(
   requireStaffPerm(['tax_invoices', 'orders']),
   asyncHandler(async (req, res) => res.json({ irns: await accountingExport.listIrns(req.params.businessId) })),
 );
+// The IRN payload always carries `isStub` / `filedWithIrp` / `notice` (see
+// _serializeIrn). They are ALSO lifted to the envelope here: a client that
+// renders `body.irn` without inspecting it still cannot present a DEMO number
+// as a filed one, because `stub: true` sits next to it. In production with no
+// IRP credentials this endpoint refuses (503 IRP_NOT_CONFIGURED) instead of
+// fabricating — see src/services/irpGateway.js.
 router.post(
   '/einvoice/:orderId',
   requireRole(['business_owner', 'staff_manager']),
-  asyncHandler(async (req, res) => res.status(201).json({ irn: await accountingExport.generateIrn(req.params.businessId, req.params.orderId) })),
+  asyncHandler(async (req, res) => {
+    const irn = await accountingExport.generateIrn(req.params.businessId, req.params.orderId);
+    res.status(201).json({ irn, stub: irn.isStub, filedWithIrp: irn.filedWithIrp });
+  }),
 );
 // FF-402 code-review pass — namespaced under `/accounting/` to avoid
 // colliding with FF-1103 `/eway-bills` above (which uses the dedicated
@@ -168,7 +181,12 @@ router.post(
     vehicleNo: Joi.string().required(),
     distanceKm: Joi.number().integer().min(0).required(),
   }) }),
-  asyncHandler(async (req, res) => res.status(201).json({ ewayBill: await accountingExport.generateEwayBill(req.params.businessId, req.body.invoiceId, req.body) })),
+  asyncHandler(async (req, res) => {
+    const ewayBill = await accountingExport.generateEwayBill(
+      req.params.businessId, req.body.invoiceId, req.body,
+    );
+    res.status(201).json({ ewayBill, stub: ewayBill.isStub, filedWithNic: ewayBill.filedWithNic });
+  }),
 );
 
 module.exports = router;

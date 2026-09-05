@@ -141,6 +141,41 @@ const FEATURE_PHRASES = [
   [/\badd-?on marketplace\b/i, 'marketplace_addons'],
 ];
 
+// ══════════════════════════════════════════════════════════════════════════
+// 2b. CREDENTIAL-GATED CAPABILITIES
+// ══════════════════════════════════════════════════════════════════════════
+//
+// The check above answers ONE question: does the plan feed grant this key?
+// On 2026-09-05 that turned out to be the wrong question for e-invoice.
+// `einvoice_gst` IS granted on Advanced and Enterprise, so every claim about
+// it passed — while the integration behind the key was a stub that computed
+// the correct NIC IRN hash and never called the IRP. IRP_BASE_URL /
+// IRP_USERNAME / IRP_PASSWORD are not set in production, so no invoice
+// NamastePOS has ever "e-invoiced" exists on any government system.
+//
+// A feature key is a PERMISSION, not a promise that the far end is connected.
+// Where the two differ, the copy has to say so, because the reader's
+// consequence is a tax filing rather than a disappointed click.
+//
+// So: a capability listed here may still be sold — the plan gating is real
+// and the document pipeline is real — but any claim about it MUST carry the
+// qualifier. The regex is deliberately one word (`GSP`): a qualifier that can
+// be paraphrased is a qualifier that drifts, and "GSP" is the thing an owner
+// can act on ("do I have a GSP account?"). Copy that mentions the capability
+// in a plan sentence without naming GSP fails the gate.
+//
+// REMOVE an entry here the day the credentials are live in production and the
+// live call is implemented — not the day the code is written.
+const CREDENTIAL_GATED = {
+  einvoice_gst: {
+    env: ['IRP_BASE_URL', 'IRP_USERNAME', 'IRP_PASSWORD'],
+    qualifier: /\bGSP\b/i,
+    phrase: 'e-invoice ready (GSP connection required)',
+    reality: 'the IRN is generated locally and is NOT filed with the NIC IRP '
+      + '(src/services/irpGateway.js — production refuses to generate one at all)',
+  },
+};
+
 /** Metric nouns as marketing writes them. */
 const METRIC_PHRASES = [
   [/\bstaff logins?\b|\bstaff\b/i, 'staff'],
@@ -278,6 +313,10 @@ function claimsFromCompareTable(html, file, labelToKey) {
         file,
         line,
         text: `compare table row "${label}"`,
+        // The row LABEL is the whole claim here — there is no sentence to
+        // carry a qualifier, so a credential-gated capability has to be
+        // qualified in the label itself (and in the LBL map that renders it).
+        context: label,
       });
     });
     row = rowRe.exec(body[1]);
@@ -314,7 +353,7 @@ function claimsFromPlanCards(html, file) {
       const t = stripTags(li);
       if (!t || /^Everything in /i.test(t)) continue;
       for (const key of featuresIn(t)) {
-        claims.push({ kind: 'feature', plan: name, key, included: true, file, line, text: `plan card bullet "${t}"` });
+        claims.push({ kind: 'feature', plan: name, key, included: true, file, line, text: `plan card bullet "${t}"`, context: t });
       }
       claims.push(...limitClaimsIn(t, name, file, line, 'plan card bullet'));
     }
@@ -382,7 +421,7 @@ function claimsFromPlanRows(html, file, planNames) {
         const t = cell.txt;
         if (!t || /^₹/.test(t)) continue;
         for (const key of featuresIn(t)) {
-          claims.push({ kind: 'feature', plan, key, included: true, file, line, text: `pricing row cell "${t.slice(0, 90)}"` });
+          claims.push({ kind: 'feature', plan, key, included: true, file, line, text: `pricing row cell "${t.slice(0, 90)}"`, context: t });
         }
         claims.push(...limitClaimsIn(t, plan, file, line, 'pricing row cell'));
       }
@@ -443,7 +482,9 @@ function claimsFromProse(src, file, planNames) {
       const isLadder = LADDER_RE.test(seg.slice(0, at));
 
       for (const key of featuresIn(seg)) {
-        claims.push({ kind: isLadder ? 'ladder' : 'feature', plan, key, included: true, file, line, text: `"${seg.trim().slice(0, 120)}"` });
+        // `text` is truncated for readability; `context` is the whole
+        // segment, which is what the credential-gate regex is tested against.
+        claims.push({ kind: isLadder ? 'ladder' : 'feature', plan, key, included: true, file, line, text: `"${seg.trim().slice(0, 120)}"`, context: seg });
       }
       claims.push(...limitClaimsIn(seg, plan, file, line, 'copy'));
 
@@ -562,6 +603,23 @@ function checkClaims(plans, claims) {
 
     if (c.kind === 'feature' || c.kind === 'ladder') {
       const has = grants(plan, c.key);
+
+      // CREDENTIAL GATE (see section 2b). Runs BEFORE the grant check and
+      // independently of it: the failure mode it catches is a claim the feed
+      // fully supports. `context` is the untruncated copy where we have it —
+      // a qualifier 130 characters into a sentence still counts.
+      const gated = CREDENTIAL_GATED[c.key];
+      if (gated && c.included && !gated.qualifier.test(String(c.context || c.text))) {
+        fail(
+          c,
+          `copy attributes "${c.key}" to ${c.plan} with no credential qualifier`,
+          `${c.plan} DOES grant ${c.key}, but the integration behind the key is not connected: `
+          + `${gated.reality}. It is gated on ${gated.env.join(', ')}, which are unset in production. `
+          + `Copy naming this capability must carry the qualifier ${gated.qualifier} `
+          + `— e.g. "${gated.phrase}".`,
+        );
+      }
+
       if (c.included && !has) {
         fail(c, `copy attributes "${c.key}" to ${c.plan}, which the plan does not grant`, `${describeGrant(plan, c.key)}. Plans with it: ${order.filter((n) => grants(byName.get(n), c.key)).join(', ') || 'none'}`);
       } else if (c.included === false && has) {
@@ -664,6 +722,7 @@ module.exports = {
   LANDING_DIR,
   PAGES,
   SNAPSHOT,
+  CREDENTIAL_GATED,
   grants,
   collectClaims,
   checkClaims,

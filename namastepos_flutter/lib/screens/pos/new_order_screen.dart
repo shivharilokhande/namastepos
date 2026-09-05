@@ -32,6 +32,34 @@ class NewOrderScreen extends StatefulWidget {
 class _NewOrderScreenState extends State<NewOrderScreen> {
   String _search = '';
 
+  /// Whether to draw the mic at all. Starts false and is turned on only by a
+  /// successful, NON-PROMPTING probe — a phone with no speech recogniser
+  /// never gets a button that would fail on tap, and merely opening this
+  /// screen never raises an OS permission sheet.
+  bool _voiceOffered = false;
+
+  /// True while a listen session is live, so the mic can show it is hot.
+  bool _listening = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _probeVoice();
+  }
+
+  @override
+  void dispose() {
+    // Never leave the microphone hot behind a closed screen.
+    VoiceOrderService.instance.abort();
+    super.dispose();
+  }
+
+  Future<void> _probeVoice() async {
+    await VoiceOrderService.instance.probe();
+    if (!mounted) return;
+    setState(() => _voiceOffered = VoiceOrderService.instance.offerMicButton);
+  }
+
   @override
   Widget build(BuildContext context) {
     final menu = context.watch<MenuProvider>();
@@ -66,11 +94,19 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
             ? 'Add to Table ${pendingCaptainSession!['tableLabel'] ?? ''}'
             : 'New Order'),
         actions: [
-          IconButton(
-            tooltip: 'Voice order',
-            icon: const Icon(Icons.mic_rounded),
-            onPressed: () => _voiceOrder(context),
-          ),
+          if (_voiceOffered)
+            // GestureDetector, not just IconButton, so a long-press can open
+            // the language picker — an owner whose staff calls out orders in
+            // Marathi should not be stuck on the en_IN default.
+            GestureDetector(
+              onLongPress: _listening ? null : () => _pickVoiceLanguage(context),
+              child: IconButton(
+                tooltip: 'Voice order (long-press for language)',
+                icon: Icon(_listening ? Icons.mic : Icons.mic_rounded,
+                    color: _listening ? AppColors.error : null),
+                onPressed: _listening ? null : () => _voiceOrder(context),
+              ),
+            ),
           if (orders.cart.isNotEmpty)
             TextButton.icon(
               onPressed: () => _confirmClear(context, orders),
@@ -158,51 +194,283 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     );
   }
 
+  /// Voice order: listen → parse → SHOW THE OWNER WHAT WE HEARD → add.
+  ///
+  /// Nothing reaches the cart without a tap on "Add". Speech recognition on a
+  /// Hinglish menu is a good shortcut and a bad oracle: "do chai" is as often
+  /// heard as "do chi" or "two chai", and a wrong line here becomes a wrong
+  /// bill for a real customer. The confirm sheet is the whole safety story.
+  ///
+  /// Nothing about the audio, the transcript or the matches is reported to
+  /// analytics — see the note at the top of services/voice_order_service.dart.
   Future<void> _voiceOrder(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
-    if (!VoiceOrderService.instance.available) {
-      messenger.showSnackBar(const SnackBar(
-        content: Text('Voice ordering is disabled in this build. '
-            'Use the menu grid to add items.'),
-        duration: Duration(seconds: 3),
+    final voice = VoiceOrderService.instance;
+
+    // Permission permanently refused: not a dead button — hand them Settings.
+    if (voice.needsSettings) {
+      messenger.showSnackBar(SnackBar(
+        content: Text(VoiceOrderService.messageForReadiness(voice.readiness)),
+        duration: const Duration(seconds: 6),
+        action: SnackBarAction(
+            label: 'Settings', onPressed: () => voice.openSettings()),
       ));
       return;
     }
+
+    setState(() => _listening = true);
+    messenger.hideCurrentSnackBar();
     messenger.showSnackBar(const SnackBar(
-        content: Text('Listening… say e.g. "two paneer tikka one naan"'),
-        duration: Duration(seconds: 5)));
-    final text = await VoiceOrderService.instance.listen();
+      content: Text('Listening… say the quantity then the item, '
+          'like "do chai" or "two paneer tikka".'),
+      duration: Duration(seconds: 8),
+    ));
+
+    final text = await voice.listen();
+
+    if (mounted) setState(() => _listening = false);
+    messenger.hideCurrentSnackBar();
+
+    // The readiness may have changed under us (a fresh permission prompt, or
+    // a phone that turned out to have no recogniser at all). Re-read it so a
+    // button that can no longer work stops being drawn.
+    if (mounted) {
+      setState(() => _voiceOffered = voice.offerMicButton);
+    }
+
     if (text == null || text.trim().isEmpty) {
-      messenger.showSnackBar(const SnackBar(content: Text('No speech detected')));
+      messenger.showSnackBar(SnackBar(
+        content: Text(voice.lastMessage.isEmpty
+            ? 'No speech detected.'
+            : voice.lastMessage),
+        duration: const Duration(seconds: 5),
+        action: voice.needsSettings
+            ? SnackBarAction(
+                label: 'Settings', onPressed: () => voice.openSettings())
+            : null,
+      ));
       return;
     }
+
     // Guard the BuildContext reads below across the listen() async gap.
     if (!context.mounted) return;
     final menu = context.read<MenuProvider>().visibleItems;
     final parsed = VoiceOrderService.parse(text, menu);
-    if (parsed.isEmpty) {
-      messenger.showSnackBar(SnackBar(content: Text('No matches in "$text"')));
+
+    if (parsed.lines.isEmpty) {
+      messenger.showSnackBar(SnackBar(
+        content: Text('Heard "$text" but nothing on the menu matches. '
+            'Add it from the grid, or try saying just the item name.'),
+        duration: const Duration(seconds: 6),
+      ));
       return;
     }
+
+    final confirmed = await _confirmVoiceLines(context, text, parsed);
+    if (confirmed == null || confirmed.isEmpty) return;
+    if (!context.mounted) return;
+
     final orders = context.read<OrdersProvider>();
     final added = <String>[];
-    final skipped = <String>[];
-    for (final p in parsed) {
-      // Bug fix: firstWhere without orElse throws StateError if the menu
-      // mutates between parse and lookup. Use where().firstOrNull style.
-      MenuItem? m;
-      for (final x in menu) { if (x.name == p.name) { m = x; break; } }
-      if (m == null) {
-        skipped.add('${p.qty}× ${p.name}');
-        continue;
+    for (final p in confirmed) {
+      // Re-resolve against the live menu: it can be refreshed while the
+      // confirm sheet is open, and a stale MenuItem would price wrongly.
+      MenuItem? m = p.item;
+      for (final x in context.read<MenuProvider>().visibleItems) {
+        if (x.id == p.item?.id || x.name == p.name) { m = x; break; }
       }
+      if (m == null) continue;
       orders.addToCart(CartItem(item: m, qty: p.qty));
-      added.add('${p.qty}× ${p.name}');
+      added.add('${p.qty}× ${m.name}');
     }
-    final msg = added.isEmpty
-        ? 'Could not match any items: ${skipped.join(", ")}'
-        : 'Added ${added.join(", ")}${skipped.isEmpty ? "" : " (skipped ${skipped.join(", ")})"}';
-    messenger.showSnackBar(SnackBar(content: Text(msg)));
+    if (added.isEmpty) return;
+    messenger.showSnackBar(SnackBar(content: Text('Added ${added.join(", ")}')));
+  }
+
+  /// The confirm-before-add sheet. Shows the raw transcript (so the owner can
+  /// see WHY a line is wrong), every match with an editable quantity, a
+  /// warning marker on low-confidence guesses, and anything we could not
+  /// match at all.
+  Future<List<ParsedVoiceLine>?> _confirmVoiceLines(
+      BuildContext context, String transcript, VoiceParseResult parsed) {
+    final qty = <int>[for (final l in parsed.lines) l.qty];
+    final keep = <bool>[for (final _ in parsed.lines) true];
+
+    return showModalBottomSheet<List<ParsedVoiceLine>>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (innerContext, setSheetState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.mic_rounded, size: 20),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text('Check before adding',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w700)),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Heard: "$transcript"',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: AppColors.textSecondary,
+                            fontStyle: FontStyle.italic)),
+                    const SizedBox(height: 12),
+                    // A short list in a bounded box — never a ListView inside
+                    // an unbounded column.
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                          maxHeight:
+                              MediaQuery.of(innerContext).size.height * 0.4),
+                      child: SingleChildScrollView(
+                        child: Column(
+                          children: [
+                            for (var i = 0; i < parsed.lines.length; i++)
+                              _VoiceLineRow(
+                                line: parsed.lines[i],
+                                qty: qty[i],
+                                keep: keep[i],
+                                onKeep: (v) =>
+                                    setSheetState(() => keep[i] = v),
+                                onQty: (v) => setSheetState(
+                                    () => qty[i] = v.clamp(1, 99)),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (parsed.unmatched.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Not on the menu: ${parsed.unmatched.join(", ")}. '
+                        'Add these from the grid.',
+                        style: const TextStyle(
+                            fontSize: 12, color: AppColors.error),
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                Navigator.pop(sheetContext, <ParsedVoiceLine>[]),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: keep.contains(true)
+                                ? () {
+                                    final out = <ParsedVoiceLine>[];
+                                    for (var i = 0;
+                                        i < parsed.lines.length;
+                                        i++) {
+                                      if (!keep[i]) continue;
+                                      final l = parsed.lines[i];
+                                      out.add(ParsedVoiceLine(l.name, qty[i],
+                                          item: l.item,
+                                          score: l.score,
+                                          spoken: l.spoken));
+                                    }
+                                    Navigator.pop(sheetContext, out);
+                                  }
+                                : null,
+                            child: const Text('Add to order'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  /// Long-press on the mic. Lists only the languages the DEVICE reports it can
+  /// recognise, so nothing here is a promise the phone cannot keep.
+  Future<void> _pickVoiceLanguage(BuildContext context) async {
+    final voice = VoiceOrderService.instance;
+    final messenger = ScaffoldMessenger.of(context);
+    if (!await voice.init()) {
+      if (!context.mounted) return;
+      messenger.showSnackBar(SnackBar(
+          content:
+              Text(VoiceOrderService.messageForReadiness(voice.readiness))));
+      if (mounted) setState(() => _voiceOffered = voice.offerMicButton);
+      return;
+    }
+    final locales = voice.selectableLocales;
+    if (!context.mounted) return;
+    if (locales.isEmpty) {
+      messenger.showSnackBar(const SnackBar(
+          content: Text('This phone did not report any recognition languages. '
+              'The system default will be used.')));
+      return;
+    }
+    final current = voice.localeId;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text('Voice language',
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'English (India) usually works best for mixed Hindi-English '
+                'orders, because item names stay in English letters.',
+                style:
+                    TextStyle(fontSize: 12, color: AppColors.textSecondary),
+              ),
+            ),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: locales.length,
+                itemBuilder: (_, i) {
+                  final l = locales[i];
+                  return RadioListTile<String>(
+                    value: l.id,
+                    groupValue: current,
+                    title: Text(l.name),
+                    subtitle: Text(l.id,
+                        style: const TextStyle(fontSize: 11)),
+                    onChanged: (v) async {
+                      if (v != null) await voice.setLocale(v);
+                      if (sheetContext.mounted) Navigator.pop(sheetContext);
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _confirmClear(BuildContext context, OrdersProvider orders) {
@@ -691,6 +959,90 @@ class _CartLineRow extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(icon, size: 16, color: Colors.white),
+      ),
+    );
+  }
+}
+
+/// One row in the voice confirm sheet: keep/drop, the matched item, an
+/// editable quantity, and — when the match was a guess rather than a hit —
+/// what was actually said, so the owner can judge it instead of trusting it.
+class _VoiceLineRow extends StatelessWidget {
+  final ParsedVoiceLine line;
+  final int qty;
+  final bool keep;
+  final ValueChanged<bool> onKeep;
+  final ValueChanged<int> onQty;
+
+  const _VoiceLineRow({
+    required this.line,
+    required this.qty,
+    required this.keep,
+    required this.onKeep,
+    required this.onQty,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final price = line.item?.price;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Checkbox(
+            value: keep,
+            onChanged: (v) => onKeep(v ?? false),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    if (!line.confident)
+                      const Padding(
+                        padding: EdgeInsets.only(right: 4),
+                        child: Icon(Icons.help_outline,
+                            size: 14, color: AppColors.error),
+                      ),
+                    Flexible(
+                      child: Text(
+                        line.name,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 14),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  line.confident
+                      ? (price == null ? '' : AppFmt.money(price))
+                      : 'guess from "${line.spoken}" — check this one',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: line.confident
+                        ? AppColors.textSecondary
+                        : AppColors.error,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.remove_circle_outline, size: 20),
+            onPressed: qty > 1 ? () => onQty(qty - 1) : null,
+          ),
+          Text('$qty',
+              style: const TextStyle(
+                  fontWeight: FontWeight.w700, fontSize: 15)),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.add_circle_outline, size: 20),
+            onPressed: () => onQty(qty + 1),
+          ),
+        ],
       ),
     );
   }

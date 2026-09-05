@@ -24,9 +24,10 @@
 // `ff_printer_address`. On launch we restore it and lazily reconnect.
 
 import 'dart:async';
-import 'dart:io' show Platform;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
 import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -56,6 +57,22 @@ class PrinterDevice {
 class PrinterService {
   PrinterService._();
   static final PrinterService instance = PrinterService._();
+
+  /// Can THIS device drive a cheap classic-Bluetooth thermal printer directly?
+  ///
+  /// Only Android can. iOS refuses classic-Bluetooth (SPP) to normal apps —
+  /// an app may only talk to MFi-certified accessories through the External
+  /// Accessory framework, and effectively no 58mm/80mm thermal printer sold in
+  /// India is certified. `print_bluetooth_thermal` therefore returns an empty
+  /// paired list on iPhone no matter what the owner does, so every surface
+  /// that would show a pair/scan flow must ask this first and offer the PDF /
+  /// AirPrint route instead (see `receipt_pdf.dart`).
+  ///
+  /// Read from `defaultTargetPlatform` rather than `dart:io`'s `Platform` so
+  /// this stays compilable on a web/desktop analyze target, and never from a
+  /// user setting — the owner cannot opt out of Apple's rule.
+  static bool get supportsBluetoothPrinting =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   static const _kAddressKey = 'ff_printer_address';
   static const _kNameKey    = 'ff_printer_name';
@@ -97,15 +114,26 @@ class PrinterService {
 
   /// Has the user enabled Bluetooth on their device?
   Future<bool> isBluetoothOn() async {
+    // On a platform that can't use classic BT at all, the Bluetooth toggle is
+    // not the owner's problem — never nag them to turn something on that
+    // would change nothing.
+    if (!supportsBluetoothPrinting) return true;
     try {
       return await PrintBluetoothThermal.bluetoothEnabled;
     } catch (_) {
-      return true; // assume on so iOS callers aren't blocked
+      return true;
     }
   }
 
   /// Devices the user has already paired in OS Bluetooth Settings.
+  ///
+  /// Returns empty WITHOUT asking the plugin on a platform that cannot use
+  /// classic BT: an empty list that came back from a real query looks to the
+  /// caller exactly like "you have no printers, go pair one", which is the
+  /// dead end this guard exists to stop. Callers must branch on
+  /// [supportsBluetoothPrinting], not on this being empty.
   Future<List<PrinterDevice>> pairedDevices() async {
+    if (!supportsBluetoothPrinting) return const <PrinterDevice>[];
     try {
       final list = await PrintBluetoothThermal.pairedBluetooths;
       return list.map(PrinterDevice.fromBluetoothInfo).toList();
@@ -117,6 +145,7 @@ class PrinterService {
   /// Connect to a printer. Persists the choice so we restore it on next
   /// launch. Returns true on success.
   Future<bool> connect(PrinterDevice device) async {
+    if (!supportsBluetoothPrinting) return false;
     final ok = await PrintBluetoothThermal.connect(macPrinterAddress: device.address);
     if (!ok) return false;
     _selected = device;
@@ -497,6 +526,7 @@ class PrinterService {
       printBill(order: order, business: business);
 
   Future<bool> _ensureConnected() async {
+    if (!supportsBluetoothPrinting) return false;
     // Lazy-restore the saved printer the first time a print is attempted.
     // Means callers don't have to remember to call restore() in main.dart.
     if (_selected == null) await restore();
@@ -505,14 +535,15 @@ class PrinterService {
     return PrintBluetoothThermal.connect(macPrinterAddress: _selected!.address);
   }
 
-  /// Hint surfaced on the setup screen. iOS is restricted; we explain
-  /// rather than silently failing.
+  /// Hint surfaced on the setup screen.
+  ///
+  /// The old iOS text said "MFi-certified", which tells an owner nothing and
+  /// still ended with "pair it and come back" — a loop that can never finish.
   String get platformNote {
-    if (Platform.isIOS) {
-      return 'iOS only lists MFi-certified Bluetooth printers. If your '
-             "printer doesn't appear here even after pairing it in "
-             'Settings → Bluetooth, it\'s not MFi-certified. Use an '
-             'Android device for non-MFi printers.';
+    if (!supportsBluetoothPrinting) {
+      return 'iPhone does not allow these cheap Bluetooth printers - Apple '
+             'only permits certified ones, and the thermal printers sold in '
+             'India are not certified.';
     }
     return "Pair your printer in your phone's Bluetooth Settings first, "
            'then return here and tap Refresh.';

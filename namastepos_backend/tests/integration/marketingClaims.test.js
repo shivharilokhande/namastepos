@@ -224,6 +224,52 @@ describe('marketing claims vs the plan feed', () => {
       expect(v[0].message).toContain('also granted on: Pro');
     });
 
+    // ──────────────────────────────────────────────────────────────────────
+    // 2026-09-05 — the FIFTH bug, and the one the feed-comparison above
+    // cannot see. `einvoice_gst` IS granted on Advanced and Enterprise, so
+    // "e-invoice from Advanced" was supported by the data and passed every
+    // check — while the code behind the key computed a NIC IRN locally and
+    // never called the IRP. The guard now knows about capabilities gated on
+    // external credentials (CREDENTIAL_GATED) and fails a claim that does not
+    // carry the qualifier, however well the feed supports it.
+    // ──────────────────────────────────────────────────────────────────────
+    it('bug 5 — a credential-gated capability claimed without the qualifier', () => {
+      // The compare-table label IS the claim: it maps to the key via the LBL
+      // table the page renders with, so both have to move together or the
+      // label stops resolving to a key at all.
+      const undoRow = breakFile(
+        'index.html',
+        '<tr><td>E-invoice ready (GSP connection required)</td>',
+        '<tr><td>E-invoice (GST)</td>',
+      );
+      const undoLbl = breakFile(
+        'index.html',
+        "einvoice_gst:'E-invoice ready (GSP connection required)'",
+        "einvoice_gst:'E-invoice (GST)'",
+      );
+      const v = violationsNow();
+      undoLbl();
+      undoRow();
+
+      // Both plans that grant the key are named — the claim is per-plan.
+      expect(v.map((x) => x.plan).sort()).toEqual(['Advanced', 'Enterprise']);
+      const [first] = v;
+      expect(first.message).toContain('copy attributes "einvoice_gst" to Advanced with no credential qualifier');
+      expect(first.message).toContain('Advanced DOES grant einvoice_gst');
+      expect(first.message).toContain('IRP_BASE_URL, IRP_USERNAME, IRP_PASSWORD');
+      expect(first.message).toContain('e-invoice ready (GSP connection required)');
+    });
+
+    it('the qualifier is what clears it — not the feed', () => {
+      // Same claim, qualifier restored: no violation. This is the difference
+      // between "the copy is banned" and "the copy must be honest".
+      const gated = guard.CREDENTIAL_GATED.einvoice_gst;
+      expect(gated.env).toEqual(['IRP_BASE_URL', 'IRP_USERNAME', 'IRP_PASSWORD']);
+      expect(gated.qualifier.test('E-invoice (GST)')).toBe(false);
+      expect(gated.qualifier.test(gated.phrase)).toBe(true);
+      expect(violationsNow()).toEqual([]);
+    });
+
     it('the un-broken copy in the temp dir is still clean (no leaked edits)', () => {
       expect(violationsNow()).toEqual([]);
     });

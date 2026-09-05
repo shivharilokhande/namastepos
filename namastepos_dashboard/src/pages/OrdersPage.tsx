@@ -159,7 +159,7 @@ export function OrdersPage() {
       // WHY (2026-08-25): the old toast printed the IRN once ("IRN
       // generated · 580ce2…") and it then had no home anywhere in the UI —
       // founder: "where do those invoices go?" Point at its permanent home.
-      toast.success('IRN saved — view it in Tax invoices');
+      toast.success('DEMO IRN saved — not filed with the IRP. View it in Tax invoices.');
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['einvoice-irns'] });
     },
@@ -177,7 +177,9 @@ export function OrdersPage() {
     queryFn: async () => {
       const b = getBusinessCache();
       const r = await api.get(`/businesses/${b.id}/einvoice`);
-      return (r.data.irns || []) as Array<{ orderId: string; irn: string; status?: string }>;
+      return (r.data.irns || []) as Array<{
+        orderId: string; irn: string; status?: string; isStub?: boolean;
+      }>;
     },
     enabled: status === 'collected',
     staleTime: 60 * 1000, // IRNs are immutable once generated; no live polling needed
@@ -467,22 +469,37 @@ export function OrdersPage() {
                     (o.irn was never populated by the orders payload). Bill rows
                     wrap several KOTs, so any KOT's IRN counts for the bill. */}
                 {o.status === 'collected' && (() => {
-                  const hasIrn = !!o.irn
-                    || !!irnByOrder[o.id]
-                    || (Array.isArray(o.kots) && o.kots.some((k: any) => !!irnByOrder[k.id]));
-                  return hasIrn ? (
+                  const rec = irnByOrder[o.id]
+                    || (Array.isArray(o.kots) ? o.kots.map((k: any) => irnByOrder[k.id]).find(Boolean) : undefined);
+                  const hasIrn = !!o.irn || !!rec;
+                  // 2026-09-05: NamastePOS is not connected to a GSP/IRP, so
+                  // every IRN so far was generated locally and filed nowhere.
+                  // A green "e-invoiced ✓" on such a row is the lie — an
+                  // undefined isStub (older payload) counts as a stub too.
+                  const filed = rec ? rec.isStub === false : false;
+                  if (!hasIrn) {
+                    return (
+                      <Button size="sm" variant="ghost" className="mt-2 w-full"
+                        onClick={() => einvoice.mutate(o.id)} disabled={einvoice.isPending}>
+                        <FileText className="mr-1 h-3.5 w-3.5" />
+                        Generate e-invoice (demo)
+                      </Button>
+                    );
+                  }
+                  return filed ? (
                     <div className="mt-2 flex justify-center"
-                      title="IRN generated — open Tax invoices to view or copy it">
+                      title="IRN filed with the IRP — open Tax invoices to view or copy it">
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 text-emerald-700 px-2.5 py-1 text-[11px] font-semibold">
                         e-invoiced ✓
                       </span>
                     </div>
                   ) : (
-                    <Button size="sm" variant="ghost" className="mt-2 w-full"
-                      onClick={() => einvoice.mutate(o.id)} disabled={einvoice.isPending}>
-                      <FileText className="mr-1 h-3.5 w-3.5" />
-                      Generate e-invoice
-                    </Button>
+                    <div className="mt-2 flex justify-center"
+                      title="DEMO IRN — generated locally, never filed with the government IRP. Not valid in a GST return.">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-800 px-2.5 py-1 text-[11px] font-semibold">
+                        e-invoice DEMO — not filed
+                      </span>
+                    </div>
                   );
                 })()}
                 {/* FF-304 partial-refund entry point — mobile parity

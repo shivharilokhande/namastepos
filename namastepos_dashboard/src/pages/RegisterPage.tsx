@@ -281,7 +281,8 @@ export function RegisterPage() {
             {trialsGst && (
               // Only shown when the trialled plan genuinely carries the
               // `tax_invoices` feature key. GST tax invoices start at Pro
-              // (Rs 799) and e-invoice at Advanced; implying they are free is
+              // (Rs 799); e-invoice-READY documents start at Advanced (filing
+              // still needs a GSP/IRP connection). Implying either is free is
               // the error that causes refunds, so this line is gated on the
               // live feature list rather than on the page being the register page.
               <p className="flex items-start gap-2 text-xs">

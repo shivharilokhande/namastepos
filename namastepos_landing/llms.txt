@@ -12,7 +12,7 @@ Single-outlet Indian food businesses - cafes, QSRs, cloud kitchens, dhabas, stre
 
 - Offline-first billing. Orders are written on the device and replayed idempotently on reconnect, so billing and KOTs continue through an outage and a bill can never be duplicated.
 - The phone is the till. No counter PC and no proprietary terminal required. Staff sign in with phone plus PIN, on any Android phone, iPhone or browser.
-- GST built in. Server-authoritative pricing, CGST/SGST/IGST and HSN per item, and e-invoice support on the higher plans (see the plan ladder below for exactly where each starts).
+- GST built in. Server-authoritative pricing, CGST/SGST/IGST and HSN per item, and e-invoice ready (GSP connection required) on the higher plans (see the plan ladder below for exactly where each starts).
 - Transparent, all-inclusive pricing. A free-forever plan, paid plans from ₹299 per month, monthly billing, no annual lock-in, and reports on every plan with no report paywall.
 - Growth tools included, not sold back. Loyalty points, memberships, prepaid wallet and gift cards, customer CRM, WhatsApp marketing, referrals and QR self-ordering are part of the plan ladder.
 
@@ -22,7 +22,7 @@ Single-outlet Indian food businesses - cafes, QSRs, cloud kitchens, dhabas, stre
 - KOT printing and a live kitchen display system (KDS)
 - Table management across floors, plus reservations
 - QR self-ordering from the table, with server-side price re-validation
-- Invoicing: basic invoices on every plan; GST tax invoices from Pro; e-invoice (GST) from Advanced; TDS/TCS from Enterprise
+- Invoicing: basic invoices on every plan; GST tax invoices from Pro; e-invoice ready (GSP connection required) from Advanced; TDS/TCS from Enterprise
 - Loyalty and points, memberships, prepaid wallet and gift cards, customer CRM
 - WhatsApp receipts, order updates and marketing campaigns
 - Inventory tracking, recipe costing, dish wastage, dead stock and low-stock alerts
@@ -45,13 +45,13 @@ Android (APK), iOS and a web dashboard. One login works across devices.
 | Advanced | ₹999 | ₹9,990 | unlimited | unlimited | unlimited | 3 | unlimited |
 | Enterprise | ₹1,999 | ₹19,990 | unlimited | unlimited | unlimited | 3 | unlimited |
 
-Yearly billing costs about ten months of the monthly price, so roughly two months free. Free trial: 7 days, no credit card. No annual lock-in, cancel anytime. Add-ons (WhatsApp messaging, e-invoice pack, extra outlets) are sold separately and priced in-product.
+Yearly billing costs about ten months of the monthly price, so roughly two months free. Free trial: 7 days, no credit card. No annual lock-in, cancel anytime. Add-ons (WhatsApp messaging, e-invoice pack - GSP connection required, extra outlets) are sold separately and priced in-product.
 
 Where features start on the ladder, so nothing is implied to be free that is not:
 
 - Starter and Growth include basic invoicing, not GST tax invoices.
 - GST tax invoices start on Pro.
-- E-invoice (GST) starts on Advanced.
+- E-invoice ready (GSP connection required) starts on Advanced. NamastePOS produces e-invoice-format documents and IRNs locally; it is not connected to a GSP/IRP, so nothing is filed with the government and an IRN from NamastePOS must not be used in a return.
 - TDS/TCS and bank reconciliation start on Enterprise.
 - Zomato and Swiggy aggregators, inventory tracking and recipe costing start on Pro.
 - Accounting (P&L and balance sheet) starts on Advanced.

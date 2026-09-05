@@ -1,5 +1,7 @@
 // NamastePOS - Order detail with timeline & actions
 
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -9,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/orders_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/printer_service.dart';
+import '../../services/receipt_pdf.dart';
 import '../../services/whatsapp_service.dart';
 import '../../utils/error_humanizer.dart';
 import '../../utils/formatters.dart';
@@ -117,6 +120,51 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     final messenger = ScaffoldMessenger.of(btnCtx)
                       ..hideCurrentSnackBar();  // clear any lingering snack
                     bool ok = false;
+                    // 2026-09-05: on iOS the Bluetooth path below can never
+                    // succeed (Apple blocks classic BT), so this button used
+                    // to end on "No printer connected. Pair one in Settings"
+                    // — advice that leads nowhere on an iPhone. Route the
+                    // reprint through the OS print sheet instead: AirPrint,
+                    // save to Files, or send it to the customer.
+                    if (!PrinterService.supportsBluetoothPrinting) {
+                      try {
+                        Uint8List bytes;
+                        if (isBill && order.tableSessionId != null) {
+                          final r = await ApiService.instance.dio.get(
+                            '/businesses/${auth.business!.id}/ops/sessions/${order.tableSessionId}',
+                          );
+                          final session =
+                              (r.data['session'] as Map).cast<String, dynamic>();
+                          bytes = await ReceiptPdf.sessionBill(
+                            session: session, business: auth.business!,
+                          );
+                        } else {
+                          bytes = await ReceiptPdf.orderReceipt(
+                            business: auth.business!,
+                            order: order,
+                            title: 'TAX INVOICE',
+                            duplicate: true,
+                          );
+                        }
+                        await ReceiptPdf.openPrintSheet(
+                          bytes, name: 'Order #${order.orderNo}',
+                        );
+                      } catch (e) {
+                        messenger.showSnackBar(SnackBar(
+                          content: Text("Couldn't reprint — " + humanizeError(e)),
+                          backgroundColor: AppColors.error,
+                        ));
+                        return;
+                      }
+                      // Same audit ping the Bluetooth branch sends, for the
+                      // same reason (`reprint_count` / the DUPLICATE banner).
+                      try {
+                        await ApiService.instance.dio.post(
+                          '/businesses/${auth.business!.id}/orders/${order.id}/print',
+                        );
+                      } catch (_) { /* silent — the sheet already opened */ }
+                      return;
+                    }
                     try {
                       if (isBill && order.tableSessionId != null) {
                         final r = await ApiService.instance.dio.get(

@@ -14,6 +14,7 @@ import '../menu/menu_editor_screen.dart';
 import '../tables/tables_screen.dart';
 import 'aggregators_screen.dart';
 import 'business_info_screen.dart';
+import '../../services/printer_service.dart';
 import 'printer_setup_screen.dart';
 import 'privacy_screen.dart';
 import 'privacy_policy_screen.dart';
@@ -98,7 +99,14 @@ class SettingsScreen extends StatelessWidget {
           ]),
 
           _group('Hardware', [
-            _tile(context, icon: Icons.print_outlined, title: 'Thermal printer',
+            // "Thermal printer" promises a thermal printer, which an iPhone
+            // cannot drive (Apple blocks classic Bluetooth). There the screen
+            // is about printing in general — AirPrint / share — so name it
+            // for what it does on this device.
+            _tile(context, icon: Icons.print_outlined,
+                title: PrinterService.supportsBluetoothPrinting
+                    ? 'Thermal printer'
+                    : 'Printing',
                 onTap: () => Navigator.push(context, MaterialPageRoute(
                     builder: (_) => const PrinterSetupScreen()))),
           ]),
