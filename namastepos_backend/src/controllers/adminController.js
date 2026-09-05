@@ -307,12 +307,16 @@ const setPlanManually = [
       req.body.tier,
       { billingPeriod: req.body.billingPeriod },
     );
+    const planNameForTitle = (await query('SELECT name FROM plans WHERE tier = $1 LIMIT 1', [req.body.tier]))
+      .rows[0]?.name || req.body.tier;
     // FF-402 — auto-log to the CRM activity feed so support sees the
     // plan change alongside notes/refunds in one timeline.
     require('../services/crmService').logActivity({
       businessId: req.params.businessId,
       kind: 'plan_change',
-      title: `Plan set to ${req.body.tier}${req.body.billingPeriod ? ` (${req.body.billingPeriod})` : ''}`,
+      // 2026-09-06 (admin review F-08): the plan NAME, not the db code ('pro' is
+      // Enterprise — see planTiers.js).
+      title: `Plan set to ${planNameForTitle}${req.body.billingPeriod ? ` (${req.body.billingPeriod})` : ''}`,
       meta: { toTier: req.body.tier,
         billingPeriod: req.body.billingPeriod,
         subscriptionStatus: sub2?.status },
@@ -323,14 +327,36 @@ const setPlanManually = [
   }),
 ];
 
+// 2026-09-06 (CONTRACTS §5): both echo the row. suspend also reports whether
+// the Razorpay mandate was cancelled; restore of a paid plan whose mandate is
+// gone returns `{ requiresCheckout: true, checkout }` (the tenant must
+// re-authorise payment — see adminService.restore) instead of a silent flip.
 const suspend = asyncHandler(async (req, res) => {
-  await adminLegacy.suspend(req.params.businessId);
-  res.json({ success: true });
+  const row = await adminLegacy.suspend(req.params.businessId);
+  res.json({ success: true, subscription: row, mandate: row ? row.mandate : null });
 });
 const restore = asyncHandler(async (req, res) => {
-  await adminLegacy.restore(req.params.businessId);
-  res.json({ success: true });
+  const row = await adminLegacy.restore(req.params.businessId);
+  res.json({
+    success: true,
+    subscription: row,
+    requiresCheckout: !!(row && row.requiresCheckout),
+    checkout: (row && row.checkout) || null,
+    message: (row && row.message) || null,
+  });
 });
+// Effective entitlement with provenance (admin review F-03) — what the tenant's
+// gates see right now and which layer (plan / addon / override) put it there.
+const effectiveFeatures = asyncHandler(async (req, res) => {
+  const biz = await query(
+    'SELECT 1 FROM businesses WHERE id = $1 AND deleted_at IS NULL LIMIT 1',
+    [req.params.businessId],
+  );
+  if (biz.rowCount === 0) return res.status(404).json({ error: 'NOT_FOUND', message: 'Customer not found' });
+  return res.json(await features.planSummaryWithSources(req.params.businessId));
+});
+// Post-deploy review checks — super-admin only (routes).
+const reviewChecks = asyncHandler(async (_req, res) => res.json(await adminLegacy.reviewChecks()));
 const impersonate = asyncHandler(async (req, res) => {
   res.json(await adminLegacy.impersonate(req.params.businessId));
 });
@@ -1140,6 +1166,8 @@ module.exports = {
   setPlanManually,
   suspend,
   restore,
+  effectiveFeatures,
+  reviewChecks,
   impersonate,
   createImpersonationCode,
   deleteCustomer,

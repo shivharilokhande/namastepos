@@ -86,7 +86,12 @@ export const navGroups: { name: string; items: NavItem[] }[] = [
       // a route but was never listed. (Printers now lives under "Team &
       // setup" and Marketplace under "Growth" per the 2026-08-25 regroup.)
       { to: '/modifier-groups', icon: MenuIcon,  label: 'Modifier groups',  feature: 'menu_variants_modifiers', perm: 'modifier_groups' },
-      { to: '/inventory', icon: Package,         label: 'Inventory',        feature: 'menu_basic', perm: 'menu_editor' },
+      // D-13 (2026-09-06): was `menu_basic`, which unlocked Inventory for
+      // Starter on web while the mobile tile is gated on `inventory_tracking`
+      // (Pro+). Founder decision: web aligns to mobile. The registry entry now
+      // lists clients ['mobile','dashboard']. Stock fields inside the menu
+      // editor stay available to every plan — only this page is gated.
+      { to: '/inventory', icon: Package,         label: 'Inventory',        feature: 'inventory_tracking', perm: 'menu_editor' },
       { to: '/ingredients', icon: Carrot,        label: 'Ingredients',      feature: 'recipe_costing', perm: 'menu_editor' },
       { to: '/wastage',   icon: TrashIcon,       label: 'Wastage',          feature: 'wastage', perm: 'wastage' },
     ],

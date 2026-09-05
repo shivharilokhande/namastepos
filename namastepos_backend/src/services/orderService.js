@@ -744,6 +744,12 @@ async function create(businessId, body, opts = {}) {
     let membershipDiscount = 0; // INR
     let _membershipRedeem = null; // { subId, lines: [{menuItemId, qty, valueInr}] }
     if (customerPhone && allowMemberBenefits) {
+      // 2026-09-06 (review #16, P3): a plain try/catch inside a Postgres
+      // transaction does NOT "never block an order" — a failed statement
+      // aborts the whole txn and every later statement 25P02s. SAVEPOINT +
+      // ROLLBACK TO is the only way to swallow a statement failure here (same
+      // pattern as np201_price_adj / cancel_membership in this file).
+      await client.query('SAVEPOINT np_membership_redeem');
       try {
         const custQ = await client.query(
           `SELECT id FROM customers
@@ -792,9 +798,14 @@ async function create(businessId, body, opts = {}) {
             }
           }
         }
+        await client.query('RELEASE SAVEPOINT np_membership_redeem');
       } catch (e) {
         // Membership tables may predate migrations 020/055 — never block
-        // an order over the bundle feature.
+        // an order over the bundle feature. Roll back ONLY this sub-step so
+        // the order transaction stays usable; drop any partial redeem.
+        await client.query('ROLLBACK TO SAVEPOINT np_membership_redeem');
+        membershipDiscount = 0;
+        _membershipRedeem = null;
         require('../config/logger').warn(
           `[order] membership redeem skipped: ${e?.message}`,
         );
@@ -1181,6 +1192,10 @@ async function create(businessId, body, opts = {}) {
 
       // Membership redemption audit rows (2026-08-23)
       if (_membershipRedeem) {
+        // 2026-09-06 (review #16): SAVEPOINT, not a bare try/catch — see the
+        // redeem block above for why a swallowed statement error would
+        // otherwise abort the rest of this transaction.
+        await client.query('SAVEPOINT np_membership_audit');
         try {
           for (const l of _membershipRedeem.lines) {
             await client.query(
@@ -1191,7 +1206,11 @@ async function create(businessId, body, opts = {}) {
                 l.menuItemId, l.qty, l.valueInr],
             );
           }
-        } catch (_) { /* table added in 055 — non-fatal on older DBs */ }
+          await client.query('RELEASE SAVEPOINT np_membership_audit');
+        } catch (_) {
+          // table added in 055 — non-fatal on older DBs
+          await client.query('ROLLBACK TO SAVEPOINT np_membership_audit');
+        }
       }
 
       // Record the redemption transaction inline (we're already in the txn)

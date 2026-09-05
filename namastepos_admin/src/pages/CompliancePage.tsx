@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { adminApi, Dsr, Grievance, Breach } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatDateTime } from '@/lib/utils';
+import { useCan } from '@/lib/rbac';
 
 type Tab = 'dsr' | 'grievances' | 'breaches' | 'retention' | 'settings';
 
@@ -300,6 +301,7 @@ const BREACH_STATUS: Record<string, any> = {
 };
 
 function BreachTab() {
+  const { can } = useCan(); // F-10 — POST/PATCH breaches are settings.write
   const [status, setStatus] = useState('');
   const [open, setOpen] = useState<Breach | null>(null);
   const [creating, setCreating] = useState(false);
@@ -319,7 +321,7 @@ function BreachTab() {
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
-          <Button onClick={() => setCreating(true)}>Log breach</Button>
+          {can('settings.write') && <Button onClick={() => setCreating(true)}>Log breach</Button>}
         </div>
       </div>
       {isError && (
@@ -515,6 +517,8 @@ function NewBreachDialog({ onClose }: { onClose: () => void }) {
 // ── Data retention ──────────────────────────────────────────────────────
 function RetentionTab() {
   const qc = useQueryClient();
+  const { can } = useCan(); // F-10 — PUT retention + run are settings.write
+  const canWrite = can('settings.write');
   const { data } = useQuery({ queryKey: ['compliance-retention'], queryFn: () => adminApi.retentionConfig() });
   const [form, setForm] = useState<Record<string, number>>({});
   const num = (k: 'deletedBusinessDays' | 'auditLogDays' | 'cookieConsentDays', fallback: number) =>
@@ -583,7 +587,8 @@ function RetentionTab() {
             </div>
           ))}
           <div className="flex justify-end">
-            <Button onClick={() => save.mutate()} disabled={Object.keys(form).length === 0 || save.isPending}>
+            <Button onClick={() => save.mutate()} disabled={!canWrite || Object.keys(form).length === 0 || save.isPending}
+                    title={canWrite ? undefined : 'Needs settings.write'}>
               {save.isPending ? 'Saving…' : 'Save windows'}
             </Button>
           </div>
@@ -605,9 +610,11 @@ function RetentionTab() {
               <Button variant="outline" onClick={() => doPreview.mutate()} disabled={doPreview.isPending}>
                 {doPreview.isPending ? 'Checking…' : 'Preview'}
               </Button>
-              <Button variant="outline" onClick={confirmRun} disabled={run.isPending}>
-                {run.isPending ? 'Running…' : 'Run now'}
-              </Button>
+              {canWrite && (
+                <Button variant="outline" onClick={confirmRun} disabled={run.isPending}>
+                  {run.isPending ? 'Running…' : 'Run now'}
+                </Button>
+              )}
             </div>
           </div>
           {preview && (
@@ -629,6 +636,7 @@ function RetentionTab() {
 // ── Officer & settings ──────────────────────────────────────────────────
 function SettingsTab() {
   const qc = useQueryClient();
+  const { can } = useCan(); // F-10 — PUT compliance/settings is settings.write
   const { data } = useQuery({ queryKey: ['compliance-settings'], queryFn: () => adminApi.complianceSettings() });
   const [form, setForm] = useState<Record<string, string>>({});
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
@@ -684,7 +692,8 @@ function SettingsTab() {
         </CardContent>
       </Card>
       <div className="flex justify-end">
-        <Button onClick={() => save.mutate()} disabled={Object.keys(form).length === 0 || save.isPending}>
+        <Button onClick={() => save.mutate()} disabled={!can('settings.write') || Object.keys(form).length === 0 || save.isPending}
+                title={can('settings.write') ? undefined : 'Needs settings.write'}>
           {save.isPending ? 'Saving…' : 'Save settings'}
         </Button>
       </div>

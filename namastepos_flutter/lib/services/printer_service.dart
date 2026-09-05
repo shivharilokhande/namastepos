@@ -235,6 +235,17 @@ class PrinterService {
           styles: const PosStyles(align: PosAlign.right),
         ),
       ]));
+      // 2026-09-06 (round 2, MOB #1): the picked size + add-ons, on their own
+      // indented lines exactly like the server's thermal renderer
+      // (printerService.js `· variant` / `+ modifier`) — so the kitchen sees
+      // "Large" and the customer sees what the extra rupees were for. Rows
+      // from before this change embed the summary in `name` and have none.
+      if (item.variantLabel != null && item.variantLabel!.trim().isNotEmpty) {
+        bytes.addAll(generator.text('   · ${item.variantLabel!.trim()}'));
+      }
+      for (final mod in item.modifierNames) {
+        bytes.addAll(generator.text('   + $mod'));
+      }
     }
     bytes.addAll(generator.hr());
 

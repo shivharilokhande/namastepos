@@ -1,7 +1,7 @@
 name: namastepos
 description: NamastePOS — Micro-food POS for street vendors and small restaurants. PetPooja clone.
 publish_to: 'none'
-version: 1.0.22+23
+version: 1.0.23+24
 
 environment:
   sdk: ">=3.0.0 <4.0.0"
@@ -147,6 +147,10 @@ dev_dependencies:
   build_runner: ^2.4.7
   mockito: ^5.4.4
   flutter_launcher_icons: ^0.14.1
+  # Test-only (2026-09-06): runs the real sqflite schema + _onUpgrade steps
+  # against an in-memory SQLite so migrations (v4→v5 order_items columns)
+  # are proven to keep old rows readable. Never shipped in the app.
+  sqflite_common_ffi: ^2.4.2+1
 
 # Launcher icon generation (2026-08-26): regenerate Android + iOS launcher
 # icons from the master NamastePOS brand logo. iOS requires no alpha, so we

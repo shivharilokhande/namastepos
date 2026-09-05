@@ -3,6 +3,7 @@
 const express = require('express');
 const c = require('../controllers/opsController');
 const { requireAuth, requireBusinessOwnership, requireRole } = require('../middleware/auth');
+const requireStaffPerm = require('../middleware/requireStaffPerm');
 const idempotent = require('../middleware/idempotent');
 const sub = require('../services/subscriptionService');
 
@@ -51,8 +52,12 @@ router.delete('/tables/:tableId', requireRole(['business_owner']), c.deleteTable
 // a committed-then-lost seat gets that 409, which the offline outbox treats as
 // a permanent rejection and dead-letters, leaving the waiter staring at a
 // table the server thinks is already occupied. Replay the original instead.
+// 2026-09-06 (CONTRACTS §7): seating a table and releasing one need the
+// `tables` staff permission — waiters/captains/managers hold it by default,
+// a cook or a driver does not. Owner always passes.
 router.post(
   '/tables/:tableId/sessions',
+  requireStaffPerm('tables'),
   idempotent('POST /ops/tables/:tableId/sessions'),
   ...c.openSession,
 );
@@ -78,7 +83,7 @@ router.post(
   ...c.closeSession,
 );
 // Push 22 — release a table whose customer left without ordering.
-router.post('/sessions/:sessionId/abandon', c.abandonSession);
+router.post('/sessions/:sessionId/abandon', requireStaffPerm('tables'), c.abandonSession);
 
 // ── Joined tables (2026-08-25, founder request) ───────────────────────
 // One big party across several physical tables shares ONE session/bill.

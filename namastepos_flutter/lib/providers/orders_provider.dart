@@ -392,16 +392,26 @@ class OrdersProvider extends ChangeNotifier {
   }) async {
     // Each cart line becomes an order_item. Effective unit price already
     // bakes in variant override + modifier deltas via `unitPrice`.
+    // 2026-09-06 (round 2, MOB #1): the variant + modifiers now ride as
+    // STRUCTURED fields (variantId/variantLabel/modifierLines) — the same
+    // payload the web NewOrderDialog sends — so the server's authoritative
+    // pricing (NP-201) charges the variant/modifier price instead of
+    // re-pricing the line to the base menu price. `name` is therefore the
+    // plain dish name like the web sends; receipts/KOTs/lists compose the
+    // choice from the structured fields (OrderItem.displayName/configLabel).
     final m = priceMultiplier <= 0 ? 1.0 : priceMultiplier;
     final items = _cart
         .map((c) => OrderItem(
               id: '', // replaced inside repo
               orderId: '',
               menuItemId: c.item.id,
-              name: c.configSummary.isEmpty ? c.item.name : '${c.item.name} (${c.configSummary})',
+              name: c.item.name,
               price: double.parse((c.unitPrice * m).toStringAsFixed(2)),
               qty: c.qty.toDouble(),
               note: c.note,
+              variantId: c.variantId,
+              variantLabel: c.variantLabelOrNull,
+              modifierLines: c.modifierLinesJson,
             ))
         .toList();
     final subtotal = double.parse((cartSubtotal * m).toStringAsFixed(2));
@@ -447,16 +457,9 @@ class OrdersProvider extends ChangeNotifier {
       final resp = await ApiService.instance.createOrder(businessId, {
         'clientId': effectiveClientId,
         // Same body shape OrderRepo posts — backend Joi requires name +
-        // price on every item, not just menuItemId.
-        'items': items
-            .map((i) => {
-                  'menuItemId': i.menuItemId,
-                  'name': i.name,
-                  'price': i.price,
-                  'qty': i.qty,
-                  if (i.note != null) 'note': i.note,
-                })
-            .toList(),
+        // price on every item, not just menuItemId. One builder for both
+        // paths (2026-09-06) so variantId/modifierLines cannot go missing here.
+        'items': items.map((i) => i.toOrderBody()).toList(),
         'source': source.name,
         'tableNo': tableNo,
         if (tableSessionId != null) 'tableSessionId': tableSessionId,

@@ -6,6 +6,14 @@
 //   POST /v1/businesses/:id/addons/subscribe { slug }        — activate
 //   POST /v1/businesses/:id/addons/:slug/confirm-payment     — paid-addon 2nd leg
 //   POST /v1/businesses/:id/addons/:slug/cancel              — cancel
+//   POST /v1/businesses/:id/addons/:slug/resume              — undo a cancel
+//
+// Round 2 MOB #2 (2026-09-06, CONTRACTS §6): a PAID addon's cancel is now
+// cancel-at-period-end (the paid days are kept; the row stays in `active`
+// with cancelAtPeriodEnd=true), so the card shows "Ends <date>" + Resume.
+// Resume replies exactly like subscribe — { requiresPayment:true, ... } opens
+// the same Razorpay checkout; { activation } means reopened on the spot; 409
+// ADDON_EXPIRED_REBUY means the paid period is over → offer to buy again.
 //
 // Paid addons (2026-09-03): /subscribe no longer activates a paid addon —
 // the backend returns { requiresPayment:true, razorpayOrder:{id,amount,
@@ -22,6 +30,7 @@ import 'package:provider/provider.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../constants/colors.dart';
+import '../../models/subscription.dart';
 import '../../utils/error_humanizer.dart';
 import '../../utils/formatters.dart';
 import '../../providers/auth_provider.dart';
@@ -29,6 +38,50 @@ import '../../providers/subscription_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
+
+/// Pure helpers for the addon replies in CONTRACTS §6 — off the widget so
+/// they can be unit-tested (round 2 MOB #2).
+class AddonReplies {
+  AddonReplies._();
+
+  /// The Razorpay options for a `{ requiresPayment: true, razorpayOrder, keyId }`
+  /// reply (subscribe AND resume share this shape). Null when the reply does
+  /// not need payment, or is unusable (no order id / key).
+  static Map<String, dynamic>? checkoutOptions(
+    Map<String, dynamic> res, {
+    required String description,
+    String? contact,
+  }) {
+    if (res['requiresPayment'] != true) return null;
+    final order = ((res['razorpayOrder'] ?? res['order']) as Map?)
+        ?.cast<String, dynamic>();
+    final key = (res['keyId'] ?? order?['key'])?.toString();
+    if (order == null || order['id'] == null || key == null || key.isEmpty) {
+      return null;
+    }
+    return <String, dynamic>{
+      'key': key,
+      'order_id': order['id'],
+      'amount': order['amount'],
+      'currency': order['currency'] ?? 'INR',
+      'name': 'NamastePOS Add-on',
+      'description': description,
+      if (contact != null) 'prefill': {'contact': contact},
+    };
+  }
+
+  /// A 409 ADDON_EXPIRED_REBUY (paid period over) — the only resume failure
+  /// that has a next step (buy again via /subscribe).
+  static bool isExpiredRebuy(ApiException e) =>
+      e.code == 'ADDON_EXPIRED_REBUY' ||
+      (e.statusCode == 409 && e.message.toLowerCase().contains('subscribe again'));
+
+  /// "Ends 2026-10-01" for an addon that is cancelling at period end.
+  static String? endsLine(AddonActivation? a) {
+    if (a == null || !a.cancelAtPeriodEnd || !a.isActive) return null;
+    return 'Ends ${a.currentPeriodEnd.toLocal().toIso8601String().substring(0, 10)}';
+  }
+}
 
 class MarketplaceScreen extends StatefulWidget {
   const MarketplaceScreen({super.key});
@@ -40,6 +93,9 @@ class MarketplaceScreen extends StatefulWidget {
 class _MarketplaceScreenState extends State<MarketplaceScreen> {
   List<Map<String, dynamic>> _catalog = [];
   Set<String> _activeSlugs = {};
+  // Per-slug activation row (status / cancelAtPeriodEnd / currentPeriodEnd)
+  // so the card can show "Ends <date>" + Resume for a cancelling paid addon.
+  Map<String, AddonActivation> _activeBySlug = {};
   bool _loading = true;
   String? _error;
   String? _busySlug;
@@ -110,10 +166,18 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
           .where((s) => s != null && s.isNotEmpty)
           .cast<String>()
           .toSet();
+      final bySlug = <String, AddonActivation>{};
+      for (final m in activeList.cast<Map>()) {
+        try {
+          final a = AddonActivation.fromMap(m.cast<String, dynamic>());
+          if (a.slug.isNotEmpty) bySlug[a.slug] = a;
+        } catch (_) { /* a row we cannot read just has no "Ends" chip */ }
+      }
       if (!mounted) return; // H6 (2026-08-23)
       setState(() {
         _catalog = catalog;
         _activeSlugs = active;
+        _activeBySlug = bySlug;
         _loading = false;
       });
     } catch (e) {
@@ -134,28 +198,8 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
       // _onPaySuccess via /confirm-payment. (`order`/`key` read defensively
       // alongside the current `razorpayOrder`/`keyId` field names.)
       if (res['requiresPayment'] == true) {
-        final order = ((res['razorpayOrder'] ?? res['order']) as Map?)
-            ?.cast<String, dynamic>();
-        final key = (res['keyId'] ?? order?['key'])?.toString();
-        if (order == null || order['id'] == null || key == null || key.isEmpty) {
-          _showSnack('Could not start payment — please try again.');
-          return; // finally resets _busySlug
-        }
-        final addonName = _catalog.firstWhere(
-          (a) => (a['slug'] ?? '') == slug,
-          orElse: () => const {},
-        )['name']?.toString();
-        _payingSlug = slug; // keep _busySlug set — handlers reset both
-        _razorpay.open(<String, dynamic>{
-          'key': key,
-          'order_id': order['id'],
-          'amount': order['amount'],
-          'currency': order['currency'] ?? 'INR',
-          'name': 'NamastePOS Add-on',
-          'description': addonName ?? slug,
-          'prefill': {'contact': biz.phone},
-        });
-        return;
+        _openAddonCheckout(slug, res, contact: biz.phone);
+        return; // finally leaves _busySlug set while the modal is up
       }
 
       // Free addon (or no Razorpay configured) → instant activation, as before.
@@ -193,6 +237,74 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     } finally {
       // Keep the row busy while a checkout modal is up — the payment
       // handlers own the reset in that case.
+      if (mounted && _payingSlug == null) setState(() => _busySlug = null);
+    }
+  }
+
+  /// Opens native Razorpay for a `{ requiresPayment: true }` reply — the ONE
+  /// path both subscribe and resume use (CONTRACTS §6: same shape). The
+  /// backend wrote NO activation row yet; activation happens in
+  /// [_onPaySuccess] via /confirm-payment, whichever call produced the order.
+  void _openAddonCheckout(String slug, Map<String, dynamic> res, {String? contact}) {
+    final addonName = _catalog.firstWhere(
+      (a) => (a['slug'] ?? '') == slug,
+      orElse: () => const {},
+    )['name']?.toString();
+    final co = AddonReplies.checkoutOptions(res,
+        description: addonName ?? slug, contact: contact);
+    if (co == null) {
+      _showSnack('Could not start payment — please try again.');
+      if (mounted) setState(() => _busySlug = null);
+      return;
+    }
+    _payingSlug = slug; // keep _busySlug set — handlers reset both
+    _razorpay.open(co);
+  }
+
+  /// POST /addons/:slug/resume — undo a cancel-at-period-end (round 2 MOB #2).
+  Future<void> _resume(String slug) async {
+    final biz = context.read<AuthProvider>().business;
+    if (biz == null) return;
+    setState(() => _busySlug = slug);
+    try {
+      final res = await ApiService.instance.resumeAddon(biz.id, slug);
+      if (!mounted) return;
+      if (res['requiresPayment'] == true) {
+        // Paid addon: money first — same checkout as a fresh subscribe.
+        _openAddonCheckout(slug, res, contact: biz.phone);
+        return;
+      }
+      await context.read<AuthProvider>().refreshPlan();
+      await _refreshAddonState();
+      await _load();
+      _showSnack('Resumed $slug');
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      if (AddonReplies.isExpiredRebuy(e)) {
+        // The paid period is over; nothing to resume. Offer the purchase.
+        final again = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Paid period has ended'),
+            content: Text(e.message),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Not now')),
+              ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Buy again')),
+            ],
+          ),
+        );
+        if (again == true && mounted) {
+          setState(() => _busySlug = null);
+          await _activate(slug);
+          return;
+        }
+      } else {
+        // 403 (plan cannot hold it) / 404 / anything else — humanised.
+        _showSnack("Couldn't resume — ${humanizeError(e)}");
+      }
+    } catch (e) {
+      if (mounted) _showSnack("Couldn't resume — ${humanizeError(e)}");
+    } finally {
       if (mounted && _payingSlug == null) setState(() => _busySlug = null);
     }
   }
@@ -261,12 +373,21 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
   Future<void> _cancel(String slug) async {
     final biz = context.read<AuthProvider>().business;
     if (biz == null) return;
+    // Paid addons cancel at period end (founder decision, round 2): the days
+    // already paid for are kept. Free addons still end immediately.
+    final paid = ((_catalog.firstWhere(
+          (a) => (a['slug'] ?? '') == slug,
+          orElse: () => const {},
+        )['priceInr'] as num?)?.toDouble() ?? 0) > 0;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Cancel "$slug"?'),
-        content: const Text(
-          'You\'ll lose access to this addon immediately. You can re-activate any time.',
+        content: Text(
+          paid
+              ? 'You keep this add-on until the end of the period you\'ve paid '
+                'for; nothing more is charged. You can resume before it ends.'
+              : 'You\'ll lose access to this addon immediately. You can re-activate any time.',
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Keep')),
@@ -280,15 +401,19 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     if (ok != true) return;
     setState(() => _busySlug = slug);
     try {
-      await ApiService.instance.dio
-          .post('/businesses/${biz.id}/addons/$slug/cancel');
+      final activation = await ApiService.instance.cancelAddon(biz.id, slug);
       if (!mounted) return;
       await context.read<AuthProvider>().refreshPlan();
       await _refreshAddonState();
       await _load();
       if (mounted) {
+        final a = activation == null ? null : AddonActivation.fromMap(
+            {'addon': {'slug': slug}, ...activation});
+        final ends = AddonReplies.endsLine(a);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Cancelled $slug')),
+          SnackBar(content: Text(ends == null
+              ? 'Cancelled $slug'
+              : '$slug cancels at period end · $ends')),
         );
       }
     } catch (e) {
@@ -338,6 +463,10 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
     final priceInr = (a['priceInr'] as num?)?.toDouble() ?? 0;
     final isActive = _activeSlugs.contains(slug);
     final busy = _busySlug == slug;
+    // Cancelling at period end (paid addon): still active, but the CTA flips
+    // to Resume and the chip says when it ends.
+    final ends = AddonReplies.endsLine(_activeBySlug[slug]);
+    final cancelling = isActive && ends != null;
 
     return Container(
       padding: const EdgeInsets.all(14),
@@ -361,12 +490,13 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: AppColors.success.withValues(alpha: 0.15),
+                    color: (cancelling ? AppColors.warning : AppColors.success)
+                        .withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Text('ACTIVE',
+                  child: Text(cancelling ? ends.toUpperCase() : 'ACTIVE',
                       style: TextStyle(
-                          color: AppColors.success,
+                          color: cancelling ? AppColors.warning : AppColors.success,
                           fontWeight: FontWeight.w800, fontSize: 11)),
                 ),
             ],
@@ -388,20 +518,29 @@ class _MarketplaceScreenState extends State<MarketplaceScreen> {
                   ? const SizedBox(
                       width: 18, height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2))
-                  : ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            isActive ? Colors.white : AppColors.primary,
-                        foregroundColor:
-                            isActive ? Colors.red : Colors.white,
-                        side: isActive
-                            ? const BorderSide(color: Colors.red, width: 1)
-                            : null,
-                      ),
-                      onPressed: () =>
-                          isActive ? _cancel(slug) : _activate(slug),
-                      child: Text(isActive ? 'Cancel' : 'Activate'),
-                    ),
+                  : cancelling
+                      ? ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => _resume(slug),
+                          child: const Text('Resume'),
+                        )
+                      : ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor:
+                                isActive ? Colors.white : AppColors.primary,
+                            foregroundColor:
+                                isActive ? Colors.red : Colors.white,
+                            side: isActive
+                                ? const BorderSide(color: Colors.red, width: 1)
+                                : null,
+                          ),
+                          onPressed: () =>
+                              isActive ? _cancel(slug) : _activate(slug),
+                          child: Text(isActive ? 'Cancel' : 'Activate'),
+                        ),
             ],
           ),
         ],

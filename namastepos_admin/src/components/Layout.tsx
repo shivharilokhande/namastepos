@@ -1,43 +1,21 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, CreditCard, BarChart3, LogOut, Utensils,
-  Tag, Receipt, FileText, Shield, Settings, ScrollText, UsersRound,
+  Tag, Receipt, FileText, Settings, ScrollText, UsersRound,
   TrendingUp, Package, LifeBuoy, Send, Gift, ShieldCheck,
-  AlertTriangle, Gauge, PieChart, Activity,
+  AlertTriangle, Gauge, PieChart, Activity, ClipboardCheck, UserCog,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
-import { adminApi, Admin } from '@/api/admin';
 import { adminLogout, apiError } from '@/api/client';
 import { cn } from '@/lib/utils';
+// F-10 (2026-09-06): the RBAC mirror moved to src/lib/rbac.ts so the nav and
+// the page-level action buttons read ONE copy (the Layout copy had drifted —
+// `sales` lacked coupons.write). `useCan` shares the /auth/me query with pages.
+import { useCan } from '@/lib/rbac';
 
 interface NavItem { to: string; icon: any; label: string; needs?: string; }
 type Section = { label: string; items: NavItem[] };
-
-// Mirror of the backend RBAC matrix (src/middleware/adminRbac.js) so we only
-// SHOW nav a role can actually use — otherwise every non-super role saw items
-// that 403 on click now that the backend re-checks the live role. Backend
-// remains the source of truth; this is UX only. Keep in sync with the backend.
-const ROLE_PERMS: Record<string, string[]> = {
-  super_admin: ['*'],
-  finance: ['revenue.read', 'revenue.write', 'refunds.read', 'refunds.write',
-    'gst.read', 'gst.write', 'invoices.read', 'invoices.write', 'customers.read',
-    'plans.read', 'coupons.read', 'audit.read', 'reports.read', 'settings.read',
-    'compliance.read'],
-  support: ['customers.read', 'customers.write', 'customers.impersonate',
-    'notes.read', 'notes.write', 'staff.read', 'menu.read', 'orders.read',
-    'reports.read', 'audit.read', 'plans.read', 'coupons.read', 'invoices.read',
-    'refunds.read', 'gst.read', 'compliance.read', 'compliance.write'],
-  sales: ['customers.read', 'customers.write', 'plans.read', 'plans.change',
-    'coupons.read', 'reports.read'],
-};
-function roleCan(role: string | undefined, need?: string): boolean {
-  if (!need) return true;            // always-visible items
-  if (!role) return false;
-  const g = ROLE_PERMS[role] || [];
-  return g.includes('*') || g.includes(need);
-}
 
 const SECTIONS: Section[] = [
   { label: 'Overview', items: [
@@ -79,24 +57,28 @@ const SECTIONS: Section[] = [
     { to: '/audit',     icon: ScrollText,      label: 'Audit log', needs: 'audit.read' },
     // GET /admin/webhooks/events is audit.read, not settings.write.
     { to: '/webhooks',  icon: BarChart3,       label: 'Webhooks',  needs: 'audit.read' },
+    // 2026-09-06 — review checks (zero-GST invoices, stub IRNs, lapsed cancels…)
+    // GET /admin/ops/review-checks is super-admin only; settings.write is the
+    // one perm only super_admin holds in adminRbac.js, so gate on it.
+    { to: '/ops/review-checks', icon: ClipboardCheck, label: 'Review checks', needs: 'settings.write' },
     { to: '/team',      icon: UsersRound,      label: 'Admin team', needs: 'settings.write' },
     { to: '/settings',  icon: Settings,        label: 'Platform settings', needs: 'settings.write' },
+  ]},
+  { label: 'You', items: [
+    // F-11 — 2FA enrolment for the signed-in admin. Ungated: every role can
+    // (and should) reach it; it used to live only on settings.write-gated
+    // Platform settings, so support/sales could never self-enrol.
+    { to: '/account',   icon: UserCog,         label: 'My account' },
   ]},
 ];
 
 export function Layout() {
   const navigate = useNavigate();
-  const [me, setMe] = useState<Admin | null>(null);
   // A failed /auth/me used to be swallowed, leaving `me=null` — every roleCan()
   // returned false and the console looked empty with no explanation. Surface it.
-  const [meError, setMeError] = useState<string | null>(null);
-
-  const loadMe = () => {
-    setMeError(null);
-    adminApi.me().then((m) => { setMe(m); setMeError(null); })
-      .catch((e) => { setMe(null); setMeError(apiError(e)); });
-  };
-  useEffect(() => { loadMe(); }, []);
+  const { me, isError, error, refetch, can } = useCan();
+  const meError = isError ? apiError(error) : null;
+  const loadMe = () => { refetch(); };
 
   const logout = async () => { await adminLogout(); navigate('/login'); };
 
@@ -147,7 +129,7 @@ export function Layout() {
         <nav className="flex-1 space-y-4">
           {SECTIONS.map((sec) => ({
             ...sec,
-            items: sec.items.filter((it) => roleCan(me?.role, it.needs)),
+            items: sec.items.filter((it) => can(it.needs)),
           }))
             .filter((sec) => sec.items.length > 0)
             .map((sec) => (

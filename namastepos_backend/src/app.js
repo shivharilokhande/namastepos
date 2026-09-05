@@ -39,6 +39,8 @@ const metaWhatsappWebhookRoutes = require('./routes/metaWhatsappWebhook.routes')
 const finalSprintRoutes = require('./routes/finalSprint.routes');
 const meRoutes = require('./routes/me.routes');
 const complianceRoutes = require('./routes/compliance.routes');
+const recurringInvoicesRoutes = require('./routes/recurringInvoices.routes');
+const b2bTemplateRoutes = require('./routes/b2bTemplate.routes');
 const billingController = require('./controllers/billingController');
 
 const sentry = require('./config/sentry');
@@ -298,6 +300,15 @@ function buildApp() {
   app.use(`${env.API_PREFIX}/businesses/:businessId/ops`, opsRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId/support`, supportRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId/ingredients`, ingredientsRoutes);
+  // 2026-09-06 (round-2 review): recurring invoices are a real feature now
+  // (CONTRACTS §2) — the featureGate rule '/recurring-invoices' →
+  // 'recurring_invoices' fires on this mount. B2B invoice template store
+  // (CONTRACTS §1) gates itself with requireFeature('b2b_invoice').
+  app.use(`${env.API_PREFIX}/businesses/:businessId/recurring-invoices`, recurringInvoicesRoutes);
+  app.use(`${env.API_PREFIX}/businesses/:businessId`, b2bTemplateRoutes);
+  // 2026-09-06 (round 2, CONTRACTS §3/§4): tenant API keys and white-label.
+  app.use(`${env.API_PREFIX}/businesses/:businessId/api-keys`, require('./routes/apiKeys.routes'));
+  app.use(`${env.API_PREFIX}/businesses/:businessId/white-label`, require('./routes/whiteLabel.routes'));
   app.use(`${env.API_PREFIX}/businesses/:businessId`, sprint1ExtraRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId`, sprintsAllRoutes);
   app.use(`${env.API_PREFIX}/businesses/:businessId`, finalSprintRoutes);

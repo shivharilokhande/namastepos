@@ -387,6 +387,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('${it.name}  ×${it.qty.toInt()}'),
+                    // Round 2 MOB #1 (2026-09-06): size + add-ons now arrive
+                    // as structured fields (web orders always did).
+                    if (it.configLabel != null)
+                      Text(it.configLabel!,
+                          style: const TextStyle(color: AppColors.primary, fontSize: 12)),
                     if (it.note != null && it.note!.isNotEmpty)
                       Text('(${it.note})',
                           style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
@@ -688,7 +693,7 @@ class _RefundDialogState extends State<_RefundDialog> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                      '${it.qty.toStringAsFixed(0)} × ${it.name}',
+                                      '${it.qty.toStringAsFixed(0)} × ${it.displayName}',
                                       style: const TextStyle(
                                           fontWeight: FontWeight.w600,
                                           fontSize: 13)),

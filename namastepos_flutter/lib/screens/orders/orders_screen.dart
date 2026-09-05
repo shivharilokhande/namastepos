@@ -344,7 +344,7 @@ class _OrderCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              order.items.map((e) => '${e.name} x${e.qty.toInt()}').join(', '),
+              order.items.map((e) => '${e.displayName} x${e.qty.toInt()}').join(', '),
               maxLines: 2, overflow: TextOverflow.ellipsis,
               style: const TextStyle(color: AppColors.textPrimary),
             ),

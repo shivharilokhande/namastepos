@@ -52,7 +52,11 @@ module.exports = {
         ? await features.listTierFeatures(p.tier, p.tierKind)
         : (p.tierKind ? await features.listTierFeatures(p.tierKind) : []),
     })));
-    res.json({ plans: enriched });
+    // 2026-09-06 (dashboard review D-18): ship the owner-facing labels from THE
+    // registry so no client keeps a second hand-maintained label map.
+    const registry = require('../config/featureRegistry');
+    const featureLabels = Object.fromEntries(registry.keys().map((k) => [k, registry.labelOf(k)]));
+    res.json({ plans: enriched, featureLabels });
   }),
 
   // Current business subscription.

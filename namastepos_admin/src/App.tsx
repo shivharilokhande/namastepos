@@ -28,6 +28,8 @@ import { AuditPage } from './pages/AuditPage';
 import { WebhooksPage } from './pages/WebhooksPage';
 import { AdminTeamPage } from './pages/AdminTeamPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { AccountPage } from './pages/AccountPage';           // F-11 (2026-09-06)
+import { ReviewChecksPage } from './pages/ReviewChecksPage'; // Ops review checks (2026-09-06)
 import { HealthPage } from './pages/HealthPage';
 import { CrmPage } from './pages/CrmPage';   // FF-402
 import { CompliancePage } from './pages/CompliancePage';
@@ -70,6 +72,10 @@ export default function App() {
         <Route path="referrals"     element={<ReferralsPage />} />
         <Route path="team"          element={<AdminTeamPage />} />
         <Route path="settings"      element={<SettingsPage />} />
+        {/* F-11 — voluntary 2FA enrolment, reachable by every role. */}
+        <Route path="account"       element={<AccountPage />} />
+        {/* Super-admin only server-side (GET /admin/ops/review-checks). */}
+        <Route path="ops/review-checks" element={<ReviewChecksPage />} />
       </Route>
       {/* Bug fix (2026-08-20): show a real 404 rather than silently
           redirecting to the platform overview. */}

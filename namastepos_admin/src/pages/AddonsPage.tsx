@@ -11,6 +11,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { adminApi, Addon } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR } from '@/lib/utils';
+import { useCan } from '@/lib/rbac';
+import { FeaturePicker } from '@/components/FeaturePicker';
+import { useFeatureCatalog } from '@/lib/featureCatalog';
+import { assignablePlans } from '@/lib/plans';
 
 const CATEGORIES = ['integrations', 'marketing', 'operations', 'reports'] as const;
 
@@ -19,6 +23,9 @@ export function AddonsPage() {
   const { data: addons = [] } = useQuery({ queryKey: ['addons-admin'], queryFn: adminApi.listAddons });
   const [editing, setEditing] = useState<Addon | null>(null);
   const [creating, setCreating] = useState(false);
+  // F-10 — POST/PUT /admin/addons + sync-razorpay are plans.change.
+  const { can } = useCan();
+  const canChange = can('plans.change');
 
   const sync = useMutation({
     mutationFn: adminApi.syncAddonsRzp,
@@ -41,13 +48,15 @@ export function AddonsPage() {
             {addons.length} addons in the marketplace · sold separately on top of plans
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={() => sync.mutate()} disabled={sync.isPending} variant="outline">
-            <RefreshCw className={`mr-2 h-4 w-4 ${sync.isPending ? 'animate-spin' : ''}`} />
-            Sync to Razorpay
-          </Button>
-          <Button onClick={() => setCreating(true)}><Plus className="mr-2 h-4 w-4" /> New addon</Button>
-        </div>
+        {canChange && (
+          <div className="flex gap-2">
+            <Button onClick={() => sync.mutate()} disabled={sync.isPending} variant="outline">
+              <RefreshCw className={`mr-2 h-4 w-4 ${sync.isPending ? 'animate-spin' : ''}`} />
+              Sync to Razorpay
+            </Button>
+            <Button onClick={() => setCreating(true)}><Plus className="mr-2 h-4 w-4" /> New addon</Button>
+          </div>
+        )}
       </div>
 
       {Object.entries(grouped).map(([cat, items]) => (
@@ -56,7 +65,7 @@ export function AddonsPage() {
             {cat}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {items.map((a) => <AddonCard key={a.id} addon={a} onEdit={() => setEditing(a)} />)}
+            {items.map((a) => <AddonCard key={a.id} addon={a} onEdit={canChange ? () => setEditing(a) : undefined} />)}
           </div>
         </div>
       ))}
@@ -75,7 +84,8 @@ export function AddonsPage() {
   );
 }
 
-function AddonCard({ addon, onEdit }: { addon: Addon; onEdit: () => void }) {
+function AddonCard({ addon, onEdit }: { addon: Addon; onEdit?: () => void }) {
+  const grants: string[] = (addon as any).grantsFeatures || (addon as any).grants_features || [];
   return (
     <Card className={addon.isActive ? '' : 'opacity-60'}>
       <CardHeader>
@@ -89,7 +99,7 @@ function AddonCard({ addon, onEdit }: { addon: Addon; onEdit: () => void }) {
               <CardDescription className="text-xs">{addon.tagline}</CardDescription>
             </div>
           </div>
-          <Button size="sm" variant="ghost" onClick={onEdit}><Edit2 className="h-4 w-4" /></Button>
+          {onEdit && <Button size="sm" variant="ghost" onClick={onEdit}><Edit2 className="h-4 w-4" /></Button>}
         </div>
         <div className="mt-3">
           <div className="text-xl font-bold">{formatINR(addon.priceInr)}<span className="text-sm font-normal text-muted-foreground">/{addon.billingPeriod === 'yearly' ? 'yr' : addon.billingPeriod === 'one_time' ? 'once' : 'mo'}</span></div>
@@ -110,9 +120,18 @@ function AddonCard({ addon, onEdit }: { addon: Addon; onEdit: () => void }) {
             <Badge variant="warning">Not synced</Badge>
           )}
         </div>
-        {addon.features.permissions && (
+        {/* F-05 (2026-09-06): `grantsFeatures` is what actually unlocks plan
+            features; `features.permissions` is marketing copy the marketplace
+            card renders as bullets (nothing on the backend reads it). Label
+            them truthfully so nobody types a feature key into the wrong box. */}
+        {grants.length > 0 && (
           <div className="text-xs text-muted-foreground border-t pt-2">
-            Unlocks: <span className="font-medium">{addon.features.permissions.join(', ')}</span>
+            Grants features: <span className="font-mono font-medium">{grants.join(', ')}</span>
+          </div>
+        )}
+        {addon.features.permissions && addon.features.permissions.length > 0 && (
+          <div className="text-xs text-muted-foreground border-t pt-2">
+            Marketplace bullets: <span className="font-medium">{addon.features.permissions.join(', ')}</span>
           </div>
         )}
         <code className="block text-[10px] text-muted-foreground">slug: {addon.slug}</code>
@@ -131,13 +150,10 @@ function AddonDialog({ mode, addon, onClose, onSaved }:
     staleTime: 60_000,
   });
   // Plans-addons migration — the addon can grant plan-level feature keys
-  // while active. Same catalog the custom-plan editor uses.
-  const { data: featureKeys = [] } = useQuery({
-    queryKey: ['feature-keys'],
-    queryFn: adminApi.listFeatureKeys,
-    staleTime: 60_000,
-  });
-  const [grantSearch, setGrantSearch] = useState('');
+  // while active. F-04: the SAME registry catalog + grouped <FeaturePicker>
+  // the plan / custom-plan / override editors use, so the ungated warning and
+  // the `why` tooltip appear here too.
+  const { catalog, groups } = useFeatureCatalog();
   const [f, setF] = useState<any>(addon ? {
     slug: addon.slug, name: addon.name, tagline: addon.tagline || '',
     description: addon.description || '', icon: addon.icon, category: addon.category,
@@ -161,10 +177,6 @@ function AddonDialog({ mode, addon, onClose, onSaved }:
         ? p.grantsFeatures.filter((k: string) => k !== key)
         : [...p.grantsFeatures, key],
     }));
-  const visibleGrantKeys = featureKeys.filter((fk) => {
-    const q = grantSearch.trim().toLowerCase();
-    return !q || fk.key.toLowerCase().includes(q) || (fk.label || '').toLowerCase().includes(q);
-  });
 
   const save = useMutation({
     mutationFn: () => {
@@ -222,9 +234,14 @@ function AddonDialog({ mode, addon, onClose, onSaved }:
             <select value={f.required_plan_tier} onChange={(e) => set('required_plan_tier', e.target.value)}
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
               <option value="">Any plan</option>
-              {plans
-                .filter((p: any) => (p.priceInr || 0) > 0)
-                .map((p: any) => (
+              {/* Keep a saved-but-now-hidden tier visible so the select never blanks. */}
+              {f.required_plan_tier && !assignablePlans(plans).some((p) => p.tier === f.required_plan_tier) && (
+                <option value={f.required_plan_tier}>{f.required_plan_tier} (hidden by filter)</option>
+              )}
+              {/* F-07 — public + active paid plans only. */}
+              {assignablePlans(plans)
+                .filter((p) => (p.priceInr || 0) > 0)
+                .map((p) => (
                   <option key={p.tier} value={p.tier}>{p.name} ({p.tier})</option>
                 ))}
             </select>
@@ -233,39 +250,31 @@ function AddonDialog({ mode, addon, onClose, onSaved }:
           {/* L5 — marketplace revenue share (partner attribution + payout %) */}
           <div><Label>Partner name (optional)</Label><Input value={f.partner_name} onChange={(e) => set('partner_name', e.target.value)} placeholder="3rd-party add-on partner" /></div>
           <div><Label>Revenue share % (partner payout)</Label><Input type="number" min="0" max="100" step="0.5" value={f.revenue_share_pct} onChange={(e) => set('revenue_share_pct', +e.target.value)} /></div>
+          {/* Plans-addons migration — plan-level feature keys the addon grants
+              while active (sent as grantsFeatures). This is the ONLY field that
+              unlocks anything. */}
           <div className="col-span-2">
-            <Label>Unlocked permissions (comma-separated)</Label>
+            <Label>Grants features ({f.grantsFeatures.length} selected)</Label>
+            <FeaturePicker
+              className="mt-1"
+              catalog={catalog} groups={groups}
+              selected={new Set<string>(f.grantsFeatures)}
+              onToggle={toggleGrant}
+              columns={2} maxHeightClass="max-h-48" />
+            <p className="text-[11px] text-muted-foreground mt-1">
+              Subscribers get these plan features while the addon is active. Amber
+              “ungated” keys are enforced by nothing — do not sell them.
+            </p>
+          </div>
+          {/* F-05 — display-only marketing copy for the marketplace card. The
+              backend never reads it; typing a feature key here grants nothing. */}
+          <div className="col-span-2">
+            <Label>Marketplace bullet points (comma-separated, display only)</Label>
             <Input value={(f.features.permissions || []).join(', ')}
                    onChange={(e) => set('features', { ...f.features, permissions: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) })}
-                   placeholder="aggregator_integrations, push_notifications" />
-          </div>
-          {/* Plans-addons migration — plan-level feature keys the addon grants
-              while active (sent as grantsFeatures). */}
-          <div className="col-span-2">
-            <div className="flex items-center justify-between mb-1">
-              <Label>Grants features ({f.grantsFeatures.length} selected)</Label>
-              <Input className="w-44 h-8" placeholder="Filter…"
-                     value={grantSearch} onChange={(e) => setGrantSearch(e.target.value)} />
-            </div>
-            <div className="border rounded-md p-2 max-h-40 overflow-y-auto">
-              {featureKeys.length === 0 ? (
-                <div className="text-xs text-muted-foreground p-1">No feature keys available.</div>
-              ) : (
-                <div className="grid grid-cols-2 gap-1">
-                  {visibleGrantKeys.map((fk) => (
-                    <label key={fk.key}
-                        className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted/50 cursor-pointer text-sm">
-                      <input type="checkbox"
-                          checked={f.grantsFeatures.includes(fk.key)}
-                          onChange={() => toggleGrant(fk.key)} />
-                      <span className="font-mono text-[12px]">{fk.label || fk.key}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+                   placeholder="Zomato + Swiggy orders in one screen, Auto-accept" />
             <p className="text-[11px] text-muted-foreground mt-1">
-              Subscribers get these plan features while the addon is active.
+              Shown as bullets on the tenant marketplace card. Not an entitlement — use “Grants features” above for that.
             </p>
           </div>
           <div className="col-span-2 flex items-center gap-3">

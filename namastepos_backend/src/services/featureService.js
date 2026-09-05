@@ -365,6 +365,93 @@ async function planSummary(businessId) {
   };
 }
 
+/**
+ * planSummary() with PROVENANCE — which source grants each key (round-2 fix
+ * batch 2026-09-06, CONTRACTS §5, admin review F-03).
+ *
+ * The admin console had no way to answer "does this restaurant have loyalty
+ * right now, and why?" without impersonating: the overrides card showed
+ * overrides, the custom-plan card showed the plan, the addons tab showed
+ * activations, and nothing showed the UNION featureService actually enforces.
+ * This walks the same three layers _load() merges — plan matrix, live addon
+ * grants, per-business overrides — in the same order, and reports per key:
+ *
+ *   features: [{ key, label, group, sources: ['plan' | 'addon:<slug>' | 'override:enable', …] }]
+ *   disabled: [{ key, label, group, source: 'override:disable', wouldBeGrantedBy: [...] }]
+ *
+ * Reads the database directly (not the cache) so the answer is what the next
+ * request will see. `planVersion` is the same fingerprint /auth/me carries.
+ */
+async function planSummaryWithSources(businessId) {
+  const resolved = await resolveTierKind(businessId);
+  const planRow = (await query(
+    'SELECT tier, tier_kind, name FROM plans WHERE tier = $1 LIMIT 1',
+    [resolved.tier],
+  )).rows[0] || null;
+  const sources = new Map(); // key → Set(source)
+  const add = (key, src) => {
+    if (!key) return;
+    if (!sources.has(key)) sources.set(key, new Set());
+    sources.get(key).add(src);
+  };
+  for (const key of await featuresFor(resolved.tier, resolved.tier_kind)) add(key, 'plan');
+  const addons = await query(
+    `SELECT a.slug, a.grants_features
+       FROM business_addons ba
+       JOIN addons a ON a.id = ba.addon_id
+      WHERE ba.business_id = $1
+        AND ba.status IN ('active', 'trialing')
+        AND (ba.current_period_end IS NULL OR ba.current_period_end > NOW())
+        AND a.is_active = TRUE`,
+    [businessId],
+  );
+  for (const row of addons.rows) {
+    add(row.slug, `addon:${row.slug}`); // back-compat slug pseudo-key, as in _load
+    for (const key of row.grants_features || []) add(key, `addon:${row.slug}`);
+  }
+  const overrides = await query(
+    'SELECT feature_key, enabled FROM business_feature_overrides WHERE business_id = $1',
+    [businessId],
+  );
+  const disabled = [];
+  for (const row of overrides.rows) {
+    if (!row.feature_key) continue;
+    if (row.enabled) {
+      add(row.feature_key, 'override:enable');
+    } else {
+      const wouldBe = [...(sources.get(row.feature_key) || [])];
+      sources.delete(row.feature_key);
+      disabled.push({
+        key: row.feature_key,
+        label: registry.labelOf(row.feature_key),
+        group: (registry.get(row.feature_key) || {}).group || 'Unregistered',
+        source: 'override:disable',
+        wouldBeGrantedBy: wouldBe,
+      });
+    }
+  }
+  const features = [...sources.entries()]
+    .map(([key, srcs]) => ({
+      key,
+      label: registry.labelOf(key),
+      group: (registry.get(key) || {}).group || 'Unregistered',
+      sources: [...srcs],
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+  return {
+    plan: {
+      code: resolved.tier,
+      name: planRow ? planRow.name : resolved.tier,
+      tierKind: resolved.tier_kind,
+      tierLabel: planTiers.labelOf(resolved.tier_kind),
+      entitled: resolved.entitled !== false,
+    },
+    planVersion: _fingerprint(resolved.tier, resolved.tier_kind, new Set(sources.keys())),
+    features,
+    disabled: disabled.sort((a, b) => a.key.localeCompare(b.key)),
+  };
+}
+
 function clearCache(businessId) {
   cache.delete(businessId);
   _publishInvalidate(businessId); // tell other instances (no-op without REDIS_URL)
@@ -572,6 +659,7 @@ module.exports = {
   cacheStatus,
   hasFeature,
   planSummary,
+  planSummaryWithSources,
   planVersion,
   planVersionIfCached,
   listFeatureCatalogDetailed,

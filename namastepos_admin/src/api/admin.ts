@@ -7,6 +7,9 @@ export interface Admin {
   id: string; email: string; displayName?: string;
   role: 'super_admin' | 'finance' | 'support' | 'sales';
   isActive: boolean; lastLoginAt?: string; createdAt: string;
+  // Not sent today (2026-09-06: /auth/me returns the row only). If the backend
+  // ever adds it, src/lib/rbac.ts `useCan` prefers it over the role mirror.
+  permissions?: string[];
 }
 
 // 2026-09-03 — multi-outlet visibility. An outlet is its own `businesses` row
@@ -94,9 +97,15 @@ export interface Plan {
   // 'pro_plan' and 'advanced' plans.
   tierKind?: string;
   priceInr: number; priceInrPaise: number;
-  // FF-402c — one plan, two prices. null yearly = plan doesn't offer yearly.
+  // FF-402c — one plan, two prices.
+  // F-02 (2026-09-06): `priceYearlyInr` is NEVER null for a paid plan —
+  // serializePlan defaults it to 10× monthly when price_yearly_paise IS NULL
+  // (kept for compatibility). The truth about whether the plan OFFERS yearly is
+  // `offersYearly` (true iff the column is non-null). Gate badges, toggles and
+  // the ChangePlan cadence guard on it, never on `priceYearlyInr != null`.
   priceYearlyInr: number | null;
   priceYearlyInrPaise: number | null;
+  offersYearly?: boolean;
   billingPeriod?: string;    // deprecated at plan level, still returned for legacy readers
   razorpayPlanId?: string | null;
   razorpayPlanIdYearly?: string | null;
@@ -309,8 +318,6 @@ export const adminApi = {
   listCustomers: (params: any = {}) =>
     api.get<{ customers: Customer[]; total: number; limit: number; offset: number }>(
       '/admin/customers', { params }).then((r) => r.data),
-  getCustomer: (id: string) =>
-    api.get<{ customer: any }>(`/admin/customers/${id}`).then((r) => r.data.customer),
   drilldown: (id: string) =>
     api.get<any>(`/admin/customers/${id}/drilldown`).then((r) => r.data),
 
@@ -342,8 +349,8 @@ export const adminApi = {
   // FF-402c — cadence is a separate param now; plan tier is one row.
   setPlan: (id: string, tier: string, billingPeriod?: 'monthly' | 'yearly') =>
     api.post(`/admin/customers/${id}/set-plan`, { tier, billingPeriod }).then((r) => r.data),
-  impersonate: (id: string) =>
-    api.post<{ accessToken: string; business: any }>(`/admin/customers/${id}/impersonate`).then((r) => r.data),
+  // F-13 (2026-09-06): the legacy `impersonate` wrapper (raw JWT via `#imp=`)
+  // is deleted so the NP-126 code flow below cannot be bypassed by re-wiring it.
   // NP-126 — one-time impersonation code. The dashboard exchanges it via
   // POST /v1/auth/impersonation-exchange for a real session, so no raw JWT
   // ever rides in a URL, in browser history, or on the clipboard.
@@ -410,9 +417,7 @@ export const adminApi = {
   // Push 14d — feature matrix (source of truth for plan-gated UI on the
   // owner dashboard + mobile). Changes propagate within ~60s as those
   // clients poll /auth/me.
-  featureCatalog: () =>
-    api.get<{ features: string[] }>('/admin/feature-catalog').then((r) => r.data.features),
-  // 2026-09-05 (feature-sync audit). The SAME endpoint, with the label, the
+  // 2026-09-05 (feature-sync audit). /admin/feature-catalog with the label, the
   // section and the enforcement kind the backend registry declares.
   //
   // This page used to keep its own `buckets` map deciding which section each
@@ -650,30 +655,9 @@ export const adminApi = {
     ).then((r) => r.data),
 
   // ── Custom plans + feature overrides (plans-addons migration) ─────────
-  // Global feature-key catalog. The backend may return {keys:[{key,label?}]}
-  // OR a plain string array — normalise both to FeatureKey[] here so pages
-  // never have to care.
-  // FIX 2026-09-03: pointed at a non-existent /admin/feature-keys — the custom
-  // plan feature picker and the overrides dropdown both rendered empty
-  // ("No feature keys available"). The real endpoint is /admin/feature-catalog
-  // → { features: string[] }.
-  // 2026-09-05: prefer the rich `catalog` (label + group + enforcement) so the
-  // custom-plan builder, the per-business override dropdown and the add-on
-  // "grants features" picker all show the same names and sections as the plan
-  // editor — from the backend registry, with no list of their own.
-  listFeatureKeys: () =>
-    api.get<any>('/admin/feature-catalog').then((r) => {
-      if (Array.isArray(r.data?.catalog)) {
-        return (r.data.catalog as FeatureCatalogEntry[]).map((c): FeatureKey => ({
-          key: c.key, label: c.label, group: c.group, enforcement: c.enforcement,
-        }));
-      }
-      const raw = Array.isArray(r.data)
-        ? r.data
-        : (r.data?.features ?? r.data?.keys ?? []);
-      return (raw as any[]).map((k): FeatureKey =>
-        typeof k === 'string' ? { key: k } : { key: k.key, label: k.label });
-    }),
+  // F-13 / F-04 (2026-09-06): `listFeatureKeys` (a second normaliser over the
+  // same /admin/feature-catalog call, minus `why`) is gone. Every picker reads
+  // `featureCatalogDetailed` through src/lib/featureCatalog.ts `useFeatureCatalog`.
   getFeatureOverrides: (businessId: string) =>
     api.get<{ overrides: FeatureOverride[] }>(`/admin/customers/${businessId}/feature-overrides`)
        .then((r) => r.data.overrides ?? []),
@@ -683,6 +667,15 @@ export const adminApi = {
        .then((r) => r.data.overrides ?? []),
   deleteFeatureOverride: (businessId: string, featureKey: string) =>
     api.delete(`/admin/customers/${businessId}/feature-overrides/${featureKey}`).then((r) => r.data),
+  // F-03 (2026-09-06) — what the tenant ACTUALLY has right now: plan ∪ addon
+  // grants ∪ enable-overrides, minus disable-overrides, each key with the
+  // source(s) that grant it. CONTRACTS_round2 §5.
+  effectiveFeatures: (businessId: string) =>
+    api.get<EffectiveFeatures>(`/admin/customers/${businessId}/effective-features`)
+       .then((r) => r.data),
+  // Ops → Review checks (super-admin only). CONTRACTS_round2 §5.
+  reviewChecks: () =>
+    api.get<ReviewChecksResponse>('/admin/ops/review-checks').then((r) => r.data),
   // {plan:null} when the customer has no custom plan yet.
   getCustomPlan: (businessId: string) =>
     api.get<CustomPlanResponse>(`/admin/customers/${businessId}/custom-plan`).then((r) => r.data),
@@ -761,12 +754,39 @@ export interface FeatureCatalogEntry {
   enforcement: 'route' | 'middleware' | 'service' | 'client' | 'ungated' | 'unregistered' | 'unknown';
   why?: string;
 }
-export interface FeatureKey { key: string; label?: string; group?: string; enforcement?: string }
 export interface FeatureOverride { featureKey: string; mode: 'enable' | 'disable' }
 export interface CustomPlanLimits {
   staff: number; tables: number; floors: number;
   menu_items: number; monthly_orders: number;
+  // F-06 (2026-09-06): outlets cap. Omitted → the backend treats it as
+  // uncapped (unlimited outlets), so the editor always sends it.
+  businesses: number;
 }
+
+// ── F-03: effective features (GET /admin/customers/:id/effective-features) ──
+export type FeatureSource = 'plan' | `addon:${string}` | 'override:enable';
+export interface EffectiveFeature {
+  key: string; label: string; group: string;
+  sources: FeatureSource[];
+}
+export interface EffectiveFeatures {
+  plan: { code: string; name: string; tierKind: string } | null;
+  planVersion: string | number | null;
+  features: EffectiveFeature[];
+  disabled: { key: string; label: string; source: 'override:disable' }[];
+}
+
+// ── Ops: review checks (GET /admin/ops/review-checks) ─────────────────
+export interface ReviewCheck {
+  id: string;
+  label: string;
+  severity: 'critical' | 'warn' | 'info';
+  count: number;
+  description: string;
+  sql: string;
+  sample: Record<string, unknown>[];
+}
+export interface ReviewChecksResponse { generatedAt: string; checks: ReviewCheck[] }
 export interface CustomPlan {
   tier: string; name: string;
   priceInrPaise: number; priceYearlyPaise: number | null;

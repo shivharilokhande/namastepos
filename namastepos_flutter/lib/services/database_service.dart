@@ -21,7 +21,11 @@ class DatabaseService {
   // v4 (2026-09-05, review #2): menu_items.gstPct — the item's GST slab, so
   // the offline menu cache can estimate tax on a queued order the same way
   // the server will. Additive; old rows read back null → scheme default.
-  static const int _dbVersion = 4;
+  // v5 (2026-09-06, round 2 MOB #1): order_items.variantId / variantLabel /
+  // modifierLines (JSON TEXT) — the picked size + add-ons, so an offline
+  // receipt/KOT can name them and the queued create body carries the ids
+  // the server prices from. Additive; old rows read back null.
+  static const int _dbVersion = 5;
 
   Database? _db;
 
@@ -129,6 +133,9 @@ class DatabaseService {
         price REAL NOT NULL,
         qty REAL NOT NULL,
         note TEXT,
+        variantId TEXT,
+        variantLabel TEXT,
+        modifierLines TEXT,
         FOREIGN KEY (orderId) REFERENCES orders(id) ON DELETE CASCADE
       );
     ''');
@@ -252,6 +259,25 @@ class DatabaseService {
     // backend; until then a null slab falls back to the scheme default.
     if (oldV < 4) {
       await db.execute('ALTER TABLE menu_items ADD COLUMN gstPct REAL');
+    }
+    // v5 (round 2 MOB #1, 2026-09-06): additive columns — variant + modifier
+    // choice per order line. Existing rows keep their composed `name` (which
+    // already embeds the choice) and read back null here.
+    if (oldV < 5) {
+      await migrateOrderItemsV5(db);
+    }
+  }
+
+  /// The v5 step, exposed so a test can run it against an in-memory v4 DB.
+  /// Each ADD COLUMN is guarded against re-runs (SQLite has no
+  /// `ADD COLUMN IF NOT EXISTS`): a column that already exists is skipped.
+  static Future<void> migrateOrderItemsV5(DatabaseExecutor db) async {
+    final cols = (await db.rawQuery('PRAGMA table_info(order_items)'))
+        .map((r) => r['name'].toString())
+        .toSet();
+    for (final c in const ['variantId', 'variantLabel', 'modifierLines']) {
+      if (cols.contains(c)) continue;
+      await db.execute('ALTER TABLE order_items ADD COLUMN $c TEXT');
     }
   }
 

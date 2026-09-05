@@ -135,12 +135,20 @@ export interface PastDueGrace {
  * separate job, not a side effect of adding a banner.
  */
 export interface Subscription {
+  /** 'trialing' | 'active' | 'past_due' | 'paused' | 'cancelled' | 'suspended' (2026-09-06) */
   status: string;
   plan: Record<string, any> | null;
   usage?: PlanUsage | null;
   grace?: PastDueGrace | null;
   overage?: PlanOverage | null;
   pause?: PauseState | null;
+  // 2026-09-06 (round 2, CONTRACTS §6) — additive fields on GET /billing.
+  /** A scheduled downgrade: where the account lands on `effectiveAt` (falls back to currentPeriodEnd). */
+  pendingPlan?: { code?: string; tier?: string; name?: string; effectiveAt?: string | null } | null;
+  /** Admin suspension block; present only while status === 'suspended'. */
+  suspension?: { since?: string | null; message?: string | null } | null;
+  /** A re-checkout was completed and we are waiting for its first charge. */
+  reactivationPending?: boolean;
   [key: string]: any;
 }
 
@@ -334,6 +342,82 @@ export interface FulfilmentTransitionBody {
   rider?: { name?: string; phone?: string; otp?: string };
   // Required when moving to 'picked_up' on an order with otpRequired.
   otp?: string;
+}
+
+// ── Round-2 contracts (2026-09-06, CONTRACTS_round2.md) ──────────────────
+// Camel-case on the wire; money as `*Paise` integers. The dashboard converts
+// rupees ↔ paise at the form boundary only (Math.round(inr * 100)) so nothing
+// downstream ever holds a float rupee amount.
+
+/** §1 — B2B invoice template, its own store (migration 095), gated `b2b_invoice`. */
+export interface B2BInvoiceTemplate {
+  letterhead: string;
+  terms: string;
+  signatureUrl: string;
+  bankDetails: string;
+  showHsn: boolean;
+  showEway: boolean;
+}
+
+/** §2 — recurring invoices. */
+export type RecurringFrequency = 'weekly' | 'monthly' | 'quarterly' | 'yearly';
+export interface RecurringInvoiceItem {
+  name: string;
+  hsn?: string | null;
+  qty: number;
+  unitPricePaise: number;
+  gstPct: number;
+}
+export interface RecurringSchedule {
+  id: string;
+  name: string;
+  customerId: string;
+  customerName: string | null;
+  frequency: RecurringFrequency;
+  nextRunAt: string | null;
+  endDate: string | null;
+  isActive: boolean;
+  items: RecurringInvoiceItem[];
+  notes: string | null;
+  totalPaise: number;
+  lastRunAt: string | null;
+  lastInvoiceId: string | null;
+  runCount: number;
+}
+export interface RecurringScheduleBody {
+  name: string;
+  customerId: string;
+  frequency: RecurringFrequency;
+  startDate: string; // YYYY-MM-DD
+  endDate?: string | null;
+  items: RecurringInvoiceItem[];
+  notes?: string | null;
+}
+export interface RecurringRunNowResult {
+  schedule: RecurringSchedule;
+  invoice: { id: string; invoiceNo: string; totalPaise: number };
+}
+
+/** §3 — tenant API keys. `secret` is returned by POST exactly once. */
+export interface ApiKeyRow {
+  id: string;
+  label: string;
+  prefix: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+  revokedAt: string | null;
+}
+export interface ApiKeyCreated {
+  key: Pick<ApiKeyRow, 'id' | 'label' | 'prefix' | 'createdAt'>;
+  secret: string;
+}
+
+/** §4 — white label. */
+export interface WhiteLabel {
+  enabled: boolean;
+  brandName: string;
+  hidePoweredBy: boolean;
+  accentColor: string | null;
 }
 
 export const ffApi = {
@@ -1180,6 +1264,62 @@ export const ffApi = {
     api.post('/me/correct', body).then((r) => r.data),
   exportMyData: () => api.get('/me/export').then((r) => r.data),
   eraseMyAccount: () => api.delete('/me/account').then((r) => r.data),
+
+  // ── Round 2 (2026-09-06) — B2B template / recurring invoices / API keys /
+  // white label. Shapes per CONTRACTS_round2.md §1–§4. All tenant-scoped.
+  getB2BInvoiceTemplate: (): Promise<B2BInvoiceTemplate> => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/b2b-invoice-template`).then((r) => r.data.template);
+  },
+  updateB2BInvoiceTemplate: (body: Partial<B2BInvoiceTemplate>): Promise<B2BInvoiceTemplate> => {
+    const b = getBusinessCache();
+    return api.put(`/businesses/${b.id}/b2b-invoice-template`, body).then((r) => r.data.template);
+  },
+
+  listRecurringInvoices: (): Promise<RecurringSchedule[]> => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/recurring-invoices`).then((r) => r.data.schedules);
+  },
+  createRecurringInvoice: (body: RecurringScheduleBody): Promise<RecurringSchedule> => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/recurring-invoices`, body).then((r) => r.data.schedule);
+  },
+  updateRecurringInvoice: (
+    id: string, patch: Partial<RecurringScheduleBody> & { isActive?: boolean },
+  ): Promise<RecurringSchedule> => {
+    const b = getBusinessCache();
+    return api.patch(`/businesses/${b.id}/recurring-invoices/${id}`, patch).then((r) => r.data.schedule);
+  },
+  deleteRecurringInvoice: (id: string): Promise<void> => {
+    const b = getBusinessCache();
+    return api.delete(`/businesses/${b.id}/recurring-invoices/${id}`).then(() => undefined);
+  },
+  runRecurringInvoiceNow: (id: string): Promise<RecurringRunNowResult> => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/recurring-invoices/${id}/run-now`).then((r) => r.data);
+  },
+
+  listApiKeys: (): Promise<ApiKeyRow[]> => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/api-keys`).then((r) => r.data.keys);
+  },
+  createApiKey: (label: string): Promise<ApiKeyCreated> => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/api-keys`, { label }).then((r) => r.data);
+  },
+  revokeApiKey: (keyId: string): Promise<void> => {
+    const b = getBusinessCache();
+    return api.delete(`/businesses/${b.id}/api-keys/${keyId}`).then(() => undefined);
+  },
+
+  getWhiteLabel: (): Promise<WhiteLabel> => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/white-label`).then((r) => r.data.whiteLabel);
+  },
+  updateWhiteLabel: (body: Partial<WhiteLabel>): Promise<WhiteLabel> => {
+    const b = getBusinessCache();
+    return api.put(`/businesses/${b.id}/white-label`, body).then((r) => r.data.whiteLabel);
+  },
 
   // Public — no auth
   grievanceOfficer: () => api.get('/compliance/grievance-officer').then((r) => r.data),

@@ -102,6 +102,10 @@ jobs:
       - name: Lint dashboard
         working-directory: namastepos_dashboard
         run: npm run lint
+      # 2026-09-06: vitest added (usePlan fail-closed, RequireFeature, gstEstimate, navConfig).
+      - name: Test dashboard
+        working-directory: namastepos_dashboard
+        run: npm test -- --run
       - name: Build dashboard
         working-directory: namastepos_dashboard
         run: npm run build
@@ -122,6 +126,10 @@ jobs:
       - name: Type-check admin
         working-directory: namastepos_admin
         run: npx tsc --noEmit -p .
+      # 2026-09-06 (admin review F-09): eslint config added; errors block.
+      - name: Lint admin
+        working-directory: namastepos_admin
+        run: npm run lint
       - name: Build admin
         working-directory: namastepos_admin
         run: npm run build

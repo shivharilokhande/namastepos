@@ -5,8 +5,11 @@
 //   - Super admins (email/password)   — token carries {sid, isSuperAdmin: true}
 
 const { verifyAccessToken } = require('../utils/jwt');
-const { Unauthorized, Forbidden } = require('../utils/errors');
+const {
+  Unauthorized, Forbidden, NotFound, HttpError, TooManyRequests,
+} = require('../utils/errors');
 const cacheBus = require('../utils/cacheBus');
+const env = require('../config/env');
 
 function _verify(token) {
   try {
@@ -58,9 +61,107 @@ function _decodeAdmin(req) {
   return _verify(token);
 }
 
+// ── Tenant API keys (round-2 fix batch 2026-09-06, CONTRACTS §3) ───────────
+//
+// A THIRD principal: `X-API-Key: npk_live_…` on /v1/businesses/:id/* only.
+//   { businessId, role: 'api_key', apiKeyId, readOnly: true, isApiKey: true }
+// It is READ-ONLY by construction (non-GET → 405 API_KEY_READ_ONLY, decided
+// here before any route runs), tenant-bound (another business's id → 404 in
+// requireBusinessOwnership, indistinguishable from a business that does not
+// exist), plan-gated on every request (403 API_ACCESS_NOT_IN_PLAN the moment
+// the plan loses `api_access`, no revocation needed), and rate-limited per key.
+// A revoked or unknown secret is 401. Bearer always wins when both are sent, so
+// nothing about the existing two principals changes.
+//
+// Downstream gates and this principal (read them before changing either side):
+//   • requireBusinessOwnership — 404 on mismatch, read-only enforced again.
+//   • requireRole             — an api_key has no business_users row and is
+//                               never in an allow-list → 403. Owner-only
+//                               surfaces (billing, staff, keys) stay closed.
+//   • requireStaffPerm        — GET/HEAD with a read permission in
+//                               API_KEY_READ_PERMS only (orders / menu /
+//                               reports / customers), else 403.
+//   • featureGate (app.js)    — mounted BEFORE requireAuth and skips requests
+//                               with no Bearer, so the plan gate is re-run
+//                               here for the resolved business (same 402
+//                               body) — a key must not read a route the plan
+//                               does not include.
+//   • noPlatformStaff / csrf  — keyed on isSuperAdmin / cookies; unaffected.
+const API_KEY_HEADER = 'x-api-key';
+const READ_METHODS = ['GET', 'HEAD', 'OPTIONS'];
+
+function _hasBearer(req) {
+  return (req.headers.authorization || '').startsWith('Bearer ');
+}
+
+/** Path relative to the business prefix, e.g. '/orders/123' — what featureGate sees. */
+function _pathWithinBusiness(req) {
+  const full = (req.originalUrl || req.url || '').split('?')[0];
+  const m = full.match(/\/businesses\/[^/]+(\/.*)?$/);
+  return m ? (m[1] || '/') : null;
+}
+
+async function _authenticateApiKey(req, res) {
+  const full = (req.originalUrl || '').split('?')[0];
+  if (!full.startsWith(`${env.API_PREFIX}/businesses/`)) {
+    throw new Unauthorized('API keys are accepted on /businesses/:businessId routes only');
+  }
+  if (!READ_METHODS.includes(req.method)) {
+    throw new HttpError(
+      405,
+      'API keys are read-only. Use the dashboard or the mobile app to make changes.',
+      'API_KEY_READ_ONLY',
+    );
+  }
+  const apiKeys = require('../services/apiKeyService');
+  const key = await apiKeys.resolve(req.headers[API_KEY_HEADER]);
+  // Tenant scope FIRST — a key for business A probing business B learns
+  // nothing (404), not even whether B's plan has API access.
+  const bid = req.params?.businessId;
+  if (bid && bid !== key.businessId) throw new NotFound('Business not found');
+  await apiKeys.assertPlanAllows(key.businessId);
+  const rl = apiKeys.checkRateLimit(key.id);
+  if (res) {
+    res.setHeader('X-RateLimit-Limit', String(apiKeys.RATE_LIMIT_PER_MIN));
+    res.setHeader('X-RateLimit-Remaining', String(rl.remaining));
+    res.setHeader('X-RateLimit-Reset', String(Math.ceil(rl.resetAt / 1000)));
+  }
+  if (!rl.allowed) {
+    throw new TooManyRequests(`API key rate limit is ${apiKeys.RATE_LIMIT_PER_MIN} requests per minute`);
+  }
+  apiKeys.touchLastUsed(key.id);
+  // Plan gate for the path (featureGate ran before us and skipped, see above).
+  const rel = _pathWithinBusiness(req);
+  if (rel) {
+    const featureGate = require('./featureGate');
+    const needKey = featureGate.requiredFeature(rel);
+    if (needKey) {
+      const features = require('../services/featureService');
+      if (!(await features.hasFeature(key.businessId, needKey))) {
+        const err = new HttpError(402, 'This feature is not included in your plan.', 'FEATURE_LOCKED');
+        err.details = { feature: needKey, upgradeUrl: '/billing' };
+        throw err;
+      }
+    }
+  }
+  return {
+    id: null,
+    businessId: key.businessId,
+    role: 'api_key',
+    apiKeyId: key.id,
+    readOnly: true,
+    isApiKey: true,
+    impersonator: false,
+  };
+}
+
 /** Any authenticated principal. */
-function requireAuth(req, _res, next) {
+async function requireAuth(req, res, next) {
   try {
+    if (!_hasBearer(req) && req.headers[API_KEY_HEADER]) {
+      req.user = await _authenticateApiKey(req, res);
+      return next();
+    }
     const payload = _decode(req);
     if (payload.isSuperAdmin) {
       req.user = { id: payload.sid, isSuperAdmin: true, email: payload.email };
@@ -204,6 +305,16 @@ async function requireBusinessOwnership(req, _res, next) {
     }
     const bid = req.params.businessId;
     if (!bid) return next(new Forbidden('Missing businessId'));
+    // API-key principal (2026-09-06): another tenant's id is a 404, not a 403
+    // — the key must not be able to confirm that a business id exists. Writes
+    // were already refused in requireAuth (405); this is the belt.
+    if (req.user?.isApiKey === true) {
+      if (req.user.businessId !== bid) return next(new NotFound('Business not found'));
+      if (!READ_ONLY.includes(req.method)) {
+        return next(new HttpError(405, 'API keys are read-only.', 'API_KEY_READ_ONLY'));
+      }
+      return next();
+    }
     if (!req.user || req.user.businessId !== bid) {
       return next(new Forbidden('You can only access your own business'));
     }
@@ -328,6 +439,12 @@ function requireRole(allowed) {
         if (req.method === 'GET' || req.method === 'HEAD') return next();
         return next(new Forbidden('Impersonation is read-only. Exit impersonation to make changes.'));
       }
+      // API-key principal (2026-09-06): no business_users row, never in a role
+      // allow-list. Role-gated surfaces (billing, staff, keys, …) stay closed
+      // to keys regardless of method — answer without a membership lookup.
+      if (req.user.isApiKey === true) {
+        return next(new Forbidden(`API keys cannot access this resource (requires one of: ${allow.join(', ')})`));
+      }
 
       const businessId = req.params.businessId || req.user.businessId;
       let effectiveRole = req.user.role;
@@ -380,6 +497,12 @@ function requireRole(allowed) {
  * Permission keys are the same keyspace the owner toggles per-staff:
  * see staffService.PERMISSION_KEYS / DEFAULT_PERMS_BY_ROLE.
  */
+// The staff-permission keys an API key may READ through (CONTRACTS §3). Same
+// keyspace as staffService.PERMISSION_KEYS ('menu_editor' is the menu key —
+// there is no 'menu'); deliberately a short allow-list, identical to the one
+// in middleware/requireStaffPerm.js (BE-A's wrapper) so the two gates agree.
+const API_KEY_READ_PERMS = new Set(['orders', 'menu_editor', 'reports', 'customers']);
+
 function requireStaffPerm(perm) {
   const need = Array.isArray(perm) ? perm : [perm];
   return async (req, _res, next) => {
@@ -393,6 +516,16 @@ function requireStaffPerm(perm) {
       if (req.user.impersonator) {
         if (req.method === 'GET' || req.method === 'HEAD') return next();
         return next(new Forbidden('Impersonation is read-only. Exit impersonation to make changes.'));
+      }
+      // API-key principal (2026-09-06, CONTRACTS §3): read permissions for
+      // orders / menu / reports / customers only, GET/HEAD only. Everything
+      // else a staff permission guards (pos, kds, tables, expenses, staff,
+      // bill_template, …) is closed to keys.
+      if (req.user.isApiKey === true) {
+        const readable = (req.method === 'GET' || req.method === 'HEAD')
+          && need.some((p) => API_KEY_READ_PERMS.has(p));
+        if (readable) return next();
+        return next(new Forbidden(`API keys cannot access this resource (requires permission: ${need.join(' or ')})`));
       }
 
       const businessId = req.params.businessId || req.user.businessId;
@@ -477,4 +610,6 @@ module.exports = {
   invalidateMembership,
   _currentMembership,
   _clearAuthCachesForTests,
+  // API-key principal (2026-09-06): the read allow-list, for tests + docs.
+  API_KEY_READ_PERMS,
 };

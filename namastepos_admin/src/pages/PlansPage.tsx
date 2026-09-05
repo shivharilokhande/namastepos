@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, RefreshCw, Edit2, Plus, Trash2, Sparkles } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,10 @@ import { adminApi, Plan, TierKindOption } from '@/api/admin';
 import { useTierKinds } from '@/hooks/useTierKinds';
 import { apiError } from '@/api/client';
 import { formatINR } from '@/lib/utils';
+import { useCan } from '@/lib/rbac';
+import { planOffersYearly } from '@/lib/plans';
+import { FeaturePicker } from '@/components/FeaturePicker';
+import { useFeatureCatalog } from '@/lib/featureCatalog';
 
 // 2026-09-04 — the tier_kind ladder is served by the backend, which owns the
 // single source of truth (namastepos_backend/src/services/planTiers.js).
@@ -77,6 +81,10 @@ function TierKindSelect({
 export function PlansPage() {
   const qc = useQueryClient();
   const { data: plans } = useQuery({ queryKey: ['plans-admin'], queryFn: adminApi.listPlans });
+  // F-10 — every mutation on this page is `plans.change` server-side
+  // (admin.routes.js). Hide the buttons for roles that would only get a 403.
+  const { can } = useCan();
+  const canChange = can('plans.change');
 
   const [editing, setEditing] = useState<Plan | null>(null);
   const [creating, setCreating] = useState(false);
@@ -121,16 +129,18 @@ export function PlansPage() {
             changes within ~60s.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button onClick={() => setCreating(true)} variant="outline">
-            <Plus className="mr-2 h-4 w-4" />
-            New plan
-          </Button>
-          <Button onClick={() => sync.mutate()} disabled={sync.isPending} variant="outline">
-            <RefreshCw className={`mr-2 h-4 w-4 ${sync.isPending ? 'animate-spin' : ''}`} />
-            Sync Razorpay plans
-          </Button>
-        </div>
+        {canChange && (
+          <div className="flex gap-2">
+            <Button onClick={() => setCreating(true)} variant="outline">
+              <Plus className="mr-2 h-4 w-4" />
+              New plan
+            </Button>
+            <Button onClick={() => sync.mutate()} disabled={sync.isPending} variant="outline">
+              <RefreshCw className={`mr-2 h-4 w-4 ${sync.isPending ? 'animate-spin' : ''}`} />
+              Sync Razorpay plans
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Push 18b — features are now per-plan, not per-tier_kind. Each
@@ -140,11 +150,13 @@ export function PlansPage() {
         <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 px-1">
           Public plans
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* F-12 — five live plans: 2 / 3 / 5 across instead of a 3+2 wrap. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5 gap-4">
           {publicPlans.map((p) => (
             <PlanCard
               key={p.id}
               plan={p}
+              canChange={canChange}
               onEdit={() => setEditing(p)}
               onEditFeatures={() => setFeaturePicker(p)}
               onDelete={() => {
@@ -229,9 +241,10 @@ export function PlansPage() {
 // Plan card (one per row in `plans` table)
 // ──────────────────────────────────────────────────────────────────────
 function PlanCard({
-  plan, onEdit, onEditFeatures, onDelete,
+  plan, canChange, onEdit, onEditFeatures, onDelete,
 }: {
   plan: Plan & { tierKind?: string; tier_kind?: string };
+  canChange: boolean;
   onEdit: () => void;
   onEditFeatures: () => void;
   onDelete: () => void;
@@ -248,6 +261,7 @@ function PlanCard({
   // (which is Growth's kind, and was also Enterprise's tier code).
   const featured = rung?.rank === 1;
   const styles = rankStyles(rung?.rank);
+  const offersYearly = planOffersYearly(plan);
   return (
     <Card className={`border-2 ${styles.border}`}>
       <CardHeader>
@@ -265,13 +279,14 @@ function PlanCard({
               </span>
               {featured && <Badge>Popular</Badge>}
               {/* FF-402c — plans now carry BOTH prices on one row.
-                  If yearly is offered, badge it — else "monthly-only". */}
-              {plan.priceInr > 0 && plan.priceYearlyInr != null && (
+                  If yearly is offered, badge it — else "monthly-only".
+                  F-02: decided by `offersYearly`, not the defaulted price. */}
+              {plan.priceInr > 0 && offersYearly && (
                 <span className="inline-block rounded bg-amber-500 px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-white">
                   Yearly recommended
                 </span>
               )}
-              {plan.priceInr > 0 && plan.priceYearlyInr == null && (
+              {plan.priceInr > 0 && !offersYearly && (
                 <span className="inline-block rounded bg-muted px-2 py-0.5 text-[10px] font-black uppercase tracking-wider text-muted-foreground">
                   Monthly only
                 </span>
@@ -280,12 +295,14 @@ function PlanCard({
               <span className="text-xs">db tier: {plan.tier}</span>
             </div>
           </div>
-          <div className="flex flex-col gap-1">
-            <Button size="sm" variant="ghost" onClick={onEdit} title="Edit"><Edit2 className="h-4 w-4" /></Button>
-            <Button size="sm" variant="ghost" onClick={onDelete} title="Delete">
-              <Trash2 className="h-4 w-4 text-destructive" />
-            </Button>
-          </div>
+          {canChange && (
+            <div className="flex flex-col gap-1">
+              <Button size="sm" variant="ghost" onClick={onEdit} title="Edit"><Edit2 className="h-4 w-4" /></Button>
+              <Button size="sm" variant="ghost" onClick={onDelete} title="Delete">
+                <Trash2 className="h-4 w-4 text-destructive" />
+              </Button>
+            </div>
+          )}
         </div>
         {/* FF-402c — show BOTH prices on the same plan card. Yearly line
             hidden when the plan doesn't offer yearly (priceYearlyInr = null). */}
@@ -295,7 +312,7 @@ function PlanCard({
               <span className="text-3xl font-bold">{formatINR(plan.priceInr)}</span>
               <span className="text-sm text-muted-foreground ml-1">/mo</span>
             </div>
-            {plan.priceYearlyInr != null && plan.priceInr > 0 && (
+            {offersYearly && plan.priceYearlyInr != null && plan.priceInr > 0 && (
               <div className="text-right">
                 <div className="text-lg font-bold text-emerald-700">
                   {formatINR(plan.priceYearlyInr)}
@@ -310,7 +327,7 @@ function PlanCard({
               </div>
             )}
           </div>
-          {plan.priceYearlyInr == null && plan.priceInr > 0 && (
+          {!offersYearly && plan.priceInr > 0 && (
             <p className="text-[10px] text-muted-foreground italic">
               Yearly not offered · edit plan to enable
             </p>
@@ -332,14 +349,14 @@ function PlanCard({
         {/* Push 18b — per-plan feature picker. Replaces the old global
             "Feature matrix by tier" card so super-admin can edit each
             plan's feature set independently. */}
-        <PlanFeatureSummary planTier={plan.tier} onEdit={onEditFeatures} />
+        <PlanFeatureSummary planTier={plan.tier} onEdit={onEditFeatures} canChange={canChange} />
       </CardContent>
     </Card>
   );
 }
 
 // Compact preview of the plan's currently-enabled features + an Edit button.
-function PlanFeatureSummary({ planTier, onEdit }: { planTier: string; onEdit: () => void }) {
+function PlanFeatureSummary({ planTier, onEdit, canChange }: { planTier: string; onEdit: () => void; canChange: boolean }) {
   const { data: features = [] } = useQuery({
     queryKey: ['tier-features', planTier],
     queryFn: () => adminApi.tierFeatures(planTier),
@@ -350,13 +367,15 @@ function PlanFeatureSummary({ planTier, onEdit }: { planTier: string; onEdit: ()
         <div className="text-xs font-semibold uppercase text-muted-foreground">
           Features ({features.length})
         </div>
-        <Button size="sm" variant="outline" onClick={onEdit}>
-          <Sparkles className="mr-1 h-3.5 w-3.5" /> Edit
-        </Button>
+        {canChange && (
+          <Button size="sm" variant="outline" onClick={onEdit}>
+            <Sparkles className="mr-1 h-3.5 w-3.5" /> Edit
+          </Button>
+        )}
       </div>
       <div className="text-[11px] leading-5 text-foreground/80 line-clamp-3">
         {features.length === 0
-          ? <span className="italic">No features assigned yet — click Edit to add some.</span>
+          ? <span className="italic">No features assigned yet{canChange ? ' — click Edit to add some.' : '.'}</span>
           : features.map((f) => f.replace(/_/g, ' ')).join(', ')}
       </div>
     </div>
@@ -415,16 +434,13 @@ function TierFeaturePickerDialog({
   // the abstract tier_kind concept. Each plan owns its own feature set.
   const planTier = plan.tier;
   // Labels, sections and the "nothing enforces this" warning all come from the
-  // backend registry (src/config/featureRegistry.js) via /admin/feature-catalog.
-  // This dialog used to own a hardcoded `buckets` map instead, which is why a
-  // newly-shipped key silently landed in "Advanced" and rendered as raw
-  // snake_case — and why nothing here could tell the founder that the key he
-  // was about to grant is gated by nothing at all.
-  const { data: cat } = useQuery({
-    queryKey: ['feature-catalog-detailed'],
-    queryFn: adminApi.featureCatalogDetailed,
-  });
-  const catalog = cat?.catalog ?? [];
+  // backend registry (src/config/featureRegistry.js) via /admin/feature-catalog,
+  // rendered by the shared <FeaturePicker> (F-04) that the custom-plan, override
+  // and addon pickers also use. This dialog used to own a hardcoded `buckets`
+  // map, which is why a newly-shipped key silently landed in "Advanced" and
+  // rendered as raw snake_case — and why nothing here could tell the founder
+  // that the key he was about to grant is gated by nothing at all.
+  const { catalog, groups } = useFeatureCatalog();
   const { data: current = [], isLoading } = useQuery({
     queryKey: ['tier-features', planTier],
     queryFn: () => adminApi.tierFeatures(planTier),
@@ -441,24 +457,18 @@ function TierFeaturePickerDialog({
     onError: (e) => toast.error(apiError(e)),
   });
 
-  // Sections, in the order the registry declares them. Anything whose group is
-  // not in that order (an unregistered key still granted by an old plan) is
-  // appended, so it stays visible and removable rather than disappearing.
-  const groups = useMemo(() => {
-    const order = cat?.groups ?? [];
-    const buckets = new Map<string, typeof catalog>();
-    for (const g of order) buckets.set(g, []);
-    for (const entry of catalog) {
-      if (!buckets.has(entry.group)) buckets.set(entry.group, []);
-      buckets.get(entry.group)!.push(entry);
-    }
-    return [...buckets.entries()].filter(([, v]) => v.length > 0);
-  }, [catalog, cat?.groups]);
-
   const toggle = (k: string) => {
     const next = new Set(active);
     if (next.has(k)) next.delete(k); else next.add(k);
     setSelected(next);
+  };
+  // F-01 (admin side): an EMPTY set is almost never intended and — until the
+  // backend fallback is removed — can make tenants inherit another plan's rows
+  // while this card shows 0. Ask before saving zero keys.
+  const onSave = () => {
+    if (active.size === 0
+      && !confirm(`Save ${plan.name} with NO features? Tenants on it lose every gated feature.`)) return;
+    save.mutate();
   };
 
   return (
@@ -475,52 +485,19 @@ function TierFeaturePickerDialog({
         {isLoading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div className="text-xs text-muted-foreground">
               {active.size} of {catalog.length} selected. Owner dashboard + mobile see updates within ~60s.
             </div>
-            {groups.map(([groupName, keys]) => (
-              <div key={groupName}>
-                <div className="text-xs font-semibold uppercase tracking-wider mb-2 text-muted-foreground">
-                  {groupName}
-                </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {keys.map((entry) => {
-                    // "Nothing enforces this" is the warning worth surfacing:
-                    // granting such a key charges the customer for a promise no
-                    // gate keeps. That is exactly the 2026-09-05 Voice POS bug.
-                    const toothless = entry.enforcement === 'ungated'
-                      || entry.enforcement === 'unregistered';
-                    return (
-                      <label key={entry.key}
-                          title={entry.why ?? entry.key}
-                          className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer text-sm">
-                        <input type="checkbox"
-                            checked={active.has(entry.key)}
-                            onChange={() => toggle(entry.key)} />
-                        <span className="flex-1 min-w-0">
-                          <span className="block truncate">{entry.label}</span>
-                          <span className="block font-mono text-[11px] text-muted-foreground truncate">
-                            {entry.key}
-                          </span>
-                        </span>
-                        {toothless && (
-                          <span className="text-[10px] font-semibold uppercase text-amber-600 shrink-0"
-                              title="No gate enforces this key — granting it promises something nothing checks.">
-                            ungated
-                          </span>
-                        )}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+            <FeaturePicker
+              catalog={catalog} groups={groups}
+              selected={active} onToggle={toggle}
+              columns={2} maxHeightClass="max-h-[60vh]" />
           </div>
         )}
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+          <Button onClick={onSave} disabled={save.isPending}>
             {save.isPending ? 'Saving…' : `Save (${active.size})`}
           </Button>
         </DialogFooter>
@@ -547,10 +524,12 @@ function EditPlanDialog({
   const [tierKind, setTierKind] = useState<string>(plan.tierKind || '');
   // FF-402c — edit BOTH prices on the same form (was: separate rows).
   const [priceMonthly, setPriceMonthly] = useState(plan.priceInr);
+  // F-02 — seed from `offersYearly`, not from the (always-defaulted) price, so
+  // a monthly-only plan opens with the toggle OFF and the field blank.
   const [priceYearly, setPriceYearly] = useState<string>(
-    plan.priceYearlyInr != null ? String(plan.priceYearlyInr) : ''
+    planOffersYearly(plan) && plan.priceYearlyInr != null ? String(plan.priceYearlyInr) : ''
   );
-  const [offerYearly, setOfferYearly] = useState(plan.priceYearlyInr != null);
+  const [offerYearly, setOfferYearly] = useState(planOffersYearly(plan));
   const [isActive, setIsActive] = useState(plan.isActive);
   // FF-402e — the bottom rung of the ladder is trial-only, so it never
   // carries a yearly price. Read "bottom rung" off the ladder rather than
@@ -562,7 +541,10 @@ function EditPlanDialog({
 
   const save = useMutation({
     mutationFn: () => {
-      const yearlyPaise = !offerYearly
+      // F-02: "Offer yearly" off ⇒ explicit null (backend stores NULL →
+      // offersYearly=false). F-12: blank while on ⇒ 10× monthly, computed
+      // HERE so the PUT is complete (the update path does not auto-fill).
+      const yearlyPaise = !offerYearly || yearlyForbidden
         ? null
         : (priceYearly === '' ? priceMonthly * 100 * 10 : Math.round(Number(priceYearly) * 100));
       return adminApi.updatePlan(plan.tier, {
@@ -743,7 +725,7 @@ function CreatePlanDialog({
       // FF-402c — send both prices in one call. Blank yearly ⇒ auto
       // 10× monthly on the backend; "offer yearly" off ⇒ null,
       // which disables the yearly option for this plan.
-      const yearlyPaise = !offerYearly
+      const yearlyPaise = !offerYearly || yearlyForbidden
         ? null
         : (priceYearly === '' ? undefined : Math.round(Number(priceYearly) * 100));
       return adminApi.createPlan({

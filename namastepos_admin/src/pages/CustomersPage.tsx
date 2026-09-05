@@ -17,6 +17,8 @@ import { apiError } from '@/api/client';
 import { formatINR, formatDate } from '@/lib/utils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { useTierKinds } from '@/hooks/useTierKinds';
+import { useCan } from '@/lib/rbac';
+import { assignablePlans, subscriptionStatusVariant } from '@/lib/plans';
 
 export function CustomersPage() {
   const tierKinds = useTierKinds();
@@ -108,13 +110,10 @@ export function CustomersPage() {
     );
   };
 
-  const statusVariant = (s: string) => {
-    if (s === 'active') return 'success' as const;
-    if (s === 'trialing') return 'secondary' as const;
-    if (s === 'past_due') return 'warning' as const;
-    if (s === 'cancelled' || s === 'paused') return 'destructive' as const;
-    return 'muted' as const;
-  };
+  // 2026-09-06: one status→badge map for the whole console (knows `suspended`).
+  const statusVariant = subscriptionStatusVariant;
+  // F-10 — POST /admin/customers is customers.write.
+  const { can } = useCan();
 
   return (
     <div className="space-y-6">
@@ -125,9 +124,11 @@ export function CustomersPage() {
             {data?.total ?? 0} signed-up businesses
           </p>
         </div>
-        <Button onClick={() => setCreating(true)}>
-          <Plus className="mr-2 h-4 w-4" /> Add customer manually
-        </Button>
+        {can('customers.write') && (
+          <Button onClick={() => setCreating(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Add customer manually
+          </Button>
+        )}
       </div>
 
       <Card>
@@ -261,10 +262,13 @@ export function CustomersPage() {
   );
 }
 
-function CreateCustomerDialog({ open, onClose, onCreated, plans }: {
+function CreateCustomerDialog({ open, onClose, onCreated, plans: allPlans }: {
   open: boolean; onClose: () => void; onCreated: (id: string) => void;
   plans: any[];
 }) {
+  // F-07 — only public + active plans are assignable here; another tenant's
+  // private custom plan or a retired plan would 404 on the backend anyway.
+  const plans = assignablePlans(allPlans);
   // Push 19a — default to whichever plan exists at the cheapest price
   // (typically Starter / Free). Falls back to 'free' if /plans hasn't
   // loaded yet so the form never breaks.

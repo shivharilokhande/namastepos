@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { adminApi } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatDateTime } from '@/lib/utils';
+import { useCan } from '@/lib/rbac';
 
 // X7 (2026-08-28) — support inbox. List tickets, open a thread, reply,
 // change status, and raise a ticket on a tenant's behalf.
@@ -29,6 +30,7 @@ const PRIORITY_VARIANT: Record<string, any> = {
 };
 
 export function SupportPage() {
+  const { can } = useCan(); // F-10 — create/reply/status are customers.write
   const [status, setStatus] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -61,7 +63,7 @@ export function SupportPage() {
             <option value="resolved">Resolved</option>
             <option value="closed">Closed</option>
           </select>
-          <Button onClick={() => setCreating(true)}>New ticket</Button>
+          {can('customers.write') && <Button onClick={() => setCreating(true)}>New ticket</Button>}
         </div>
       </div>
 
@@ -120,6 +122,8 @@ export function SupportPage() {
 
 function TicketDialog({ id, onClose }: { id: string; onClose: () => void }) {
   const qc = useQueryClient();
+  const { can } = useCan();
+  const canWrite = can('customers.write');
   const [reply, setReply] = useState('');
   const { data: ticket } = useQuery({ queryKey: ['support', id], queryFn: () => adminApi.supportTicket(id) });
 
@@ -168,14 +172,20 @@ function TicketDialog({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
         )}
         <DialogFooter className="flex-wrap gap-2">
-          <div className="mr-auto flex gap-1">
-            {['pending', 'resolved', 'closed', 'open'].map((s) => (
-              <Button key={s} variant="ghost" size="sm" onClick={() => setStatus.mutate(s)}>Mark {s}</Button>
-            ))}
-          </div>
-          <Button onClick={() => sendReply.mutate()} disabled={!reply.trim() || sendReply.isPending}>
-            {sendReply.isPending ? 'Sending…' : 'Send reply'}
-          </Button>
+          {canWrite ? (
+            <>
+              <div className="mr-auto flex gap-1">
+                {['pending', 'resolved', 'closed', 'open'].map((s) => (
+                  <Button key={s} variant="ghost" size="sm" onClick={() => setStatus.mutate(s)}>Mark {s}</Button>
+                ))}
+              </div>
+              <Button onClick={() => sendReply.mutate()} disabled={!reply.trim() || sendReply.isPending}>
+                {sendReply.isPending ? 'Sending…' : 'Send reply'}
+              </Button>
+            </>
+          ) : (
+            <Button variant="outline" onClick={onClose}>Close</Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

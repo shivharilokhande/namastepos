@@ -97,8 +97,11 @@ const FEATURE_RULES = [
   // Enterprise features
   { match: '/accounting/', key: 'accounting_pnl_bs' },
   { match: '/einvoice', key: 'einvoice_gst' },
-  // ('/recurring-invoice' rule removed 2026-09-05: no such route exists — see
-  // the registry entry for recurring_invoices.)
+  // 2026-09-06 (round-2, CONTRACTS §2): the feature is BUILT now —
+  // routes/recurringInvoices.routes.js mounted at /recurring-invoices. (The
+  // old '/recurring-invoice' rule was removed on 2026-09-05 because nothing
+  // answered on it; this one has a router behind it.)
+  { match: '/recurring-invoices', key: 'recurring_invoices' },
   { match: '/bank/', key: 'bank_reconcile' },
   { match: '/surge/', key: 'surge_pricing' },
   // ('/outlets' + '/multi-outlet' rules removed 2026-09-05: the outlet surface

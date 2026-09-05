@@ -558,6 +558,134 @@ async function issueFromOrderInTx(client, businessId, orderId, opts = {}) {
   return _serialize(insert.rows[0]);
 }
 
+/**
+ * Issue a tax invoice that is NOT anchored to an order (2026-09-06, round-2
+ * review / CONTRACTS §2 — recurring invoices). A recurring schedule bills a
+ * B2B customer for a fixed line-item template every period (canteen contract,
+ * monthly catering retainer), so there is no orders row to freeze from: the
+ * lines come from the schedule's template and GST is computed HERE per line.
+ *
+ * Runs inside the caller's transaction (`client`) so the FY sequence stays
+ * gap-free and the caller can record the run + the invoice atomically.
+ *
+ * GST semantics mirror gstService2.computeGstBreakdown: taxable × pct per
+ * line, in integer paise (round half-up), CGST/SGST halves for intra-state
+ * (remainder paise on SGST), IGST when the recipient's GSTIN state differs
+ * from the supplier's. A composition-scheme business (businesses.gst_scheme =
+ * 'composition', migration 092) charges no GST on its invoices.
+ *
+ * `items`: [{ name, hsn?, qty, unitPricePaise, gstPct }]
+ * `recipient`: { name, phone, gstin?, address? }
+ * Returns the serialised invoice.
+ */
+async function issueFromRecurring(client, businessId, {
+  items, recipient = {}, notes = null, issuedByUserId = null, placeOfSupply = null,
+} = {}) {
+  if (!Array.isArray(items) || items.length === 0) throw new BadRequest('Invoice has no items');
+
+  const bRes = await client.query(
+    `SELECT b.name AS biz_name, b.gstin AS biz_gstin, b.address AS biz_address,
+            b.state_code AS biz_state, b.phone AS biz_phone, b.gst_scheme
+       FROM businesses b WHERE b.id = $1`,
+    [businessId],
+  );
+  if (bRes.rowCount === 0) throw new NotFound('Business not found');
+  const b = bRes.rows[0];
+  const composition = String(b.gst_scheme || '').toLowerCase() === 'composition';
+
+  const recipientGstin = recipient.gstin ? String(recipient.gstin).trim().toUpperCase() : null;
+  const pos = placeOfSupply || _stateFromGstin(recipientGstin) || b.biz_state || '00';
+  const isInterstate = !!(b.biz_state && pos !== b.biz_state);
+
+  const lines = [];
+  const hsnMap = new Map();
+  for (const it of items) {
+    const qty = Number(it.qty);
+    const unitPaise = Math.round(Number(it.unitPricePaise));
+    const gstPct = composition ? 0 : (Number(it.gstPct) || 0);
+    if (!Number.isFinite(qty) || qty <= 0) throw new BadRequest(`Invalid qty for ${it.name}`);
+    if (!Number.isInteger(unitPaise) || unitPaise < 0) throw new BadRequest(`Invalid unitPricePaise for ${it.name}`);
+    const linePaise = Math.round(qty * unitPaise);
+    const gstPaise = Math.round((linePaise * gstPct) / 100);
+    const cgstPaise = isInterstate ? 0 : Math.floor(gstPaise / 2);
+    const sgstPaise = isInterstate ? 0 : gstPaise - cgstPaise;
+    const igstPaise = isInterstate ? gstPaise : 0;
+    const hsn = (it.hsn || '').trim() || '996331';
+    lines.push({
+      name: it.name,
+      hsn,
+      qty,
+      unitPricePaise: unitPaise,
+      lineTaxablePaise: linePaise,
+      gstPct,
+      cgstPaise,
+      sgstPaise,
+      igstPaise,
+      gstAmountPaise: gstPaise,
+      lineTotalPaise: linePaise + gstPaise,
+    });
+    const e = hsnMap.get(hsn) || { hsn, taxable: 0, cgst: 0, sgst: 0, igst: 0, total: 0 };
+    e.taxable += linePaise;
+    e.cgst += cgstPaise;
+    e.sgst += sgstPaise;
+    e.igst += igstPaise;
+    e.total += linePaise + gstPaise;
+    hsnMap.set(hsn, e);
+  }
+  const subtotalPaise = lines.reduce((s, l) => s + l.lineTaxablePaise, 0);
+  const cgstPaise = lines.reduce((s, l) => s + l.cgstPaise, 0);
+  const sgstPaise = lines.reduce((s, l) => s + l.sgstPaise, 0);
+  const igstPaise = lines.reduce((s, l) => s + l.igstPaise, 0);
+  const totalPaise = subtotalPaise + cgstPaise + sgstPaise + igstPaise;
+
+  const fy = _financialYear(new Date());
+  const seq = await _nextSeq(client, businessId, fy.short);
+  const invoiceNo = _formatInvoiceNo(fy.short, seq);
+  const qrPayload = JSON.stringify({
+    sellerGstin: b.biz_gstin || null,
+    buyerGstin: recipientGstin || null,
+    invoice: invoiceNo,
+    date: new Date().toISOString().slice(0, 10),
+    totalInr: totalPaise / 100,
+  });
+
+  const insert = await client.query(
+    `INSERT INTO tax_invoices (
+       business_id, order_id, invoice_no, fy, fy_seq, invoice_date,
+       supplier_name, supplier_gstin, supplier_address, supplier_state_code,
+       recipient_name, recipient_gstin, recipient_address, recipient_state_code, recipient_phone,
+       place_of_supply, is_interstate, reverse_charge,
+       subtotal_paise, discount_paise, cgst_paise, sgst_paise, igst_paise,
+       service_charge_paise, round_off_paise, total_paise, amount_in_words,
+       items, hsn_summary,
+       payment_method, payment_status, paid_at,
+       qr_code_payload, issued_by_user_id, notes
+     ) VALUES (
+       $1, NULL, $2, $3, $4, NOW(),
+       $5, $6, $7, $8,
+       $9, $10, $11, $12, $13,
+       $14, $15, FALSE,
+       $16, 0, $17, $18, $19,
+       0, 0, $20, $21,
+       $22, $23,
+       NULL, 'unpaid', NULL,
+       $24, $25, $26
+     ) RETURNING *`,
+    [
+      businessId, invoiceNo, fy.short, seq,
+      b.biz_name, b.biz_gstin, b.biz_address, b.biz_state,
+      recipient.name || null, recipientGstin, recipient.address || null,
+      _stateFromGstin(recipientGstin) || null, recipient.phone || null,
+      pos, isInterstate,
+      subtotalPaise, cgstPaise, sgstPaise, igstPaise,
+      totalPaise, _amountInWords(totalPaise),
+      JSON.stringify(lines), JSON.stringify([...hsnMap.values()]),
+      qrPayload, issuedByUserId, notes,
+    ],
+  );
+  return _serialize(insert.rows[0]);
+}
+
 async function getById(businessId, invoiceId) {
   const r = await query(
     `SELECT * FROM tax_invoices
@@ -670,6 +798,7 @@ function _serialize(row) {
 module.exports = {
   issueFromOrder,
   issueFromSession,
+  issueFromRecurring,
   getById,
   list,
   cancel,

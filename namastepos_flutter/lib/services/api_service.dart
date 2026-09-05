@@ -11,9 +11,14 @@ import 'upsell_hints.dart';
 class ApiException implements Exception {
   final int? statusCode;
   final String message;
-  ApiException(this.message, [this.statusCode]);
+  /// The server's machine-readable error code (`{ error: 'RESUME_NOT_ALLOWED',
+  /// message }` from errorHandler.js), when present. Added 2026-09-06 (round 2
+  /// MOB #2) so billing screens can branch on RESUME_NOT_ALLOWED /
+  /// ACCOUNT_SUSPENDED / ADDON_EXPIRED_REBUY instead of matching English text.
+  final String? code;
+  ApiException(this.message, [this.statusCode, this.code]);
   @override
-  String toString() => 'ApiException($statusCode): $message';
+  String toString() => 'ApiException($statusCode${code == null ? '' : ' $code'}): $message';
 }
 
 class ApiService {
@@ -576,6 +581,18 @@ class ApiService {
     return (r as Map)['plans'] as List? ?? const [];
   }
 
+  /// POST /billing/resume (round 2 MOB #2, CONTRACTS §6). Un-pauses or undoes
+  /// a cancel-at-period-end. Returns either
+  ///   { requiresCheckout: true, checkout: { subscriptionId, checkoutOptions } }
+  ///   — nothing changed yet; open Razorpay with checkout.checkoutOptions —
+  /// or { resumed: true, status, ... } when the change is already in effect.
+  /// Throws ApiException 409 code RESUME_NOT_ALLOWED (choose a plan instead)
+  /// or 403 code ACCOUNT_SUSPENDED (tenant cannot lift an admin suspension).
+  Future<Map<String, dynamic>> resumeSubscription(String businessId) async {
+    final r = await _wrap(() => _dio.post('/businesses/$businessId/billing/resume'));
+    return (r as Map).cast<String, dynamic>();
+  }
+
   // ── Staff CRUD (Push 14a) ─────────────────────────────────────────────
   // Direct PIN-based staff management, used by the in-app Staff screen.
   // Separate from the email-invite flow on /staff/invites which the
@@ -875,6 +892,25 @@ class ApiService {
           '/businesses/$businessId/addons/subscribe',
           data: {'slug': slug},
         ));
+    return (r as Map).cast<String, dynamic>();
+  }
+
+  /// POST /addons/:slug/cancel → { activation }. Paid addons cancel at period
+  /// end (keep the paid days; `activation.cancelAtPeriodEnd` true, status still
+  /// active); free addons end immediately (status cancelled).
+  Future<Map<String, dynamic>?> cancelAddon(String businessId, String slug) async {
+    final r = await _wrap(() => _dio.post('/businesses/$businessId/addons/$slug/cancel'));
+    return ((r as Map)['activation'] as Map?)?.cast<String, dynamic>();
+  }
+
+  /// POST /addons/:slug/resume (round 2 MOB #2, CONTRACTS §6). Same reply
+  /// shapes as [subscribeAddon]: { requiresPayment:true, razorpayOrder, keyId }
+  /// for a paid addon (open the same Razorpay checkout; nothing is active until
+  /// [confirmAddonPayment]) or { activation } when reopened on the spot.
+  /// Throws ApiException 409 code ADDON_EXPIRED_REBUY (paid period over —
+  /// offer to buy again via [subscribeAddon]) or 403 (plan cannot hold it).
+  Future<Map<String, dynamic>> resumeAddon(String businessId, String slug) async {
+    final r = await _wrap(() => _dio.post('/businesses/$businessId/addons/$slug/resume'));
     return (r as Map).cast<String, dynamic>();
   }
 
@@ -1473,10 +1509,10 @@ class ApiService {
     await _wrap(() => _dio.delete('/businesses/$businessId/food-coupons/$id'));
   }
 
-  Future<List<dynamic>> listQrCodes(String businessId) async {
-    final r = await _wrap(() => _dio.get('/businesses/$businessId/qr-codes'));
-    return (r as Map)['qrCodes'] as List? ?? const [];
-  }
+  // `listQrCodes` (GET /qr-codes) removed 2026-09-06 (round 2 MOB #3): the
+  // path never existed on the server (featureGate.js review B5) and nothing in
+  // the app called it. The live QR surface is /ops/tables/:tableId/qr (+
+  // /rotate) — see the ops section above.
 
   Future<Map<String, dynamic>> getBillTemplate(String businessId) async {
     final r = await _wrap(() => _dio.get('/businesses/$businessId/bill-template'));
@@ -1720,10 +1756,15 @@ class ApiService {
       return resp.data;
     } on DioException catch (e) {
       final code = e.response?.statusCode;
-      final msg = e.response?.data is Map
-          ? (e.response!.data['message']?.toString() ?? e.message ?? 'API error')
+      final data = e.response?.data;
+      final msg = data is Map
+          ? (data['message']?.toString() ?? e.message ?? 'API error')
           : (e.message ?? 'Network error');
-      throw ApiException(msg, code);
+      // errorHandler.js puts the typed code under `error` (a string).
+      final errCode = data is Map && data['error'] is String
+          ? data['error'] as String
+          : null;
+      throw ApiException(msg, code, errCode);
     }
   }
 

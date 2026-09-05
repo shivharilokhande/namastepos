@@ -152,6 +152,11 @@ class OrderRepo {
                 price: i.price,
                 qty: i.qty,
                 note: i.note,
+                // 2026-09-06 (round 2, MOB #1): keep the picked variant +
+                // modifiers on the local row AND the queued body.
+                variantId: i.variantId,
+                variantLabel: i.variantLabel,
+                modifierLines: i.modifierLines,
               ))
           .toList();
 
@@ -221,13 +226,11 @@ class OrderRepo {
           // Backend Joi schema requires name + price in addition to menuItemId,
           // so we send the whole order_item row. Failing to include these
           // produces "BAD_REQUEST: Validation failed" on submit.
-          'items': order.items.map((i) => {
-            'menuItemId': i.menuItemId,
-            'name': i.name,
-            'price': i.price,
-            'qty': i.qty,
-            if (i.note != null) 'note': i.note,
-          }).toList(),
+          // 2026-09-06: OrderItem.toOrderBody() also carries variantId /
+          // variantLabel / modifierLines (server-authoritative pricing needs
+          // the ids); the queued outbox row is this same JSON, so an offline
+          // order replays with them too.
+          'items': order.items.map((i) => i.toOrderBody()).toList(),
           'source': source.name,
           'tableNo': tableNo,
           if (tableSessionId != null) 'tableSessionId': tableSessionId,

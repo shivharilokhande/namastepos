@@ -132,6 +132,10 @@ router.get('/customers', requirePermission('customers.read'), c.listCustomers);
 router.get('/customers/:businessId', requirePermission('customers.read'), c.getCustomer);
 router.get('/customers/:businessId/drilldown', requirePermission('customers.read'), c.drilldown);
 router.get('/customers/:businessId/audit', requirePermission('customers.read'), c.tenantAudit);
+// 2026-09-06 (CONTRACTS §5, admin review F-03): the tenant's EFFECTIVE feature
+// set (plan ∪ addon grants ∪ overrides) with the source of every key. Read-only;
+// aggregates entitlement, no tenant business data → customers.read.
+router.get('/customers/:businessId/effective-features', requirePermission('customers.read'), c.effectiveFeatures);
 // ── Tenant-privacy escape hatch (2026-09-03, founder-driven) ───────────
 // The drilldown above no longer returns the tenant's order ledger — only
 // aggregates (see customerAdminService.drilldown). This single-order lookup
@@ -571,6 +575,13 @@ const onlySuper = (req, _res, next) => {
   }
   next();
 };
+
+// ── Post-deploy review checks (2026-09-06, CONTRACTS §5) ────────────────
+// Super-admin ONLY: the response carries raw SQL and samples that name tenants
+// and money (₹0-GST invoices, stub IRNs, lapsed mandates). requirePermission
+// resolves the role LIVE (a demoted admin loses it at once) and settings.write
+// is held by super_admin alone; onlySuper is the belt on top.
+router.get('/ops/review-checks', requirePermission('settings.write'), onlySuper, c.reviewChecks);
 
 router.get('/team', onlySuper, c.teamList);
 router.post('/team', onlySuper, audit.middlewareLog('admin-team', 'create', (req, b) => ({ type: 'admin', id: b.admin?.id })), ...c.teamCreate);

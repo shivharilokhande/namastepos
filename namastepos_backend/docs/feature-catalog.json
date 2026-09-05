@@ -90,7 +90,8 @@
       "group": "Menu",
       "enforcement": "client",
       "clients": [
-        "mobile"
+        "mobile",
+        "dashboard"
       ]
     },
     {
@@ -306,10 +307,7 @@
       "key": "b2b_invoice",
       "label": "B2B invoices",
       "group": "Billing & accounting",
-      "enforcement": "client",
-      "clients": [
-        "dashboard"
-      ]
+      "enforcement": "middleware"
     },
     {
       "key": "einvoice_gst",
@@ -321,10 +319,7 @@
       "key": "recurring_invoices",
       "label": "Recurring invoices",
       "group": "Billing & accounting",
-      "enforcement": "client",
-      "clients": [
-        "dashboard"
-      ]
+      "enforcement": "route"
     },
     {
       "key": "accounting_pnl_bs",
@@ -366,13 +361,13 @@
       "key": "api_access",
       "label": "API access",
       "group": "Advanced",
-      "enforcement": "ungated"
+      "enforcement": "middleware"
     },
     {
       "key": "white_label",
       "label": "White-label branding",
       "group": "Advanced",
-      "enforcement": "ungated"
+      "enforcement": "service"
     }
   ]
 }

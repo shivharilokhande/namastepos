@@ -214,10 +214,21 @@ async function generateTickets(client, { businessId, orderId, orderItems }) {
       [businessId, orderId, stationId, ticketNo],
     );
     for (const it of items) {
+      // 2026-09-06: the kitchen must see the CHOICE, not just the dish. Both
+      // clients now send the plain item name with the variant in
+      // `variantLabel` and the add-ons in `modifierLines` (NP-201 shapes), so
+      // "Pizza" alone on a ticket would lose "(Large) +extra cheese".
+      const kotName = [
+        it.name,
+        it.variantLabel ? `(${it.variantLabel})` : null,
+        ...(Array.isArray(it.modifierLines)
+          ? it.modifierLines.map((m) => (m && (m.name || m.optionLabel) ? `+${m.name || m.optionLabel}` : null))
+          : []),
+      ].filter(Boolean).join(' ');
       await client.query(
         `INSERT INTO kot_ticket_items (ticket_id, order_item_id, name, qty, note)
          VALUES ($1, $2, $3, $4, $5)`,
-        [ins.rows[0].id, it.orderItemId || null, it.name, it.qty, it.note || null],
+        [ins.rows[0].id, it.orderItemId || null, kotName, it.qty, it.note || null],
       );
     }
     // NP-301: carry the grouped lines back out so the caller can enqueue the

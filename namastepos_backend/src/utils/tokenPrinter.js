@@ -13,8 +13,16 @@ function center(s, width = 32) {
 }
 function hr(width = 32) { return '-'.repeat(width); }
 
-/** Format an order into a 32-column receipt string. */
-function formatToken(order, business, width = 32) {
+/**
+ * Format an order into a 32-column receipt string.
+ *
+ * `opts.whiteLabel` (2026-09-06, CONTRACTS §4) is the resolved result of
+ * whiteLabelService.effective(businessId) — resolved by the CALLER, because this
+ * formatter is synchronous and the plan check is not. `poweredBy` is printed
+ * verbatim as the attribution line; null prints no line. Absent → NamastePOS,
+ * exactly as before.
+ */
+function formatToken(order, business, width = 32, opts = {}) {
   const lines = [];
   lines.push(center(business.name.toUpperCase(), width));
   if (business.address) lines.push(center(business.address, width));
@@ -57,7 +65,11 @@ function formatToken(order, business, width = 32) {
   lines.push('');
   lines.push(center('Thank you! Visit again.', width));
   if (business.upi_id) lines.push(center(`UPI: ${business.upi_id}`, width));
-  lines.push(center('-- Powered by NamastePOS --', width));
+  const wl = opts && opts.whiteLabel;
+  const poweredBy = wl && Object.prototype.hasOwnProperty.call(wl, 'poweredBy')
+    ? wl.poweredBy
+    : 'NamastePOS';
+  if (poweredBy) lines.push(center(`-- Powered by ${poweredBy} --`, width));
   return lines.join('\n');
 }
 

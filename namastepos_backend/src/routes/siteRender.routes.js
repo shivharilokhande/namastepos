@@ -65,7 +65,17 @@ router.get('/:slug', asyncHandler(async (req, res) => {
     [s.business_id],
   );
 
-  const color = safeColor(s.primary_color, '#FF6B35');
+  // White label (2026-09-06, CONTRACTS §4): resolved per request against the
+  // plan (whiteLabelService.effective re-checks hasFeature), so a downgrade
+  // brings "Powered by NamastePOS" back on the next page load. The tenant's
+  // own site colour still wins; the white-label accent is the fallback.
+  const wl = await require('../services/whiteLabelService').effective(s.business_id);
+  const color = safeColor(s.primary_color, safeColor(wl.enabled ? wl.accentColor : null, '#FF6B35'));
+  const footerHtml = wl.poweredBy === null
+    ? ''
+    : (wl.enabled && wl.brandName
+      ? `<footer>Powered by ${esc(wl.poweredBy)}</footer>`
+      : '<footer>Powered by <a href="https://namastepos.in">NamastePOS</a></footer>');
   const name = esc(s.biz_name);
   const phone = esc(s.contact_phone || '');
   const waPhone = (s.contact_phone || '').replace(/[^0-9]/g, '');
@@ -151,7 +161,7 @@ router.get('/:slug', asyncHandler(async (req, res) => {
       ${s.delivery_radius_km ? `Delivery within ${esc(s.delivery_radius_km)} km` : ''}
     </div>
   </main>
-  <footer>Powered by <a href="https://namastepos.in">NamastePOS</a></footer>
+  ${footerHtml}
 </body>
 </html>`);
 }));

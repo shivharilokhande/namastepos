@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { adminApi, DunningRow } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR, formatDateTime } from '@/lib/utils';
+import { useCan } from '@/lib/rbac';
 
 // 2026-09-03 — dunning / billing ops.
 //
@@ -35,6 +36,9 @@ export function BillingOpsPage() {
   const [timelineFor, setTimelineFor] = useState<DunningRow | null>(null);
   const [waiveFor, setWaiveFor] = useState<DunningRow | null>(null);
   const [markPaidFor, setMarkPaidFor] = useState<DunningRow | null>(null);
+  // F-10 — retry / waive / mark-paid are revenue.write (finance + super_admin).
+  const { can } = useCan();
+  const canAct = can('revenue.write');
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['dunning', includeRecovered],
@@ -198,19 +202,21 @@ export function BillingOpsPage() {
                       </Button>
                       {/* Only the row actually in flight is disabled — gating on
                           retry.isPending alone froze the button on every row. */}
-                      <Button variant="outline" size="sm" title="Re-send the recovery nudge"
-                              disabled={retry.isPending && retry.variables === r.businessId}
-                              onClick={() => retry.mutate(r.businessId)}>
-                        <RefreshCw className="mr-1 h-3 w-3" /> Retry
-                      </Button>
-                      <Button variant="outline" size="sm" title="Forgive this cycle"
-                              onClick={() => setWaiveFor(r)}>
-                        <HandCoins className="mr-1 h-3 w-3" /> Waive
-                      </Button>
-                      <Button variant="secondary" size="sm" title="Settled outside the gateway"
-                              onClick={() => setMarkPaidFor(r)}>
-                        <BadgeCheck className="mr-1 h-3 w-3" /> Mark paid
-                      </Button>
+                      {canAct && <>
+                        <Button variant="outline" size="sm" title="Re-send the recovery nudge"
+                                disabled={retry.isPending && retry.variables === r.businessId}
+                                onClick={() => retry.mutate(r.businessId)}>
+                          <RefreshCw className="mr-1 h-3 w-3" /> Retry
+                        </Button>
+                        <Button variant="outline" size="sm" title="Forgive this cycle"
+                                onClick={() => setWaiveFor(r)}>
+                          <HandCoins className="mr-1 h-3 w-3" /> Waive
+                        </Button>
+                        <Button variant="secondary" size="sm" title="Settled outside the gateway"
+                                onClick={() => setMarkPaidFor(r)}>
+                          <BadgeCheck className="mr-1 h-3 w-3" /> Mark paid
+                        </Button>
+                      </>}
                     </div>
                   </TableCell>
                 </TableRow>

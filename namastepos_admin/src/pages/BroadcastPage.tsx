@@ -17,6 +17,9 @@ const SEGMENTS = [
   { value: 'trialing', label: 'On trial' },
   { value: 'trial_ending', label: 'Trial ending (7 days)' },
   { value: 'past_due', label: 'Past due' },
+  // 2026-09-06: no `suspended` segment here on purpose — broadcastService
+  // .resolveRecipients only accepts active|trialing|past_due|trial_ending|plan:*
+  // and 400s on anything else. Add it there first, then list it here.
   { value: 'plan:free', label: 'On Starter (free)' },
   { value: 'plan:basic', label: 'On Growth' },
 ];

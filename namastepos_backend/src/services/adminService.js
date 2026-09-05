@@ -234,38 +234,369 @@ async function outletSiblings(businessId) {
  * idempotent (guarded WHERE) and both drop the feature cache so the gates
  * change with the row rather than 60 s later.
  *
- * NOTE: suspend does NOT touch the Razorpay mandate — an admin hold is not a
- * cancellation, and refunding/pausing billing during a hold is a founder
- * decision (see fix report).
+ * MANDATE (round-2 fix batch 2026-09-06, founder decision, CONTRACTS §5/§6):
+ * suspend now also cancels the Razorpay mandate AT CYCLE END when the row has
+ * one — a suspended tenant must not keep being debited for a service they
+ * cannot use, and the days already paid for are not refunded (no refunds).
+ * The cancellation is recorded the same way the owner's own cancel is
+ * (`cancel_at_period_end = TRUE`, `cancelled_at`), which is what every other
+ * path already understands: _onChargeSuccess refuses a stray charge on the
+ * old mandate, and the nightly sweep closes the row once the period has
+ * lapsed. A lifecycle row (`suspended`, meta.mandateCancelled) is the audit
+ * trail. Best-effort at the gateway: a Razorpay error never blocks the hold.
+ *
+ * restore of a PAID plan whose mandate is gone does NOT flip the row to
+ * `active` (that was the A1 hole in a new shape — a free paid plan for as long
+ * as nobody looked). It reuses the resume plumbing from round 1:
+ *   • paid period still running → `active` + cancel flag kept (they own those
+ *     days), and a fresh createSubscription() whose first charge is at the
+ *     period end; the flag clears in _onChargeSuccess via the reactivation
+ *     marker. The tenant's own POST /billing/resume returns the same checkout.
+ *   • paid period already lapsed → `cancelled` + a checkout charging now; the
+ *     first charge reactivates (A1 "rebuy" path).
+ *   • no gateway configured (non-prod manual mode) → restored to the parked
+ *     status with the flag cleared, as nothing can be billed anyway.
+ * Either way the reply carries `{ requiresCheckout: true, checkout }` — the
+ * admin console tells the founder the tenant has to re-authorise payment; the
+ * tenant sees it under /billing (`reactivationPending`, `cancelAtPeriodEnd`).
  */
 async function suspend(businessId) {
+  const cur = (await query(
+    `SELECT s.id, s.status, s.razorpay_subscription_id, s.cancel_at_period_end,
+            p.price_inr_paise, p.tier AS plan_tier
+       FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+      WHERE s.business_id = $1 LIMIT 1`,
+    [businessId],
+  )).rows[0];
+  if (!cur || cur.status === 'suspended') return null;
+
+  // A live mandate on a paid plan: stop future debits (cycle end, no refund).
+  const hasMandate = !!cur.razorpay_subscription_id && Number(cur.price_inr_paise) > 0;
+  let mandate = { cancelled: false, reason: 'no_gateway_subscription' };
+  if (hasMandate && !cur.cancel_at_period_end) {
+    try {
+      mandate = await require('./razorpayService').cancelSubscription(businessId, { atCycleEnd: true });
+    } catch (e) {
+      mandate = { cancelled: false, reason: 'gateway_error', error: e.message };
+      require('../config/logger').warn(`[suspend] gateway cancel failed for ${businessId}: ${e.message}`);
+    }
+  }
   const r = await query(
     `UPDATE subscriptions
         SET pre_suspend_status = status::text,
             suspended_at = NOW(),
             status = 'suspended',
+            cancel_at_period_end = CASE WHEN $2::boolean THEN TRUE ELSE cancel_at_period_end END,
+            cancelled_at = CASE WHEN $2::boolean THEN COALESCE(cancelled_at, NOW()) ELSE cancelled_at END,
             updated_at = NOW()
       WHERE business_id = $1 AND status <> 'suspended'
-      RETURNING id, business_id, status, pre_suspend_status, suspended_at`,
-    [businessId],
+      RETURNING id, business_id, status, pre_suspend_status, suspended_at,
+                cancel_at_period_end, current_period_end`,
+    // The flag records INTENT ("this mandate is not to renew"), so it is set
+    // whenever a mandate existed — even if the gateway call failed, the
+    // reactivation guard then protects against the stray charge.
+    [businessId, hasMandate],
   );
+  const row = r.rows[0] || null;
+  if (row) {
+    try {
+      await require('./churnService').logLifecycle(null, {
+        businessId,
+        subscriptionId: row.id,
+        event: 'suspended',
+        fromStatus: cur.status,
+        toStatus: 'suspended',
+        planTier: cur.plan_tier || null,
+        meta: { via: 'admin', mandateCancelled: mandate.cancelled === true, mandate },
+      });
+    } catch (_) { /* trail is non-fatal */ }
+  }
   try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
-  return r.rows[0] || null;
+  return row ? { ...row, mandate } : null;
 }
 
 async function restore(businessId) {
+  const cur = (await query(
+    `SELECT s.*, p.price_inr_paise, p.tier AS plan_tier
+       FROM subscriptions s LEFT JOIN plans p ON p.id = s.plan_id
+      WHERE s.business_id = $1 AND s.status = 'suspended' LIMIT 1`,
+    [businessId],
+  )).rows[0];
+  if (!cur) return null;
+
+  const target = cur.pre_suspend_status || 'active';
+  const paid = Number(cur.price_inr_paise) > 0;
+  // "Mandate gone" = the cancel flag is up on a row that had a gateway sub:
+  // suspend() put it there, or the owner had cancelled before the hold.
+  const mandateGone = cur.cancel_at_period_end === true && !!cur.razorpay_subscription_id;
+  const needsCheckout = paid && mandateGone && ['active', 'past_due'].includes(target);
+
+  const logRestored = async (toStatus, meta) => {
+    try {
+      await require('./churnService').logLifecycle(null, {
+        businessId,
+        subscriptionId: cur.id,
+        event: 'restored',
+        fromStatus: 'suspended',
+        toStatus,
+        planTier: cur.plan_tier || null,
+        meta: { via: 'admin', ...meta },
+      });
+    } catch (_) { /* trail is non-fatal */ }
+  };
+
+  if (!needsCheckout) {
+    const r = await query(
+      `UPDATE subscriptions
+          SET status = COALESCE(pre_suspend_status, 'active')::subscription_status,
+              pre_suspend_status = NULL,
+              suspended_at = NULL,
+              updated_at = NOW()
+        WHERE business_id = $1 AND status = 'suspended'
+        RETURNING id, business_id, status`,
+      [businessId],
+    );
+    try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
+    const row = r.rows[0] || null;
+    if (row) await logRestored(row.status, { requiresCheckout: false });
+    return row ? { ...row, requiresCheckout: false } : null;
+  }
+
+  const rzp = require('./razorpayService');
+  const mode = rzp.checkoutMode({ requireLive: true }); // plan-level rule
+  if (mode === 'unavailable') throw rzp.paymentsUnavailableError();
+  if (mode === 'manual') {
+    // Non-prod without a gateway: nothing can be billed, so the row goes back
+    // to where it was with the cancel flag cleared (mirrors the manual branch
+    // of subscriptionService.resume).
+    const r = await query(
+      `UPDATE subscriptions
+          SET status = COALESCE(pre_suspend_status, 'active')::subscription_status,
+              pre_suspend_status = NULL,
+              suspended_at = NULL,
+              cancel_at_period_end = FALSE,
+              cancelled_at = NULL,
+              updated_at = NOW()
+        WHERE business_id = $1 AND status = 'suspended'
+        RETURNING id, business_id, status`,
+      [businessId],
+    );
+    try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
+    const row = r.rows[0] || null;
+    if (row) await logRestored(row.status, { requiresCheckout: false, mode });
+    return row ? { ...row, requiresCheckout: false } : null;
+  }
+
+  const periodEndMs = cur.current_period_end ? new Date(cur.current_period_end).getTime() : 0;
+  const periodRunning = periodEndMs > Date.now();
   const r = await query(
-    `UPDATE subscriptions
-        SET status = COALESCE(pre_suspend_status, 'active')::subscription_status,
-            pre_suspend_status = NULL,
-            suspended_at = NULL,
-            updated_at = NOW()
-      WHERE business_id = $1 AND status = 'suspended'
-      RETURNING id, business_id, status`,
+    periodRunning
+      ? `UPDATE subscriptions
+            SET status = 'active',
+                pre_suspend_status = NULL,
+                suspended_at = NULL,
+                updated_at = NOW()
+          WHERE business_id = $1 AND status = 'suspended'
+          RETURNING id, business_id, status, cancel_at_period_end, current_period_end`
+      : `UPDATE subscriptions
+            SET status = 'cancelled',
+                cancelled_at = COALESCE(cancelled_at, NOW()),
+                pre_suspend_status = NULL,
+                suspended_at = NULL,
+                updated_at = NOW()
+          WHERE business_id = $1 AND status = 'suspended'
+          RETURNING id, business_id, status, cancel_at_period_end, current_period_end`,
     [businessId],
   );
+  const row = r.rows[0] || null;
   try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
-  return r.rows[0] || null;
+  if (!row) return null;
+  // The checkout: first charge at the period end while it is still paid for,
+  // now otherwise. createSubscription stamps the reactivation marker.
+  const checkout = await rzp.createSubscription(businessId, cur.plan_tier, {
+    billingPeriod: cur.billing_period || 'monthly',
+    startAt: periodRunning ? cur.current_period_end : null,
+  });
+  await logRestored(row.status, { requiresCheckout: true, periodRunning, checkoutSubscriptionId: checkout.subscriptionId });
+  return {
+    ...row,
+    requiresCheckout: true,
+    checkout,
+    message: periodRunning
+      ? `Restored. The payment mandate was cancelled during the suspension; the plan is paid up to ${new Date(cur.current_period_end).toLocaleDateString('en-IN')} and the owner must set up payment again from Billing to keep it after that.`
+      : 'Restored as cancelled: the paid period ended during the suspension. The owner must complete checkout from Billing to reactivate the plan.',
+  };
+}
+
+// ── Review checks (round-2 fix batch 2026-09-06, CONTRACTS §5) ────────────
+//
+// The 2026-09-05 code review left eight "run this read-only query on prod
+// after deploy" instructions scattered across reports. Nobody runs those twice.
+// This turns them into one super-admin endpoint (GET /admin/ops/review-checks)
+// that runs every check, returns the count, a sample (≤ 20 rows) and — on
+// purpose — the SQL it ran, so the founder can paste it into psql when the
+// number looks wrong. Read-only; nothing here writes.
+
+const REVIEW_SAMPLE_LIMIT = 20;
+
+const REVIEW_CHECK_SQL = Object.freeze({
+  zero_gst_invoices: `SELECT id, business_id, invoice_no, invoice_date, total_paise, reverse_charge
+  FROM tax_invoices
+ WHERE cgst_paise + sgst_paise + igst_paise = 0 AND total_paise > 0
+ ORDER BY invoice_date DESC`,
+  stub_irns: `SELECT id, business_id, irn, status, created_at
+  FROM einvoice_irns
+ WHERE is_stub
+ ORDER BY created_at DESC`,
+  aggregator_without_key: `SELECT business_id, provider, is_active, updated_at
+  FROM aggregator_credentials
+ WHERE is_active = TRUE
+ ORDER BY updated_at DESC`,
+  lapsed_cancel_rows: `SELECT business_id, status, cancel_at_period_end, current_period_end
+  FROM subscriptions
+ WHERE status = 'active' AND cancel_at_period_end AND current_period_end < NOW() - INTERVAL '3 days'
+ ORDER BY current_period_end`,
+  suspended_tenants: `SELECT s.business_id, b.name, s.pre_suspend_status, s.suspended_at, s.cancel_at_period_end
+  FROM subscriptions s JOIN businesses b ON b.id = s.business_id
+ WHERE s.status = 'suspended'
+ ORDER BY s.suspended_at DESC NULLS LAST`,
+  plans_with_unenforced_keys: `SELECT pf.tier_kind AS plan_code, p.name AS plan_name, p.is_public, p.is_active, pf.feature_key
+  FROM plan_features pf LEFT JOIN plans p ON p.tier = pf.tier_kind
+ WHERE pf.feature_key = ANY($1)
+ ORDER BY pf.tier_kind, pf.feature_key`,
+});
+
+async function _sampled(sql, params = []) {
+  const r = await query(sql, params);
+  return { count: r.rowCount, sample: r.rows.slice(0, REVIEW_SAMPLE_LIMIT) };
+}
+
+async function reviewChecks() {
+  const env = require('../config/env');
+  const registry = require('../config/featureRegistry');
+  const features = require('./featureService');
+  const checks = [];
+  const push = (c) => checks.push(c);
+
+  // 1. ₹0-GST tax invoices with a non-zero total (code review 2026-09-05:
+  //    omitted tax used to be written as 0 instead of the server GST).
+  {
+    const { count, sample } = await _sampled(REVIEW_CHECK_SQL.zero_gst_invoices);
+    push({
+      id: 'zero_gst_invoices',
+      label: 'Tax invoices with ₹0 GST and a non-zero total',
+      severity: count > 0 ? 'warn' : 'info',
+      count,
+      description: 'A GST tax invoice whose CGST+SGST+IGST is zero while the total is not. Legitimate only for exempt / nil-rated supplies; otherwise the tax was omitted at issue time.',
+      sql: REVIEW_CHECK_SQL.zero_gst_invoices,
+      sample,
+    });
+  }
+  // 2. Stub IRNs (migration 093).
+  {
+    const { count, sample } = await _sampled(REVIEW_CHECK_SQL.stub_irns);
+    push({
+      id: 'stub_irns',
+      label: 'E-invoice IRNs never filed with the IRP (stubs)',
+      severity: count > 0 ? 'critical' : 'info',
+      count,
+      description: 'einvoice_irns rows flagged is_stub by migration 093: plausible-looking IRNs that were never registered with the government portal. Tenants holding these must be told; the numbers are not valid for GST.',
+      sql: REVIEW_CHECK_SQL.stub_irns,
+      sample: sample.map((r) => ({ ...r, irn: r.irn ? `${String(r.irn).slice(0, 12)}…` : null })),
+    });
+  }
+  // 3. Aggregator credentials on a plan without `aggregators`.
+  {
+    const r = await query(REVIEW_CHECK_SQL.aggregator_without_key);
+    const offending = [];
+    for (const row of r.rows) {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await features.hasFeature(row.business_id, 'aggregators');
+      if (!ok) offending.push(row);
+    }
+    push({
+      id: 'aggregator_without_key',
+      label: 'Active aggregator credentials on a plan without the aggregators feature',
+      severity: offending.length > 0 ? 'warn' : 'info',
+      count: offending.length,
+      description: 'aggregator_credentials rows still active for a business whose effective plan (plan ∪ addons ∪ overrides) no longer includes `aggregators`. Ingestion for these is refused by the feature gate; the rows should be disabled or the tenant upgraded.',
+      sql: `${REVIEW_CHECK_SQL.aggregator_without_key}\n-- then, per row: featureService.hasFeature(business_id, 'aggregators') = false`,
+      sample: offending.slice(0, REVIEW_SAMPLE_LIMIT),
+    });
+  }
+  // 4. Cancel-at-period-end rows whose period lapsed > 3 days ago.
+  {
+    const { count, sample } = await _sampled(REVIEW_CHECK_SQL.lapsed_cancel_rows);
+    push({
+      id: 'lapsed_cancel_rows',
+      label: 'Cancelled-at-period-end subscriptions still active 3+ days after the period ended',
+      severity: count > 0 ? 'warn' : 'info',
+      count,
+      description: 'The nightly sweep (subscriptionService.sweepPeriodEndTransitions) moves these to cancelled; a non-zero count means the sweep has not run or is failing.',
+      sql: REVIEW_CHECK_SQL.lapsed_cancel_rows,
+      sample,
+    });
+  }
+  // 5. Suspended tenants.
+  {
+    const { count, sample } = await _sampled(REVIEW_CHECK_SQL.suspended_tenants);
+    push({
+      id: 'suspended_tenants',
+      label: 'Suspended tenants',
+      severity: 'info',
+      count,
+      description: 'Subscriptions in the admin-imposed `suspended` state. Each one is a support decision awaiting restore; their Razorpay mandate was cancelled at cycle end on suspend.',
+      sql: REVIEW_CHECK_SQL.suspended_tenants,
+      sample,
+    });
+  }
+  // 6. DB TLS verification.
+  {
+    const verified = process.env.DB_SSL_VERIFY === 'true' || !!process.env.PG_CA_CERT;
+    push({
+      id: 'db_ssl_unverified',
+      label: 'Database TLS certificate not verified',
+      severity: verified ? 'info' : (env.isProd() ? 'critical' : 'warn'),
+      count: verified ? 0 : 1,
+      description: 'Neither DB_SSL_VERIFY=true nor PG_CA_CERT is set, so the Postgres connection accepts any certificate (config/db.js). Set PG_CA_CERT to the provider CA bundle on Render.',
+      sql: null,
+      sample: [{ DB_SSL_VERIFY: process.env.DB_SSL_VERIFY || null, PG_CA_CERT: process.env.PG_CA_CERT ? '(set)' : null }],
+    });
+  }
+  // 7. Order tax enforcement mode.
+  {
+    const mode = env.ORDER_TAX_ENFORCE || 'log';
+    push({
+      id: 'order_tax_mode',
+      label: 'ORDER_TAX_ENFORCE mode',
+      severity: mode === 'enforce' ? 'info' : 'warn',
+      count: mode === 'enforce' ? 0 : 1,
+      description: 'Server-side order GST is only logged (not enforced) until ORDER_TAX_ENFORCE=enforce is set on Render. Flip it after ~1 week of clean logs (system review 2026-09-01).',
+      sql: null,
+      sample: [{ ORDER_TAX_ENFORCE: mode }],
+    });
+  }
+  // 8. Plan lines nothing enforces.
+  {
+    const ungated = registry.keysWithEnforcement('ungated');
+    const known = new Set(registry.keys());
+    const stray = (await query('SELECT DISTINCT feature_key FROM plan_features')).rows
+      .map((r) => r.feature_key).filter((k) => k && !known.has(k));
+    const keys = [...new Set([...ungated, ...stray])];
+    const { count, sample } = keys.length
+      ? await _sampled(REVIEW_CHECK_SQL.plans_with_unenforced_keys, [keys])
+      : { count: 0, sample: [] };
+    push({
+      id: 'plans_with_unenforced_keys',
+      label: 'Plan features sold but enforced nowhere',
+      severity: count > 0 ? 'warn' : 'info',
+      count,
+      description: `plan_features rows for keys the registry declares enforcement:'ungated' (${ungated.join(', ') || 'none'})${stray.length ? ` plus unregistered keys (${stray.join(', ')})` : ''}. Each is a plan-card line the product does not keep; see the registry entry's \`why\`.`,
+      sql: REVIEW_CHECK_SQL.plans_with_unenforced_keys.replace('$1', `ARRAY[${keys.map((k) => `'${k}'`).join(', ')}]`),
+      sample,
+    });
+  }
+  return { generatedAt: new Date().toISOString(), checks };
 }
 
 // ── Platform metrics ─────────────────────────────────────────────────────
@@ -395,6 +726,8 @@ module.exports = {
   getCustomer,
   suspend,
   restore,
+  reviewChecks,
+  REVIEW_CHECK_SQL,
   metrics,
   impersonate,
   createImpersonationCode,

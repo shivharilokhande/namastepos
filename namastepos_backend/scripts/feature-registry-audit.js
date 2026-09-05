@@ -75,7 +75,6 @@ const PLAN_FEED = path.join(BACKEND, 'tests', 'fixtures', 'plan-feed.json');
 // The reasons live in the registry entries' `why` field — one place, not two.
 // This is only the frozen membership list.
 const UNENFORCED_DEBT = Object.freeze([
-  'api_access', // no tenant API-key surface exists at all
   'customers_crm', // CRM screens are the directory screens; nothing branches
   'dashboard_access', // migration 034 sells it; nothing checks it
   // 2026-09-05 (entitlements review B8): ADDED DELIBERATELY. Its featureGate
@@ -91,7 +90,6 @@ const UNENFORCED_DEBT = Object.freeze([
   // gates the mic on the key (lib/constants/feature_keys.dart declares it
   // MobileSurface.gated) so it is enforced, and rule 3 below fires if the
   // gate is ever removed. Do not put it back without removing that gate.
-  'white_label', // no white-label implementation exists
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════

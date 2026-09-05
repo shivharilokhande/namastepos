@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Plus, Tag, Copy, Ban } from 'lucide-react';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -12,11 +12,16 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { adminApi, Coupon } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatDate, formatINR } from '@/lib/utils';
+import { useCan } from '@/lib/rbac';
+import { assignablePlans } from '@/lib/plans';
 
 export function CouponsPage() {
   const qc = useQueryClient();
   const { data: coupons = [], isError, error, refetch } = useQuery({ queryKey: ['coupons'], queryFn: () => adminApi.listCoupons() });
   const [creating, setCreating] = useState(false);
+  // F-10 — create/disable are coupons.write (finance + support are read-only).
+  const { can } = useCan();
+  const canWrite = can('coupons.write');
 
   const disable = useMutation({
     mutationFn: (id: string) => adminApi.disableCoupon(id),
@@ -41,7 +46,7 @@ export function CouponsPage() {
             {isError ? '—' : `${coupons.length} platform subscription coupons`}
           </p>
         </div>
-        <Button onClick={() => setCreating(true)}><Plus className="mr-2 h-4 w-4" /> New coupon</Button>
+        {canWrite && <Button onClick={() => setCreating(true)}><Plus className="mr-2 h-4 w-4" /> New coupon</Button>}
       </div>
 
       <Card>
@@ -85,7 +90,7 @@ export function CouponsPage() {
                     <Badge variant={c.status === 'active' ? 'success' : 'muted'}>{c.status}</Badge>
                   </TableCell>
                   <TableCell>
-                    {c.status === 'active' && (
+                    {c.status === 'active' && canWrite && (
                       <Button size="sm" variant="ghost" onClick={() => disable.mutate(c.id)}>
                         <Ban className="h-4 w-4 text-destructive" />
                       </Button>
@@ -152,9 +157,11 @@ function CreateCouponDialog({ onClose, onCreated }: { onClose: () => void; onCre
             <select value={form.appliesToPlan} onChange={(e) => set('appliesToPlan', e.target.value)}
                     className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
               <option value="">Any paid plan</option>
-              {plans
-                .filter((p: any) => (p.priceInr || 0) > 0)
-                .map((p: any) => (
+              {/* F-07 — public + active paid plans only; a private custom plan's
+                  tier code is a coupon nobody else can ever redeem. */}
+              {assignablePlans(plans)
+                .filter((p) => (p.priceInr || 0) > 0)
+                .map((p) => (
                   <option key={p.tier} value={p.tier}>{p.name} only</option>
                 ))}
             </select>

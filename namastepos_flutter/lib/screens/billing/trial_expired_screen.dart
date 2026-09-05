@@ -13,7 +13,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../models/subscription.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/subscription_provider.dart';
 import 'billing_screen.dart';
 
 class TrialExpiredScreen extends StatelessWidget {
@@ -23,6 +25,13 @@ class TrialExpiredScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final bizName = auth.business?.name ?? 'your business';
+    // Round 2 MOB #2 (CONTRACTS §6): if the row is admin-suspended the way out
+    // is support, not checkout — say so and offer no upgrade CTA. Any other
+    // status (incl. ones this build has never heard of) falls through to the
+    // normal trial copy; nothing here can throw on an unknown status.
+    final sub = context.watch<SubscriptionProvider>().subscription;
+    final suspended = sub?.isSuspended == true;
+    if (suspended) return _suspended(context, sub!);
 
     return Scaffold(
       backgroundColor: AppColors.surface,
@@ -43,7 +52,9 @@ class TrialExpiredScreen extends StatelessWidget {
                     size: 48, color: AppColors.warning),
               ),
               const SizedBox(height: 28),
-              const Text('Your 14-day trial has ended',
+              // No hardcoded trial length (TRIAL_DAYS is a server env; it has
+              // been 7, not 14, since 2026-08-26).
+              const Text('Your free trial has ended',
                   textAlign: TextAlign.center,
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
               const SizedBox(height: 10),
@@ -112,6 +123,53 @@ class TrialExpiredScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
+              TextButton(
+                onPressed: () async {
+                  await context.read<AuthProvider>().logout();
+                },
+                child: const Text('Log out',
+                    style: TextStyle(color: AppColors.textSecondary)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Suspended variant — same takeover layout, support message, log-out only.
+  Widget _suspended(BuildContext context, Subscription sub) {
+    final since = sub.suspension?.since;
+    return Scaffold(
+      backgroundColor: AppColors.surface,
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 96,
+                height: 96,
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.block, size: 48, color: AppColors.error),
+              ),
+              const SizedBox(height: 28),
+              const Text('Account suspended — contact support',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 10),
+              Text(
+                '${sub.suspension?.message ?? SuspensionInfo.defaultMessage}'
+                '${since == null ? '' : '\nSuspended since ${since.toLocal().toIso8601String().substring(0, 10)}.'}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    color: AppColors.textSecondary, fontSize: 14, height: 1.4),
+              ),
+              const SizedBox(height: 24),
               TextButton(
                 onPressed: () async {
                   await context.read<AuthProvider>().logout();

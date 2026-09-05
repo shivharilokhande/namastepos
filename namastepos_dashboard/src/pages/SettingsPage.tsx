@@ -10,6 +10,11 @@ import {
 } from '@/components/ui/dialog';
 import { ffApi } from '@/api/namastepos';
 import { api, apiError, setBusinessCache } from '@/api/client';
+// 2026-09-06 (round 2): owner-only, plan-gated sections. Each card carries
+// its own <RequireFeature> upgrade card (api_access / white_label) and
+// returns null for staff, so this page needs no extra plumbing.
+import { ApiAccessCard } from '@/components/settings/ApiAccessCard';
+import { WhiteLabelCard } from '@/components/settings/WhiteLabelCard';
 
 // 2026-08-25 — mirror of the backend Joi enum on PUT /businesses/:id/aggregators.
 // Zomato/Swiggy are the two the founder cares about; dunzo/magicpin exist in
@@ -533,6 +538,12 @@ export function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* ── White label (2026-09-06, CONTRACTS §4) ──────────────────────── */}
+      <WhiteLabelCard />
+
+      {/* ── API access (2026-09-06, CONTRACTS §3) ───────────────────────── */}
+      <ApiAccessCard />
 
       {/* Aggregator connect/edit dialog */}
       <Dialog open={aggDialogOpen} onOpenChange={setAggDialogOpen}>

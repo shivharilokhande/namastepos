@@ -545,27 +545,19 @@ async function drainScheduledMessages() {
 }
 
 async function dueRecurringInvoices() {
-  // For each due recurring invoice, generate a new invoice + advance next_run_at.
-  const due = await query(
-    `SELECT * FROM recurring_invoices
-      WHERE is_active = TRUE AND next_run_at <= NOW()
-        AND (end_at IS NULL OR end_at > NOW())
-      LIMIT 50`,
-  );
-  for (const r of due.rows) {
-    // Simplified: log and bump. Real generation logic depends on tenant.
-    logger.info(`Recurring invoice fired for customer ${r.customer_id}`);
-    const interval = {
-      weekly: "INTERVAL '7 days'",
-      monthly: "INTERVAL '1 month'",
-      quarterly: "INTERVAL '3 months'",
-      yearly: "INTERVAL '1 year'",
-    }[r.frequency] || "INTERVAL '1 month'";
-    await query(
-      `UPDATE recurring_invoices SET next_run_at = next_run_at + ${interval} WHERE id = $1`,
-      [r.id],
-    );
+  // 2026-09-06 (round-2 review / CONTRACTS §2): until this batch the tick
+  // logged "fired" and bumped next_run_at — no invoice was ever produced for a
+  // feature sold on Advanced/Enterprise. The real generator lives in
+  // services/recurringInvoiceService.runDue: one transaction per schedule,
+  // FOR UPDATE SKIP LOCKED, an idempotent (schedule, period) claim, a GST tax
+  // invoice via taxInvoiceService.issueFromRecurring, then the advance of
+  // next_run_at — all or nothing per schedule.
+  const recurring = require('./recurringInvoiceService');
+  const out = await recurring.runDue({ limit: 50 });
+  if (out.due > 0) {
+    logger.info(`[recurring-invoices] due=${out.due} generated=${out.generated} skipped(no plan key)=${out.skipped}`);
   }
+  return out;
 }
 
 async function autoRestock86() {

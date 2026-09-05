@@ -208,7 +208,10 @@ module.exports = {
   print: asyncHandler(async (req, res) => {
     const o = await order.byId(req.params.businessId, req.params.orderId);
     const biz = await auth.getBusinessById(req.params.businessId);
-    const receipt = formatToken(o, biz);
+    // 2026-09-06 (white_label): the printed footer honours the tenant's brand
+    // when the plan grants the key (re-checked inside effective()).
+    const wl = await require('../services/whiteLabelService').effective(req.params.businessId);
+    const receipt = formatToken(o, biz, 32, { whiteLabel: wl });
     await order.markPrinted(req.params.businessId, req.params.orderId);
     res.json({ order: o, receipt });
   }),

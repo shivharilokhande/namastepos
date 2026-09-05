@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Check, Download, FileText } from 'lucide-react';
@@ -13,6 +14,8 @@ import { trackUpgradePaid } from '@/lib/activation';
 import { formatINR, formatDate } from '@/lib/utils';
 import { escapeHtml } from '@/lib/receiptPrint';
 import { TIER_KIND_COLORS, TIER_KIND_LADDER, TIER_KIND_TAGLINES } from '@/lib/planTiers';
+import { featureLabel, serverLabelsFor } from '@/lib/featureLabels';
+import axios from 'axios';
 
 declare global {
   interface Window { Razorpay: any; }
@@ -128,60 +131,11 @@ function openInvoicePreview(inv: any, sub: any, biz: any, win?: Window | null) {
   w.document.close();
 }
 
-// Push 14f — readable labels for the raw feature keys stored in
-// plan_features. Anything missing falls back to a humanised key, so
-// adding a brand-new feature still shows up in the compare card (just
-// with its raw name) until we drop a label here.
-const FEATURE_LABELS: Record<string, string> = {
-  pos: 'POS / new order',
-  orders: 'Orders list',
-  token_generation: 'Token generation',
-  tables_single_floor: '1 floor of tables',
-  tables_multi_floor: 'Multi-floor + drag layout',
-  menu_basic: 'Basic menu',
-  menu_variants_modifiers: 'Variants + modifier groups',
-  reports_basic: 'Daily + monthly reports',
-  expenses: 'Expenses tracking',
-  invoice_basic: 'GST invoices',
-  b2b_invoice: 'B2B / GST invoices',
-  staff_lite: 'Staff (PIN logins)',
-  staff_unlimited: 'Unlimited staff accounts',
-  customers_basic: 'Customer directory',
-  customers_crm: 'CRM with notes',
-  loyalty: 'Loyalty points',
-  memberships: 'Memberships',
-  reviews: 'Customer reviews',
-  reservations: 'Reservations',
-  wastage: 'Wastage tracking',
-  daily_closing: 'Daily closing',
-  kds: 'KDS (kitchen display)',
-  captain_mode: 'Captain mode',
-  driver_mode: 'Driver / delivery',
-  aggregators: 'Aggregator integrations (Zomato/Swiggy)',
-  qr_ordering: 'QR ordering',
-  whatsapp_marketing: 'WhatsApp marketing',
-  recipe_costing: 'Recipe costing',
-  voice_pos: 'Voice POS',
-  bill_split: 'Bill split',
-  surge_pricing: 'Surge pricing',
-  marketplace_addons: 'Marketplace add-ons',
-  multi_outlet: 'Multi-outlet management',
-  accounting_pnl_bs: 'P&L · Balance Sheet · TB',
-  // 2026-09-05 — the capability is the IRN/e-invoice document pipeline; the
-  // filing leg needs a GSP/IRP connection NamastePOS does not have yet. The
-  // label must not read as "you can file from here".
-  einvoice_gst: 'E-invoice ready (GSP connection required)',
-  recurring_invoices: 'Recurring invoices',
-  bank_reconcile: 'Bank reconciliation',
-  heat_map: 'Heat map',
-  forecast: 'Forecasting',
-  dead_stock: 'Dead-stock analytics',
-  bulk_import: 'Bulk import',
-  api_access: 'API access',
-  white_label: 'White-label',
-  tds_tcs: 'TDS / TCS',
-  multi_currency_fx: 'Multi-currency / FX',
-};
+// D-18 (2026-09-06): the hand-maintained 45-entry FEATURE_LABELS map that
+// lived here (7 registry keys missing → raw "pnl statement" on plan cards) is
+// gone. Labels come from @/lib/featureLabels: server-sent labels when the
+// plan feed carries them, else a complete mirror of the backend registry,
+// else a humanised key.
 
 // 2026-09-04 — colours + taglines moved to @/lib/planTiers, which mirrors
 // the backend's tier-kind ladder. The local three-entry maps here had gone
@@ -200,6 +154,36 @@ function loadRazorpayScript(): Promise<void> {
     document.body.appendChild(s);
   });
 }
+
+// 2026-09-06 (round 2, CONTRACTS §6): one place that opens a Razorpay
+// subscription checkout from the server's `checkoutOptions`. Used by
+// change-plan AND by resume/restore, which now returns the same shape when
+// the old mandate is gone (`{ requiresCheckout: true, checkout: {
+// subscriptionId, checkoutOptions } }`). Resolves when the customer completes
+// the modal; rejects with 'Cancelled' on dismiss (same shape the mutations'
+// onError already expects). Completing the modal is NOT activation — the
+// webhook is; callers just invalidate ['sub'] and let `reactivationPending`
+// tell the owner what is happening.
+async function openRazorpayCheckout(checkoutOptions: Record<string, unknown>): Promise<void> {
+  await loadRazorpayScript();
+  return new Promise<void>((resolve, reject) => {
+    const rz = new window.Razorpay({
+      ...checkoutOptions,
+      handler: () => resolve(),
+      modal: { ondismiss: () => reject(new Error('Cancelled')) },
+    });
+    rz.open();
+  });
+}
+
+/** Server error code from an axios error (`{ error }` or `{ code }` body), else null. */
+function apiErrorCode(e: unknown): string | null {
+  if (!axios.isAxiosError(e)) return null;
+  const d = e.response?.data as { error?: string; code?: string } | undefined;
+  return d?.error || d?.code || null;
+}
+
+const SUSPENDED_MESSAGE = 'Account suspended — contact support';
 
 export function BillingPage() {
   const qc = useQueryClient();
@@ -289,11 +273,17 @@ export function BillingPage() {
   const change = useMutation({
     mutationFn: async (tier: string) => {
       const res = await ffApi.changePlan(tier, billingPeriod);
+      // 2026-09-06 (CONTRACTS §6): a restore of a paid plan whose mandate is
+      // gone answers with the resume shape — `{ requiresCheckout, checkout:
+      // { subscriptionId, checkoutOptions } }`. Normalise it onto the fields
+      // the legacy branch below reads so both shapes take the same path.
+      const checkoutOptions = res.checkoutOptions || res.checkout?.checkoutOptions;
+      const subscriptionId = res.subscriptionId || res.checkout?.subscriptionId;
       // Free downgrade OR manual activation (backend billingController
       // returns { manual: true, subscription } — no subscriptionId — when
       // Razorpay isn't configured, so NO mandate is ever created): keep the
       // old instant path, deliberately WITHOUT the autopay consent popup.
-      if (tier === 'free' || res.manual === true || !res.subscriptionId) return res;
+      if (tier === 'free' || res.manual === true || !subscriptionId || !checkoutOptions) return res;
       // Bug #14 (2026-08-25): from here on the Razorpay checkout WILL open
       // and set up a recurring mandate — block on the RBI-required
       // disclosure and only proceed if the owner explicitly agrees.
@@ -314,28 +304,28 @@ export function BillingPage() {
       // Same rejection shape as dismissing the Razorpay modal below, so
       // onError shows the familiar "Cancelled" toast and no charge happens.
       if (!agreed) throw new Error('Cancelled');
-      await loadRazorpayScript();
-      return new Promise((resolve, reject) => {
-        const rz = new window.Razorpay({
-          ...res.checkoutOptions,
-          handler: () => resolve(res),
-          modal: { ondismiss: () => reject(new Error('Cancelled')) },
-        });
-        rz.open();
-      });
+      await openRazorpayCheckout(checkoutOptions);
+      return res;
     },
     onSuccess: (res: any) => {
       // X2 proration — if the upgrade carries a pro-rated charge for the
       // unused remainder of the current period, tell the owner.
       const prorate = Number(res?.prorationInr || 0);
-      if (prorate > 0) {
+      if (res?.requiresCheckout) {
+        toast.success('Payment set up — your plan reactivates as soon as the first charge confirms');
+      } else if (prorate > 0) {
         toast.success(`Plan upgraded — ₹${prorate.toLocaleString('en-IN')} charged now for the rest of this cycle`);
       } else {
         toast.success('Plan updated');
       }
       qc.invalidateQueries({ queryKey: ['sub'] });
+      qc.invalidateQueries({ queryKey: ['me'] });
     },
-    onError: (e) => toast.error(apiError(e)),
+    onError: (e) => {
+      // 2026-09-06 (CONTRACTS §6): a suspended account cannot self-serve.
+      if (apiErrorCode(e) === 'ACCOUNT_SUSPENDED') { toast.error(SUSPENDED_MESSAGE); return; }
+      toast.error(apiError(e));
+    },
   });
 
   // ── Cancel flow (2026-09-05, churn batch) ─────────────────────────────
@@ -392,13 +382,54 @@ export function BillingPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
+  // 2026-09-06 (round 2, CONTRACTS §6): POST /billing/resume now has FOUR
+  // outcomes, not one —
+  //   200 { subscription }                      → resumed on the spot
+  //   200 { requiresCheckout, checkout }        → the Razorpay mandate is gone
+  //        (cancelled at cycle end after a suspend / lapse), so the server
+  //        opened a fresh subscription; we run the RBI consent popup and the
+  //        checkout exactly like an upgrade. The row flips back to active only
+  //        when the first charge lands (`reactivationPending` meanwhile).
+  //   409 RESUME_NOT_ALLOWED                    → nothing to resume from here
+  //   403 ACCOUNT_SUSPENDED                     → admin suspension; support only
   const resume = useMutation({
-    mutationFn: ffApi.resumeSubscription,
-    onSuccess: () => {
-      toast.success('Resumed on the same plan');
-      qc.invalidateQueries({ queryKey: ['sub'] });
+    mutationFn: async () => {
+      const res = await ffApi.resumeSubscription();
+      const checkoutOptions = res?.checkout?.checkoutOptions;
+      if (!res?.requiresCheckout || !checkoutOptions) return res;
+      const cadence: 'monthly' | 'yearly' = (sub?.billingPeriod as any) === 'yearly' && sub?.plan?.priceYearlyInr != null
+        ? 'yearly' : 'monthly';
+      const agreed = await new Promise<boolean>((resolve) => {
+        setConsent({
+          planName: sub?.plan?.name || 'your plan',
+          amountInr: cadence === 'yearly' ? (sub?.plan?.priceYearlyInr ?? 0) : (sub?.plan?.priceInr ?? 0),
+          cadence,
+          resolve,
+        });
+      });
+      if (!agreed) throw new Error('Cancelled');
+      await openRazorpayCheckout(checkoutOptions);
+      return res;
     },
-    onError: (e) => toast.error(apiError(e)),
+    onSuccess: (res: any) => {
+      if (res?.requiresCheckout) {
+        toast.success('Payment set up — your plan reactivates as soon as the first charge confirms');
+      } else {
+        toast.success('Resumed on the same plan');
+      }
+      qc.invalidateQueries({ queryKey: ['sub'] });
+      qc.invalidateQueries({ queryKey: ['me'] });
+    },
+    onError: (e) => {
+      const code = apiErrorCode(e);
+      if (code === 'ACCOUNT_SUSPENDED') { toast.error(SUSPENDED_MESSAGE); return; }
+      if (code === 'RESUME_NOT_ALLOWED') {
+        toast.error('This subscription cannot be resumed from here — choose a plan below to start again.');
+        qc.invalidateQueries({ queryKey: ['sub'] });
+        return;
+      }
+      toast.error(apiError(e));
+    },
   });
 
   const downgrade = useMutation({
@@ -428,6 +459,14 @@ export function BillingPage() {
     },
     onError: (e) => toast.error(apiError(e)),
   });
+
+  // 2026-09-06 (CONTRACTS §6): `subscriptions.status` may be 'suspended'.
+  // Every self-serve billing action is disabled while it is — the server
+  // answers 403 ACCOUNT_SUSPENDED anyway; this just stops the owner clicking
+  // into that wall. `pendingPlan` names a scheduled downgrade.
+  const isSuspended = sub?.status === 'suspended';
+  const pendingPlan: { name?: string; code?: string; effectiveAt?: string | null } | null = sub?.pendingPlan || null;
+  const pendingPlanDate: string | null = pendingPlan?.effectiveAt || sub?.currentPeriodEnd || null;
 
   // Order plans by price for a natural compare order. Cheapest first.
   const orderedPlans = [...plans].sort((a: any, b: any) => (a.priceInr || 0) - (b.priceInr || 0));
@@ -485,6 +524,36 @@ export function BillingPage() {
           <Button variant="default" onClick={() => { const el = document.getElementById('choose-plan'); el?.scrollIntoView({ behavior: 'smooth' }); }}>
             Update payment
           </Button>
+        </div>
+      )}
+
+      {/* 2026-09-06 (round 2, CONTRACTS §6) — admin SUSPENSION. Distinct from
+          pause: the owner cannot resume it, change plan or cancel from here.
+          One line, one action (Support). `suspension.message` is the server's
+          plain-language reason when it chose to give one. */}
+      {isSuspended && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+          data-testid="suspended-banner">
+          <div className="flex-1">
+            <div className="font-semibold text-red-800">{SUSPENDED_MESSAGE}</div>
+            <div className="text-sm text-red-700">
+              {sub?.suspension?.message || 'Your account has been suspended by NamastePOS. Billing actions are disabled until it is restored.'}
+              {sub?.suspension?.since && <> Suspended since {formatDate(sub.suspension.since)}.</>}
+            </div>
+          </div>
+          <Button asChild variant="default"><Link to="/support">Contact support</Link></Button>
+        </div>
+      )}
+
+      {/* 2026-09-06 — a re-checkout has been completed but the first charge has
+          not landed yet. Features come back when the webhook confirms it. */}
+      {sub?.reactivationPending && !isSuspended && (
+        <div className="rounded-lg border border-sky-300 bg-sky-50 p-4" data-testid="reactivation-banner">
+          <div className="font-semibold text-sky-900">Reactivation pending</div>
+          <div className="text-sm text-sky-800">
+            We are waiting for your payment to confirm. Your plan switches back on automatically as soon as the first
+            charge lands — usually within a few minutes. Nothing has been deleted.
+          </div>
         </div>
       )}
 
@@ -689,7 +758,7 @@ export function BillingPage() {
                     <div> so both children are legal siblings. */}
                 <div className="text-sm text-muted-foreground flex items-center gap-2 flex-wrap">
                   <span>{sub.plan?.name} ·</span>
-                  <Badge variant={sub.status === 'active' ? 'success' : 'warning'}>{sub.status}</Badge>
+                  <Badge variant={sub.status === 'active' ? 'success' : sub.status === 'suspended' ? 'destructive' : 'warning'}>{sub.status}</Badge>
                   {/* FF-402d — surface the ACTUAL cadence on the current
                       plan card so an owner on yearly can see it clearly
                       and doesn't assume they're being charged monthly. */}
@@ -738,14 +807,23 @@ export function BillingPage() {
               );
             })()}
             {sub.cancelAtPeriodEnd && <div className="text-destructive">Will not auto-renew</div>}
+            {/* 2026-09-06 (CONTRACTS §6) — a downgrade is SCHEDULED, not applied
+                on the spot; say where the account lands and when. */}
+            {pendingPlan && (
+              <div className="text-amber-700" data-testid="pending-plan">
+                Moves to <strong>{pendingPlan.name || pendingPlan.code}</strong>
+                {pendingPlanDate ? <> on {formatDate(pendingPlanDate)}</> : null}
+              </div>
+            )}
             <div className="flex flex-wrap gap-2 pt-2">
-              {sub.status === 'active' && !sub.cancelAtPeriodEnd && (
+              {sub.status === 'active' && !sub.cancelAtPeriodEnd && !isSuspended && (
                 <Button variant="outline" size="sm" onClick={() => setCancelOpen(true)}>
                   Cancel subscription
                 </Button>
               )}
-              {(sub.cancelAtPeriodEnd || sub.status === 'paused') && (
-                <Button variant="default" size="sm" disabled={resume.isPending} onClick={() => resume.mutate()}>
+              {(sub.cancelAtPeriodEnd || sub.status === 'paused' || pendingPlan) && !isSuspended && (
+                <Button variant="default" size="sm" disabled={resume.isPending || !!sub.reactivationPending}
+                  onClick={() => resume.mutate()}>
                   {sub.status === 'paused' ? 'Resume now' : 'Keep my plan'}
                 </Button>
               )}
@@ -878,7 +956,7 @@ export function BillingPage() {
                     ) : visibleFeatures.map((k) => (
                       <li key={k} className="flex items-start gap-2">
                         <Check className="h-4 w-4 mt-0.5 text-emerald-600 flex-shrink-0" />
-                        <span>{FEATURE_LABELS[k] || k.replace(/_/g, ' ')}</span>
+                        <span>{featureLabel(k, serverLabelsFor(p))}</span>
                       </li>
                     ))}
                     {hidden > 0 && (
@@ -893,7 +971,8 @@ export function BillingPage() {
                     <Button className="w-full mt-4"
                       style={{ backgroundColor: color, color: 'white' }}
                       onClick={() => change.mutate(p.tier)}
-                      disabled={change.isPending}>
+                      title={isSuspended ? SUSPENDED_MESSAGE : undefined}
+                      disabled={change.isPending || isSuspended}>
                       {p.priceInr === 0
                         ? `Downgrade to ${p.name}`
                         : isCadenceSwitch
@@ -947,7 +1026,8 @@ export function BillingPage() {
                   <Button
                     className="w-full mt-3"
                     variant={current ? 'outline' : 'default'}
-                    disabled={current || change.isPending}
+                    title={isSuspended ? SUSPENDED_MESSAGE : undefined}
+                    disabled={current || change.isPending || isSuspended}
                     onClick={() => change.mutate(p.tier)}
                   >
                     {current

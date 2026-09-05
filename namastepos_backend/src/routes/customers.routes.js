@@ -4,6 +4,7 @@
 const express = require('express');
 const c = require('../controllers/customerController');
 const { requireAuth, requireBusinessOwnership, requireRole } = require('../middleware/auth');
+const requireStaffPerm = require('../middleware/requireStaffPerm');
 const requireAddon = require('../middleware/requireAddon');
 const noPlatformStaff = require('../middleware/noPlatformStaff');
 const idempotent = require('../middleware/idempotent');
@@ -27,15 +28,23 @@ router.use(
 );
 
 // Customer CRUD
-router.get('/', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), ...c.list);
-router.get('/lookup', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), c.lookup); // ?phone=…
+// 2026-09-06 (CONTRACTS §7): the read AND write paths are gated on the
+// `customers` staff permission instead of a hard-coded role list. Before this,
+// POST / and PATCH /:id had NO gate at all — a cook could rewrite a diner's
+// name and phone — while the reads named roles, so an owner who ticked
+// `customers` for a captain (a default grant, see DEFAULT_PERMS_BY_ROLE) still
+// saw that captain 403 on the lookup the POS needs. Owner always passes;
+// DELETE stays owner-only and points stay owner/manager below.
+router.get('/', requireStaffPerm('customers'), ...c.list);
+router.get('/lookup', requireStaffPerm('customers'), c.lookup); // ?phone=…
 // NP-401 note: POST / is an UPSERT keyed on the phone number and PATCH
 // /:customerId sets absolute field values — replaying either is already a
-// no-op (no duplicate row, no drifting balance), so neither is gated. The
-// points endpoint below is the one that moves a RELATIVE balance.
-router.post('/', ...c.upsert);
-router.get('/:customerId', requireRole(['business_owner', 'staff_manager', 'staff_cashier']), c.get);
-router.patch('/:customerId', ...c.update);
+// no-op (no duplicate row, no drifting balance), so neither needs the
+// idempotency gate. The points endpoint below is the one that moves a
+// RELATIVE balance.
+router.post('/', requireStaffPerm('customers'), ...c.upsert);
+router.get('/:customerId', requireStaffPerm('customers'), c.get);
+router.patch('/:customerId', requireStaffPerm('customers'), ...c.update);
 router.delete('/:customerId', requireRole(['business_owner']), c.remove);
 router.post(
   '/:customerId/points',

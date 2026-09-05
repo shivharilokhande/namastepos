@@ -22,6 +22,11 @@ class ModifierLine {
     this.priceDelta = 0,
   });
 
+  /// Wire shape of one modifier on POST /orders `items[].modifierLines[]` —
+  /// the "mobile" spelling the backend Joi schema admits alongside the web
+  /// one (orderController.js: optionId/optionLabel/priceDelta; the service
+  /// reads the id from `optionId ?? modifierId`). Only the id is trusted;
+  /// labels/deltas are re-derived server-side (NP-202).
   Map<String, dynamic> toJson() => {
         'groupId': groupId,
         'groupLabel': groupLabel,
@@ -29,6 +34,16 @@ class ModifierLine {
         'optionLabel': optionLabel,
         'priceDelta': priceDelta,
       };
+
+  factory ModifierLine.fromJson(Map<String, dynamic> m) => ModifierLine(
+        groupId: m['groupId']?.toString(),
+        groupLabel: (m['groupLabel'] ?? '').toString(),
+        optionId: (m['optionId'] ?? m['modifierId'])?.toString(),
+        optionLabel: (m['optionLabel'] ?? m['name'] ?? '').toString(),
+        priceDelta: ((m['priceDelta'] ?? m['priceDeltaInr']) as num?)
+                ?.toDouble() ??
+            0,
+      );
 }
 
 class CartItem {
@@ -61,6 +76,17 @@ class CartItem {
   }
 
   double get lineTotal => unitPrice * qty;
+
+  /// `modifierLines` for an OrderItem / the create body; null when none so
+  /// the field is omitted from the wire (Joi allows null too).
+  List<Map<String, dynamic>>? get modifierLinesJson =>
+      modifiers.isEmpty ? null : modifiers.map((m) => m.toJson()).toList();
+
+  /// Non-empty variant label or null (the sheet passes '' for unnamed sizes).
+  String? get variantLabelOrNull =>
+      (variantLabel == null || variantLabel!.trim().isEmpty)
+          ? null
+          : variantLabel!.trim();
 
   /// Composite key used to dedupe same-config lines. If two CartItems have
   /// the same key, they collapse into one with summed qty.

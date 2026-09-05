@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { adminApi } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR, formatDateTime } from '@/lib/utils';
+import { SUBSCRIPTION_STATUSES, subscriptionStatusVariant } from '@/lib/plans';
 
 // N4 (2026-08-27): consolidated subscription / invoice ledger. One operable
 // view of every tenant subscription — plan, status, next-charge, trial, and
@@ -42,10 +43,7 @@ interface LedgerResp {
   };
 }
 
-const STATUS_VARIANT: Record<string, any> = {
-  active: 'success', trialing: 'warning', past_due: 'destructive',
-  paused: 'muted', cancelled: 'muted',
-};
+// 2026-09-06: status list + badge map live in src/lib/plans.ts (know `suspended`).
 const MODE_VARIANT: Record<string, any> = {
   paid: 'success', comped: 'warning', free: 'muted',
 };
@@ -60,7 +58,8 @@ export function SubscriptionsPage() {
     }),
   });
 
-  const rows = data?.rows ?? [];
+  // Memoised so the `??` fallback does not hand useMemo a fresh [] each render.
+  const rows = useMemo(() => data?.rows ?? [], [data?.rows]);
   const s = data?.summary;
 
   const exportCsv = useMemo(() => () => {
@@ -103,11 +102,7 @@ export function SubscriptionsPage() {
         <select className="h-9 rounded-md border bg-background px-3 text-sm"
           value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">All statuses</option>
-          <option value="active">Active</option>
-          <option value="trialing">Trialing</option>
-          <option value="past_due">Past due</option>
-          <option value="paused">Paused</option>
-          <option value="cancelled">Cancelled</option>
+          {SUBSCRIPTION_STATUSES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <select className="h-9 rounded-md border bg-background px-3 text-sm"
           value={billingMode} onChange={(e) => setBillingMode(e.target.value)}>
@@ -149,7 +144,7 @@ export function SubscriptionsPage() {
                   </TableCell>
                   <TableCell>{r.planName || r.planTier || '—'}</TableCell>
                   <TableCell>
-                    <Badge variant={STATUS_VARIANT[r.status] || 'muted'}>{r.status}</Badge>
+                    <Badge variant={subscriptionStatusVariant(r.status) || 'muted'}>{r.status}</Badge>
                     {r.status === 'past_due' && r.dunningAttempts > 0 && (
                       <span className="ml-1 text-xs text-destructive">· {r.dunningAttempts} failed</span>
                     )}

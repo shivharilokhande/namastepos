@@ -23,12 +23,53 @@ import 'package:provider/provider.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 
 import '../../constants/colors.dart';
+import '../../models/subscription.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/formatters.dart';
 import '../../providers/subscription_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
+
+/// Round 2 MOB #2 (2026-09-06) — pure helpers for the billing replies in
+/// CONTRACTS §6, kept off the widget so they can be unit-tested.
+class BillingReplies {
+  BillingReplies._();
+
+  /// `POST /billing/resume` → the Razorpay `checkoutOptions` to open, or null
+  /// when the reply means "already in effect" (no checkout needed) or is
+  /// unusable (missing key / subscription_id → caller shows an error).
+  static Map<String, dynamic>? resumeCheckoutOptions(Map<String, dynamic> res) {
+    if (res['requiresCheckout'] != true) return null;
+    final checkout = (res['checkout'] as Map?)?.cast<String, dynamic>();
+    final co = ((checkout?['checkoutOptions'] ?? res['checkoutOptions']) as Map?)
+        ?.cast<String, dynamic>();
+    if (co == null || co['subscription_id'] == null || co['key'] == null) {
+      return null;
+    }
+    return Map<String, dynamic>.from(co);
+  }
+
+  /// Human copy for a failed `POST /billing/resume`.
+  static String resumeErrorMessage(ApiException e) {
+    if (e.code == 'ACCOUNT_SUSPENDED' || e.statusCode == 403) {
+      return SuspensionInfo.defaultMessage;
+    }
+    if (e.code == 'RESUME_NOT_ALLOWED' || e.statusCode == 409) {
+      return 'This subscription can\'t be resumed — choose a plan below instead.';
+    }
+    return 'Couldn\'t resume: ${e.message}';
+  }
+
+  /// "Moves to Starter on 2026-10-01" for a scheduled downgrade, else null.
+  static String? pendingPlanLine(Subscription s) {
+    final p = s.pendingPlan;
+    if (p == null) return null;
+    final at = s.pendingPlanEffectiveAt;
+    final when = at == null ? '' : ' on ${at.toLocal().toIso8601String().substring(0, 10)}';
+    return 'Moves to ${p.name}$when';
+  }
+}
 
 class BillingScreen extends StatefulWidget {
   const BillingScreen({super.key});
@@ -39,8 +80,12 @@ class BillingScreen extends StatefulWidget {
 
 class _BillingScreenState extends State<BillingScreen> {
   Map<String, dynamic>? _sub;
+  // Round 2 MOB #2: the same /billing row parsed — status (incl. 'suspended'),
+  // pendingPlan, reactivationPending, suspension. Null when the fetch failed.
+  Subscription? _subModel;
   bool _loading = true;
   bool _checkoutBusy = false;
+  bool _resumeBusy = false;
   // 2026-08-24: monthly/yearly toggle. Backend returns priceYearlyInr per plan
   // and accepts billingPeriod on /billing/change; the app used to ignore both.
   String _billingPeriod = 'monthly';
@@ -194,6 +239,14 @@ class _BillingScreenState extends State<BillingScreen> {
     if (biz == null) { setState(() => _loading = false); return; }
     try {
       _sub = await ApiService.instance.getSubscription(biz.id);
+      // Parsed separately and defensively: a status or field the app has
+      // never seen must never take the Billing screen down.
+      try {
+        _subModel = _sub == null ? null : Subscription.fromMap(_sub!);
+      } catch (e) {
+        debugPrint('BillingScreen: subscription parse failed: $e');
+        _subModel = null;
+      }
     } catch (e) {
       // Don't blow up the whole screen; just leave _sub null so the
       // "current plan" banner falls back to the tier label from
@@ -201,6 +254,7 @@ class _BillingScreenState extends State<BillingScreen> {
       // up in the flutter run console instead of disappearing silently.
       debugPrint('BillingScreen: getSubscription failed: $e');
       _sub = null;
+      _subModel = null;
     }
     // Push 14f — pull live plans from the backend. Each plan carries its
     // tier_kind + featureKeys so the compare cards reflect exactly what
@@ -237,6 +291,11 @@ class _BillingScreenState extends State<BillingScreen> {
     final biz = context.read<AuthProvider>().business;
     if (biz == null) return;
     if (_checkoutBusy) return;                // double-tap guard
+    // A6: a suspended tenant cannot buy their way out (server 403s anyway).
+    if (_subModel?.isSuspended == true) {
+      _showSnack(_subModel?.suspension?.message ?? SuspensionInfo.defaultMessage);
+      return;
+    }
 
     setState(() { _checkoutBusy = true; _pendingTier = tierKind; });
     try {
@@ -289,44 +348,8 @@ class _BillingScreenState extends State<BillingScreen> {
       final priceLabel = (tierInfo['price'] as String?) ?? '';
       final cadenceWord = _billingPeriod == 'yearly' ? 'year' : 'month';
       if (!mounted) return;
-      final agreed = await showDialog<bool>(
-        context: context,
-        // Force a deliberate choice — tapping outside must not be read as
-        // consent, and RBI disclosure shouldn't be dismissible by accident.
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Auto-pay setup'),
-          content: Text(
-            'You are setting up automatic recurring payment for the '
-            '$planLabel plan ($priceLabel/$cadenceWord). Your payment method '
-            'will be charged automatically each billing cycle. You can '
-            'cancel anytime from Plans & Billing — no questions asked.',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Agree & Continue'),
-            ),
-          ],
-        ),
-      );
-      // Anything short of an explicit "Agree & Continue" aborts checkout —
-      // no mandate is created, mirroring a Razorpay modal dismiss.
-      if (agreed != true) {
-        if (mounted) {
-          setState(() { _checkoutBusy = false; _pendingTier = null; });
-          _showSnack('Checkout cancelled');
-        }
-        return;
-      }
-      // razorpay_flutter wants a Map<String, dynamic>. Pass through the
-      // backend's options unchanged so any future fields (notes, theme,
-      // prefill) propagate without code changes here.
-      _razorpay.open(Map<String, dynamic>.from(co));
+      await _openMandateCheckout(co,
+          planLabel: planLabel, priceLabel: priceLabel, cadenceWord: cadenceWord);
     } on ApiException catch (e) {
       // 401 → session expired and the refresh interceptor couldn't recover.
       // Force a clean re-login (auth_provider.logout clears tokens, _RootGate
@@ -340,11 +363,130 @@ class _BillingScreenState extends State<BillingScreen> {
         await context.read<AuthProvider>().logout();
         return;
       }
-      _showSnack('Couldn\'t start checkout: ${e.message}');
+      // A6: humanised — the server refuses plan changes on a suspended row.
+      _showSnack(e.code == 'ACCOUNT_SUSPENDED' || e.statusCode == 403
+          ? SuspensionInfo.defaultMessage
+          : 'Couldn\'t start checkout: ${e.message}');
       setState(() { _checkoutBusy = false; _pendingTier = null; });
+      if (e.code == 'ACCOUNT_SUSPENDED') await _load(); // pick up the banner
     } catch (e) {
       _showSnack('Couldn\'t start checkout: $e');
       setState(() { _checkoutBusy = false; _pendingTier = null; });
+    }
+  }
+
+  /// RBI e-mandate disclosure + the native Razorpay modal. Shared by the
+  /// change-plan path ([_upgrade]) and the resume/restore path ([_resume]) —
+  /// both authorise a RECURRING autopay mandate, so both need the consent.
+  /// Anything short of an explicit "Agree & Continue" aborts: no mandate is
+  /// created, mirroring a Razorpay modal dismiss. `co` must already be
+  /// validated (key + subscription_id present).
+  Future<void> _openMandateCheckout(
+    Map<String, dynamic> co, {
+    required String planLabel,
+    required String priceLabel,
+    required String cadenceWord,
+  }) async {
+    // Bug #14 (2026-08-25) — RBI e-mandate disclosure. The native Razorpay
+    // modal below authorises a RECURRING autopay mandate (UPI Autopay /
+    // card autopay), not a one-off charge, and RBI rules require explicit
+    // informed consent BEFORE the mandate is set up.
+    final agreed = await showDialog<bool>(
+      context: context,
+      // Force a deliberate choice — tapping outside must not be read as
+      // consent, and RBI disclosure shouldn't be dismissible by accident.
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Auto-pay setup'),
+        content: Text(
+          'You are setting up automatic recurring payment for the '
+          '$planLabel plan${priceLabel.isEmpty ? '' : ' ($priceLabel/$cadenceWord)'}. '
+          'Your payment method will be charged automatically each billing '
+          'cycle. You can cancel anytime from Plans & Billing — no questions asked.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Agree & Continue'),
+          ),
+        ],
+      ),
+    );
+    if (agreed != true) {
+      if (mounted) {
+        setState(() { _checkoutBusy = false; _resumeBusy = false; _pendingTier = null; });
+        _showSnack('Checkout cancelled');
+      }
+      return;
+    }
+    // razorpay_flutter wants a Map<String, dynamic>. Pass through the
+    // backend's options unchanged so any future fields (notes, theme,
+    // prefill) propagate without code changes here.
+    _razorpay.open(Map<String, dynamic>.from(co));
+  }
+
+  /// POST /billing/resume — un-pause, or undo a cancel-at-period-end
+  /// (round 2 MOB #2, CONTRACTS §6). A paid plan whose gateway mandate is gone
+  /// comes back as `requiresCheckout` and is routed through the SAME Razorpay
+  /// path as a plan change; nothing changes server-side until the first charge
+  /// lands (the row then shows `reactivationPending`).
+  Future<void> _resume() async {
+    final biz = context.read<AuthProvider>().business;
+    if (biz == null || _resumeBusy || _checkoutBusy) return;
+    setState(() => _resumeBusy = true);
+    try {
+      final res = await ApiService.instance.resumeSubscription(biz.id);
+      if (!mounted) return;
+      if (res['requiresCheckout'] == true) {
+        final co = BillingReplies.resumeCheckoutOptions(res);
+        if (co == null) {
+          throw const FormatException(
+              'Backend did not return a valid Razorpay subscription for the resume.');
+        }
+        final planLabel = _subModel?.plan?.name ?? _currentTierLabel();
+        final tierInfo = _tiers.firstWhere(
+          (t) => t['label'] == planLabel,
+          orElse: () => <String, dynamic>{},
+        );
+        // Success handler labels + refreshes on the current plan.
+        _pendingTier = (tierInfo['kind'] as String?) ?? _subModel?.plan?.tier;
+        setState(() => _checkoutBusy = true);
+        await _openMandateCheckout(co,
+            planLabel: planLabel,
+            priceLabel: (tierInfo['price'] as String?) ?? '',
+            cadenceWord: _billingPeriod == 'yearly' ? 'year' : 'month');
+        return; // the Razorpay handlers own the reset from here
+      }
+      // Already in effect — pull the new row.
+      final auth = context.read<AuthProvider>();
+      final subs = context.read<SubscriptionProvider>();
+      await auth.refreshPlan();
+      await subs.load(biz.id);
+      await _load();
+      if (mounted) {
+        setState(() => _resumeBusy = false);
+        _showSnack(res['resumed'] == true
+            ? 'Welcome back — your plan is active again'
+            : (res['message']?.toString() ?? 'Plan resumed'));
+      }
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _resumeBusy = false);
+      _showSnack(BillingReplies.resumeErrorMessage(e));
+      // Both refusals mean the row is not what the screen thought — re-read it
+      // so the banner/CTAs match the server (suspended → banner, no resume).
+      if (e.code == 'ACCOUNT_SUSPENDED' || e.code == 'RESUME_NOT_ALLOWED'
+          || e.statusCode == 403 || e.statusCode == 409) {
+        await _load();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _resumeBusy = false; _checkoutBusy = false; _pendingTier = null; });
+      _showSnack('Couldn\'t resume: $e');
     }
   }
 
@@ -355,7 +497,10 @@ class _BillingScreenState extends State<BillingScreen> {
     // catches up. ALSO reload SubscriptionProvider so the trial banner
     // (which reads from subscription, not plan) clears immediately — was
     // sticking around with "X days left in trial" even after upgrade.
-    _showSnack('Payment received. Activating $_pendingTier plan…');
+    final wasResume = _resumeBusy;
+    _showSnack(wasResume
+        ? 'Payment received. Bringing your plan back…'
+        : 'Payment received. Activating $_pendingTier plan…');
     final biz = context.read<AuthProvider>().business;
     final auth = context.read<AuthProvider>();
     final subs = context.read<SubscriptionProvider>();
@@ -365,8 +510,13 @@ class _BillingScreenState extends State<BillingScreen> {
     }
     await _load();
     if (mounted) {
-      setState(() { _checkoutBusy = false; _pendingTier = null; });
-      _showSnack('You\'re on the ${_currentTierLabel()} plan now');
+      setState(() { _checkoutBusy = false; _resumeBusy = false; _pendingTier = null; });
+      // A resume via checkout flips the row only when the first charge lands
+      // (webhook) — until then /billing says reactivationPending, and the
+      // banner below says so. Don't claim "you're on X now" prematurely.
+      _showSnack(_subModel?.reactivationPending == true
+          ? 'Payment received — your plan comes back as soon as it clears'
+          : 'You\'re on the ${_currentTierLabel()} plan now');
     }
   }
 
@@ -374,7 +524,7 @@ class _BillingScreenState extends State<BillingScreen> {
     final reason = resp.message ?? 'Unknown error';
     final code = resp.code;
     if (mounted) {
-      setState(() { _checkoutBusy = false; _pendingTier = null; });
+      setState(() { _checkoutBusy = false; _resumeBusy = false; _pendingTier = null; });
       // Code 0 / 1 are common "user dismissed modal" results — those don't
       // need an alarming red toast, just a quiet "you cancelled".
       final isCancel = code == Razorpay.PAYMENT_CANCELLED || code == 0;
@@ -478,12 +628,20 @@ class _BillingScreenState extends State<BillingScreen> {
                               fontWeight: FontWeight.w900)),
                       if (_sub != null && _renewsDate(_sub!) != null)
                         Text(
-                          'Renews ${_renewsDate(_sub!)}',
+                          // A row that is ending/moving does not "renew".
+                          (_subModel?.cancelAtPeriodEnd == true ||
+                                  _subModel?.pendingPlan != null)
+                              ? 'Current period ends ${_renewsDate(_sub!)}'
+                              : 'Renews ${_renewsDate(_sub!)}',
                           style: const TextStyle(color: Colors.white70, fontSize: 12),
                         ),
                     ],
                   ),
                 ),
+                // Round 2 MOB #2 — suspended / pending downgrade / reactivation
+                // pending / paused or cancelling (with Resume). One banner
+                // block, driven entirely by the parsed /billing row.
+                if (_subModel != null) ..._statusBanners(_subModel!),
                 const SizedBox(height: 20),
                 const Text('Compare plans',
                     style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
@@ -510,6 +668,114 @@ class _BillingScreenState extends State<BillingScreen> {
             ),
     bottomNavigationBar: const HomeBottomNav(),
     );
+  }
+
+  static String _ymd(DateTime d) => d.toLocal().toIso8601String().substring(0, 10);
+
+  Widget _banner({
+    required IconData icon,
+    required Color color,
+    required String title,
+    String? body,
+    Widget? action,
+  }) =>
+      Container(
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(title,
+                      style: TextStyle(fontWeight: FontWeight.w800, color: color)),
+                  if (body != null) ...[
+                    const SizedBox(height: 4),
+                    Text(body,
+                        style: const TextStyle(
+                            fontSize: 13, color: AppColors.textSecondary)),
+                  ],
+                  if (action != null) ...[const SizedBox(height: 10), action],
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+
+  /// CONTRACTS §6 states → banners. Order matters: a suspension overrides
+  /// everything else (and removes every CTA); the rest can stack.
+  List<Widget> _statusBanners(Subscription s) {
+    if (s.isSuspended) {
+      return [
+        _banner(
+          icon: Icons.block,
+          color: AppColors.error,
+          title: 'Account suspended — contact support',
+          body: s.suspension?.message != SuspensionInfo.defaultMessage
+              ? s.suspension?.message
+              : (s.suspension?.since != null
+                  ? 'Suspended since ${_ymd(s.suspension!.since!)}. Plan changes are '
+                    'disabled until support restores the account.'
+                  : 'Plan changes are disabled until support restores the account.'),
+          // No upgrade / resume CTA by design — the tenant cannot lift it.
+        ),
+      ];
+    }
+    final out = <Widget>[];
+    final pending = BillingReplies.pendingPlanLine(s);
+    if (pending != null) {
+      out.add(_banner(
+        icon: Icons.schedule,
+        color: AppColors.warning,
+        title: pending,
+        body: 'You keep ${s.plan?.name ?? 'your current plan'} until then.',
+      ));
+    }
+    if (s.reactivationPending) {
+      out.add(_banner(
+        icon: Icons.hourglass_top,
+        color: AppColors.primary,
+        title: 'Reactivation pending',
+        body: 'Waiting for your first payment to go through. Your plan comes '
+            'back automatically as soon as it clears.',
+      ));
+    }
+    if (s.canOfferResume) {
+      final paused = s.status == 'paused';
+      out.add(_banner(
+        icon: paused ? Icons.pause_circle_outline : Icons.event_busy,
+        color: AppColors.warning,
+        title: paused
+            ? 'Your account is paused'
+            : 'Cancels on ${_ymd(s.currentPeriodEnd)}',
+        body: paused
+            ? 'Nothing is deleted. Resume to start billing again.'
+            : 'You keep everything until then. Changed your mind?',
+        action: SizedBox(
+          height: 40,
+          child: OutlinedButton.icon(
+            onPressed: (_resumeBusy || _checkoutBusy) ? null : _resume,
+            icon: _resumeBusy
+                ? const SizedBox(
+                    width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.play_arrow),
+            label: Text(paused ? 'Resume plan' : 'Keep my plan'),
+          ),
+        ),
+      ));
+    }
+    return out;
   }
 
   /// Button copy for one plan card.
@@ -540,6 +806,8 @@ class _BillingScreenState extends State<BillingScreen> {
     final isCurrent = t['kind'] == currentTier;
     final recommended = t['recommended'] == true;
     final color = t['color'] as Color;
+    // A6: no upgrade CTA on a suspended account (server 403s; banner explains).
+    final suspended = _subModel?.isSuspended == true;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -612,7 +880,7 @@ class _BillingScreenState extends State<BillingScreen> {
                 SizedBox(
                   width: double.infinity, height: 44,
                   child: ElevatedButton(
-                    onPressed: (isCurrent || _checkoutBusy)
+                    onPressed: (isCurrent || _checkoutBusy || suspended)
                         ? null
                         : () => _upgrade(t['kind'] as String),
                     style: ElevatedButton.styleFrom(
@@ -627,7 +895,9 @@ class _BillingScreenState extends State<BillingScreen> {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2.4, color: Colors.white))
                         : Text(
-                            _ctaLabel(t, currentTier),
+                            suspended && !isCurrent
+                                ? 'Unavailable while suspended'
+                                : _ctaLabel(t, currentTier),
                             style: const TextStyle(fontWeight: FontWeight.w900),
                           ),
                   ),

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Pause, Play, UserCheck, Calendar, ArrowUpRight, Pin, Trash2, FileText,
-  Upload, Download, ShieldAlert,
+  Upload, Download, ShieldAlert, RefreshCw,
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -17,11 +17,15 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
 import {
-  adminApi, FeatureKey, FeatureOverride, CustomPlanLimits,
+  adminApi, FeatureOverride, FeatureCatalogEntry, CustomPlanLimits, Plan,
   OrderStats, OutletSibling, SupportOrder,
 } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR, formatDate, formatDateTime } from '@/lib/utils';
+import { useCan } from '@/lib/rbac';
+import { planOffersYearly, assignablePlans, subscriptionStatusVariant } from '@/lib/plans';
+import { FeaturePicker, EnforcementChip } from '@/components/FeaturePicker';
+import { useFeatureCatalog, groupCatalog } from '@/lib/featureCatalog';
 // 2026-09-03 — reuse the usage card and the dunning timeline rather than
 // duplicating them here; both are exported from their own pages.
 import { CustomerUsageCard } from './UsagePage';
@@ -72,6 +76,9 @@ export function CustomerDetailPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [extending, setExtending] = useState(false);
   const [changingPlan, setChangingPlan] = useState(false);
+  // F-10 — mirror the route permissions (admin.routes.js) so a support/finance
+  // admin is not shown a button that 403s. Backend stays authoritative.
+  const { can } = useCan();
 
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['drilldown', id],
@@ -187,23 +194,33 @@ export function CustomerDetailPage() {
           <OutletBanner outlet={b.outlet} siblings={b.outletSiblings || []} />
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button variant="outline" onClick={() => setExtending(true)}>
-            <Calendar className="mr-2 h-4 w-4" /> Extend trial
-          </Button>
-          <Button variant="outline" onClick={() => setChangingPlan(true)}>
-            <ArrowUpRight className="mr-2 h-4 w-4" /> Change plan
-          </Button>
-          <Button variant="outline" onClick={startImpersonation} disabled={impersonate.isPending}>
-            <UserCheck className="mr-2 h-4 w-4" /> Impersonate
-          </Button>
-          {s?.status === 'paused' ? (
-            <Button variant="secondary" onClick={() => restore.mutate()} disabled={restore.isPending}>
-              <Play className="mr-2 h-4 w-4" /> Restore
+          {can('customers.write') && (
+            <Button variant="outline" onClick={() => setExtending(true)}>
+              <Calendar className="mr-2 h-4 w-4" /> Extend trial
             </Button>
-          ) : (
-            <Button variant="destructive" onClick={() => suspend.mutate()} disabled={suspend.isPending}>
-              <Pause className="mr-2 h-4 w-4" /> Suspend
+          )}
+          {can('plans.change') && (
+            <Button variant="outline" onClick={() => setChangingPlan(true)}>
+              <ArrowUpRight className="mr-2 h-4 w-4" /> Change plan
             </Button>
+          )}
+          {can('customers.impersonate') && (
+            <Button variant="outline" onClick={startImpersonation} disabled={impersonate.isPending}>
+              <UserCheck className="mr-2 h-4 w-4" /> Impersonate
+            </Button>
+          )}
+          {/* 2026-09-06: `suspended` is a real subscriptions.status now (the
+              mandate is cancelled at cycle end); it restores the same way. */}
+          {can('customers.write') && (
+            s?.status === 'paused' || s?.status === 'suspended' ? (
+              <Button variant="secondary" onClick={() => restore.mutate()} disabled={restore.isPending}>
+                <Play className="mr-2 h-4 w-4" /> Restore
+              </Button>
+            ) : (
+              <Button variant="destructive" onClick={() => suspend.mutate()} disabled={suspend.isPending}>
+                <Pause className="mr-2 h-4 w-4" /> Suspend
+              </Button>
+            )
           )}
         </div>
       </div>
@@ -433,7 +450,9 @@ function OverviewTab({ business, subscription, payments }: any) {
         <CardHeader><CardTitle>Subscription</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
           <Row label="Plan" value={subscription?.plan_name || '—'} />
-          <Row label="Status" value={<Badge>{subscription?.status}</Badge>} />
+          <Row label="Status" value={
+            <Badge variant={subscriptionStatusVariant(subscription?.status)}>{subscription?.status || '—'}</Badge>
+          } />
           {/* FF-402f — smarter labels. Once the sub is active the trial
               is already OVER, so calling the row "Trial ends" implies a
               future date that isn't. Also flag `current_period_end` when
@@ -532,6 +551,8 @@ function OverviewTab({ business, subscription, payments }: any) {
 
 function AddonsTab({ businessId }: { businessId: string }) {
   const qc = useQueryClient();
+  const { can } = useCan();
+  const canWrite = can('customers.write'); // attach/detach are customers.write
   const { data: addons = [], isError: addonsErr, error: addonsErrObj, refetch: refetchAddons } = useQuery({
     queryKey: ['customer-addons', businessId],
     queryFn: () => adminApi.customerAddons(businessId),
@@ -546,12 +567,20 @@ function AddonsTab({ businessId }: { businessId: string }) {
 
   const attach = useMutation({
     mutationFn: (slug: string) => adminApi.attachAddonToCustomer(businessId, slug),
-    onSuccess: () => { toast.success('Addon attached'); qc.invalidateQueries({ queryKey: ['customer-addons', businessId] }); },
+    onSuccess: () => {
+      toast.success('Addon attached');
+      qc.invalidateQueries({ queryKey: ['customer-addons', businessId] });
+      qc.invalidateQueries({ queryKey: ['effective-features', businessId] });
+    },
     onError: (e) => toast.error(apiError(e)),
   });
   const detach = useMutation({
     mutationFn: (slug: string) => adminApi.detachAddonFromCustomer(businessId, slug),
-    onSuccess: () => { toast.success('Addon detached'); qc.invalidateQueries({ queryKey: ['customer-addons', businessId] }); },
+    onSuccess: () => {
+      toast.success('Addon detached');
+      qc.invalidateQueries({ queryKey: ['customer-addons', businessId] });
+      qc.invalidateQueries({ queryKey: ['effective-features', businessId] });
+    },
     onError: (e) => toast.error(apiError(e)),
   });
 
@@ -562,7 +591,7 @@ function AddonsTab({ businessId }: { businessId: string }) {
 
   return (
     <div className="space-y-4">
-      <Card>
+      {canWrite && <Card>
         <CardHeader>
           <CardTitle className="text-base">Attach add-on</CardTitle>
           <CardDescription>
@@ -591,7 +620,7 @@ function AddonsTab({ businessId }: { businessId: string }) {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       <Card>
         <CardContent className="p-0">
@@ -634,7 +663,7 @@ function AddonsTab({ businessId }: { businessId: string }) {
                         {a.cancelAtPeriodEnd ? 'Will cancel at period end' : 'Auto-renews'}
                       </TableCell>
                       <TableCell className="text-right">
-                        {isActive && (
+                        {isActive && canWrite && (
                           <Button
                             size="sm" variant="ghost"
                             className="text-destructive"
@@ -669,8 +698,11 @@ function AddonsTab({ businessId }: { businessId: string }) {
 }
 
 // ── Plans-addons migration — per-customer custom plan + feature overrides ──
+// F-06 (2026-09-06): `businesses` (outlets) added. It was missing, so a
+// STANDALONE custom plan sent no outlet cap and `enforceLimit` treated the
+// undefined key as unlimited outlets.
 const CUSTOM_PLAN_LIMIT_KEYS: (keyof CustomPlanLimits)[] =
-  ['staff', 'tables', 'floors', 'menu_items', 'monthly_orders'];
+  ['staff', 'tables', 'floors', 'menu_items', 'monthly_orders', 'businesses'];
 // 2026-09-04 — the tier-kind ladder is served by the backend (single source
 // of truth: namastepos_backend/src/services/planTiers.js). This page used to
 // declare `['starter','pro','enterprise']`, which had drifted from the live
@@ -679,39 +711,155 @@ const CUSTOM_PLAN_LIMIT_KEYS: (keyof CustomPlanLimits)[] =
 // the backend's Joi schema rejected both. Do NOT re-add a local list.
 
 function PlanFeaturesTab({ businessId }: { businessId: string }) {
-  // One shared feature-key catalog for both panels. adminApi.listFeatureKeys
-  // normalises {keys:[{key,label?}]} and plain-string-array responses.
-  const { data: featureKeys = [] } = useQuery({
-    queryKey: ['feature-keys'],
-    queryFn: adminApi.listFeatureKeys,
-    staleTime: 60_000,
-  });
+  // F-04 — one registry catalog for every picker on this tab (and the addon
+  // editor). Labels, sections, enforcement chips and the ungated warning are
+  // all the backend registry's, rendered by the shared <FeaturePicker>.
+  const { catalog, groups } = useFeatureCatalog();
   return (
     <div className="space-y-6">
-      <CustomPlanCard businessId={businessId} featureKeys={featureKeys} />
-      <FeatureOverridesCard businessId={businessId} featureKeys={featureKeys} />
+      <EffectiveFeaturesCard businessId={businessId} />
+      <CustomPlanCard businessId={businessId} catalog={catalog} groups={groups} />
+      <FeatureOverridesCard businessId={businessId} catalog={catalog} groups={groups} />
     </div>
   );
 }
 
-// Group + filter the catalog for checkbox rendering. Grouped by the key's
-// first underscore-segment so related keys (menu_*, reports_* …) sit together.
-function useFeatureGroups(featureKeys: FeatureKey[], search: string) {
-  return useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const visible = featureKeys.filter((f) =>
-      !q || f.key.toLowerCase().includes(q) || (f.label || '').toLowerCase().includes(q));
-    const buckets: Record<string, FeatureKey[]> = {};
-    for (const f of visible) {
-      const g = f.key.includes('_') ? f.key.split('_')[0] : 'general';
-      (buckets[g] ||= []).push(f);
-    }
-    return Object.entries(buckets).sort(([a], [b]) => a.localeCompare(b));
-  }, [featureKeys, search]);
+// F-03 (2026-09-06) — what the tenant ACTUALLY has right now. Before this the
+// founder had to impersonate to answer "does this restaurant have loyalty?":
+// the overrides card listed overrides, the custom-plan card its extras, the
+// addons tab its activations — nothing showed plan ∪ addons ∪ overrides.
+// Source: GET /admin/customers/:id/effective-features (CONTRACTS_round2 §5).
+function SourceChip({ source }: { source: string }) {
+  const cls = source === 'plan' ? 'bg-slate-100 text-slate-700 border-slate-200'
+    : source.startsWith('addon:') ? 'bg-sky-50 text-sky-700 border-sky-200'
+    : source === 'override:enable' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+    : 'bg-red-50 text-red-700 border-red-200';
+  const text = source === 'plan' ? 'plan'
+    : source.startsWith('addon:') ? `addon · ${source.slice('addon:'.length)}`
+    : source === 'override:enable' ? 'override'
+    : source === 'override:disable' ? 'disabled by override'
+    : source;
+  return (
+    <span className={`inline-block rounded border px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide ${cls}`}>
+      {text}
+    </span>
+  );
 }
 
-function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featureKeys: FeatureKey[] }) {
+function EffectiveFeaturesCard({ businessId }: { businessId: string }) {
+  const q = useQuery({
+    queryKey: ['effective-features', businessId],
+    queryFn: () => adminApi.effectiveFeatures(businessId),
+  });
+  const { catalog } = useFeatureCatalog();
+  const enforcementOf = useMemo(
+    () => new Map(catalog.map((c) => [c.key, c.enforcement])), [catalog]);
+  const data = q.data;
+  const sections = useMemo(() => {
+    if (!data) return [];
+    // Group in registry order; the endpoint sends `group` per key, so reuse the
+    // picker's grouping to keep the section names identical to the editors.
+    const order = [...new Set(catalog.map((c) => c.group))];
+    return groupCatalog(data.features, order);
+  }, [data, catalog]);
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between space-y-0">
+        <div>
+          <CardTitle className="text-base">Effective features</CardTitle>
+          <CardDescription>
+            What this tenant can use RIGHT NOW — plan ∪ add-on grants ∪ enable-overrides, minus
+            disable-overrides. Each chip says where the key comes from.
+          </CardDescription>
+        </div>
+        <Button size="sm" variant="ghost" onClick={() => q.refetch()} disabled={q.isFetching} title="Refresh">
+          <RefreshCw className={`h-4 w-4 ${q.isFetching ? 'animate-spin' : ''}`} />
+        </Button>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {q.isLoading ? (
+          <div className="text-sm text-muted-foreground">Loading…</div>
+        ) : q.isError ? (
+          // Billing-relevant: never render "no features" over a read failure.
+          <div>
+            <div className="text-sm text-destructive">Couldn't load effective features — {apiError(q.error)}</div>
+            <Button variant="outline" size="sm" className="mt-2" onClick={() => q.refetch()}>Retry</Button>
+          </div>
+        ) : data ? (
+          <>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground">Plan</span>
+              <span className="font-medium">{data.plan?.name ?? 'none'}</span>
+              {data.plan && (
+                <span className="text-xs text-muted-foreground font-mono">
+                  db tier: {data.plan.code}{data.plan.tierKind ? ` · kind: ${data.plan.tierKind}` : ''}
+                </span>
+              )}
+              <span className="text-xs text-muted-foreground">
+                · plan version <span className="font-mono">{String(data.planVersion ?? '—')}</span>
+              </span>
+              <span className="text-xs text-muted-foreground">
+                · {data.features.length} feature{data.features.length === 1 ? '' : 's'} on
+                {data.disabled.length > 0 ? ` · ${data.disabled.length} disabled` : ''}
+              </span>
+            </div>
+            {data.features.length === 0 && (
+              <div className="text-sm text-muted-foreground">No gated features are enabled for this tenant.</div>
+            )}
+            {sections.map(([groupName, feats]) => (
+              <div key={groupName}>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                  {groupName}
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                  {feats.map((f) => (
+                    <div key={f.key} className="flex items-center gap-2 px-2 py-1 rounded text-sm">
+                      <span className="flex-1 min-w-0">
+                        <span className="block truncate">{f.label || f.key}</span>
+                        <span className="block font-mono text-[11px] text-muted-foreground truncate">{f.key}</span>
+                      </span>
+                      <span className="flex flex-wrap gap-1 justify-end">
+                        {f.sources.map((src) => <SourceChip key={src} source={src} />)}
+                        <EnforcementChip enforcement={enforcementOf.get(f.key)} />
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {data.disabled.length > 0 && (
+              <div className="border-t pt-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-red-700 mb-1">
+                  Disabled by override
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1">
+                  {data.disabled.map((f) => (
+                    <div key={f.key} className="flex items-center gap-2 px-2 py-1 rounded text-sm opacity-80">
+                      <span className="flex-1 min-w-0">
+                        <span className="block truncate line-through">{f.label || f.key}</span>
+                        <span className="block font-mono text-[11px] text-muted-foreground truncate">{f.key}</span>
+                      </span>
+                      <SourceChip source={f.source} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CustomPlanCard({ businessId, catalog, groups }: {
+  businessId: string; catalog: FeatureCatalogEntry[]; groups: string[];
+}) {
   const qc = useQueryClient();
+  const { can, isSuperAdmin } = useCan();
+  const canChange = can('plans.change'); // PUT/DELETE custom-plan are plans.change
+  const [showAllBases, setShowAllBases] = useState(false);
   const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['custom-plan', businessId],
     queryFn: () => adminApi.getCustomPlan(businessId),
@@ -734,18 +882,28 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
   const [limits, setLimits] = useState<Record<string, string>>(
     Object.fromEntries(CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, '-1'])));
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState('');
   // 2026-09-03 — a custom plan EXTENDS a public plan ("Growth + 2 extras").
   const [basePlanTier, setBasePlanTier] = useState<string>('');
 
-  // Public plans available as a base.
-  const { data: publicPlans } = useQuery({
-    queryKey: ['plans-public'],
+  // Public plans available as a base (F-07: public + active + not another
+  // tenant's private plan; super-admin may lift the filter).
+  const { data: allPlans } = useQuery({
+    queryKey: ['plans-admin'],
     queryFn: adminApi.listPlans,
+    staleTime: 60_000,
   });
-  const bases = (publicPlans ?? []).filter(
-    (p: any) => p.isPublic !== false && !String(p.tier).startsWith('custom-'));
-  const base = bases.find((p: any) => p.tier === basePlanTier) || null;
+  const bases = assignablePlans(allPlans ?? [], showAllBases)
+    .filter((p) => !String(p.tier).startsWith('custom-'));
+  const base = bases.find((p) => p.tier === basePlanTier) || null;
+  // F-06 — a STANDALONE custom plan with a missing limit gets the cheapest
+  // public plan's value from the backend (customPlanService). Show those
+  // defaults instead of "-1" so the admin sees what will actually apply.
+  const cheapestPublic = useMemo(() => {
+    const pub = assignablePlans(allPlans ?? []);
+    return [...pub].sort((a, b) => (a.priceInrPaise || 0) - (b.priceInrPaise || 0))[0] ?? null;
+  }, [allPlans]);
+  const defaultLimitsFor = (from: Plan | null): Record<string, string> =>
+    Object.fromEntries(CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, String(from?.limits?.[k] ?? -1)]));
   // Keys the base plan already grants — shown checked + locked.
   const inherited = new Set<string>(plan?.inheritedFeatureKeys ?? []);
 
@@ -766,24 +924,30 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
     setTierKind(p.tierKind || '');
     setBasePlanTier(p.basePlanTier || '');
     setLimits(Object.fromEntries(
-      CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, String(p.limits?.[k] ?? -1)])));
+      CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, String(p.limits?.[k] ?? cheapestPublic?.limits?.[k] ?? -1)])));
     // FIX: the endpoint returns { plan } — extras live on the plan itself, so
     // `data.featureKeys` was always undefined and the picker rendered empty.
     setSelected(new Set(p.extraFeatureKeys ?? p.featureKeys ?? []));
     setEditing(true);
-  }, [data, businessId]);
+  }, [data, businessId, cheapestPublic]);
 
   // Picking a base pre-fills price/limits/tier from it (editable afterwards).
+  // Picking "standalone" seeds the limits the backend would default to (F-06).
   const applyBase = (tier: string) => {
     setBasePlanTier(tier);
-    const b = bases.find((p: any) => p.tier === tier);
-    if (!b) return;
+    const b = bases.find((p) => p.tier === tier);
+    if (!b) { setLimits(defaultLimitsFor(cheapestPublic)); return; }
     if (!name.trim()) setName(`${b.name} + extras`);
     setPriceMonthly(String((b.priceInrPaise ?? 0) / 100));
-    setPriceYearly(b.priceYearlyInrPaise != null ? String(b.priceYearlyInrPaise / 100) : '');
+    // F-02: only carry a yearly price over when the base actually offers one.
+    setPriceYearly(planOffersYearly(b) && b.priceYearlyInrPaise != null ? String(b.priceYearlyInrPaise / 100) : '');
     if (b.tierKind) setTierKind(b.tierKind);
-    setLimits(Object.fromEntries(
-      CUSTOM_PLAN_LIMIT_KEYS.map((k) => [k, String(b.limits?.[k] ?? -1)])));
+    setLimits(defaultLimitsFor(b));
+  };
+  // First-time "Create custom plan" (standalone) → show backend defaults.
+  const startCreate = () => {
+    setLimits(defaultLimitsFor(cheapestPublic));
+    setEditing(true);
   };
 
   const buildBody = (assign: boolean) => ({
@@ -805,6 +969,7 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
       toast.success(assign ? 'Custom plan saved & assigned' : 'Custom plan saved');
       qc.invalidateQueries({ queryKey: ['custom-plan', businessId] });
       qc.invalidateQueries({ queryKey: ['drilldown', businessId] });
+      qc.invalidateQueries({ queryKey: ['effective-features', businessId] });
     },
     onError: (e) => toast.error(apiError(e)),
   });
@@ -825,7 +990,6 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
     onError: (e) => toast.error(apiError(e)), // 409 when assigned — backend guards too
   });
 
-  const groups = useFeatureGroups(featureKeys, search);
   const toggle = (k: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -845,13 +1009,15 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
             {plan?.assigned && <span className="ml-1 font-medium text-emerald-700">Currently assigned.</span>}
           </CardDescription>
         </div>
-        {plan && (
+        {plan && canChange && (
           <Button size="sm" variant="outline" className="text-destructive border-destructive/40"
             disabled={busy}
             onClick={() => {
-              const fallback = plan.basePlanTier || 'free';
+              // F-08 — name the destination plan, never its tier code.
+              const fallbackPlan = (allPlans ?? []).find((p) => p.tier === plan.basePlanTier) ?? cheapestPublic;
+              const fallback = fallbackPlan ? `${fallbackPlan.name}` : (plan.basePlanTier || 'the free plan');
               const msg = plan.assigned
-                ? `Remove the custom plan "${plan.name}"?\n\nThis customer will be moved to "${fallback}".`
+                ? `Remove the custom plan "${plan.name}"?\n\nThis customer will be moved to ${fallback}.`
                 : `Remove the custom plan "${plan.name}"?`;
               if (confirm(msg)) remove.mutate(!!plan.assigned);
             }}>
@@ -871,9 +1037,13 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
             <Button variant="outline" size="sm" onClick={() => refetch()}>Retry</Button>
           </div>
         ) : !plan && !editing ? (
-          <Button variant="outline" onClick={() => setEditing(true)}>
-            Create custom plan
-          </Button>
+          canChange ? (
+            <Button variant="outline" onClick={startCreate}>
+              Create custom plan
+            </Button>
+          ) : (
+            <div className="text-sm text-muted-foreground">No custom plan. (Creating one needs the plans.change permission.)</div>
+          )
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -900,17 +1070,28 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
                 <select value={basePlanTier} onChange={(e) => applyBase(e.target.value)}
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm">
                   <option value="">None — standalone plan</option>
-                  {bases.map((p: any) => (
+                  {/* A base the filter hides (inactive / private) stays visible so the
+                      saved plan never renders blank. */}
+                  {basePlanTier && !bases.some((p) => p.tier === basePlanTier) && (
+                    <option value={basePlanTier}>{basePlanTier} (hidden by filter)</option>
+                  )}
+                  {bases.map((p) => (
                     <option key={p.tier} value={p.tier}>
-                      {p.name} (₹{p.priceInr}/mo)
+                      {p.name} (₹{p.priceInr}/mo){p.isActive === false ? ' · inactive' : ''}{p.isPublic === false ? ' · private' : ''}
                     </option>
                   ))}
                 </select>
                 <p className="text-xs text-muted-foreground mt-1">
                   {base
                     ? `Inherits everything in ${base.name} — tick only the EXTRA features below. Later changes to ${base.name} flow through automatically.`
-                    : 'Pick the plan the customer wanted (e.g. Growth), then add the extras they need.'}
+                    : `Pick the plan the customer wanted (e.g. Growth), then add the extras they need.${cheapestPublic ? ` Standalone limits default to ${cheapestPublic.name}'s.` : ''}`}
                 </p>
+                {isSuperAdmin && (
+                  <label className="text-[11px] text-muted-foreground flex items-center gap-1 mt-1 cursor-pointer">
+                    <input type="checkbox" checked={showAllBases} onChange={(e) => setShowAllBases(e.target.checked)} />
+                    Show all plans (inactive + private)
+                  </label>
+                )}
               </div>
               <div>
                 <Label>Tier kind</Label>
@@ -938,10 +1119,10 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
               <div className="text-sm font-semibold mb-2">
                 Limits <span className="text-xs font-normal text-muted-foreground">(-1 = unlimited)</span>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                 {CUSTOM_PLAN_LIMIT_KEYS.map((k) => (
                   <div key={k}>
-                    <Label className="text-xs">{k.replace(/_/g, ' ')}</Label>
+                    <Label className="text-xs">{k === 'businesses' ? 'outlets (businesses)' : k.replace(/_/g, ' ')}</Label>
                     <Input type="number" value={limits[k] ?? '-1'}
                       onChange={(e) => setLimits((prev) => ({ ...prev, [k]: e.target.value }))} />
                   </div>
@@ -949,59 +1130,31 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
               </div>
             </div>
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <div className="text-sm font-semibold">
-                  {base ? 'Extra features' : 'Features'}{' '}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    ({Array.from(selected).filter((k) => !inherited.has(k)).length} extra
-                    {base ? ` · ${inherited.size} inherited from ${base.name}` : ''})
-                  </span>
-                </div>
-                <Input className="w-48 h-8" placeholder="Filter features…"
-                  value={search} onChange={(e) => setSearch(e.target.value)} />
+              <div className="text-sm font-semibold mb-2">
+                {base ? 'Extra features' : 'Features'}{' '}
+                <span className="text-xs font-normal text-muted-foreground">
+                  ({Array.from(selected).filter((k) => !inherited.has(k)).length} extra
+                  {base ? ` · ${inherited.size} inherited from ${base.name}` : ''})
+                </span>
               </div>
-              <div className="border rounded-md p-3 max-h-72 overflow-y-auto space-y-3">
-                {featureKeys.length === 0 && (
-                  <div className="text-sm text-muted-foreground">
-                    No feature keys available — check that the admin API is reachable.
-                  </div>
-                )}
-                {groups.map(([groupName, keys]) => (
-                  <div key={groupName}>
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
-                      {groupName}
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-1">
-                      {keys.map((f) => {
-                        const inh = inherited.has(f.key);
-                        return (
-                          <label key={f.key}
-                            title={inh ? `Granted by ${base?.name} — included automatically` : undefined}
-                            className={`flex items-center gap-2 px-2 py-1 rounded text-sm ${
-                              inh ? 'opacity-70' : 'hover:bg-muted/50 cursor-pointer'}`}>
-                            <input type="checkbox" checked={inh || selected.has(f.key)}
-                              disabled={inh} onChange={() => !inh && toggle(f.key)} />
-                            <span className="font-mono text-[12px]">{f.label || f.key}</span>
-                            {inh && (
-                              <span className="text-[10px] uppercase tracking-wide text-emerald-700">base</span>
-                            )}
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
+              <FeaturePicker
+                catalog={catalog} groups={groups}
+                selected={selected} onToggle={toggle}
+                locked={inherited} lockedBadge="base"
+                lockedTitle={() => `Granted by ${base?.name ?? 'the base plan'} — included automatically`}
+                columns={3} maxHeightClass="max-h-72" />
+            </div>
+            {canChange && (
+              <div className="flex gap-2 flex-wrap">
+                <Button variant="outline" disabled={busy || !name.trim()}
+                  onClick={() => save.mutate(plan?.assigned ?? false)}>
+                  {save.isPending ? 'Saving…' : 'Save'}
+                </Button>
+                <Button disabled={busy || !name.trim()} onClick={() => save.mutate(true)}>
+                  {save.isPending ? 'Saving…' : 'Save & assign to this customer'}
+                </Button>
               </div>
-            </div>
-            <div className="flex gap-2 flex-wrap">
-              <Button variant="outline" disabled={busy || !name.trim()}
-                onClick={() => save.mutate(plan?.assigned ?? false)}>
-                {save.isPending ? 'Saving…' : 'Save'}
-              </Button>
-              <Button disabled={busy || !name.trim()} onClick={() => save.mutate(true)}>
-                {save.isPending ? 'Saving…' : 'Save & assign to this customer'}
-              </Button>
-            </div>
+            )}
           </>
         )}
       </CardContent>
@@ -1009,8 +1162,12 @@ function CustomPlanCard({ businessId, featureKeys }: { businessId: string; featu
   );
 }
 
-function FeatureOverridesCard({ businessId, featureKeys }: { businessId: string; featureKeys: FeatureKey[] }) {
+function FeatureOverridesCard({ businessId, catalog, groups }: {
+  businessId: string; catalog: FeatureCatalogEntry[]; groups: string[];
+}) {
   const qc = useQueryClient();
+  const { can } = useCan();
+  const canWrite = can('customers.write'); // PUT/DELETE feature-overrides
   const { data: overrides = [], isLoading, isError, error, refetch } = useQuery({
     queryKey: ['feature-overrides', businessId],
     queryFn: () => adminApi.getFeatureOverrides(businessId),
@@ -1018,8 +1175,10 @@ function FeatureOverridesCard({ businessId, featureKeys }: { businessId: string;
   const [addKey, setAddKey] = useState('');
   const [addMode, setAddMode] = useState<'enable' | 'disable'>('enable');
 
-  const invalidate = () =>
+  const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['feature-overrides', businessId] });
+    qc.invalidateQueries({ queryKey: ['effective-features', businessId] });
+  };
   // PUT replaces the whole set — used to add rows / flip a row's mode.
   const saveSet = useMutation({
     mutationFn: (next: FeatureOverride[]) => adminApi.setFeatureOverrides(businessId, next),
@@ -1032,8 +1191,8 @@ function FeatureOverridesCard({ businessId, featureKeys }: { businessId: string;
     onError: (e) => toast.error(apiError(e)),
   });
 
-  const existing = new Set(overrides.map((o) => o.featureKey));
-  const addable = featureKeys.filter((f) => !existing.has(f.key));
+  const existing = useMemo(() => new Set(overrides.map((o) => o.featureKey)), [overrides]);
+  const labelOf = useMemo(() => new Map(catalog.map((c) => [c.key, c])), [catalog]);
   const busy = saveSet.isPending || removeOne.isPending;
 
   return (
@@ -1065,9 +1224,17 @@ function FeatureOverridesCard({ businessId, featureKeys }: { businessId: string;
             <TableBody>
               {overrides.map((o) => (
                 <TableRow key={o.featureKey}>
-                  <TableCell className="font-mono text-xs">{o.featureKey}</TableCell>
                   <TableCell>
-                    <button type="button" disabled={busy}
+                    <div className="flex items-center gap-2">
+                      <span className="min-w-0">
+                        <span className="block text-sm truncate">{labelOf.get(o.featureKey)?.label ?? o.featureKey}</span>
+                        <span className="block font-mono text-[11px] text-muted-foreground">{o.featureKey}</span>
+                      </span>
+                      <EnforcementChip enforcement={labelOf.get(o.featureKey)?.enforcement ?? 'unregistered'} />
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <button type="button" disabled={busy || !canWrite}
                       title="Click to flip enable/disable"
                       onClick={() => saveSet.mutate(overrides.map((x) =>
                         x.featureKey === o.featureKey
@@ -1079,44 +1246,56 @@ function FeatureOverridesCard({ businessId, featureKeys }: { businessId: string;
                     </button>
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button size="sm" variant="ghost" disabled={busy}
-                      onClick={() => removeOne.mutate(o.featureKey)}>
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
+                    {canWrite && (
+                      <Button size="sm" variant="ghost" disabled={busy}
+                        onClick={() => removeOne.mutate(o.featureKey)}>
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
         )}
-        <div className="flex gap-2 items-end flex-wrap border-t pt-4">
-          <div className="flex-1 min-w-48">
-            <Label className="text-xs">Feature</Label>
-            <select value={addKey} onChange={(e) => setAddKey(e.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm">
-              <option value="">Select a feature key…</option>
-              {addable.map((f) => (
-                <option key={f.key} value={f.key}>{f.label || f.key}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <Label className="text-xs">Mode</Label>
-            <div className="flex gap-1">
-              {(['enable', 'disable'] as const).map((m) => (
-                <button key={m} type="button" onClick={() => setAddMode(m)}
-                  className={`px-3 h-9 rounded border text-sm capitalize ${
-                    addMode === m ? 'border-primary bg-primary/10 font-semibold' : 'border-input'}`}>
-                  {m}
-                </button>
-              ))}
+        {canWrite && (
+          <div className="space-y-3 border-t pt-4">
+            <div>
+              <Label className="text-xs">Feature</Label>
+              {/* F-04 — the same grouped picker as the plan editor (radio mode), so
+                  the ungated / unregistered warning and the `why` tooltip show
+                  here too. Keys that already have an override are hidden. */}
+              <FeaturePicker
+                catalog={catalog} groups={groups}
+                selected={addKey ? new Set([addKey]) : new Set()}
+                onToggle={(k) => setAddKey(k)}
+                exclude={existing} single columns={3} maxHeightClass="max-h-56" />
+            </div>
+            <div className="flex gap-2 items-end flex-wrap">
+              <div>
+                <Label className="text-xs">Mode</Label>
+                <div className="flex gap-1">
+                  {(['enable', 'disable'] as const).map((m) => (
+                    <button key={m} type="button" onClick={() => setAddMode(m)}
+                      className={`px-3 h-9 rounded border text-sm capitalize ${
+                        addMode === m ? 'border-primary bg-primary/10 font-semibold' : 'border-input'}`}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex-1 text-xs text-muted-foreground self-center">
+                {addKey
+                  ? <>Selected: <span className="font-mono">{addKey}</span>{labelOf.get(addKey)?.why ? ` — ${labelOf.get(addKey)!.why}` : ''}</>
+                  : 'Pick a feature above.'}
+              </div>
+              <Button size="sm" disabled={!addKey || busy}
+                onClick={() => saveSet.mutate([...overrides, { featureKey: addKey, mode: addMode }])}>
+                {saveSet.isPending ? 'Saving…' : 'Add override'}
+              </Button>
             </div>
           </div>
-          <Button size="sm" disabled={!addKey || busy}
-            onClick={() => saveSet.mutate([...overrides, { featureKey: addKey, mode: addMode }])}>
-            {saveSet.isPending ? 'Saving…' : 'Add override'}
-          </Button>
-        </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -1127,6 +1306,8 @@ function FeatureOverridesCard({ businessId, featureKeys }: { businessId: string;
 // errors so the operator can fix and re-upload.
 function MenuTab({ menu, businessId }: any) {
   const qc = useQueryClient();
+  const { can } = useCan();
+  const canImport = can('customers.write'); // POST menu/bulk
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{ inserted: number; skipped: number; errors: any[] } | null>(null);
 
@@ -1170,7 +1351,7 @@ function MenuTab({ menu, businessId }: any) {
 
   return (
     <div className="space-y-4">
-      <Card>
+      {canImport && <Card>
         <CardHeader className="flex flex-row items-start justify-between space-y-0">
           <div>
             <CardTitle className="text-base">Bulk import from CSV</CardTitle>
@@ -1229,7 +1410,7 @@ function MenuTab({ menu, businessId }: any) {
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
 
       <Card><CardContent className="p-0"><Table>
         <TableHeader><TableRow>
@@ -1645,6 +1826,8 @@ function InvoicesTab({ invoices, businessId }: any) {
 
 function NotesTab({ notes, businessId }: any) {
   const qc = useQueryClient();
+  const { can } = useCan();
+  const canWrite = can('notes.write'); // POST/DELETE notes
   const [body, setBody] = useState('');
   const [pinned, setPinned] = useState(false);
   const add = useMutation({
@@ -1663,7 +1846,7 @@ function NotesTab({ notes, businessId }: any) {
 
   return (
     <div className="space-y-3">
-      <Card>
+      {canWrite && <Card>
         <CardContent className="pt-6 space-y-3">
           <Input placeholder="Add a note for the team…" value={body}
                  onChange={(e) => setBody(e.target.value)} />
@@ -1677,7 +1860,10 @@ function NotesTab({ notes, businessId }: any) {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card>}
+      {notes.length === 0 && (
+        <div className="text-sm text-muted-foreground">No notes yet.</div>
+      )}
       {notes.map((n: any) => (
         <Card key={n.id} className={n.pinned ? 'border-primary' : ''}>
           <CardContent className="pt-4">
@@ -1689,9 +1875,11 @@ function NotesTab({ notes, businessId }: any) {
                   {n.adminEmail} · {formatDateTime(n.createdAt)}
                 </div>
               </div>
-              <Button size="sm" variant="ghost" onClick={() => remove.mutate(n.id)}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
+              {canWrite && (
+                <Button size="sm" variant="ghost" onClick={() => remove.mutate(n.id)}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -1736,12 +1924,21 @@ function ExtendTrialDialog({ open, onClose, businessId }: any) {
 
 function ChangePlanDialog({ open, onClose, businessId, current }: any) {
   const qc = useQueryClient();
+  const { isSuperAdmin } = useCan();
+  const [showAll, setShowAll] = useState(false);
   // Push 19a — fetch live plan catalog instead of hardcoding Free/Basic/Pro.
-  const { data: plans = [] } = useQuery({
+  const { data: allPlans = [] } = useQuery({
     queryKey: ['plans-admin'],
     queryFn: adminApi.listPlans,
     staleTime: 60_000,
   });
+  // F-07 — public + active + not another tenant's private plan. The customer's
+  // CURRENT plan always stays listed (it may be their own custom plan).
+  const plans = useMemo(() => {
+    const base = assignablePlans(allPlans, showAll);
+    const cur = allPlans.find((p) => p.tier === current);
+    return cur && !base.some((p) => p.tier === cur.tier) ? [...base, cur] : base;
+  }, [allPlans, showAll, current]);
   const [tier, setTier] = useState(current || '');
   // FF-402c — cadence chosen separately from the plan. Default to
   // yearly so support is nudged to the recommended pick; per-plan
@@ -1754,14 +1951,21 @@ function ChangePlanDialog({ open, onClose, businessId, current }: any) {
     }
   }, [plans, current, tier]);
   const selectedPlan = plans.find((p) => p.tier === tier);
-  const yearlyOffered = !!(selectedPlan && selectedPlan.priceYearlyInr != null);
+  // F-02 — `offersYearly`, not the defaulted price, decides the cadence guard.
+  const yearlyOffered = !!(selectedPlan && selectedPlan.priceInr > 0 && planOffersYearly(selectedPlan));
   useEffect(() => {
     // If admin picks a plan that doesn't offer yearly, force monthly.
     if (!yearlyOffered && cadence === 'yearly') setCadence('monthly');
   }, [yearlyOffered, cadence]);
   const m = useMutation({
     mutationFn: () => adminApi.setPlan(businessId, tier, yearlyOffered ? cadence : 'monthly'),
-    onSuccess: () => { toast.success(`Plan set to ${tier} (${cadence})`); qc.invalidateQueries({ queryKey: ['drilldown', businessId] }); onClose(); },
+    // F-08 — say the plan NAME, not its tier code (code 'pro' is Enterprise).
+    onSuccess: () => {
+      toast.success(`Plan set to ${selectedPlan?.name ?? tier} (${yearlyOffered ? cadence : 'monthly'})`);
+      qc.invalidateQueries({ queryKey: ['drilldown', businessId] });
+      qc.invalidateQueries({ queryKey: ['effective-features', businessId] });
+      onClose();
+    },
     onError: (e) => toast.error(apiError(e)),
   });
   return (
@@ -1784,11 +1988,18 @@ function ChangePlanDialog({ open, onClose, businessId, current }: any) {
                 <option key={p.tier} value={p.tier}>
                   {p.name}
                   {p.priceInr ? ` — ${formatINR(p.priceInr)}/mo` : ' — free'}
-                  {p.priceYearlyInr != null && p.priceInr > 0 ? ` · ${formatINR(p.priceYearlyInr)}/yr` : ''}
+                  {planOffersYearly(p) && p.priceYearlyInr != null && p.priceInr > 0 ? ` · ${formatINR(p.priceYearlyInr)}/yr` : ''}
+                  {p.isActive === false ? ' · inactive' : ''}{p.isPublic === false || p.businessId ? ' · private' : ''}
                   {p.tier === current ? '  (current)' : ''}
                 </option>
               ))}
           </select>
+          {isSuperAdmin && (
+            <label className="text-[11px] text-muted-foreground flex items-center gap-1 mt-1 cursor-pointer">
+              <input type="checkbox" checked={showAll} onChange={(e) => setShowAll(e.target.checked)} />
+              Show all plans (inactive + other tenants' custom plans)
+            </label>
+          )}
         </div>
         {/* FF-402c — cadence toggle. Yearly disabled when the selected
             plan doesn't offer a yearly price. Yearly is pre-selected
@@ -1806,7 +2017,7 @@ function ChangePlanDialog({ open, onClose, businessId, current }: any) {
                 className={`flex-1 px-3 py-2 rounded border text-sm relative ${cadence === 'yearly' ? 'border-primary bg-primary/10 font-semibold' : 'border-input'} ${!yearlyOffered ? 'opacity-40 cursor-not-allowed' : ''}`}>
                 {/* Hardcode-audit fix (2026-08-24): no client-side ×10 pricing
                     rule — the backend plan record is the source of truth. */}
-                Yearly — {selectedPlan.priceYearlyInr != null ? formatINR(selectedPlan.priceYearlyInr) : 'n/a'}
+                Yearly — {yearlyOffered && selectedPlan.priceYearlyInr != null ? formatINR(selectedPlan.priceYearlyInr) : 'n/a'}
                 {yearlyOffered && (
                   <span className="absolute -top-2 -right-2 text-[9px] uppercase tracking-wider bg-amber-500 text-white px-1.5 py-0.5 rounded font-bold">
                     Recommended
@@ -1893,24 +2104,45 @@ function LifecycleTab({ businessId, business, subscription }: {
     qc.invalidateQueries({ queryKey: ['drilldown', businessId] });
     qc.invalidateQueries({ queryKey: ['overview'] });
   };
+  // F-10 — route permissions (admin.routes.js): account/owner-email/MPIN/
+  // welcome are customers.write; cancel-subscription is revenue.write
+  // (finance-grade); soft-delete is customers.write; anonymise is
+  // settings.write (super_admin). Cards a role cannot act on are hidden.
+  const { can, me } = useCan();
+  const canCustomers = can('customers.write');
+  const canRevenue = can('revenue.write');
+  const canErase = can('settings.write');
+  const noActions = !canCustomers && !canRevenue && !canErase;
 
   return (
     <div className="space-y-4">
-      <AccountOwnershipCard businessId={businessId} business={business} onSaved={refresh} />
+      {noActions && (
+        <Card>
+          <CardContent className="py-6 text-sm text-muted-foreground">
+            Your role ({me?.role ?? '—'}) has read-only access here — lifecycle actions need
+            customers.write, revenue.write or settings.write.
+          </CardContent>
+        </Card>
+      )}
+      {canCustomers && (
+        <AccountOwnershipCard businessId={businessId} business={business} onSaved={refresh} />
+      )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Owner access</CardTitle>
-          <CardDescription>
-            Login identity and device credentials for this tenant's owner.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <OwnerEmailRow businessId={businessId} current={business.email} onSaved={refresh} />
-          <ResetCredentialsRow businessId={businessId} />
-          <ResendWelcomeRow businessId={businessId} />
-        </CardContent>
-      </Card>
+      {canCustomers && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Owner access</CardTitle>
+            <CardDescription>
+              Login identity and device credentials for this tenant's owner.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <OwnerEmailRow businessId={businessId} current={business.email} onSaved={refresh} />
+            <ResetCredentialsRow businessId={businessId} />
+            <ResendWelcomeRow businessId={businessId} />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -1918,10 +2150,16 @@ function LifecycleTab({ businessId, business, subscription }: {
           <CardDescription>
             Current status: <strong>{subscription?.status || 'none'}</strong>
             {subscription?.cancel_at_period_end ? ' · cancels at period end' : ''}
+            {subscription?.status === 'suspended' && subscription?.suspended_at
+              ? ` · suspended ${formatDate(subscription.suspended_at)}` : ''}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <CancelSubscriptionRow businessId={businessId} subscription={subscription} onDone={refresh} />
+          {canRevenue ? (
+            <CancelSubscriptionRow businessId={businessId} subscription={subscription} onDone={refresh} />
+          ) : (
+            <p className="text-xs text-muted-foreground">Cancelling a subscription is a finance action (revenue.write).</p>
+          )}
         </CardContent>
       </Card>
 
@@ -1935,7 +2173,9 @@ function LifecycleTab({ businessId, business, subscription }: {
         </CardContent>
       </Card>
 
-      <DangerZoneCard businessId={businessId} business={business} />
+      {(canCustomers || canErase) && (
+        <DangerZoneCard businessId={businessId} business={business} canDelete={canCustomers} canErase={canErase} />
+      )}
     </div>
   );
 }
@@ -2115,7 +2355,9 @@ function CancelSubscriptionRow({ businessId, subscription, onDone }: {
   );
 }
 
-function DangerZoneCard({ businessId, business }: { businessId: string; business: any }) {
+function DangerZoneCard({ businessId, business, canDelete, canErase }: {
+  businessId: string; business: any; canDelete: boolean; canErase: boolean;
+}) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [confirmName, setConfirmName] = useState('');
@@ -2154,7 +2396,7 @@ function DangerZoneCard({ businessId, business }: { businessId: string; business
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="space-y-2">
+        {canDelete && <div className="space-y-2">
           <div className="text-sm font-medium">Soft-delete</div>
           <p className="text-xs text-muted-foreground">
             Marks the business deleted and cancels its subscription. Personal data is kept,
@@ -2165,9 +2407,9 @@ function DangerZoneCard({ businessId, business }: { businessId: string; business
             {business.deleted_at ? 'Already deleted'
               : softDelete.isPending ? 'Deleting…' : 'Soft-delete customer'}
           </Button>
-        </div>
+        </div>}
 
-        <div className="space-y-3 border-t pt-4">
+        {canErase && <div className={`space-y-3 ${canDelete ? 'border-t pt-4' : ''}`}>
           <div className="text-sm font-medium text-destructive">
             DPDP erasure (irreversible)
           </div>
@@ -2196,7 +2438,7 @@ function DangerZoneCard({ businessId, business }: { businessId: string; business
             <Trash2 className="mr-2 h-4 w-4" />
             {anonymise.isPending ? 'Erasing…' : 'Anonymise & erase personal data'}
           </Button>
-        </div>
+        </div>}
       </CardContent>
     </Card>
   );

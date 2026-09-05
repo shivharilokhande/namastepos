@@ -68,11 +68,24 @@ const menu = asyncHandler(async (req, res) => {
   if (!settings.isEnabled) {
     return res.status(503).json({ error: 'QR_DISABLED', message: 'Guest ordering is paused. Ask the staff.' });
   }
+  // White label (2026-09-06, CONTRACTS §4): the guest page prints
+  // `whiteLabel.poweredBy` verbatim as its attribution line (null = no line)
+  // and may tint with `accentColor`. Resolved at request time against the
+  // plan, so a tenant whose plan lost `white_label` is back to "Powered by
+  // NamastePOS" on the next scan without anyone touching their settings.
+  const whiteLabel = await require('../services/whiteLabelService').effective(businessId);
   res.json({
     business: { name: business.name, logoUrl: business.logoUrl },
     table: { label: table.label, floor: table.floorName },
     settings,
     items,
+    whiteLabel: {
+      enabled: whiteLabel.enabled,
+      brandName: whiteLabel.enabled ? whiteLabel.brandName : null,
+      hidePoweredBy: whiteLabel.enabled ? whiteLabel.hidePoweredBy : false,
+      accentColor: whiteLabel.enabled ? whiteLabel.accentColor : null,
+      poweredBy: whiteLabel.poweredBy,
+    },
   });
 });
 

@@ -635,7 +635,10 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: Text('${ci.item.name} x ${ci.qty}',
+                              child: Text(
+                                  ci.configSummary.isEmpty
+                                      ? '${ci.item.name} x ${ci.qty}'
+                                      : '${ci.item.name} (${ci.configSummary}) x ${ci.qty}',
                                   style: const TextStyle(fontWeight: FontWeight.w600)),
                             ),
                             Text(AppFmt.money(ci.lineTotal, decimals: true)),

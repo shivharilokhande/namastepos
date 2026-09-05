@@ -120,6 +120,14 @@ class ReceiptPdf {
 
   // ── Documents ───────────────────────────────────────────────────────
 
+  /// "· Large" / "+ extra cheese" under an item line (round 2, MOB #1).
+  static List<pw.Widget> _configRows(OrderItem item) => [
+        if (item.variantLabel != null && item.variantLabel!.trim().isNotEmpty)
+          _line('    · ${item.variantLabel!.trim()}', size: 8, center: false),
+        for (final mod in item.modifierNames)
+          _line('    + $mod', size: 8, center: false),
+      ];
+
   /// Tax lines for one order — mirrors `PrinterService._buildReceipt`.
   static List<pw.Widget> _taxRows(Order order, String Function(double) money) {
     final est = order.synced ? '' : ' (est.)';
@@ -150,8 +158,12 @@ class ReceiptPdf {
       _line('Order #${order.orderNo}', size: 8),
       _line(_stamp(order.createdAt), size: 8),
       _hr(),
-      for (final item in order.items)
+      for (final item in order.items) ...[
         _row('${_qty(item.qty)}x ${item.name}', money(item.lineTotal)),
+        // 2026-09-06 (round 2, MOB #1): size + add-ons under the line, same
+        // layout as the thermal receipt / server printerService.js.
+        ..._configRows(item),
+      ],
       _hr(),
       _row('Subtotal', money(order.subtotal)),
       // `tax` is 0 for a composition dealer because the SERVER refuses to put

@@ -155,13 +155,31 @@ async function generateEwayBill(businessId, invoiceId, body) {
   }
   irp.assertStubAllowed('e-way bill');
 
+  // 2026-09-06 (review #15, P3): `invoiceId` was never checked against the
+  // tenant — the FK points at the platform `invoices` table, so a caller could
+  // attach an e-way bill to another business's (or the platform's) invoice id.
+  // Scope the lookup: the id must be one of THIS business's tax invoices.
+  const inv = await query(
+    'SELECT id FROM tax_invoices WHERE business_id = $1 AND id = $2',
+    [businessId, invoiceId],
+  );
+  if (inv.rowCount === 0) throw new HttpError(404, 'Invoice not found', 'NOT_FOUND');
+
+  // Same review: the demo number was a hash of (business, invoice), so a second
+  // call for the same invoice 409'd on the unique eway_no. Salt per attempt.
   const ewayNo = irp.stubEwbNo(
-    crypto.createHash('sha256').update(`${businessId}:${invoiceId}`).digest('hex'),
+    crypto.createHash('sha256')
+      .update(`${businessId}:${invoiceId}:${Date.now()}:${crypto.randomBytes(4).toString('hex')}`)
+      .digest('hex'),
   );
   const validity = new Date(Date.now() + 24 * 60 * 60 * 1000); // 1 day default
+  // `eway_bills.invoice_id` (024) is an FK to the PLATFORM `invoices` table
+  // (SaaS subscription bills) — a tenant tax-invoice id there is an FK
+  // violation, which is how the untenanted lookup went unnoticed. The tenant
+  // document belongs in `tax_invoice_id` (046/093); invoice_id stays NULL.
   const r = await query(
     `INSERT INTO eway_bills
-       (business_id, invoice_id, eway_no, eway_date, validity,
+       (business_id, tax_invoice_id, eway_no, eway_date, validity,
         vehicle_no, distance_km, is_stub, raw_response)
      VALUES ($1, $2, $3, CURRENT_DATE, $4, $5, $6, TRUE, $7) RETURNING *`,
     [businessId, invoiceId, ewayNo, validity, body.vehicleNo, body.distanceKm,

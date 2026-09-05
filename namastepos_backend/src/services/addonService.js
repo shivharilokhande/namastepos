@@ -568,29 +568,72 @@ async function forceActivate(businessId, slug) {
   return { activated: true, activation: serializeActivation(ins.rows[0], addon) };
 }
 
+// A period end this far out is the free / no-gateway instant-activation
+// window (NOW() + 100 years), not a paid period — nothing was bought for it.
+const FREE_WINDOW_MS = 50 * 365 * 86400000;
+
 async function cancel(businessId, slug) {
   const addon = await getBySlug(slug);
+  const cur = (await query(
+    'SELECT * FROM business_addons WHERE business_id = $1 AND addon_id = $2 LIMIT 1',
+    [businessId, addon.id],
+  )).rows[0];
+  if (!cur) throw new NotFound('Addon not subscribed');
+
   // Fix (2026-08-24): cancel used to only set cancel_at_period_end=TRUE while
   // leaving status='active' and current_period_end 100 years out (set by the
-  // free instant-activation path). Since addons activate for free with no real
-  // billing period, "cancel at period end" meant the addon — and its feature —
-  // never actually turned off, so the owner saw it "cancelled but still active".
-  // Cancel now takes effect immediately: status='cancelled', period ended now.
-  const r = await query(
-    `UPDATE business_addons
-        SET status = 'cancelled'::addon_status,
-            cancel_at_period_end = TRUE,
-            cancelled_at = NOW(),
-            current_period_end = NOW()
-      WHERE business_id = $1 AND addon_id = $2
-      RETURNING *`,
-    [businessId, addon.id],
-  );
+  // free instant-activation path), so a FREE addon "cancelled" never turned
+  // off. Free addons therefore cancel immediately (status='cancelled', period
+  // ended now) — unchanged.
+  //
+  // 2026-09-06 (round 2, founder decision, CONTRACTS §5): a PAID addon inside
+  // a REAL paid period is now cancel-at-period-end instead. The immediate
+  // cancel forfeited days the owner had paid for, and since A2 (2026-09-05)
+  // resume could no longer hand them back. So: the flag goes up, status and
+  // current_period_end stay as they are, featureService keeps granting until
+  // the period end (it already checks `current_period_end > NOW()`), and the
+  // existing expiry path (period lapses → hasAddon false, nightly expiry
+  // notice, revoke) takes over from there. Undo before the period ends is
+  // resume() with no charge. A paid addon whose period already ended, or one
+  // sitting on the 100-year free window (non-prod manual activation — nothing
+  // was paid), cancels immediately as before.
+  const periodEndMs = cur.current_period_end ? new Date(cur.current_period_end).getTime() : 0;
+  const now = Date.now();
+  const paidPeriodRunning = Number(addon.price_inr_paise) > 0
+    && ['trialing', 'active', 'past_due'].includes(cur.status)
+    && periodEndMs > now
+    && periodEndMs - now < FREE_WINDOW_MS;
+
+  const r = paidPeriodRunning
+    ? await query(
+      `UPDATE business_addons
+          SET cancel_at_period_end = TRUE,
+              cancelled_at = COALESCE(cancelled_at, NOW())
+        WHERE business_id = $1 AND addon_id = $2
+        RETURNING *`,
+      [businessId, addon.id],
+    )
+    : await query(
+      `UPDATE business_addons
+          SET status = 'cancelled'::addon_status,
+              cancel_at_period_end = TRUE,
+              cancelled_at = NOW(),
+              current_period_end = NOW()
+        WHERE business_id = $1 AND addon_id = $2
+        RETURNING *`,
+      [businessId, addon.id],
+    );
   if (r.rowCount === 0) throw new NotFound('Addon not subscribed');
-  // Bust the 60s feature cache so the gated feature locks right away instead
-  // of lingering until the cache expires.
+  // Bust the 60s feature cache so an immediate cancel locks the gated feature
+  // right away; for a scheduled cancel the entry is simply rebuilt with the
+  // same (still-valid) period cap.
   try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
-  return serializeActivation(r.rows[0], addon);
+  return {
+    ...serializeActivation(r.rows[0], addon),
+    // Additive: tells the client whether the feature is still on until
+    // currentPeriodEnd (true) or gone now (false).
+    endsAtPeriodEnd: paidPeriodRunning,
+  };
 }
 
 /**
@@ -667,6 +710,27 @@ async function resume(businessId, slug) {
     && !row.cancel_at_period_end
     && new Date(row.current_period_end).getTime() > Date.now();
   if (live) return serializeActivation(row, addon);
+
+  // 2026-09-06 (round 2): a cancel-at-period-end that has not landed yet is
+  // UNDONE here, not re-bought — the period was already paid for, so clearing
+  // the flag costs nothing and must not open a Razorpay order (subscribe()
+  // would treat a live row as a RENEWAL and stack a second period). The
+  // eligibility gate above has already run, so a revoked-by-downgrade row
+  // (same marks) never reaches this branch.
+  const scheduledCancelInsidePeriod = ['trialing', 'active', 'past_due'].includes(row.status)
+    && row.cancel_at_period_end === true
+    && new Date(row.current_period_end).getTime() > Date.now();
+  if (scheduledCancelInsidePeriod) {
+    const undo = await query(
+      `UPDATE business_addons
+          SET cancel_at_period_end = FALSE, cancelled_at = NULL
+        WHERE business_id = $1 AND addon_id = $2
+        RETURNING *`,
+      [businessId, addon.id],
+    );
+    try { require('./featureService').clearCache(businessId); } catch (_) { /* non-fatal */ }
+    return serializeActivation(undo.rows[0], addon);
+  }
 
   const paid = Number(addon.price_inr_paise) > 0;
   const rz = require('./razorpayService'); // lazy: avoids require cycle

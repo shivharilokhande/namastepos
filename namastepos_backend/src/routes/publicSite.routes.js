@@ -11,7 +11,20 @@ const router = express.Router();
 router.get('/:slug', asyncHandler(async (req, res) => {
   const s = await site.bySlug(req.params.slug);
   if (!s) return res.status(404).json({ error: 'NOT_FOUND' });
-  res.json({ site: s });
+  // White label (2026-09-06, CONTRACTS §4): `whiteLabel.poweredBy` is the
+  // attribution the client prints (null = none); re-checked against the plan
+  // on every request by whiteLabelService.effective.
+  const wl = await require('../services/whiteLabelService').effective(s.business_id);
+  res.json({
+    site: s,
+    whiteLabel: {
+      enabled: wl.enabled,
+      brandName: wl.enabled ? wl.brandName : null,
+      hidePoweredBy: wl.enabled ? wl.hidePoweredBy : false,
+      accentColor: wl.enabled ? wl.accentColor : null,
+      poweredBy: wl.poweredBy,
+    },
+  });
 }));
 
 router.get('/:slug/menu', asyncHandler(async (req, res) => {

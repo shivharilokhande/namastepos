@@ -25,8 +25,5 @@ export function useTierKinds(): TierKindOption[] {
   return data ?? [];
 }
 
-/** Owner-facing label for a kind ('pro_plan' -> 'Pro'), or the raw value. */
-export function tierKindLabel(kind: string | undefined, options: TierKindOption[]): string {
-  if (!kind) return '';
-  return options.find((o) => o.kind === kind)?.label ?? kind;
-}
+// F-13 (2026-09-06): `tierKindLabel` had no call sites and was removed. Pages
+// resolve labels inline via `useTierKinds().find(...)`.

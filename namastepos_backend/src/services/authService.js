@@ -430,7 +430,28 @@ async function refreshSession(refreshToken, { userAgent, ip } = {}) {
   );
   if (r.rowCount === 0) throw new Unauthorized('Refresh token invalid or expired');
   const row = r.rows[0];
-  await query('UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1', [hash]);
+  // 2026-09-06 (review #17, P3): the rotation used to be read-then-revoke, so
+  // two concurrent refreshes with the SAME token both passed the SELECT above
+  // and both minted a session — the reuse detector never saw the second one.
+  // Make the revoke conditional: exactly one caller flips revoked_at; the
+  // loser's rowCount is 0, which is a replay by definition → same family
+  // revoke + refusal as the `seen.revoked_at !== null` branch.
+  const rotated = await query(
+    `UPDATE refresh_tokens SET revoked_at = NOW()
+      WHERE id = $1 AND revoked_at IS NULL
+      RETURNING id`,
+    [row.id],
+  );
+  if (rotated.rowCount === 0) {
+    if (row.user_id) {
+      await query(
+        `UPDATE refresh_tokens SET revoked_at = NOW()
+          WHERE business_id = $1 AND user_id = $2 AND revoked_at IS NULL`,
+        [row.business_id, row.user_id],
+      );
+    }
+    throw new Unauthorized('Session reuse detected — please sign in again');
+  }
   const user = await getUserById(row.user_id);
   return issueSession(
     { user, businessId: row.business_id, role: row.role },

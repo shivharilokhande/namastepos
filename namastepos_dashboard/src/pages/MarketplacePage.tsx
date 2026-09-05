@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import { toast } from 'sonner';
 import { Package, Check, Sparkles, X, Play } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -21,6 +22,60 @@ function loadRzp(): Promise<void> {
   });
 }
 
+/** Server error code from an axios error body (`{ error }` / `{ code }`), else null. */
+function apiErrorCode(e: unknown): string | null {
+  if (!axios.isAxiosError(e)) return null;
+  const d = e.response?.data as { error?: string; code?: string } | undefined;
+  return d?.error || d?.code || null;
+}
+
+// Razorpay ORDER checkout for a paid add-on, then server-side confirmation.
+// 2026-08-25 (founder bug: addons subscribed without charging) — paid addons
+// never activate on the POST alone. The backend returns { requiresPayment,
+// razorpayOrder, keyId }; we open Checkout for that order and the addon only
+// activates after the backend verifies the payment signature in
+// /confirm-payment. Dismissing the checkout activates nothing.
+// 2026-09-06 (round 2, CONTRACTS §6): shared by subscribe AND resume — a
+// paid add-on that was cancelled-at-period-end and has since lapsed answers
+// `POST /addons/:slug/resume` with the SAME shape, so the same checkout runs.
+async function payForAddon(slug: string, r: any): Promise<void> {
+  if (!r.requiresPayment || !r.razorpayOrder?.id) {
+    // Backend contract changed under us — fail loudly rather than pretending
+    // the addon is on.
+    throw new Error('Unexpected response — add-on not activated');
+  }
+  await loadRzp();
+  const b = getBusinessCache();
+  await new Promise<void>((resolve, reject) => {
+    const rz = new window.Razorpay({
+      key: r.keyId,
+      order_id: r.razorpayOrder.id,
+      amount: r.razorpayOrder.amount,
+      currency: r.razorpayOrder.currency,
+      name: 'NamastePOS',
+      description: r.addon?.name ? `${r.addon.name} add-on` : 'Marketplace add-on',
+      theme: { color: '#FF6B35' },
+      handler: async (resp: any) => {
+        // Confirm server-side: the backend re-verifies the HMAC signature
+        // before activating, so a spoofed handler call can't turn the addon
+        // on. Synchronous — no activation polling needed.
+        try {
+          await api.post(`/businesses/${b.id}/addons/${slug}/confirm-payment`, {
+            razorpayPaymentId: resp.razorpay_payment_id,
+            razorpayOrderId: resp.razorpay_order_id,
+            razorpaySignature: resp.razorpay_signature,
+          });
+          resolve();
+        } catch (err) {
+          reject(err);
+        }
+      },
+      modal: { ondismiss: () => reject(new Error('PAYMENT_CANCELLED')) },
+    });
+    rz.open();
+  });
+}
+
 export function MarketplacePage() {
   const qc = useQueryClient();
   const { data: catalog = [] } = useQuery({ queryKey: ['catalog-addons'], queryFn: ffApi.catalogAddons });
@@ -30,53 +85,10 @@ export function MarketplacePage() {
   const activeSlugs = new Set(active.map((a: any) => a.addon.slug));
 
   const subscribe = useMutation({
-    // 2026-08-25 (founder bug: addons subscribed without charging) — paid
-    // addons no longer activate on POST /subscribe. The backend returns
-    // { requiresPayment, razorpayOrder, keyId }; we open Razorpay Checkout
-    // for that order and the addon only activates after the backend
-    // verifies the payment signature in /confirm-payment. Dismissing the
-    // checkout activates nothing.
     mutationFn: async (slug: string) => {
       const r = await ffApi.subscribeAddon(slug);
       if (r.activated) return { slug };
-
-      if (!r.requiresPayment || !r.razorpayOrder?.id) {
-        // Backend contract changed under us — fail loudly rather than
-        // pretending the addon is on.
-        throw new Error('Unexpected subscribe response — add-on not activated');
-      }
-
-      await loadRzp();
-      const b = getBusinessCache();
-      await new Promise<void>((resolve, reject) => {
-        const rz = new window.Razorpay({
-          key: r.keyId,
-          order_id: r.razorpayOrder.id,
-          amount: r.razorpayOrder.amount,
-          currency: r.razorpayOrder.currency,
-          name: 'NamastePOS',
-          description: r.addon?.name ? `${r.addon.name} add-on` : 'Marketplace add-on',
-          theme: { color: '#FF6B35' },
-          handler: async (resp: any) => {
-            // Confirm server-side: the backend re-verifies the HMAC
-            // signature before activating, so a spoofed handler call
-            // can't turn the addon on. Unlike the old webhook flow this
-            // is synchronous — no 30s activation polling needed.
-            try {
-              await api.post(`/businesses/${b.id}/addons/${slug}/confirm-payment`, {
-                razorpayPaymentId: resp.razorpay_payment_id,
-                razorpayOrderId: resp.razorpay_order_id,
-                razorpaySignature: resp.razorpay_signature,
-              });
-              resolve();
-            } catch (err) {
-              reject(err);
-            }
-          },
-          modal: { ondismiss: () => reject(new Error('PAYMENT_CANCELLED')) },
-        });
-        rz.open();
-      });
+      await payForAddon(slug, r);
       return { slug };
     },
     onSuccess: () => {
@@ -95,26 +107,56 @@ export function MarketplacePage() {
 
   const cancel = useMutation({
     mutationFn: ffApi.cancelAddon,
-    // 2026-08-24: cancel now takes effect immediately (backend sets status
-    // 'cancelled' + busts the feature cache), so refresh BOTH the addon list
-    // and the plan/features query — otherwise the sidebar kept the feature
-    // unlocked and the row kept its "active" badge until the next poll.
-    onSuccess: () => {
-      toast.success('Add-on cancelled');
+    // 2026-08-24: cancel took effect immediately (status 'cancelled' + feature
+    // cache bust), so refresh BOTH the addon list and the plan/features query.
+    // 2026-09-06 (round 2 founder decision): PAID add-ons now cancel at period
+    // end (the owner keeps the days already paid for); free add-ons still
+    // cancel immediately. Read whichever the server did from the response.
+    onSuccess: (res: any) => {
+      const row = res?.activation || res;
+      if (row?.cancelAtPeriodEnd) {
+        toast.success(row.currentPeriodEnd
+          ? `Add-on cancels on ${formatDate(row.currentPeriodEnd)} — you keep it until then`
+          : 'Add-on cancels at the end of the paid period');
+      } else {
+        toast.success('Add-on cancelled');
+      }
       qc.invalidateQueries({ queryKey: ['my-addons'] });
       qc.invalidateQueries({ queryKey: ['me'] }); // D-19 (2026-09-05): plan lives under ['me'] now
     },
     onError: (e) => toast.error(apiError(e)),
   });
 
+  // 2026-09-06 (round 2, CONTRACTS §6): POST /addons/:slug/resume →
+  //   200 { activation }                 → un-cancelled, still inside the paid period
+  //   200 { requiresPayment, razorpayOrder, keyId } → period lapsed; pay to re-activate
+  //   409 ADDON_EXPIRED_REBUY            → too late to resume; subscribe again from the catalog
   const resume = useMutation({
-    mutationFn: ffApi.resumeAddon,
-    onSuccess: () => {
-      toast.success('Resumed');
+    mutationFn: async (slug: string) => {
+      const r = await ffApi.resumeAddon(slug);
+      if (r?.requiresPayment) {
+        await payForAddon(slug, r);
+        return { slug, paid: true };
+      }
+      return { slug, paid: false };
+    },
+    onSuccess: (res) => {
+      toast.success(res.paid ? 'Payment received — add-on re-activated' : 'Resumed');
       qc.invalidateQueries({ queryKey: ['my-addons'] });
       qc.invalidateQueries({ queryKey: ['me'] }); // D-19 (2026-09-05): plan lives under ['me'] now
     },
-    onError: (e) => toast.error(apiError(e)),
+    onError: (e: any) => {
+      if (e?.message === 'PAYMENT_CANCELLED') {
+        toast.warning('Payment cancelled — add-on was not re-activated');
+        return;
+      }
+      if (apiErrorCode(e) === 'ADDON_EXPIRED_REBUY') {
+        toast.error('This add-on has expired and cannot be resumed — subscribe to it again from the catalog below.');
+        qc.invalidateQueries({ queryKey: ['my-addons'] });
+        return;
+      }
+      toast.error(apiError(e));
+    },
   });
 
   const grouped: Record<string, any[]> = {};

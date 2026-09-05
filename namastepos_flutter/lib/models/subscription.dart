@@ -29,22 +29,77 @@ class Plan {
     // whole subscription parse on a string. Unknown → -1 (unlimited).
     int toIntSafe(dynamic v) =>
         v is num ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? -1;
-    final lim = m['limits'] as Map<String, dynamic>? ?? {};
+    // 2026-09-06: `.cast` rather than `as Map<String, dynamic>` — a nested map
+    // that is not exactly that type (a Map<dynamic,dynamic> from a cache or a
+    // test) used to crash the whole subscription parse.
+    final lim = (m['limits'] as Map?)?.cast<String, dynamic>() ?? {};
     return Plan(
-      id: m['id'] as String? ?? '',
-      tier: m['tier'] as String? ?? 'free',
-      name: m['name'] as String? ?? 'Free',
+      id: m['id']?.toString() ?? '',
+      tier: m['tier']?.toString() ?? 'free',
+      name: m['name']?.toString() ?? 'Free',
       priceInr: (m['priceInr'] as num?)?.toDouble() ?? 0,
       priceYearlyInr: (m['priceYearlyInr'] as num?)?.toDouble(),
       limits: lim.map((k, v) => MapEntry(k, toIntSafe(v))),
-      features: m['features'] as Map<String, dynamic>? ?? {},
+      features: (m['features'] as Map?)?.cast<String, dynamic>() ?? {},
+    );
+  }
+}
+
+/// A downgrade scheduled for the end of the paid period (CONTRACTS round 2 §6,
+/// `subscription.pendingPlan`). The server sends the serialised target plan;
+/// `effectiveAt` is its own field when present, else the caller falls back to
+/// `currentPeriodEnd` (which is when the switch happens).
+class PendingPlan {
+  final String? code;
+  final String name;
+  final DateTime? effectiveAt;
+  const PendingPlan({this.code, required this.name, this.effectiveAt});
+
+  static PendingPlan? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final m = raw.cast<String, dynamic>();
+    final name = (m['name'] ?? m['code'] ?? m['tier'])?.toString();
+    if (name == null || name.isEmpty) return null;
+    return PendingPlan(
+      code: (m['code'] ?? m['tier'])?.toString(),
+      name: name,
+      effectiveAt: m['effectiveAt'] != null
+          ? DateTime.tryParse(m['effectiveAt'].toString())
+          : null,
+    );
+  }
+}
+
+/// Admin suspension block (`subscription.suspension`). The tenant cannot lift
+/// it from the app — Billing shows the message and hides every upgrade CTA.
+class SuspensionInfo {
+  final DateTime? since;
+  final String message;
+  const SuspensionInfo({this.since, required this.message});
+
+  static const defaultMessage = 'Account suspended — contact support.';
+
+  static SuspensionInfo? fromMap(Object? raw) {
+    if (raw is! Map) return null;
+    final m = raw.cast<String, dynamic>();
+    if (m['suspended'] == false) return null;
+    final sinceRaw = m['since'] ?? m['suspendedAt'];
+    return SuspensionInfo(
+      since: sinceRaw != null ? DateTime.tryParse(sinceRaw.toString()) : null,
+      message: (m['message']?.toString().trim().isNotEmpty ?? false)
+          ? m['message'].toString().trim()
+          : defaultMessage,
     );
   }
 }
 
 class Subscription {
   final String id;
-  final String status;       // trialing | active | past_due | paused | cancelled
+  /// trialing | active | past_due | paused | cancelled | suspended — or
+  /// anything newer the server invents. Kept as a raw string on purpose: an
+  /// unknown status must never throw (round 2 MOB #2); every getter below is a
+  /// plain comparison and unknown values simply read as "not that".
+  final String status;
   final DateTime? trialEndsAt;
   final DateTime currentPeriodEnd;
   final bool cancelAtPeriodEnd;
@@ -53,6 +108,13 @@ class Subscription {
   /// since 2026-09-04 for `upgrade_paid.billing_cycle`.
   final String billingPeriod;
   final Plan? plan;
+  /// Scheduled downgrade ("Moves to Starter on 2026-10-01"), else null.
+  final PendingPlan? pendingPlan;
+  /// True while a resume/restore checkout has been opened and the row flips
+  /// back to full service only when its first charge lands.
+  final bool reactivationPending;
+  /// Present iff the account is admin-suspended.
+  final SuspensionInfo? suspension;
 
   Subscription({
     required this.id,
@@ -62,11 +124,28 @@ class Subscription {
     this.cancelAtPeriodEnd = false,
     this.billingPeriod = 'monthly',
     this.plan,
+    this.pendingPlan,
+    this.reactivationPending = false,
+    this.suspension,
   });
 
   bool get isTrialing => status == 'trialing';
   bool get isActive => status == 'active' || status == 'trialing';
   bool get isPaused => status == 'paused' || status == 'past_due';
+  bool get isSuspended => status == 'suspended' || suspension != null;
+
+  /// When a scheduled downgrade takes effect — the server's `effectiveAt` if
+  /// it sent one, else the end of the current paid period.
+  DateTime? get pendingPlanEffectiveAt =>
+      pendingPlan == null ? null : (pendingPlan!.effectiveAt ?? currentPeriodEnd);
+
+  /// Whether POST /billing/resume is worth offering: a pause, or an undo of
+  /// cancel-at-period-end on a live row. Never on a suspended account (403),
+  /// never while a reactivation charge is already pending.
+  bool get canOfferResume =>
+      !isSuspended &&
+      !reactivationPending &&
+      (status == 'paused' || (status == 'active' && cancelAtPeriodEnd));
   int? get daysLeft {
     if (currentPeriodEnd.isBefore(DateTime.now())) return 0;
     return currentPeriodEnd.difference(DateTime.now()).inDays;
@@ -106,9 +185,21 @@ class Subscription {
             DateTime.fromMillisecondsSinceEpoch(0),
         cancelAtPeriodEnd: m['cancelAtPeriodEnd'] == true,
         billingPeriod: m['billingPeriod'] as String? ?? 'monthly',
-        plan: m['plan'] != null
-            ? Plan.fromMap(m['plan'] as Map<String, dynamic>)
+        plan: m['plan'] is Map
+            ? Plan.fromMap((m['plan'] as Map).cast<String, dynamic>())
             : null,
+        pendingPlan: PendingPlan.fromMap(m['pendingPlan']),
+        reactivationPending: m['reactivationPending'] == true,
+        suspension: SuspensionInfo.fromMap(m['suspension']) ??
+            // Older serialiser: status alone says it. Build the block so the
+            // UI has one thing to read.
+            (m['status'] == 'suspended'
+                ? SuspensionInfo(
+                    since: m['suspendedAt'] != null
+                        ? DateTime.tryParse(m['suspendedAt'].toString())
+                        : null,
+                    message: SuspensionInfo.defaultMessage)
+                : null),
       );
 }
 

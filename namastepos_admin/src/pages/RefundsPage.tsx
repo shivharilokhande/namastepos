@@ -12,10 +12,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { adminApi } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatINR, formatDateTime } from '@/lib/utils';
+import { useCan } from '@/lib/rbac';
 
 export function RefundsPage() {
   const { data: refunds = [], isError, error, refetch } = useQuery({ queryKey: ['refunds'], queryFn: () => adminApi.listRefunds() });
   const [initiating, setInitiating] = useState(false);
+  const { can } = useCan(); // F-10 — POST /admin/refunds is refunds.write
 
   return (
     <div className="space-y-6">
@@ -29,9 +31,11 @@ export function RefundsPage() {
             {isError ? '—' : `${refunds.length} refunds`}
           </p>
         </div>
-        <Button onClick={() => setInitiating(true)}>
-          <Plus className="mr-2 h-4 w-4" /> Initiate refund
-        </Button>
+        {can('refunds.write') && (
+          <Button onClick={() => setInitiating(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Initiate refund
+          </Button>
+        )}
       </div>
 
       <Card>

@@ -229,6 +229,12 @@ function serializePlan(p) {
     priceInrPaise: monthly,
     priceYearlyInr: yearly != null ? yearly / 100 : null,
     priceYearlyInrPaise: yearly,
+    // 2026-09-06 (admin review F-02): the 10× default above means
+    // priceYearlyInr is never null for a paid plan, so the console's "Monthly
+    // only" / "Offer yearly" control had nothing to read. This is the RAW
+    // column's truth: yearly is offered iff the admin set a yearly price.
+    // priceYearlyInr keeps the default for every existing client.
+    offersYearly: p.price_yearly_paise != null,
     // Legacy — kept for anything still reading plan.billingPeriod.
     // A plan itself no longer has a single billing period; each
     // subscription picks monthly vs yearly at checkout.

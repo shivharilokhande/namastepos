@@ -53,20 +53,31 @@ export function FeatureUpgradeCard({
 }
 
 export function RequireFeature({
-  feature, children,
-}: { feature: string; children?: React.ReactNode }) {
+  feature, children, compact = false, title,
+}: {
+  feature: string;
+  children?: React.ReactNode;
+  /**
+   * 2026-09-06: `compact` renders the card inline (no top margin / centring)
+   * so the gate can wrap a SECTION of a page — Settings → API access /
+   * White label — rather than a whole route. `title` overrides the card
+   * heading ("API access is not in your plan").
+   */
+  compact?: boolean;
+  title?: string;
+}) {
   const plan = usePlan();
   // Spinner only while the FIRST /auth/me is in flight. If it answered
   // without a plan block (server could not compute a summary) we fall
   // through to has() === false → upgrade card, never an endless spinner.
   if (plan.isLoading) {
     return (
-      <div className="flex items-center justify-center py-24" role="status" aria-live="polite">
+      <div className={`flex items-center justify-center ${compact ? 'py-8' : 'py-24'}`} role="status" aria-live="polite">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-muted border-t-primary" />
         <span className="sr-only">Loading…</span>
       </div>
     );
   }
-  if (!plan.has(feature)) return <FeatureUpgradeCard feature={feature} />;
+  if (!plan.has(feature)) return <FeatureUpgradeCard feature={feature} compact={compact} title={title} />;
   return children !== undefined ? <>{children}</> : <Outlet />;
 }

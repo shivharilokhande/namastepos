@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { adminApi } from '@/api/admin';
-import { formatINR, formatDate } from '@/lib/utils';
+import { formatINR } from '@/lib/utils';
 import { apiError } from '@/api/client';
 
 export function GstPage() {

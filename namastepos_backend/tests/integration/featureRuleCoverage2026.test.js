@@ -157,8 +157,14 @@ describe('featureGate FEATURE_RULES cover real routes (B10)', () => {
     // These are the exact strings that sat in FEATURE_RULES until 2026-09-05.
     // If any of them ever DOES match a route, that is fine — but then it is
     // also fine to gate it, and this list should be updated deliberately.
+    //
+    // 2026-09-06 (round 2, CONTRACTS §2): '/recurring-invoice' left this list
+    // deliberately — recurring invoices were BUILT (routes/recurringInvoices
+    // .routes.js at '/recurring-invoices') and the live rule
+    // { match: '/recurring-invoices', key: 'recurring_invoices' } is asserted
+    // by (a)/(b) above and pinned in the expectations block below.
     const historicalDead = [
-      '/captain/', '/qr-codes', '/whatsapp', '/recurring-invoice', '/marketplace',
+      '/captain/', '/qr-codes', '/whatsapp', '/marketplace',
       '/fx-rates', '/recipes', '/heat-map', '/outlets', '/multi-outlet',
     ];
     const nowLive = historicalDead.filter((m) => gated.some((p) => p.includes(m)));
@@ -183,6 +189,9 @@ describe('featureGate FEATURE_RULES cover real routes (B10)', () => {
       '/ops/tables/:tableId/qr/rotate': 'qr_ordering',
       '/fx/:base/:quote': 'multi_currency_fx',
       '/orders/:orderId/assign-driver': 'driver_mode',
+      // 2026-09-06 (round 2): recurring invoices built — CRUD + run-now.
+      '/recurring-invoices': 'recurring_invoices',
+      '/recurring-invoices/:id/run-now': 'recurring_invoices',
     };
     for (const [path, key] of Object.entries(expectations)) {
       expect(gated).toContain(path);

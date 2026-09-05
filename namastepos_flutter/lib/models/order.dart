@@ -1,5 +1,7 @@
 // NamastePOS - Order + OrderItem models
 
+import 'dart:convert';
+
 enum OrderStatus { pending, ready, collected, cancelled }
 enum OrderSource { dineIn, takeaway, zomato, swiggy, other }
 enum PaymentMethod { cash, upi, card, online, unpaid }
@@ -45,6 +47,21 @@ class OrderItem {
   final double price;
   final double qty;
   final String? note;          // e.g. "extra spice", "no onion"
+  // 2026-09-06 (round 2, MOB #1): the picked variant + modifiers travel as
+  // STRUCTURED fields, exactly as the web NewOrderDialog sends them. Since
+  // NP-201 the server prices every line from menu_items.price (+ the
+  // validated variant / modifier deltas) and only knows about a "Large" or
+  // "+extra cheese" when the ids are on the wire — a line without them was
+  // re-priced to the base price and logged as a priceAdjustments entry.
+  // `variantLabel` and the modifier labels are advisory (the server
+  // re-derives them from the DB, NP-202); they are kept here so offline
+  // receipts and KOTs can name the choice before the row syncs.
+  // `modifierLines` entries carry the mobile shape the Joi schema admits:
+  // {groupId, groupLabel, optionId, optionLabel, priceDelta} (server rows
+  // additionally carry modifierId/name/priceDeltaInr — see [modifierNames]).
+  final String? variantId;
+  final String? variantLabel;
+  final List<Map<String, dynamic>>? modifierLines;
 
   const OrderItem({
     required this.id,
@@ -54,9 +71,53 @@ class OrderItem {
     required this.price,
     required this.qty,
     this.note,
+    this.variantId,
+    this.variantLabel,
+    this.modifierLines,
   });
 
   double get lineTotal => price * qty;
+
+  bool get hasModifiers => modifierLines != null && modifierLines!.isNotEmpty;
+
+  /// Modifier names for display — accepts both spellings in production
+  /// (mobile `optionLabel`, web `name`); the server persists both.
+  List<String> get modifierNames => (modifierLines ?? const [])
+      .map((m) => (m['optionLabel'] ?? m['name'])?.toString() ?? '')
+      .where((s) => s.isNotEmpty)
+      .toList();
+
+  /// "Large · extra cheese" — null when the line has no variant/modifiers.
+  String? get configLabel {
+    final parts = <String>[];
+    if (variantLabel != null && variantLabel!.trim().isNotEmpty) {
+      parts.add(variantLabel!.trim());
+    }
+    parts.addAll(modifierNames);
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  /// Name + configuration for one-line UI rows ("Pizza (Large · extra
+  /// cheese)"). Rows created before 2026-09-06 already embed the summary in
+  /// `name` and carry no structured fields, so they render unchanged.
+  String get displayName =>
+      configLabel == null ? name : '$name ($configLabel)';
+
+  /// Parses `modifierLines` from either a sqflite TEXT (JSON) column or a
+  /// backend JSON array. Anything unreadable → null, never a throw.
+  static List<Map<String, dynamic>>? parseModifierLines(Object? raw) {
+    Object? v = raw;
+    if (v is String) {
+      if (v.trim().isEmpty) return null;
+      try { v = jsonDecode(v); } catch (_) { return null; }
+    }
+    if (v is! List) return null;
+    final out = <Map<String, dynamic>>[];
+    for (final e in v) {
+      if (e is Map) out.add(e.cast<String, dynamic>());
+    }
+    return out.isEmpty ? null : out;
+  }
 
   factory OrderItem.fromMap(Map<String, dynamic> m) => OrderItem(
         // Null-safe (2026-08-22): merged bill items / unmapped aggregator
@@ -68,8 +129,13 @@ class OrderItem {
         price: (m['price'] as num?)?.toDouble() ?? 0,
         qty: (m['qty'] as num?)?.toDouble() ?? 1,
         note: m['note'] as String?,
+        // Old sqflite rows (schema < v5) have no such columns → null.
+        variantId: m['variantId']?.toString(),
+        variantLabel: m['variantLabel']?.toString(),
+        modifierLines: parseModifierLines(m['modifierLines']),
       );
 
+  /// sqflite row. `modifierLines` is stored as a JSON TEXT column.
   Map<String, dynamic> toMap() => {
         'id': id,
         'orderId': orderId,
@@ -78,6 +144,23 @@ class OrderItem {
         'price': price,
         'qty': qty,
         'note': note,
+        'variantId': variantId,
+        'variantLabel': variantLabel,
+        'modifierLines': hasModifiers ? jsonEncode(modifierLines) : null,
+      };
+
+  /// The item entry of the POST /orders body — the ONE place both create
+  /// paths (direct post + offline outbox) build it from, so they cannot
+  /// drift. Mirrors the web dashboard's payload field-for-field.
+  Map<String, dynamic> toOrderBody() => {
+        'menuItemId': menuItemId,
+        'name': name,
+        'price': price,
+        'qty': qty,
+        if (note != null) 'note': note,
+        if (variantId != null) 'variantId': variantId,
+        if (variantLabel != null) 'variantLabel': variantLabel,
+        if (hasModifiers) 'modifierLines': modifierLines,
       };
 }
 
@@ -229,6 +312,9 @@ class Order {
           price: (it['price'] as num?)?.toDouble() ?? 0,
           qty: (it['qty'] as num?)?.toDouble() ?? 0,
           note: it['note'] as String?,
+          variantId: it['variantId']?.toString(),
+          variantLabel: it['variantLabel']?.toString(),
+          modifierLines: OrderItem.parseModifierLines(it['modifierLines']),
         )).toList();
     return Order(
       id: m['id'] as String,

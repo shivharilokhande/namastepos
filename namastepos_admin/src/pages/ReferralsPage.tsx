@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { adminApi } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatDateTime, formatINR } from '@/lib/utils';
+import { useCan } from '@/lib/rbac';
 
 // L2 (2026-08-28) — referral program admin view + payouts.
 
@@ -19,6 +20,7 @@ const STATUS_VARIANT: Record<string, any> = { pending: 'warning', signed_up: 'se
 
 export function ReferralsPage() {
   const qc = useQueryClient();
+  const { can } = useCan(); // F-10 — reward is customers.write
   const [status, setStatus] = useState('');
   const { data: referrals = [], isError: refErr, error: refErrObj, refetch: refetchRef } = useQuery<Referral[]>({
     queryKey: ['referrals', status],
@@ -81,7 +83,9 @@ export function ReferralsPage() {
                   <TableCell className="text-sm">{formatDateTime(r.createdAt)}</TableCell>
                   <TableCell className="text-right">
                     {r.status === 'signed_up' ? (
-                      <Button size="sm" variant="ghost" onClick={() => reward.mutate(r.id)} disabled={reward.isPending}>Award +30d</Button>
+                      can('customers.write')
+                        ? <Button size="sm" variant="ghost" onClick={() => reward.mutate(r.id)} disabled={reward.isPending}>Award +30d</Button>
+                        : <span className="text-xs text-muted-foreground">pending award</span>
                     ) : r.status === 'awarded' ? <span className="text-xs text-muted-foreground">✓ awarded</span>
                       : <span className="text-xs text-muted-foreground">—</span>}
                   </TableCell>

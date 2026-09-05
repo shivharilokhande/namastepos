@@ -74,6 +74,30 @@ async function _baseFeatureKeys(baseTier) {
   return features.listTierFeatures(base.tier, base.tier_kind);
 }
 
+function _limitsOf(row) {
+  const raw = row && row.limits;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw || '{}') || {}; } catch (_) { return {}; }
+  }
+  return raw || {};
+}
+
+/**
+ * Limits of the cheapest ACTIVE PUBLIC plan — the floor a standalone custom
+ * plan inherits for every metric the admin did not set (F-06). Read from the
+ * table so it follows whatever the founder configures; `{}` only when there is
+ * no public plan at all (a broken catalogue, not a normal state).
+ */
+async function _cheapestPublicLimits() {
+  const r = await query(
+    `SELECT limits FROM plans
+      WHERE is_public = TRUE AND is_active = TRUE AND business_id IS NULL
+      ORDER BY price_inr_paise ASC, created_at ASC
+      LIMIT 1`,
+  );
+  return r.rowCount > 0 ? _limitsOf(r.rows[0]) : {};
+}
+
 function _extrasOf(row) {
   const raw = row.features;
   const obj = typeof raw === 'string' ? JSON.parse(raw || '{}') : (raw || {});
@@ -156,10 +180,15 @@ async function upsertForBusiness(businessId, body) {
   // fail closed at the bottom of the ladder instead.
   const tierKind = body.tierKind
     || (base ? base.tier_kind : planTiers.FALLBACK_TIER_KIND);
-  const baseLimits = base
-    ? (typeof base.limits === 'string' ? JSON.parse(base.limits || '{}') : (base.limits || {}))
-    : {};
-  // Explicit custom limits win; anything omitted inherits the base plan's.
+  // 2026-09-06 (admin review F-06): a STANDALONE custom plan used to start
+  // from `{}`, and enforceLimit treats a missing metric as uncapped — so a
+  // bespoke plan whose admin typed nothing for `businesses` (the console could
+  // not even offer the field) had unlimited outlets, staff, tables… The
+  // floor is now the cheapest public plan's limits (Starter today, read from
+  // the table — never a literal), so an omitted cap is the smallest cap, not
+  // no cap. With a base plan, that plan's limits are the floor as before.
+  const baseLimits = base ? _limitsOf(base) : await _cheapestPublicLimits();
+  // Explicit custom limits win; anything omitted inherits the floor's.
   const limits = { ...baseLimits, ...(body.limits || {}) };
 
   const r = await query(
