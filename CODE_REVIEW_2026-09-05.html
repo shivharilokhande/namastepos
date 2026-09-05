@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NamastePOS Code Review</title>
+<style>
+  :root{--bg:#f7f6f3;--card:#fff;--ink:#14161a;--dim:#5f6672;--line:#e3e1dc;
+    --ok:#1a7f4b;--okbg:#e8f5ee;--warn:#8a5a00;--warnbg:#fdf3e0;--stop:#a32b2b;--stopbg:#fbeceb;--info:#1f4fd8;--infobg:#e9eefc}
+  @media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#14161a;--card:#1c1f25;--ink:#eceef2;--dim:#9aa2b1;--line:#2c313a;
+    --ok:#5fd39b;--okbg:#12301f;--warn:#e8bc6a;--warnbg:#332714;--stop:#f08b86;--stopbg:#331a19;--info:#7ea2ff;--infobg:#18203a}}
+  :root[data-theme=dark]{--bg:#14161a;--card:#1c1f25;--ink:#eceef2;--dim:#9aa2b1;--line:#2c313a;
+    --ok:#5fd39b;--okbg:#12301f;--warn:#e8bc6a;--warnbg:#332714;--stop:#f08b86;--stopbg:#331a19;--info:#7ea2ff;--infobg:#18203a}
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);margin:0;padding:24px 18px 70px;font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1080px;margin:0 auto}
+  h1{font-size:25px;letter-spacing:-.02em;margin:0 0 3px}
+  .sub{color:var(--dim);font-size:13.5px;margin:0 0 20px}
+  h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);margin:28px 0 9px;font-weight:600}
+  .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:9px;margin-bottom:18px}
+  .s{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .s .n{font-size:21px;font-weight:650;letter-spacing:-.02em}
+  .s .l{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-top:1px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:14px 16px;margin-bottom:10px}
+  .card p{margin:6px 0;color:var(--dim);font-size:14px}
+  .card p b{color:var(--ink)}
+  .q{font-weight:600;font-size:15px;margin:0 0 4px}
+  .tw{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:11px}
+  table{border-collapse:collapse;width:100%;font-size:13.5px}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--dim);padding:10px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .tag{font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
+  .p0{background:var(--stopbg);color:var(--stop)} .p1{background:var(--warnbg);color:var(--warn)} .p2,.p3{background:var(--infobg);color:var(--info)}
+  .fx{background:var(--okbg);color:var(--ok)} .op{background:var(--warnbg);color:var(--warn)} .you{background:var(--stopbg);color:var(--stop)}
+  footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:var(--dim);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>NamastePOS code review — 5/6 Sep 2026</h1>
+  <p class="sub">Full <code>/engineering:code-review</code> of backend, super-admin, web dashboard and Flutter app at <code>88c693d</code>; fixes shipped as <code>4b50e19</code>, verified live via <code>/v1/health</code>. Five reviewers, five fixers, every fix carries a regression test.</p>
+
+  <div class="strip">
+    <div class="s"><div class="n">62</div><div class="l">findings</div></div>
+    <div class="s"><div class="n">8</div><div class="l">P0</div></div>
+    <div class="s"><div class="n">22</div><div class="l">P1</div></div>
+    <div class="s"><div class="n">52</div><div class="l">fixed &amp; live</div></div>
+    <div class="s"><div class="n">943</div><div class="l">backend tests (was 828)</div></div>
+    <div class="s"><div class="n">131</div><div class="l">flutter tests (was 92)</div></div>
+  </div>
+
+  <h2>The four questions</h2>
+  <div class="card"><p class="q">1. Is everything that was developed working, or are there bugs?</p>
+    <p><b>There were serious bugs.</b> Five ways to keep a paid plan without paying; every auto-issued tax invoice showed ₹0 GST because order creation never wrote per-line GST; both tills recorded ₹0 GST on every order; GSTR exports 500'd; gift cards on web were unusable; two tenant-isolation holes; a guest-paid table stayed occupied forever. <b>All fixed and deployed.</b> Core POS/order/settle/refund path, auth, webhooks and offline sync were found solid.</p></div>
+  <div class="card"><p class="q">2. Are all features present in admin to add to plans?</p>
+    <p><b>Yes.</b> The picker reads the 52-key registry via <code>/admin/feature-catalog</code>; every key is grantable, grouped, with ungated keys badged. Gaps fixed: overrides, custom plans and addon grants accepted unknown keys; an empty plan inherited Enterprise's features through the <code>pro</code> kind/code collision; limits were unvalidated.</p></div>
+  <div class="card"><p class="q">3. Are all features working in admin, dashboard and mobile?</p>
+    <p><b>Mostly, with named exceptions.</b> Sold but delivering nothing (your call, see tracker): <code>recurring_invoices</code>, <code>api_access</code>, <code>white_label</code>, <code>marketplace_addons</code>. Fixed: recipe costing demanded the add-on on plans that include it; loyalty at mobile checkout did the same; B2B template page overwrote the receipt template (now read-only pending your decision).</p></div>
+  <div class="card"><p class="q">4. Do features activate/deactivate per plan in dashboard and mobile?</p>
+    <p><b>Mobile: yes</b> (fail-closed, <code>X-Plan-Version</code> on every response, 5-min backstop). <b>Dashboard: now yes</b> — it was a lock icon on the sidebar with every page reachable by URL and a hardcoded Starter list while loading. <b>Server: now yes</b> — six keys had gate rules matching no route, so un-ticking them in admin did nothing; a router-walking test now fails CI on any dead rule.</p></div>
+
+  <h2>Backend — billing &amp; entitlements</h2>
+  <div class="tw"><table>
+    <tr><th>ID</th><th>Sev</th><th>Finding</th><th>Status</th></tr>
+    <tr><td>A1</td><td><span class="tag p0">P0</span></td><td><code>POST /billing/resume</code> flipped any status (trialing/past_due/cancelled) to <code>active</code> on a paid plan with no payment; nightly cron kept it alive forever.</td><td><span class="tag fx">fixed</span> undo-cancel only; else 409; paid+gateway → checkout</td></tr>
+    <tr><td>A2</td><td><span class="tag p0">P0</span></td><td>Addon <code>resume</code> set <code>current_period_end = NOW()+100 years</code> for any row, including revoked ones.</td><td><span class="tag fx">fixed</span> paid → checkout / 409 expired</td></tr>
+    <tr><td>A3</td><td><span class="tag p0">P0</span></td><td>Downgrade to Starter never cancelled the Razorpay mandate; next <code>subscription.charged</code> silently restored the paid plan.</td><td><span class="tag fx">fixed</span> cancel-at-cycle-end + pending downgrade; nightly sweep</td></tr>
+    <tr><td>A4</td><td><span class="tag p0">P0</span></td><td>Pause cancelled the mandate; resume set active with no new gateway subscription → reverted on webhook or free forever.</td><td><span class="tag fx">fixed</span> stays paused until charge succeeds</td></tr>
+    <tr><td>A6</td><td><span class="tag p1">P1</span></td><td>Admin suspend wrote <code>paused</code>; tenant could <code>POST /billing/resume</code> to undo it. Restore set <code>active</code> unconditionally.</td><td><span class="tag fx">fixed</span> distinct <code>suspended</code> status (mig 094)</td></tr>
+    <tr><td>A7</td><td><span class="tag p1">P1</span></td><td>Expired paid addons kept granting features (no <code>current_period_end</code> check in <code>hasFeature</code>).</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>A5</td><td><span class="tag p1">P1</span></td><td>Proration is computed nowhere in prod; upgrades forfeit the unused remainder.</td><td><span class="tag you">your decision</span> response makes no false claim</td></tr>
+    <tr><td>E1</td><td><span class="tag p1">P1</span></td><td>Plan with zero <code>plan_features</code> rows fell back to <code>tier_kind='pro'</code> rows = Enterprise's code <code>pro</code> → 51 keys while admin showed 0.</td><td><span class="tag fx">fixed</span> fallback refused on collision</td></tr>
+    <tr><td>B1–B9</td><td><span class="tag p1">P1</span></td><td>Gate rules for <code>whatsapp_marketing</code>, <code>bill_split</code> (create), <code>qr_ordering</code>, <code>captain_mode</code>, <code>marketplace_addons</code>, <code>multi_currency_fx</code>, <code>recurring_invoices</code> matched zero routes; <code>/assign-driver</code>, <code>/food-coupons</code> open.</td><td><span class="tag fx">fixed</span> real rules; honest registry entries</td></tr>
+    <tr><td>B10</td><td><span class="tag p1">P1</span></td><td>Drift audit counted a rule as proof without checking it matched any route — why B1–B9 passed CI.</td><td><span class="tag fx">fixed</span> <code>featureRuleCoverage2026</code> walks the Express router</td></tr>
+    <tr><td>B12</td><td><span class="tag p2">P2</span></td><td>Aggregator webhook ingested orders for tenants whose plan lacks <code>aggregators</code>.</td><td><span class="tag fx">fixed</span> parked with 202 — <b>check prod tenants</b></td></tr>
+    <tr><td>D1</td><td><span class="tag p1">P1</span></td><td><code>/ingredients</code> and stock deduction required the paid add-on even when the plan grants <code>recipe_costing</code>.</td><td><span class="tag fx">fixed</span> orFeature + hasFeature</td></tr>
+    <tr><td>F1–F3</td><td><span class="tag p2">P2</span></td><td>Unknown feature keys accepted on overrides / custom plans / addon grants; limits unvalidated (NaN → uncapped); <code>pos</code> removable.</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>A8–A10, F4</td><td><span class="tag p3">P3</span></td><td>Webhook status writes without cache clear; <code>tier==='free'</code> literals; trial extension on active tenants.</td><td><span class="tag fx">fixed</span> <code>isFreePlan()</code> by price</td></tr>
+  </table></div>
+
+  <h2>Backend — correctness &amp; security</h2>
+  <div class="tw"><table>
+    <tr><th>ID</th><th>Sev</th><th>Finding</th><th>Status</th></tr>
+    <tr><td>#1</td><td><span class="tag p0">P0</span></td><td>Every auto-issued GST invoice carried ₹0 GST and a total ≠ what was paid — <code>order_items.gst_pct/gst_amount</code> never written; the only test seeded them by hand.</td><td><span class="tag fx">fixed</span> paise-exact per-line allocation; total == order total; legacy fallback</td></tr>
+    <tr><td>tax</td><td><span class="tag p0">P0</span></td><td>Mobile sent <code>tax: 0</code>; web POS had a manual Tax box defaulting to 0 → both tills recorded ₹0 GST on every order.</td><td><span class="tag fx">fixed</span> omitted tax = server computes; both clients show CGST/SGST</td></tr>
+    <tr><td>#2</td><td><span class="tag p1">P1</span></td><td>GSTR-1 / GSTR-3B exports selected non-existent columns → 500 on every call.</td><td><span class="tag fx">fixed</span> rewritten on real schema, 200-path tests</td></tr>
+    <tr><td>#3</td><td><span class="tag p1">P1</span></td><td>Guest "pay whole bill" set <code>closed_at</code> but not <code>status</code>; table stayed occupied, next diner attached to the paid session.</td><td><span class="tag fx">fixed</span> <code>closeSession</code> in one txn</td></tr>
+    <tr><td>#4</td><td><span class="tag p1">P1</span></td><td>Owner could change <b>any</b> user's login phone by UUID (<code>updateStaffWithPin</code> wrote <code>users</code> without membership check).</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>#5</td><td><span class="tag p1">P1</span></td><td>Client <code>tableSessionId</code> never tenant/open-checked; settle SUM/flip queries lacked <code>business_id</code> → cross-tenant settle poisoning.</td><td><span class="tag fx">fixed</span> 400 <code>INVALID_SESSION</code></td></tr>
+    <tr><td>#6</td><td><span class="tag p1">P1</span></td><td>Guest QR treated as trusted aggregator channel: 86'd items orderable, no stock lock, tax 0; fresh menus invisible to diners.</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>#7</td><td><span class="tag p2">P2</span></td><td>No <code>requireStaffPerm</code> on POST /orders, cancel-collected, session open, customers — kitchen/driver tokens can void bills.</td><td><span class="tag op">open</span> needs role-matrix confirmation</td></tr>
+    <tr><td>#8, #9, #12, #13</td><td><span class="tag p2">P2</span></td><td>Discount-PIN brute force; orphan sessions on failed orders; expired timed 86 hides forever; 22P02 → 500.</td><td><span class="tag fx">fixed</span></td></tr>
+  </table></div>
+
+  <h2>Web dashboard</h2>
+  <div class="tw"><table>
+    <tr><th>ID</th><th>Sev</th><th>Finding</th><th>Status</th></tr>
+    <tr><td>D-15</td><td><span class="tag p1">P1</span></td><td>Entitlements fail-<b>open</b> to a hardcoded 10-key Starter list while loading.</td><td><span class="tag fx">fixed</span> fail-closed, skeleton nav</td></tr>
+    <tr><td>D-10</td><td><span class="tag p1">P1</span></td><td>Gating was sidebar-only; every locked page reachable by URL; 402s swallowed into blank lists.</td><td><span class="tag fx">fixed</span> <code>RequireFeature</code> on every keyed route + one 402 toast</td></tr>
+    <tr><td>D-09</td><td><span class="tag p1">P1</span></td><td>Phone+PIN staff saw the full owner sidebar (Billing, Staff, Settings…).</td><td><span class="tag fx">fixed</span> nav by <code>permissions[]</code></td></tr>
+    <tr><td>D-05</td><td><span class="tag p1">P1</span></td><td>Customers/Memberships nav demanded the paid loyalty add-on the plan already covers.</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>D-06/07/11/12</td><td><span class="tag p1">P1</span></td><td>Voice mic, Split bill, receipt-template save, e-invoice button all ungated on web.</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>D-03</td><td><span class="tag p0">P0</span></td><td>Gift cards tab written against a retired API — could not issue, list or redeem.</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>D-01</td><td><span class="tag p0">P0</span></td><td>Recurring invoices sold on Advanced/Enterprise; page said "use the API"; no API exists.</td><td><span class="tag you">your decision</span> page now honest</td></tr>
+    <tr><td>D-04</td><td><span class="tag p1">P1</span></td><td>B2B template page silently overwrote the receipt template and 402'd on save below Enterprise.</td><td><span class="tag op">read-only</span> pending your answer</td></tr>
+    <tr><td>X-Plan-Version</td><td><span class="tag p2">P2</span></td><td>Header never read on web.</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>D-17</td><td><span class="tag p3">P3</span></td><td>No eslint config; <code>npm run lint</code> never ran anywhere.</td><td><span class="tag fx">fixed</span> config + CI step</td></tr>
+  </table></div>
+
+  <h2>Flutter mobile (v1.0.22+23)</h2>
+  <div class="tw"><table>
+    <tr><th>ID</th><th>Sev</th><th>Finding</th><th>Status</th></tr>
+    <tr><td>M1</td><td><span class="tag p1">P1</span></td><td>Loyalty/customer attach at Pay &amp; Place keyed to <code>hasAddon('loyalty')</code> (slug) not the plan key — Growth+ without the add-on got nothing.</td><td><span class="tag fx">fixed</span> <code>CheckoutGates</code> on plan keys</td></tr>
+    <tr><td>M2</td><td><span class="tag p1">P1</span></td><td>No GST calc on mobile; <code>tax: 0</code> on every order; receipts from local row.</td><td><span class="tag fx">fixed</span> <code>utils/gst.dart</code> mirrors backend; server row printed</td></tr>
+    <tr><td>M3</td><td><span class="tag p2">P2</span></td><td><code>tax_invoices</code> reachable via Registers → Invoices tab without the key.</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>M4</td><td><span class="tag p2">P2</span></td><td>WhatsApp button on dine-in order detail (founder rule).</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>M5</td><td><span class="tag p2">P2</span></td><td><code>PlanGate.tile</code> popped the root route on double-tap (the 2026-08-23 black-screen bug, never fixed here).</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>M6</td><td><span class="tag p2">P2</span></td><td>Captains/waiters landed on Dashboard with revenue/profit KPIs.</td><td><span class="tag fx">fixed</span></td></tr>
+    <tr><td>M-var</td><td><span class="tag p1">P1</span></td><td>Order lines never send <code>variantId</code>/<code>modifierLines</code>; server re-prices to base (pre-existing, found by fixer).</td><td><span class="tag op">open</span> next release</td></tr>
+    <tr><td>M8–M15</td><td><span class="tag p3">P3</span></td><td>Role fallback map drift, raw JSON in a SnackBar, surge 402 on every checkout, 402 without CTA, KPI perms, unused tier-code getter, manager lost Settings.</td><td><span class="tag fx">fixed</span></td></tr>
+  </table></div>
+
+  <h2>Super-admin console</h2>
+  <div class="tw"><table>
+    <tr><th>ID</th><th>Sev</th><th>Finding</th><th>Status</th></tr>
+    <tr><td>F-01</td><td><span class="tag p1">P1</span></td><td>Same as E1 — empty plan shows 0 features in admin, tenants get Enterprise.</td><td><span class="tag fx">fixed</span> (backend)</td></tr>
+    <tr><td>F-02</td><td><span class="tag p2">P2</span></td><td>"Offer yearly" toggle is a no-op: <code>serializePlan</code> always returns 10× monthly.</td><td><span class="tag op">open</span></td></tr>
+    <tr><td>F-03</td><td><span class="tag p2">P2</span></td><td>No "effective features" view per customer (plan ∪ overrides ∪ addons).</td><td><span class="tag op">open</span></td></tr>
+    <tr><td>F-04</td><td><span class="tag p2">P2</span></td><td>Ungated-key warning shown in 1 of 4 pickers.</td><td><span class="tag op">open</span></td></tr>
+    <tr><td>F-06</td><td><span class="tag p2">P2</span></td><td>Custom plans cannot cap <code>businesses</code>; standalone custom plans uncapped.</td><td><span class="tag op">open</span></td></tr>
+    <tr><td>F-09</td><td><span class="tag p3">P3</span></td><td>No eslint config; lint never runs for admin.</td><td><span class="tag op">open</span></td></tr>
+    <tr><td>—</td><td></td><td>Verified OK: picker reads registry (52 keys), all API paths exist (129/129), cookie-only auth, no token in localStorage, tier labels shown with codes.</td><td><span class="tag fx">ok</span></td></tr>
+  </table></div>
+
+  <h2>Verification</h2>
+  <div class="card"><p>Backend <code>jest --runInBand</code>: <b>943/943</b>, exit 0 (baseline 828/828 re-run before any edit). ESLint backend: 0 errors. <code>feature-registry-audit.js</code>: OK — 52 keys, 27 server / 26 mobile / 33 dashboard gated, 9 declared unenforced. Dashboard: tsc 0, eslint 0 errors, build 0. Admin: tsc 0. Flutter: <code>analyze</code> 0 issues, <code>test</code> 131/131. Migration 094 applied on Render boot; <code>curl /v1/health</code> → <code>4b50e19</code>, db ok. APK v1.0.22+23 built and uploaded to R2.</p></div>
+
+  <footer>Detailed per-area reports (with file:line evidence) are in the session outputs: review_backend_entitlements.md, review_backend_correctness.md, review_admin.md, review_dashboard.md, review_mobile.md, fix_BE-A/B/C.md, fix_DASH.md, fix_DASH_gst.md, fix_MOB.md. Open items and your decisions live in TRACKER.html.</footer>
+</div>
+
+</body>
+</html>

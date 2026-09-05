@@ -62,7 +62,8 @@
 <div class="wrap">
   <h1>NamastePOS tracker</h1>
   <p class="sub">Tick items off as you clear them — your progress is saved in this browser.
-    Last updated 5 Sep 2026, at commit <code>ab5b3e5</code> (verified live:
+    Last updated 6 Sep 2026, at commit <code>4b50e19</code> — full code review, see
+    <a href="CODE_REVIEW_2026-09-05.html">CODE_REVIEW_2026-09-05.html</a> (verified live:
     <code>curl -s https://api.namastepos.in/v1/health | jq -r .commit</code>).</p>
 
   <div class="strip">
@@ -93,6 +94,24 @@
 
 <script>
 const ITEMS = [
+  {g:'From the 6 Sep code review — decisions and checks only you can make', items:[
+    {id:'cr_install', k:'you', t:'Install app v1.0.22 and bill one item on phone AND web',
+     d:'Both tills now show <b>CGST/SGST on every bill</b> and stop sending <code>tax: 0</code> — the server computes GST from the menu slab. Until yesterday every mobile and every web order was recorded with ₹0 GST. Check a receipt matches the cash collected. APK is on R2; iOS install is yours.'},
+    {id:'cr_recurring', k:'you', t:'Recurring invoices: pull it from Advanced/Enterprise or ask me to build it',
+     d:'The key is on two paid plan cards and <b>no backend exists</b> — the dashboard page told owners to "use the API". It now says "coming soon". Same class as <code>api_access</code>, <code>white_label</code>, <code>marketplace_addons</code>: sold, deliver nothing. Untick them in Admin → Plans, or say build.'},
+    {id:'cr_zerogst', k:'you', t:'Count tax invoices already issued with ₹0 GST',
+     d:'<code>SELECT count(*) FROM tax_invoices WHERE cgst_paise = 0 AND sgst_paise = 0 AND igst_paise = 0 AND total_paise &gt; 0;</code> on production. They are <b>not rewritten</b>; if any were handed to a customer, cancel and reissue.'},
+    {id:'cr_aggr', k:'you', t:'Check tenants with aggregator credentials but no <code>aggregators</code> key',
+     d:'Webhook orders for a plan without the key are now <b>parked (202)</b> instead of ingested. Zomato/Swiggy is Pro+. Query: <code>SELECT b.name, p.tier FROM aggregator_configs ac JOIN businesses b ON b.id=ac.business_id JOIN subscriptions s ON s.business_id=b.id JOIN plans p ON p.id=s.plan_id;</code> — anyone on Starter/Growth needs an upgrade or an override before they miss an order.'},
+    {id:'cr_sweep', k:'you', t:'Read-only check before the first nightly billing sweep',
+     d:'<code>SELECT business_id, status, current_period_end FROM subscriptions WHERE status=\'active\' AND cancel_at_period_end AND current_period_end &lt; NOW() - INTERVAL \'3 days\';</code> — these rows lived forever on a paid plan; the sweep moves them to cancelled (→ Starter). Make sure none is a customer you expect to keep.'},
+    {id:'cr_money', k:'you', t:'Three billing policy decisions',
+     d:'<b>(1)</b> Upgrades in prod forfeit the unused remainder of the old period (no proration reaches Razorpay) — accept, or I wire <code>start_at</code> on the new subscription. <b>(2)</b> A suspended tenant keeps being debited — cancel the mandate on suspend, or refund on restore? <b>(3)</b> Paid addon cancel is immediate — switch to cancel-at-period-end?'},
+    {id:'cr_b2b', k:'you', t:'B2B invoice template: who may save it?',
+     d:'Page is read-only for now (it was silently overwriting the receipt template). Backend store still needs building. Should Save need <code>custom_branding</code> (Enterprise) or just <code>b2b_invoice</code> (Pro+)?'},
+    {id:'cr_inv', k:'you', t:'Inventory on web for Starter, mobile Pro+ — which is right?',
+     d:'Web gates <code>/inventory</code> on <code>menu_basic</code>; mobile gates its drawer tile on <code>inventory_tracking</code>. Pick one and I align the other.'},
+  ]},
   {g:'Blocked on you — nobody else can do these', items:[
     {id:'gsp', k:'you', t:'Get GSP / IRP credentials',
      d:'Until these exist, e-invoice and e-way bill <b>cannot file with the government</b>. Production now refuses rather than inventing an IRN, which is correct but is not the feature. Advanced is sold at ₹999 partly on this.'},
@@ -108,8 +127,14 @@ const ITEMS = [
      d:'The leak you reported is fixed and 13 other fail-open gates were found alongside it. Worth confirming on the Mumbai Pavbhaji and Pulao account. Note propagation is <b>~5 min</b>, not instant.'},
   ]},
   {g:'Needs me — not done yet', items:[
-    {id:'artifact', k:'me', t:'Publish this tracker as a shareable live page',
-     d:'The Artifact publish needs an approval card this session cannot show, so this is a file in your repo instead. It works fully offline in your browser; ticks are saved locally.'},
+    {id:'me_variants', k:'me', t:'Mobile order lines do not send variantId / modifierLines',
+     d:'Found during the review, pre-existing: the app prices a variant line locally but the body carries only the base item, so the server (NP-201) re-prices to the base price. Online receipts are safe (printed from the server row); split-leg targets can mismatch. Needs OrderItem + body + sqflite changes — <b>next release</b>.'},
+    {id:'me_perms', k:'me', t:'requireStaffPerm on POST /orders, cancel-collected, session open, customers',
+     d:'Kitchen/driver tokens can still create orders, void a collected bill or read the customer ledger. Exact middleware lines are in the review; deferred because it changes what waiters/captains may do — confirm the role matrix first.'},
+    {id:'me_b2b', k:'me', t:'B2B invoice template backend store',
+     d:'Blocked on your answer above (who may save). Design: own table + Joi + route gated on the chosen key; then the dashboard page becomes editable again.'},
+    {id:'me_vitest', k:'me', t:'Dashboard unit tests (vitest)',
+     d:'The dashboard has tsc + eslint + build in CI now, but no test runner. Install attempt crashed npm mid-session; retry and add tests for fail-closed entitlements and RequireFeature.'},
   ]},
   {g:'Known limits — working as designed, but you should know', items:[
     {id:'voicesec', k:'risk', t:'Voice gating is a UI decision, not a security boundary',
@@ -119,7 +144,29 @@ const ITEMS = [
     {id:'prop', k:'risk', t:'Entitlement changes are ~5–10s on an active till, ~7 min on an idle one',
      d:'The <code>X-Plan-Version</code> header is now compared on responses the app already receives (KDS 5s, captain 8s, orders 10s, every bill written), so an in-use till updates in seconds. The 5-minute poll stays as the backstop for an app parked on a screen making no requests, and because the header is best-effort when the backend 60s cache is cold.'},
   ]},
-  {g:'Fixed today — verified, deployed', items:[
+  {g:'Fixed 6 Sep (code review) — 943/943 backend, 131/131 Flutter, live at 4b50e19', items:[
+    {id:'cr1', k:'fixed', t:'Five ways to hold a paid plan for free',
+     d:'<code>POST /billing/resume</code> flipped <b>any</b> subscription (trialing, past-due, cancelled) to active with no payment; addon resume granted <b>100 years</b>; downgrade to Starter never cancelled the Razorpay mandate so the next charge put the customer back on the paid plan; pause→resume never re-billed; admin suspend used the same status as pause so the tenant could un-suspend themselves. All closed; paid paths now end in a checkout and activate only on the charge webhook.'},
+    {id:'cr2', k:'fixed', t:'Every auto-issued tax invoice showed ₹0 GST',
+     d:'Order creation never wrote <code>order_items.gst_pct/gst_amount</code>, which is all the invoice read. Per-line GST is now persisted paise-exact; invoice total equals order total; legacy rows fall back to <code>orders.tax</code>. GSTR-1/3B exports selected columns that did not exist (500 on every call) — rewritten.'},
+    {id:'cr3', k:'fixed', t:'Both tills recorded ₹0 GST on every order',
+     d:'Mobile sent <code>tax: 0</code>; the web POS had a manual "Tax (₹)" box defaulting to 0. Both now omit tax so the server computes from the menu slab, show CGST/SGST, and print from the server\'s order row.'},
+    {id:'cr4', k:'fixed', t:'Six plan gates matched no route at all',
+     d:'<code>whatsapp_marketing</code>, <code>bill_split</code> (create), <code>qr_ordering</code>, <code>captain_mode</code>, <code>marketplace_addons</code>, <code>multi_currency_fx</code> — un-ticking them in admin changed nothing server-side. The drift audit passed because it counted a rule as proof without checking it hit a route. Real rules added; a router-walking test now fails CI on any dead rule.'},
+    {id:'cr5', k:'fixed', t:'Pro/Advanced/Enterprise told to buy recipe costing again',
+     d:'<code>/ingredients</code> demanded the paid add-on even when the plan included the key; stock deduction did the same. Plan key now suffices; the add-on still grants it.'},
+    {id:'cr6', k:'fixed', t:'Saving a plan with 0 features granted Enterprise',
+     d:'Kind <code>pro</code> (Growth) collides with Enterprise\'s code <code>pro</code>; an empty plan inherited all 51 keys while admin showed 0. Fallback refused on collision. Unknown keys are now rejected on overrides, custom plans and addon grants; plan limits are validated.'},
+    {id:'cr7', k:'fixed', t:'Two tenant-isolation holes and a table stuck occupied',
+     d:'Any owner could change <b>any</b> user\'s login phone by UUID; a foreign <code>tableSessionId</code> poisoned another tenant\'s settle; guest "pay whole bill" never closed the session. Guest QR also ordered 86\'d and out-of-stock items with no tax. All fixed with cross-tenant tests.'},
+    {id:'cr8', k:'fixed', t:'Dashboard gating was a lock icon',
+     d:'Every locked page was reachable by URL; 402s vanished into blank lists; entitlements defaulted to a hardcoded Starter list while loading; staff saw the full owner sidebar; the voice mic, Split, e-invoice and receipt template were ungated. Now fail-closed, route-guarded, one upgrade toast, staff nav by permission, <code>X-Plan-Version</code> honoured.'},
+    {id:'cr9', k:'fixed', t:'Gift cards on web were written against a retired API',
+     d:'Wrong body, wrong response key, wrong columns — could not issue or list. Aligned to <code>payments.routes.js</code>; the non-existent redeem call is gone.'},
+    {id:'cr10', k:'fixed', t:'Mobile: loyalty at checkout wanted the add-on, not the plan',
+     d:'Growth+ tenants got no customer attach, points or wallet at Pay &amp; Place unless they had bought the marketplace add-on. Plus: tax-invoices bypass via the Registers tab, WhatsApp offered on dine-in, a drawer double-tap that popped the root route, captains landing on money KPIs.'},
+  ]},
+  {g:'Fixed 5 Sep — verified, deployed', items:[
     {id:'f1', k:'fixed', t:'E-invoice was fabricating IRNs in production',
      d:'<code>generateIrn()</code> computed a correct NIC hash and never called the IRP. <b>Every IRN in production was fake.</b> Production now refuses; demo emits <code>DEMO-NOT-A-VALID-IRN-…</code>, which cannot be typed into a portal.'},
     {id:'f2', k:'fixed', t:'POST /eway-bills was a 500 in every environment',
