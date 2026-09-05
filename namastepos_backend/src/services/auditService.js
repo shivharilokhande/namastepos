@@ -1,6 +1,7 @@
 // NamastePOS backend - audit log helper for admin actions
 
 const { query } = require('../config/db');
+const logger = require('../config/logger');
 
 async function log({
   module, action, entityType, entityId, payload,
@@ -16,9 +17,38 @@ async function log({
         entityId || null, payload || null, module || null, ip || null,
         userAgent || null],
     );
-  } catch (_) {
-    /* audit failures must never break business operations */
+  } catch (err) {
+    // Still swallowed: an audit failure must never break a business operation
+    // a restaurant is in the middle of. But it is NOT silent any more — this
+    // used to be a bare `catch (_) {}`, so the audit trail could stop
+    // recording for days and nothing anywhere would say so. That is the worst
+    // failure mode a compliance log has: it looks complete.
+    // Winston signature is (message, meta) — not pino's (obj, msg).
+    logger.error('audit_log write failed', {
+      err: err.message, module, action, businessId,
+    });
   }
+}
+
+/**
+ * Defer the response until the audit row is committed.
+ *
+ * Both middlewares below wrap `res.json`, which is synchronous, and used to
+ * fire `log()` without awaiting it. So the client was told "201, done" while
+ * the INSERT was still in flight — the row usually landed a few ms later, and
+ * on a slow database it landed after the next request had already read the
+ * table. That is exactly how CI run 33964654257 failed: `mark-paid` returned
+ * 201, the very next test read audit_log, and the row was not there yet. The
+ * local database was fast enough to hide it, which is why it passed here and
+ * failed there.
+ *
+ * The semantics we actually want for an audit trail are "the action is not
+ * acknowledged until it is recorded", so the send waits for the write.
+ * `res.json` returns `res` either way, so `return res.json(x)` still chains.
+ */
+function _sendAfterAudit(res, oldJson, body, entry, writer) {
+  writer(entry).finally(() => oldJson(body));
+  return res;
 }
 
 /** Express middleware that captures the admin's action for logging. */
@@ -26,21 +56,19 @@ function middlewareLog(module, action, getEntity) {
   return (req, res, next) => {
     const oldJson = res.json.bind(res);
     res.json = (body) => {
-      if (res.statusCode < 400) {
-        const entity = getEntity ? getEntity(req, body) : {};
-        log({
-          module,
-          action,
-          entityType: entity.type,
-          entityId: entity.id,
-          payload: { params: req.params, body: _sanitizeBody(req.body) },
-          adminId: req.user?.id,
-          businessId: req.params?.businessId,
-          ip: req.ip,
-          userAgent: req.headers['user-agent'],
-        });
-      }
-      return oldJson(body);
+      if (res.statusCode >= 400) return oldJson(body);
+      const entity = getEntity ? getEntity(req, body) : {};
+      return _sendAfterAudit(res, oldJson, body, {
+        module,
+        action,
+        entityType: entity.type,
+        entityId: entity.id,
+        payload: { params: req.params, body: _sanitizeBody(req.body) },
+        adminId: req.user?.id,
+        businessId: req.params?.businessId,
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      }, log);
     };
     next();
   };
@@ -103,7 +131,13 @@ async function logTenant({
         entityId || null, payload ? _sanitizeBody(payload) : null,
         module || null, ip || null, userAgent || null],
     );
-  } catch (_) { /* audit must never break business ops */ }
+  } catch (err) {
+    // Swallowed for the same reason as log() above, and logged for the same
+    // reason too: a compliance trail that stops writing must not do it quietly.
+    logger.error('tenant audit_log write failed', {
+      err: err.message, module, action, businessId,
+    });
+  }
 }
 
 /** Express middleware: log a tenant (owner/staff) mutation after a 2xx.
@@ -112,21 +146,19 @@ function tenantMiddlewareLog(module, action, getEntity) {
   return (req, res, next) => {
     const oldJson = res.json.bind(res);
     res.json = (body) => {
-      if (res.statusCode < 400) {
-        const entity = getEntity ? getEntity(req, body) : {};
-        logTenant({
-          businessId: req.params?.businessId,
-          userId: req.user?.id,
-          module,
-          action,
-          entityType: entity.type,
-          entityId: entity.id,
-          payload: { params: req.params, body: _sanitizeBody(req.body || {}) },
-          ip: req.ip,
-          userAgent: req.headers['user-agent'],
-        });
-      }
-      return oldJson(body);
+      if (res.statusCode >= 400) return oldJson(body);
+      const entity = getEntity ? getEntity(req, body) : {};
+      return _sendAfterAudit(res, oldJson, body, {
+        businessId: req.params?.businessId,
+        userId: req.user?.id,
+        module,
+        action,
+        entityType: entity.type,
+        entityId: entity.id,
+        payload: { params: req.params, body: _sanitizeBody(req.body || {}) },
+        ip: req.ip,
+        userAgent: req.headers['user-agent'],
+      }, logTenant);
     };
     next();
   };
