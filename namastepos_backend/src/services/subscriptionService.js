@@ -750,6 +750,57 @@ function enforceLimit(metric) {
 }
 
 /**
+ * Refuse NEW BILLS on a paused subscription (2026-09-05, churn batch).
+ *
+ * Pause is read-only by design — see the decision recorded in the header of
+ * churnService.js. A paused account that could still bill would just be a free
+ * account, and the seasonal outlet that pauses every monsoon would never pay
+ * again. Reads are untouched: the owner can still open the app and see every
+ * past bill, report and customer, because the whole retention argument is
+ * "your data is still there".
+ *
+ * Mounted ONLY on order creation. It is not a general kill-switch and must
+ * never become one — a paused tenant browsing their own GST records at filing
+ * time is exactly the behaviour we are protecting.
+ *
+ * Deliberately a status read rather than an entitlement read: `paused` is not
+ * entitled either way (planEntitlement.classify → reason 'paused'), but the
+ * MESSAGE has to say "paused", not "upgrade your plan".
+ */
+function blockIfPaused() {
+  return async (req, res, next) => {
+    if (req.user?.isSuperAdmin) return next();
+    const businessId = req.params.businessId || req.user?.businessId;
+    if (!businessId) return next();
+    try {
+      const r = await query(
+        'SELECT status, pause_ends_at FROM subscriptions WHERE business_id = $1 LIMIT 1',
+        [businessId],
+      );
+      const row = r.rows[0];
+      if (!row || row.status !== 'paused') return next();
+      const until = row.pause_ends_at
+        ? new Date(row.pause_ends_at).toISOString().slice(0, 10)
+        : null;
+      const err = new Forbidden(
+        until
+          ? `This account is paused until ${until}. Everything you have billed is still `
+            + 'here to read — resume from Billing and you can take orders again in a minute.'
+          : 'This account is paused. Everything you have billed is still here to read — '
+            + 'resume from Billing and you can take orders again in a minute.',
+      );
+      err.code = 'SUBSCRIPTION_PAUSED';
+      err.details = { status: 'paused', pauseEndsAt: row.pause_ends_at || null, upgradePath: '/billing' };
+      return next(err);
+    } catch (e) {
+      // Fail OPEN. A pool blip must never stop a working restaurant from
+      // billing; the worst case is a paused tenant taking one order.
+      return next();
+    }
+  };
+}
+
+/**
  * Owner-facing copy for a BULK refusal. Says all four numbers an owner needs:
  * what the plan allows, what they already hold, what the file would add, and
  * which plan lifts the limit. `requiredLabel` comes from the tier ladder
@@ -1123,6 +1174,8 @@ module.exports = {
   resume,
   serializeSubscription,
   enforceLimit,
+  // 2026-09-05 (churn batch) — new bills only; reads stay open while paused.
+  blockIfPaused,
   // Pre-write gate for bulk writes (N rows at once), same 403 contract.
   assertCapacity,
   incrementUsage,

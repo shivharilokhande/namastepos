@@ -38,6 +38,10 @@ const refundReconcile = require('./refundReconcileService');
 // nightly usage-counter reconciliation.
 const orderDurability = require('./orderDurabilityService');
 const printer = require('./printerService');
+// 2026-09-05 (churn batch): the dunning LADDER (touches 2-4 across the grace
+// window) and the pause auto-resume sweep.
+const dunning = require('./dunningService');
+const churn = require('./churnService');
 
 // FF-248 / FF-1002 / FF-334 / FF-326 / FF-336 / FF-333 tick counters.
 // Base tick is 60 s. Each scanner has its own interval-in-ticks so the
@@ -48,6 +52,7 @@ let _lateTicksSinceLast = 0; // 5 min
 let _digestTicksSinceLast = 0; // 60 min
 let _referralTicksSinceLast = 0; // 6 hours
 let _refundTicksSinceLast = 0; // 5 min (Day-1 reconciler)
+let _dunningTicksSinceLast = 0; // 60 min (dunning ladder touches 2-4)
 
 let timer = null;
 let isRunning = false;
@@ -190,6 +195,17 @@ async function _runOnce() {
       _referralTicksSinceLast = 0;
       await _track('referral-award', () => referral.awardEligible()).catch((e) => logger.warn(`[referral] ${e.message}`));
     }
+    // 2026-09-05 — dunning ladder, hourly. Touch 1 goes out from the webhook
+    // itself; touches 2, 3 and 4 are due on days measured from `past_due_at`,
+    // so an hourly scan is plenty and keeps the write volume near zero (the
+    // scan is index-bounded and normally returns nothing). Each touch is
+    // claimed by a conditional UPDATE inside sendStep, so running this on two
+    // instances still sends each touch exactly once.
+    if (++_dunningTicksSinceLast >= 60) {
+      _dunningTicksSinceLast = 0;
+      await _track('dunning-ladder', () => dunning.ladderTick())
+        .catch((e) => logger.warn(`[dunning-ladder] tick error: ${e.message}`));
+    }
     // Day-1 CTO ask — drain pending gateway refunds every 5 ticks (~5 min).
     if (++_refundTicksSinceLast >= 5) {
       _refundTicksSinceLast = 0;
@@ -208,6 +224,13 @@ async function _runOnce() {
     // Pin to a single minute so it runs exactly once.
     if (istHour === 2 && istMin === 2) {
       await _track('analytics-refresh', () => refreshAllBusinessAnalytics());
+      // 2026-09-05 (churn batch) — auto-resume pauses that have run their
+      // course. The owner picked an end date; honouring it without being asked
+      // is the whole promise of a pause, and an account that stays paused past
+      // its date is a cancellation we did not admit to. Restores the exact plan
+      // parked in `pause_plan_id` — it can never promote anyone.
+      await _track('pause-auto-resume', () => churn.autoResumeDue())
+        .catch((e) => logger.warn(`[pause-auto-resume] ${e.message}`));
       // FF-402f — self-heal stale billing periods. If an active sub's
       // `current_period_end` is in the past (Razorpay webhook dropped,
       // support toggled a plan without rolling forward, etc.) we push

@@ -27,7 +27,12 @@ const createOrderLimiter = rateLimit({
 // the 201 body so analytics still sees the pricing cliff. The soft/hard
 // classification is data in subscriptionService.METRIC_POLICY; this line does
 // not need to know which class the metric is in.
-router.post('/', createOrderLimiter, sub.enforceLimit('monthly_orders'), ...c.create);
+// 2026-09-05 (churn batch): a PAUSED subscription cannot take new bills. This
+// is the only route that gate is mounted on — reads stay open on purpose, see
+// churnService.js for the recorded pause decision. It sits before the limit
+// middleware because "you are paused" is a truer answer than "you are near
+// your plan cap".
+router.post('/', createOrderLimiter, sub.blockIfPaused(), sub.enforceLimit('monthly_orders'), ...c.create);
 router.get('/', ...c.list);
 router.get('/:orderId', c.get);
 router.put('/:orderId/status', ...c.updateStatus);

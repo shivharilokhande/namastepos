@@ -125,6 +125,15 @@ function classify(row, now = Date.now()) {
     }
     return { entitled: false, reason: 'grace_expired', expiresAt: null };
   }
+  // 2026-09-05 (churn batch) — a PAUSED subscription is not entitled, which is
+  // already the answer `inactive` gives and is exactly what we want: features
+  // fall back to the free tier with no parallel entitlement logic anywhere.
+  // It is named separately only so callers can say "paused" to the owner
+  // instead of the meaningless "inactive". `entitledSql` needs no change —
+  // 'paused' is not in its allow-list, so SQL and JS still agree.
+  if (status === 'paused') {
+    return { entitled: false, reason: 'paused', expiresAt: null };
+  }
   return { entitled: false, reason: 'inactive', expiresAt: null };
 }
 

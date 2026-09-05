@@ -7,6 +7,7 @@ const sub = require('../services/subscriptionService');
 const razorpay = require('../services/razorpayService');
 const features = require('../services/featureService');
 const subInvoice = require('../services/subscriptionInvoiceService');
+const churn = require('../services/churnService');
 const { query } = require('../config/db');
 
 const changeBody = Joi.object({
@@ -86,10 +87,16 @@ module.exports = {
       require('../config/logger').warn(`[billing] usageSummary failed for ${businessId}: ${e.message}`);
     }
     let grace = null;
+    // 2026-09-05 (churn batch) — `pause` rides on the same read for the same
+    // reason `grace` and `usage` do: every client already fetches this on
+    // launch, so the paused banner needs no new endpoint and no new polling.
+    // Null whenever the account is not paused, which is the normal case.
+    let pause = null;
     try {
       const entitlement = require('../services/planEntitlement');
       const r = await query(
         `SELECT s.status, s.trial_ends_at, s.past_due_at, s.last_dunning_at,
+                s.paused_at, s.pause_ends_at, s.pause_months, s.dunning_step,
                 p.price_inr_paise, p.price_yearly_paise, s.billing_period
            FROM subscriptions s
            LEFT JOIN plans p ON p.id = s.plan_id
@@ -97,6 +104,16 @@ module.exports = {
         [businessId],
       );
       const row = r.rows[0];
+      if (row && row.status === 'paused') {
+        pause = {
+          paused: true,
+          pausedAt: row.paused_at,
+          pauseEndsAt: row.pause_ends_at,
+          pauseMonths: row.pause_months,
+          message: 'This account is paused. Nothing is deleted and you can read '
+            + 'everything you have billed. New bills resume when you do.',
+        };
+      }
       if (row) {
         const paise = row.billing_period === 'yearly'
           ? (row.price_yearly_paise || row.price_inr_paise || 0)
@@ -112,7 +129,7 @@ module.exports = {
     } catch (e) {
       require('../config/logger').warn(`[billing] overage read failed for ${businessId}: ${e.message}`);
     }
-    res.json({ subscription: { ...subscription, usage, grace, overage } });
+    res.json({ subscription: { ...subscription, usage, grace, overage, pause } });
   }),
 
   // Change plan (initiates Razorpay flow for paid plans, immediate for free)
@@ -170,14 +187,106 @@ module.exports = {
     }),
   ],
 
-  cancel: asyncHandler(async (req, res) => {
-    await sub.cancelAtPeriodEnd(req.params.businessId);
-    res.json({ success: true, message: 'Will cancel at end of period' });
+  // ── Cancel flow (2026-09-05, churn batch) ──────────────────────────────
+  //
+  // Cancelling used to be one button that flipped a boolean. It is now three
+  // explicit steps — reasons → survey+offer → confirm — and each is its own
+  // call so a client can abandon the flow at any point without side effects.
+  // `POST /cancel` still works exactly as it did for any client that has not
+  // been updated (the survey is optional), which is why the mobile app keeps
+  // working while it catches up.
+
+  // The five reasons the picker renders. Static; no tenant data.
+  cancelReasons: asyncHandler(async (req, res) => {
+    res.json({ reasons: churn.reasons() });
   }),
 
+  // Step 1: record the reason, get the offer that reason produces. Does NOT
+  // cancel anything.
+  cancelSurvey: [
+    validate({
+      body: Joi.object({
+        reason: Joi.string().valid(...Object.keys(churn.CANCEL_REASONS)).required(),
+        note: Joi.string().allow('', null).max(4000),
+      }),
+    }),
+    asyncHandler(async (req, res) => {
+      const out = await churn.startCancel(req.params.businessId, {
+        reason: req.body.reason,
+        note: req.body.note,
+        userId: req.user?.id || req.user?.sub || null,
+      });
+      res.json(out);
+    }),
+  ],
+
+  // Step 2: confirm. Closes the open survey against a REAL cancel, then runs
+  // the unchanged cancel-at-period-end path.
+  cancel: asyncHandler(async (req, res) => {
+    const out = await churn.confirmCancel(req.params.businessId, {
+      userId: req.user?.id || req.user?.sub || null,
+    });
+    res.json({
+      success: true,
+      message: 'Will cancel at end of period',
+      periodEnd: out.periodEnd,
+      survey: out.survey,
+    });
+  }),
+
+  // Resume: un-pause (restoring the same plan) or un-cancel. One button for
+  // the owner; churnService decides which of the two it is from the row.
   resume: asyncHandler(async (req, res) => {
-    await sub.resume(req.params.businessId);
-    res.json({ success: true });
+    const out = await churn.resume(req.params.businessId, {
+      userId: req.user?.id || req.user?.sub || null,
+    });
+    res.json({ success: true, ...out });
+  }),
+
+  // Pause 1-3 months. Stops billing, keeps data, restores the same plan.
+  pause: [
+    validate({
+      body: Joi.object({
+        months: Joi.number().valid(...churn.PAUSE_MONTHS).default(1),
+        reason: Joi.string().valid(...Object.keys(churn.CANCEL_REASONS)).allow(null),
+      }),
+    }),
+    asyncHandler(async (req, res) => {
+      const userId = req.user?.id || req.user?.sub || null;
+      const out = await churn.pause(req.params.businessId, {
+        months: req.body.months,
+        reason: req.body.reason || null,
+        userId,
+      });
+      // Only record a SAVE when the pause actually came out of the cancel flow
+      // (an open survey exists). A pause started from the Billing page on a
+      // quiet Tuesday is not a save and must not inflate the save rate.
+      if (!out.alreadyPaused) {
+        await churn.acceptOffer(req.params.businessId, {
+          action: 'pause',
+          reason: req.body.reason || null,
+          userId,
+          meta: { months: req.body.months },
+        }).catch(() => {});
+      }
+      res.json({ success: true, ...out });
+    }),
+  ],
+
+  // The owner's own data, on the way out. Owner-gated, NOT plan-gated —
+  // see the note in churnService.exportAccount.
+  exportAccount: asyncHandler(async (req, res) => {
+    const businessId = req.params.businessId;
+    const data = await churn.exportAccount(businessId, {
+      userId: req.user?.id || req.user?.sub || null,
+    });
+    const stamp = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="namastepos-export-${stamp}.json"`,
+    );
+    res.send(JSON.stringify(data, null, 2));
   }),
 
   invoices: asyncHandler(async (req, res) => {

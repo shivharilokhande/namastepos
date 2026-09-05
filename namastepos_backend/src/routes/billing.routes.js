@@ -28,6 +28,18 @@ router.get('/', c.current);
 router.post('/change', requireRole('business_owner'), audit.tenantMiddlewareLog('billing', 'plan_change', () => ({ type: 'subscription' })), ...c.changePlan);
 router.post('/cancel', requireRole('business_owner'), audit.tenantMiddlewareLog('billing', 'plan_cancel', () => ({ type: 'subscription' })), c.cancel);
 router.post('/resume', requireRole('business_owner'), audit.tenantMiddlewareLog('billing', 'plan_resume', () => ({ type: 'subscription' })), c.resume);
+
+// 2026-09-05 (churn batch) — the cancel flow, pause and the account export.
+//
+// The reason picker is a read of a static list; every write is owner-only and
+// audit-logged, exactly like the plan-change writes above. The export is a
+// READ of the tenant's own data and is deliberately NOT plan-gated: an owner on
+// the way out is about to stop paying, and charging them for a copy of their
+// own menu is the one thing the win-back promise says we never do.
+router.get('/cancel/reasons', c.cancelReasons);
+router.post('/cancel/survey', requireRole('business_owner'), audit.tenantMiddlewareLog('billing', 'cancel_survey', () => ({ type: 'subscription' })), ...c.cancelSurvey);
+router.post('/pause', requireRole('business_owner'), audit.tenantMiddlewareLog('billing', 'plan_pause', () => ({ type: 'subscription' })), ...c.pause);
+router.get('/export', requireRole('business_owner'), audit.tenantMiddlewareLog('billing', 'account_export', () => ({ type: 'subscription' })), c.exportAccount);
 router.get('/invoices', requireRole(['business_owner', 'staff_manager']), c.invoices);
 router.get(
   '/invoices/:invoiceId/pdf',

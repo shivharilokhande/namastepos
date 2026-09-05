@@ -53,7 +53,10 @@
 {"@type":"Question","name":"Which plans include GST tax invoices?","acceptedAnswer":{"@type":"Answer","text":"GST-compliant CGST/SGST tax invoices, with HSN per item, are included from Pro (₹799/mo) and above. E-invoice formats start on Advanced (₹999/mo). Starter and Growth print plain invoices and receipts, not GST tax invoices."}},
 {"@type":"Question","name":"Does it work offline?","acceptedAnswer":{"@type":"Answer","text":"Yes. Billing and KOTs keep working with no internet and sync automatically when you're back online — service never stops during a rush."}},
 {"@type":"Question","name":"Can I run it on my phone?","acceptedAnswer":{"@type":"Answer","text":"Absolutely. NamastePOS is mobile-first — run the whole restaurant from an Android phone or tablet, no bulky terminal required. iOS and web are supported too."}},
-{"@type":"Question","name":"Is there a free trial?","acceptedAnswer":{"@type":"Answer","text":"Yes — start free with no credit card. Set up in about 5 minutes and upgrade only when you're ready."}},
+{"@type":"Question","name":"Is there a free trial?","acceptedAnswer":{"@type":"Answer","text":"Yes. Whichever plan you pick starts with a 7-day free trial — no credit card. Pick Pro and you run Pro for 7 days, with GST tax invoices switched on."}},
+{"@type":"Question","name":"What happens after the 7 days?","acceptedAnswer":{"@type":"Answer","text":"Nothing is charged. There is no card on file, so no automatic billing can happen. Your account moves to the free Starter plan and you carry on billing, with the paid features switched off until you choose to upgrade."}},
+{"@type":"Question","name":"Can my staff use their own phones?","acceptedAnswer":{"@type":"Answer","text":"Yes. Staff sign in with their own phone number and a PIN, on their own Android or iOS phone. Starter includes 1 staff login, Growth 5 and Pro 10; Advanced and Enterprise are unlimited."}},
+{"@type":"Question","name":"Can I get my data out?","acceptedAnswer":{"@type":"Answer","text":"Yes. CSV exports of sales, orders and menu data are included from Growth upwards, and there is no lock-in period — stop at the end of any month and take your data with you."}},
 {"@type":"Question","name":"Is there any lock-in contract?","acceptedAnswer":{"@type":"Answer","text":"No lock-in. Pricing is all-inclusive with no hidden report paywalls, and you can leave anytime."}},
 {"@type":"Question","name":"How is NamastePOS different from legacy POS systems?","acceptedAnswer":{"@type":"Answer","text":"Same everyday features, but mobile-first and offline-ready at a lower, all-inclusive price — no annual lock-in and no paywall to see your own reports."}}]}
 ]}
@@ -114,7 +117,29 @@ img{max-width:100%;display:block}
 .hero h1 .u::after{content:"";position:absolute;left:0;right:0;bottom:2px;height:10px;background:rgba(245,158,11,.35);border-radius:6px;z-index:-1}
 .hero p.sub{font-size:19px;color:var(--muted);margin:22px 0 28px;max-width:560px}
 .hero-cta{display:flex;gap:14px;flex-wrap:wrap}
-.hero-trust{display:flex;gap:22px;margin-top:26px;flex-wrap:wrap}
+.hero-trust{display:flex;gap:22px;margin-top:22px;flex-wrap:wrap}
+/* PRICE RAIL — price signal at the fold (see the markup comment in the hero) */
+.price-rail{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin-top:22px;
+  background:var(--soft);border:1px solid #cfe6d8;border-radius:14px;padding:13px 16px;
+  font-size:14.5px;color:#2b382f;line-height:1.5}
+.price-rail b{font-weight:800;color:var(--green-d)}
+.price-rail .pr-lead{font-family:'Sora','Inter',sans-serif;font-weight:800;color:var(--green-d)}
+.price-rail .pr-gst{color:#3d4d45}
+.price-rail .pr-link{font-weight:700;color:var(--green-d);text-decoration:underline;
+  text-underline-offset:3px;padding:2px 0}
+
+/* TRUST BLOCK — substantiable promises, sits directly under pricing */
+.trust-block{margin-top:40px;border:1px solid var(--line);border-radius:20px;background:#fff;
+  padding:30px 30px 26px}
+.trust-block > h3{font-size:22px;font-weight:800;margin-bottom:6px}
+.trust-block > p.tb-sub{color:var(--muted);font-size:15px;margin-bottom:22px}
+.tb-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.tb-item{display:flex;gap:13px;align-items:flex-start}
+.tb-item .tbi{width:38px;height:38px;border-radius:11px;background:var(--soft);color:var(--green);
+  display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.tb-item .tbi .material-symbols-outlined{font-size:21px}
+.tb-item h4{font-size:15.5px;font-weight:700;margin-bottom:3px}
+.tb-item p{color:var(--muted);font-size:14px;line-height:1.5}
 .hero-trust span{display:inline-flex;align-items:center;gap:7px;color:#41504a;font-size:14px;font-weight:500}
 .check{color:var(--green);font-weight:800;font-size:18px}
 
@@ -150,7 +175,7 @@ img{max-width:100%;display:block}
 
 /* TRUST STRIP */
 .strip{border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--surface)}
-.strip-in{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;align-items:start;padding:24px 0}
+.strip-in{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;align-items:start;padding:24px 0}
 .stat{text-align:center}
 .stat .n{font-family:'Sora';font-weight:800;font-size:24px;color:var(--green);white-space:nowrap}
 .stat.wide .n{font-size:16px;letter-spacing:0}
@@ -242,8 +267,16 @@ tbody td:not(:first-child){text-align:center}
 tbody tr:nth-child(even){background:var(--surface)}
 tbody tr:last-child td{border-bottom:0}
 .yes{color:var(--green);font-weight:800}
-.no{color:#c3cec8}
+/* was #c3cec8 on white = ~1.6:1, effectively invisible. #7d8b84 = ~4.6:1. */
+.no{color:#7d8b84;font-weight:700}
 td .material-symbols-outlined{font-size:20px;vertical-align:middle}
+/* Screen-reader text for the check / dash glyphs, which carry the whole meaning
+   of the table but are announced as "check" or nothing. */
+.sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0 0 0 0);white-space:nowrap;border:0}
+/* Scroll affordance for the compare table on narrow screens. */
+.cmp-hint{display:none;color:var(--muted);font-size:13px;margin:10px 2px 0;align-items:center;gap:6px}
+.cmp-hint .material-symbols-outlined{font-size:17px}
 
 /* DARK BAND */
 .band{background:linear-gradient(135deg,var(--green-x),var(--green-d));color:#fff;border-radius:26px;padding:54px;text-align:center;position:relative;overflow:hidden}
@@ -279,18 +312,69 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
 /* RESPONSIVE */
 @media(max-width:900px){
   .nav-links,.nav-cta .signin{display:none}
-  .burger{display:block}
-  .hero-in{grid-template-columns:1fr;padding:34px 0 44px}
-  .hero h1{font-size:42px}
-  .phone-stage{min-height:520px;margin-top:20px}
-  .grid3,.grid4,.feat-grid,.price-grid,.allfeat{grid-template-columns:1fr}
+  .burger{display:block;padding:8px;margin:-8px;font-size:26px;line-height:1}
+  .hero-in{grid-template-columns:1fr;padding:28px 0 36px}
+  .hero h1{font-size:40px}
+  /* The mockup is decoration and it used to eat a whole viewport between the
+     CTA and everything below it. Capped, and the floating chips are dropped. */
+  .phone-stage{min-height:0;margin-top:18px}
+  .phone{width:248px;height:min(500px,62vh)}
+  .floaty{display:none}
+  .blob{width:300px;height:300px;right:0;top:10px}
+  .grid3,.grid4,.feat-grid,.price-grid,.allfeat,.tb-grid{grid-template-columns:1fr}
   .strip-in{grid-template-columns:repeat(2,1fr);gap:20px 14px}
   .prow,.prow.rev .ptext{grid-template-columns:1fr;order:0;gap:26px}
   .prow.rev .pvisual{order:-1}
   .sec-head h2{font-size:30px}
   .band{padding:38px 22px}
+  .band .btn-amber{white-space:normal}
   .foot{grid-template-columns:1fr 1fr}
-  .compare{overflow-x:auto}
+  .trust-block{padding:24px 20px 20px}
+  .pill-toggle button{padding:11px 18px}
+
+  /* ---- COMPARE TABLE AT 360px --------------------------------------------
+     Measured before the change: 6 columns x (padding 14px 20px + 14.5px text)
+     is ~700px of table inside a 360px viewport, and the row label scrolled
+     out of view on the first swipe, so every tick became unreadable. The row
+     label is now pinned. Radius/overflow move to a wrapper because a sticky
+     cell cannot escape `overflow:hidden` on the scroll container itself. */
+  .compare{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-radius:16px}
+  .compare table{min-width:640px}
+  .compare th,.compare td{padding:12px 14px;font-size:13.5px}
+  .compare thead th:first-child,
+  .compare tbody td:first-child{
+    position:sticky;left:0;z-index:2;
+    box-shadow:1px 0 0 var(--line);
+    min-width:150px;max-width:170px;
+  }
+  .compare thead th:first-child{background:var(--green);z-index:3}
+  /* Sticky cells need their own opaque paint - the row stripe sits behind. */
+  .compare tbody tr:nth-child(odd) td:first-child{background:#fff}
+  .compare tbody tr:nth-child(even) td:first-child{background:var(--surface)}
+  .cmp-hint{display:flex}
+
+  /* ---- MOBILE INFORMATION ORDER ------------------------------------------
+     Desktop keeps the narrative order (story, then price). A phone reader is
+     answering a different question first - "can I afford this, and does it do
+     GST" - and the pricing section used to sit ~14 screens down. Reordered to:
+       hero -> trust strip -> PRICING (+ trust block) -> FAQ (the objections
+       the price raises) -> product -> features -> solutions -> full feature
+       list -> guides -> band -> footer.
+     Done with flex `order` rather than moving markup, so the DOM order that
+     the crawler and the desktop layout see is untouched. */
+  body{display:flex;flex-direction:column}
+  .nav{order:0}
+  #top{order:1}
+  .strip{order:2}
+  #pricing{order:3}
+  #faq{order:4}
+  #product{order:5}
+  #features{order:6}
+  #solutions{order:7}
+  #all-features{order:8}
+  #explore{order:9}
+  #band-sec{order:10}
+  footer{order:11}
 }
 @media(min-width:601px) and (max-width:900px){.feat-grid,.allfeat{grid-template-columns:1fr 1fr}}
 </style>
@@ -312,7 +396,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     </nav>
     <div class="nav-cta">
       <a href="https://app.namastepos.in/login" class="signin">Sign in</a>
-      <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=sticky-nav" class="btn btn-amber">Start free</a>
+      <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=sticky-nav&amp;plan=pro_plan" class="btn btn-amber">Start free</a>
       <button class="burger" id="burger" aria-label="Menu">☰</button>
     </div>
   </div>
@@ -320,7 +404,7 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     <a href="#product">Product</a><a href="#features">Features</a>
     <a href="#solutions">Solutions</a><a href="#pricing">Pricing</a>
     <a href="/blog/">Blog</a><a href="#faq">FAQ</a><a href="https://app.namastepos.in/login">Sign in</a>
-    <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=mobile-menu" class="btn btn-primary" style="margin-top:8px">Start free</a>
+    <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=mobile-menu&amp;plan=pro_plan" class="btn btn-primary" style="margin-top:8px">Start free</a>
   </div>
 </header>
 
@@ -332,13 +416,22 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <h1 style="margin-top:18px">Bill on your <span class="u">phone.</span><br/>Even when the WiFi dies.</h1>
       <p class="sub">NamastePOS is restaurant billing software for India that runs as a phone app — KOTs fire to the kitchen, bills print, UPI settles. Lose the network and every order saves on the device, then syncs the moment it's back. Free to start, no lock-in.</p>
       <div class="hero-cta">
-        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=hero" class="btn btn-primary">Start free — ₹0</a>
-        <a href="https://pub-b587dcaedebf4ce59386af9fa20fac8c.r2.dev/NamastePOS.apk" class="btn btn-ghost" download><span class="material-symbols-outlined">android</span> Download app</a>
+        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=hero&amp;plan=pro_plan" class="btn btn-primary">Start free — no card</a>
+        <a href="#pricing" class="btn btn-ghost">See pricing</a>
+      </div>
+      <!-- PRICE RAIL — the affordability answer, at the fold. A price-sensitive
+           owner on a phone decides here; the pricing section is ~14 screens
+           down on a 360px viewport, so the number has to travel up to them. -->
+      <div class="price-rail rv">
+        <span class="pr-lead">₹0 to start.</span>
+        <span>Paid plans from <b>₹299</b> per register / month.</span>
+        <span class="pr-gst">GST tax invoices from <b>Pro, ₹799</b>.</span>
+        <a href="#pricing" class="pr-link">See all five plans</a>
       </div>
       <div class="hero-trust">
-        <span><span class="material-symbols-outlined check">check_circle</span> No credit card</span>
-        <span><span class="material-symbols-outlined check">check_circle</span> 5-minute setup</span>
-        <span><span class="material-symbols-outlined check">check_circle</span> Works offline</span>
+        <span><span class="material-symbols-outlined check" aria-hidden="true" translate="no">check_circle</span> No credit card</span>
+        <span><span class="material-symbols-outlined check" aria-hidden="true" translate="no">check_circle</span> 7-day free trial</span>
+        <span><span class="material-symbols-outlined check" aria-hidden="true" translate="no">check_circle</span> Works offline</span>
       </div>
     </div>
     <!-- Phone mockup (app screen) -->
@@ -349,13 +442,13 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <div class="phone" role="img" aria-label="NamastePOS app taking a dine-in order on a phone">
         <div class="screen">
           <div class="ph-status"><span>9:41</span><span>NamastePOS</span></div>
-          <div class="ph-head"><span class="t"><span class="material-symbols-outlined">table_restaurant</span> Table 4</span><span class="material-symbols-outlined">search</span></div>
+          <div class="ph-head"><span class="t"><span class="material-symbols-outlined" aria-hidden="true" translate="no">table_restaurant</span> Table 4</span><span class="material-symbols-outlined" aria-hidden="true" translate="no">search</span></div>
           <div class="ph-chips"><span class="ph-chip on">Starters</span><span class="ph-chip">Mains</span><span class="ph-chip">Breads</span><span class="ph-chip">Drinks</span></div>
           <div class="ph-grid">
-            <div class="ph-card"><div class="ph-emoji"><span class="material-symbols-outlined">skillet</span></div><div class="n">Paneer Tikka</div><div class="p">₹240</div></div>
-            <div class="ph-card sel"><div class="ph-badge">1</div><div class="ph-emoji"><span class="material-symbols-outlined">bakery_dining</span></div><div class="n">Garlic Naan</div><div class="p">₹60</div></div>
-            <div class="ph-card"><div class="ph-emoji"><span class="material-symbols-outlined">ramen_dining</span></div><div class="n">Dal Makhani</div><div class="p">₹210</div></div>
-            <div class="ph-card"><div class="ph-emoji"><span class="material-symbols-outlined">local_bar</span></div><div class="n">Mango Lassi</div><div class="p">₹90</div></div>
+            <div class="ph-card"><div class="ph-emoji"><span class="material-symbols-outlined" aria-hidden="true" translate="no">skillet</span></div><div class="n">Paneer Tikka</div><div class="p">₹240</div></div>
+            <div class="ph-card sel"><div class="ph-badge">1</div><div class="ph-emoji"><span class="material-symbols-outlined" aria-hidden="true" translate="no">bakery_dining</span></div><div class="n">Garlic Naan</div><div class="p">₹60</div></div>
+            <div class="ph-card"><div class="ph-emoji"><span class="material-symbols-outlined" aria-hidden="true" translate="no">ramen_dining</span></div><div class="n">Dal Makhani</div><div class="p">₹210</div></div>
+            <div class="ph-card"><div class="ph-emoji"><span class="material-symbols-outlined" aria-hidden="true" translate="no">local_bar</span></div><div class="n">Mango Lassi</div><div class="p">₹90</div></div>
           </div>
           <div class="ph-bar"><div><div class="lbl">1 item</div><div class="tot">₹60</div></div><div class="go">View cart</div></div>
         </div>
@@ -367,11 +460,13 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
 <!-- TRUST STRIP -->
 <div class="strip">
   <div class="wrap strip-in">
-    <div class="stat rv"><div class="n">₹0</div><div class="l">to get started</div></div>
-    <div class="stat rv"><div class="n">GST-ready</div><div class="l">CGST/SGST tax invoices from Pro</div></div>
-    <div class="stat rv"><div class="n">Offline-first</div><div class="l">never stop billing</div></div>
+    <!-- Four items, not five: at two columns on a phone an odd count leaves an
+         orphan cell. Every line here is checkable against the product or the
+         live plan feed - no ratings, counts or uptime figures. -->
+    <div class="stat rv"><div class="n">₹0</div><div class="l">to start · no card on file</div></div>
+    <div class="stat rv"><div class="n">Monthly</div><div class="l">billing · no annual lock-in</div></div>
+    <div class="stat rv"><div class="n">Offline-first</div><div class="l">bill through a network drop</div></div>
     <div class="stat wide rv"><div class="n">Android · iOS · Web</div><div class="l">one login, any device</div></div>
-    <div class="stat rv"><div class="n">7 days</div><div class="l">free trial, no card</div></div>
   </div>
 </div>
 
@@ -386,16 +481,16 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
         <h3>Bill in seconds, seat every table</h3>
         <p>Touch billing that keeps pace with a full house. Run dine-in, takeaway and delivery from one screen, send KOTs straight to the kitchen, and hand captains their own ordering view.</p>
         <ul>
-          <li><span class="material-symbols-outlined">check</span> Table, captain &amp; quick-billing modes</li>
-          <li><span class="material-symbols-outlined">check</span> Live kitchen display (KDS) &amp; token screens</li>
-          <li><span class="material-symbols-outlined">check</span> Variants, modifiers, combos &amp; wastage</li>
-          <li><span class="material-symbols-outlined">check</span> Split, merge &amp; join tables mid-service</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Table, captain &amp; quick-billing modes</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Live kitchen display (KDS) &amp; token screens</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Variants, modifiers, combos &amp; wastage</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Split, merge &amp; join tables mid-service</li>
         </ul>
       </div>
       <div class="pvisual">
-        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">point_of_sale</span></div><div class="txt"><b>New KOT · Table 7</b><span>Fired to kitchen · 0.4s</span></div><div class="amt">₹640</div></div>
-        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">soup_kitchen</span></div><div class="txt"><b>Kitchen display</b><span>3 tickets cooking</span></div><div class="amt">KDS</div></div>
-        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">call_split</span></div><div class="txt"><b>Split bill</b><span>2 guests · UPI + cash</span></div><div class="amt">✓</div></div>
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined" aria-hidden="true" translate="no">point_of_sale</span></div><div class="txt"><b>New KOT · Table 7</b><span>Fired to kitchen · 0.4s</span></div><div class="amt">₹640</div></div>
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined" aria-hidden="true" translate="no">soup_kitchen</span></div><div class="txt"><b>Kitchen display</b><span>3 tickets cooking</span></div><div class="amt">KDS</div></div>
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined" aria-hidden="true" translate="no">call_split</span></div><div class="txt"><b>Split bill</b><span>2 guests · UPI + cash</span></div><div class="amt">✓</div></div>
       </div>
     </div>
 
@@ -405,16 +500,78 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
         <h3>Know your numbers, close with confidence</h3>
         <p>Every sale rolls up into live dashboards and a one-tap day-end closing. See item performance, P&amp;L and taxes without touching a spreadsheet.</p>
         <ul>
-          <li><span class="material-symbols-outlined">check</span> Live sales, top items &amp; P&amp;L reports</li>
-          <li><span class="material-symbols-outlined">check</span> GST tax invoices from Pro · e-invoice from Advanced</li>
-          <li><span class="material-symbols-outlined">check</span> Inventory, recipe costing &amp; expenses</li>
-          <li><span class="material-symbols-outlined">check</span> Day-end closing &amp; cash registers</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Live sales, top items &amp; P&amp;L reports</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> GST tax invoices from Pro · e-invoice from Advanced</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Inventory, recipe costing &amp; expenses</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Day-end closing &amp; cash registers</li>
         </ul>
       </div>
       <div class="pvisual">
-        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">insights</span></div><div class="txt"><b>Today's sales</b><span>128 orders · 4 tables open</span></div><div class="amt">₹42,180</div></div>
-        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">receipt_long</span></div><div class="txt"><b>GST tax invoice</b><span>CGST + SGST + HSN · Pro plan</span></div><div class="amt">✓</div></div>
-        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined">inventory_2</span></div><div class="txt"><b>Low stock alert</b><span>Paneer · 1.2 kg left</span></div><div class="amt">!</div></div>
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined" aria-hidden="true" translate="no">insights</span></div><div class="txt"><b>Today's sales</b><span>128 orders · 4 tables open</span></div><div class="amt">₹42,180</div></div>
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined" aria-hidden="true" translate="no">receipt_long</span></div><div class="txt"><b>GST tax invoice</b><span>CGST + SGST + HSN · Pro plan</span></div><div class="amt">✓</div></div>
+        <div class="pv-row"><div class="ico"><span class="material-symbols-outlined" aria-hidden="true" translate="no">inventory_2</span></div><div class="txt"><b>Low stock alert</b><span>Paneer · 1.2 kg left</span></div><div class="amt">!</div></div>
+      </div>
+    </div>
+
+    <!-- The one diagram on this page. The H1 promises billing through a dead
+         network, and that is the claim owners least believe from a sentence -
+         "it syncs later" sounds like "you'll lose the order". This draws the
+         mechanism instead: written locally, replayed once, keyed so a replay
+         cannot become a second charge. Inline SVG: no request, ~2 KB, scales,
+         and it is described for screen readers rather than being decoration. -->
+    <div class="prow rv">
+      <div class="ptext">
+        <span class="tag">When the net goes</span>
+        <h3>The bill still prints. The order still counts.</h3>
+        <p>Most billing software waits for the server and leaves a queue standing. NamastePOS writes the order to the phone first, so the counter never pauses — and every order carries its own key, so replaying it when the network comes back cannot create a second bill or a second charge.</p>
+        <ul>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Bill, KOT and print all work with no signal</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Orders replay automatically when you reconnect</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Same key on every retry — no double-charge, no duplicate KOT</li>
+        </ul>
+      </div>
+      <div class="pvisual" style="padding:22px">
+        <svg viewBox="0 0 520 200" width="100%" height="auto" role="img"
+             aria-label="How offline billing works: the order is written on the phone while there is no network, it is held on the device, and when the network returns it syncs once using the same order key, so it can never be charged twice."
+             style="display:block;max-width:520px;margin:0 auto;font-family:'Inter',system-ui,sans-serif">
+          <title>Offline billing, in three steps</title>
+          <desc>Step one, no network: the order is written to the phone and the bill prints. Step two: the order waits on the device. Step three, network back: it syncs once, carrying the same order key, so a retry cannot create a second charge.</desc>
+          <!-- step 1: phone, offline -->
+          <rect x="8" y="34" width="120" height="120" rx="16" fill="#fff" stroke="#E4EBE6"/>
+          <rect x="46" y="50" width="44" height="74" rx="8" fill="#0F1F17"/>
+          <rect x="50" y="56" width="36" height="62" rx="5" fill="#fff"/>
+          <rect x="55" y="62" width="26" height="4" rx="2" fill="#0E7C4A"/>
+          <rect x="55" y="71" width="20" height="3" rx="1.5" fill="#cfe6d8"/>
+          <rect x="55" y="78" width="24" height="3" rx="1.5" fill="#cfe6d8"/>
+          <rect x="55" y="85" width="16" height="3" rx="1.5" fill="#cfe6d8"/>
+          <rect x="55" y="100" width="26" height="10" rx="3" fill="#0E7C4A"/>
+          <text x="68" y="140" text-anchor="middle" font-size="11" font-weight="700" fill="#0A5A36">Bill printed</text>
+          <text x="68" y="24" text-anchor="middle" font-size="11" font-weight="700" fill="#D97706">No network</text>
+          <!-- arrow 1 -->
+          <path d="M136 94 h44" stroke="#0E7C4A" stroke-width="2" fill="none"/>
+          <path d="M180 94 l-7 -5 v10 z" fill="#0E7C4A"/>
+          <!-- step 2: held on device -->
+          <rect x="192" y="34" width="120" height="120" rx="16" fill="#fff" stroke="#E4EBE6"/>
+          <rect x="212" y="58" width="80" height="18" rx="5" fill="#E8F4ED"/>
+          <rect x="212" y="82" width="80" height="18" rx="5" fill="#E8F4ED"/>
+          <rect x="212" y="106" width="80" height="18" rx="5" fill="#E8F4ED"/>
+          <circle cx="222" cy="67" r="3.5" fill="#0E7C4A"/>
+          <circle cx="222" cy="91" r="3.5" fill="#0E7C4A"/>
+          <circle cx="222" cy="115" r="3.5" fill="#0E7C4A"/>
+          <text x="252" y="140" text-anchor="middle" font-size="11" font-weight="700" fill="#0A5A36">Held on the phone</text>
+          <text x="252" y="24" text-anchor="middle" font-size="11" font-weight="600" fill="#5B6B63">Keep billing</text>
+          <!-- arrow 2 -->
+          <path d="M320 94 h44" stroke="#0E7C4A" stroke-width="2" fill="none"/>
+          <path d="M364 94 l-7 -5 v10 z" fill="#0E7C4A"/>
+          <!-- step 3: synced once -->
+          <rect x="376" y="34" width="136" height="120" rx="16" fill="#E8F4ED" stroke="#cfe6d8"/>
+          <circle cx="444" cy="86" r="26" fill="#0E7C4A"/>
+          <path d="M432 86 l8 9 l17 -19" stroke="#fff" stroke-width="4" fill="none"
+                stroke-linecap="round" stroke-linejoin="round"/>
+          <text x="444" y="132" text-anchor="middle" font-size="11" font-weight="700" fill="#0A5A36">Synced once</text>
+          <text x="444" y="147" text-anchor="middle" font-size="10" fill="#5B6B63">same key, never twice</text>
+          <text x="444" y="24" text-anchor="middle" font-size="11" font-weight="700" fill="#0E7C4A">Network back</text>
+        </svg>
       </div>
     </div>
   </div>
@@ -425,18 +582,18 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
   <div class="wrap">
     <div class="sec-head rv"><span class="tag">Features</span><h2>Everything a modern restaurant needs</h2><p>All included — no per-feature paywalls, no lock-in.</p></div>
     <div class="feat-grid">
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">point_of_sale</span></div><div><h3>Billing &amp; KOT</h3><p>Touch POS, tables, captain ordering and a live kitchen display screen.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">receipt_long</span></div><div><h3>GST invoicing</h3><p>GST billing software built in: CGST/SGST tax invoices with HSN per item, from Pro. E-invoice formats from Advanced.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">qr_code_2</span></div><div><h3>QR ordering</h3><p>Guests scan, browse the menu and order from the table — you just serve.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">wifi_off</span></div><div><h3>Offline-first</h3><p>Bills and KOTs keep flowing with no internet, then sync when you reconnect.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">loyalty</span></div><div><h3>Loyalty &amp; wallet</h3><p>Points, memberships and a gift-card wallet that bring diners back.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">payments</span></div><div><h3>Every payment</h3><p>Cash, UPI, card and split payments — settle a bill any way guests pay.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">chat</span></div><div><h3>WhatsApp receipts</h3><p>Send bills, offers and updates on the channel your customers actually use.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">inventory_2</span></div><div><h3>Inventory &amp; costing</h3><p>Track stock, recipe costing, wastage and low-stock alerts in real time.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">monitoring</span></div><div><h3>Live reports</h3><p>Sales, item performance, P&amp;L and GST — no spreadsheets, no guesswork.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">event_seat</span></div><div><h3>Reservations</h3><p>Take table bookings, manage guest counts and seat parties smoothly.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">delivery_dining</span></div><div><h3>Aggregators</h3><p>Zomato &amp; Swiggy orders flow into the same kitchen and reports.</p></div></div>
-      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined">storefront</span></div><div><h3>Multi-outlet</h3><p>Run multiple outlets with consolidated, one-login reporting.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">point_of_sale</span></div><div><h3>Billing &amp; KOT</h3><p>Touch POS, tables, captain ordering and a live kitchen display screen.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">receipt_long</span></div><div><h3>GST invoicing</h3><p>GST billing software built in: CGST/SGST tax invoices with HSN per item, from Pro. E-invoice formats from Advanced.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">qr_code_2</span></div><div><h3>QR ordering</h3><p>Guests scan, browse the menu and order from the table — you just serve.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">wifi_off</span></div><div><h3>Offline-first</h3><p>Bills and KOTs keep flowing with no internet, then sync when you reconnect.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">loyalty</span></div><div><h3>Loyalty &amp; wallet</h3><p>Points, memberships and a gift-card wallet that bring diners back.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">payments</span></div><div><h3>Every payment</h3><p>Cash, UPI, card and split payments — settle a bill any way guests pay.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">chat</span></div><div><h3>WhatsApp receipts</h3><p>Send bills, offers and updates on the channel your customers actually use.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">inventory_2</span></div><div><h3>Inventory &amp; costing</h3><p>Track stock, recipe costing, wastage and low-stock alerts in real time.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">monitoring</span></div><div><h3>Live reports</h3><p>Sales, item performance, P&amp;L and GST — no spreadsheets, no guesswork.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">event_seat</span></div><div><h3>Reservations</h3><p>Take table bookings, manage guest counts and seat parties smoothly.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">delivery_dining</span></div><div><h3>Aggregators</h3><p>Zomato &amp; Swiggy orders flow into the same kitchen and reports.</p></div></div>
+      <div class="feat rv"><div class="fic"><span class="material-symbols-outlined" aria-hidden="true" translate="no">storefront</span></div><div><h3>Multi-outlet</h3><p>Run multiple outlets with consolidated, one-login reporting.</p></div></div>
     </div>
   </div>
 </section>
@@ -449,87 +606,87 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <h2>50+ features. One all-inclusive platform.</h2>
       <p>Everything below runs your restaurant end to end — no per-feature paywalls. See the pricing table for what each plan unlocks.</p>
     </div>
-    <div style="text-align:center"><span class="afcount rv"><span class="material-symbols-outlined">verified</span> 50+ features included across plans</span></div>
+    <div style="text-align:center"><span class="afcount rv"><span class="material-symbols-outlined" aria-hidden="true" translate="no">verified</span> 50+ features included across plans</span></div>
     <div class="allfeat">
       <div class="afcol rv">
-        <h3><span class="material-symbols-outlined">point_of_sale</span> Billing &amp; orders</h3>
+        <h3><span class="material-symbols-outlined" aria-hidden="true" translate="no">point_of_sale</span> Billing &amp; orders</h3>
         <ul>
-          <li><span class="material-symbols-outlined">check</span> Billing &amp; POS</li>
-          <li><span class="material-symbols-outlined">check</span> Order management</li>
-          <li><span class="material-symbols-outlined">check</span> Token billing</li>
-          <li><span class="material-symbols-outlined">check</span> Table management</li>
-          <li><span class="material-symbols-outlined">check</span> Multi-floor tables</li>
-          <li><span class="material-symbols-outlined">check</span> Menu management</li>
-          <li><span class="material-symbols-outlined">check</span> Variants &amp; modifiers</li>
-          <li><span class="material-symbols-outlined">check</span> Captain ordering</li>
-          <li><span class="material-symbols-outlined">check</span> Kitchen display (KDS)</li>
-          <li><span class="material-symbols-outlined">check</span> QR self-ordering</li>
-          <li><span class="material-symbols-outlined">check</span> Voice billing</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Billing &amp; POS</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Order management</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Token billing</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Table management</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Multi-floor tables</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Menu management</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Variants &amp; modifiers</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Captain ordering</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Kitchen display (KDS)</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> QR self-ordering</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Voice billing</li>
         </ul>
       </div>
       <div class="afcol rv">
-        <h3><span class="material-symbols-outlined">payments</span> Payments &amp; invoicing</h3>
+        <h3><span class="material-symbols-outlined" aria-hidden="true" translate="no">payments</span> Payments &amp; invoicing</h3>
         <ul>
-          <li><span class="material-symbols-outlined">check</span> Split payments</li>
-          <li><span class="material-symbols-outlined">check</span> Invoicing</li>
-          <li><span class="material-symbols-outlined">check</span> GST tax invoices</li>
-          <li><span class="material-symbols-outlined">check</span> B2B invoicing</li>
-          <li><span class="material-symbols-outlined">check</span> E-invoice (GST)</li>
-          <li><span class="material-symbols-outlined">check</span> Recurring invoices</li>
-          <li><span class="material-symbols-outlined">check</span> Cash registers</li>
-          <li><span class="material-symbols-outlined">check</span> Day-end closing</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Split payments</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Invoicing</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> GST tax invoices</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> B2B invoicing</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> E-invoice (GST)</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Recurring invoices</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Cash registers</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Day-end closing</li>
         </ul>
       </div>
       <div class="afcol rv">
-        <h3><span class="material-symbols-outlined">loyalty</span> Customers &amp; marketing</h3>
+        <h3><span class="material-symbols-outlined" aria-hidden="true" translate="no">loyalty</span> Customers &amp; marketing</h3>
         <ul>
-          <li><span class="material-symbols-outlined">check</span> Customer directory</li>
-          <li><span class="material-symbols-outlined">check</span> Customer CRM</li>
-          <li><span class="material-symbols-outlined">check</span> Loyalty &amp; points</li>
-          <li><span class="material-symbols-outlined">check</span> Memberships &amp; wallet</li>
-          <li><span class="material-symbols-outlined">check</span> Google reviews</li>
-          <li><span class="material-symbols-outlined">check</span> WhatsApp marketing</li>
-          <li><span class="material-symbols-outlined">check</span> Auto WhatsApp orders</li>
-          <li><span class="material-symbols-outlined">check</span> Add-on marketplace</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Customer directory</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Customer CRM</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Loyalty &amp; points</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Memberships &amp; wallet</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Google reviews</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> WhatsApp marketing</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Auto WhatsApp orders</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Add-on marketplace</li>
         </ul>
       </div>
       <div class="afcol rv">
-        <h3><span class="material-symbols-outlined">inventory_2</span> Inventory &amp; kitchen</h3>
+        <h3><span class="material-symbols-outlined" aria-hidden="true" translate="no">inventory_2</span> Inventory &amp; kitchen</h3>
         <ul>
-          <li><span class="material-symbols-outlined">check</span> Inventory tracking</li>
-          <li><span class="material-symbols-outlined">check</span> Recipe costing</li>
-          <li><span class="material-symbols-outlined">check</span> Dish wastage</li>
-          <li><span class="material-symbols-outlined">check</span> Dead-stock alerts</li>
-          <li><span class="material-symbols-outlined">check</span> Bulk import</li>
-          <li><span class="material-symbols-outlined">check</span> Expense tracking</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Inventory tracking</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Recipe costing</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Dish wastage</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Dead-stock alerts</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Bulk import</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Expense tracking</li>
         </ul>
       </div>
       <div class="afcol rv">
-        <h3><span class="material-symbols-outlined">monitoring</span> Reports &amp; accounting</h3>
+        <h3><span class="material-symbols-outlined" aria-hidden="true" translate="no">monitoring</span> Reports &amp; accounting</h3>
         <ul>
-          <li><span class="material-symbols-outlined">check</span> Reports &amp; dashboards</li>
-          <li><span class="material-symbols-outlined">check</span> P&amp;L statement</li>
-          <li><span class="material-symbols-outlined">check</span> Accounting (P&amp;L / BS)</li>
-          <li><span class="material-symbols-outlined">check</span> Bank reconciliation</li>
-          <li><span class="material-symbols-outlined">check</span> TDS / TCS</li>
-          <li><span class="material-symbols-outlined">check</span> Sales forecasting</li>
-          <li><span class="material-symbols-outlined">check</span> Sales heat-map</li>
-          <li><span class="material-symbols-outlined">check</span> Surge pricing</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Reports &amp; dashboards</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> P&amp;L statement</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Accounting (P&amp;L / BS)</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Bank reconciliation</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> TDS / TCS</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Sales forecasting</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Sales heat-map</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Surge pricing</li>
         </ul>
       </div>
       <div class="afcol rv">
-        <h3><span class="material-symbols-outlined">storefront</span> Operations &amp; scale</h3>
+        <h3><span class="material-symbols-outlined" aria-hidden="true" translate="no">storefront</span> Operations &amp; scale</h3>
         <ul>
-          <li><span class="material-symbols-outlined">check</span> Table reservations</li>
-          <li><span class="material-symbols-outlined">check</span> Delivery / driver mode</li>
-          <li><span class="material-symbols-outlined">check</span> Zomato / Swiggy aggregators</li>
-          <li><span class="material-symbols-outlined">check</span> Multi-outlet</li>
-          <li><span class="material-symbols-outlined">check</span> API access</li>
-          <li><span class="material-symbols-outlined">check</span> White-label</li>
-          <li><span class="material-symbols-outlined">check</span> Multi-currency</li>
-          <li><span class="material-symbols-outlined">check</span> Staff logins</li>
-          <li><span class="material-symbols-outlined">check</span> Unlimited staff logins (Advanced and Enterprise)</li>
-          <li><span class="material-symbols-outlined">check</span> Web dashboard</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Table reservations</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Delivery / driver mode</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Zomato / Swiggy aggregators</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Multi-outlet</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> API access</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> White-label</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Multi-currency</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Staff logins</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Unlimited staff logins (Advanced and Enterprise)</li>
+          <li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Web dashboard</li>
         </ul>
       </div>
     </div>
@@ -541,10 +698,10 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
   <div class="wrap">
     <div class="sec-head rv"><span class="tag">Solutions</span><h2>Made for every kind of outlet</h2><p>One platform that flexes to how you serve.</p></div>
     <div class="grid4">
-      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined">restaurant</span></div><h3>Restaurants</h3><p>Dine-in, tables, captain &amp; KOT flows built for full-service.</p></div>
-      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined">local_cafe</span></div><h3>Cafés</h3><p>Quick counter billing, combos and loyalty for repeat regulars.</p></div>
-      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined">delivery_dining</span></div><h3>Cloud kitchens</h3><p>Multi-brand orders, QR &amp; delivery-ready workflows.</p></div>
-      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined">lunch_dining</span></div><h3>QSR</h3><p>Lightning-fast token billing for high-volume counters.</p></div>
+      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined" aria-hidden="true" translate="no">restaurant</span></div><h3>Restaurants</h3><p>Dine-in, tables, captain &amp; KOT flows built for full-service.</p></div>
+      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined" aria-hidden="true" translate="no">local_cafe</span></div><h3>Cafés</h3><p>Quick counter billing, combos and loyalty for repeat regulars.</p></div>
+      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined" aria-hidden="true" translate="no">delivery_dining</span></div><h3>Cloud kitchens</h3><p>Multi-brand orders, QR &amp; delivery-ready workflows.</p></div>
+      <div class="sol-card rv"><div class="e"><span class="material-symbols-outlined" aria-hidden="true" translate="no">lunch_dining</span></div><h3>QSR</h3><p>Lightning-fast token billing for high-volume counters.</p></div>
     </div>
   </div>
 </section>
@@ -561,38 +718,44 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <div class="plan rv">
         <h3>Starter</h3>
         <div class="price">₹0<small>/mo</small></div>
-        <div class="note">7-day free trial · no card</div>
-        <ul><li><span class="material-symbols-outlined">check</span> All core POS &amp; KOT</li><li><span class="material-symbols-outlined">check</span> Invoices &amp; receipts</li><li><span class="material-symbols-outlined">check</span> QR ordering</li><li><span class="material-symbols-outlined">check</span> Offline mode</li></ul>
-        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-starter&amp;plan=free" class="btn btn-ghost">Get started free</a>
+        <!-- Was "7-day free trial - no card", which read as "Starter expires in
+             7 days" on a free-forever plan. The trial belongs to the PAID
+             cards; Starter is where a lapsed trial lands. -->
+        <div class="note">free forever · no card</div>
+        <ul><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> All core POS &amp; KOT</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Invoices &amp; receipts</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> QR ordering</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Offline mode</li></ul>
+        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-starter&amp;plan=free" class="btn btn-ghost">Start free — ₹0</a>
       </div>
       <div class="plan rv">
         <h3>Growth</h3>
         <div class="price">₹299<small>/mo</small></div>
         <div class="note">per register · billed monthly</div>
-        <ul><li><span class="material-symbols-outlined">check</span> Everything in Starter</li><li><span class="material-symbols-outlined">check</span> Invoices &amp; receipts</li><li><span class="material-symbols-outlined">check</span> Loyalty, wallet &amp; memberships</li><li><span class="material-symbols-outlined">check</span> WhatsApp marketing</li><li><span class="material-symbols-outlined">check</span> Advanced reports &amp; exports</li></ul>
-        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-growth&amp;plan=basic" class="btn btn-ghost">Start free trial</a>
+        <!-- Memberships & wallet is a Pro featureKey, not a Growth one, and
+             "Invoices & receipts" is already in Starter. Both corrected
+             against /v1/public/plans. -->
+        <ul><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Everything in Starter</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Unlimited menu items</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Loyalty &amp; points</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> WhatsApp marketing</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Advanced reports &amp; CSV exports</li></ul>
+        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-growth&amp;plan=basic" class="btn btn-ghost">Try Growth free for 7 days</a>
       </div>
       <div class="plan pop rv">
         <span class="badge">Most popular</span>
         <h3>Pro</h3>
         <div class="price">₹799<small>/mo</small></div>
         <div class="note">full-service restaurants</div>
-        <ul><li><span class="material-symbols-outlined">check</span> Everything in Growth</li><li><span class="material-symbols-outlined">check</span> GST tax invoices (CGST/SGST + HSN)</li><li><span class="material-symbols-outlined">check</span> Zomato &amp; Swiggy aggregators</li><li><span class="material-symbols-outlined">check</span> Inventory &amp; recipe costing</li><li><span class="material-symbols-outlined">check</span> Up to 10 staff logins</li></ul>
-        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-pro&amp;plan=pro_plan" class="btn btn-primary">Start free trial</a>
+        <ul><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Everything in Growth</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> GST tax invoices (CGST/SGST + HSN)</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Zomato &amp; Swiggy aggregators</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Inventory &amp; recipe costing</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Up to 10 staff logins</li></ul>
+        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-pro&amp;plan=pro_plan" class="btn btn-primary">Try Pro free for 7 days</a>
       </div>
       <div class="plan rv">
         <h3>Advanced</h3>
         <div class="price">₹999<small>/mo</small></div>
         <div class="note">inventory &amp; accounting heavy</div>
-        <ul><li><span class="material-symbols-outlined">check</span> Everything in Pro</li><li><span class="material-symbols-outlined">check</span> Accounting (P&amp;L / balance sheet)</li><li><span class="material-symbols-outlined">check</span> e-invoice (GST), TDS / TCS</li><li><span class="material-symbols-outlined">check</span> Up to 3 outlets</li></ul>
-        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-advanced&amp;plan=advanced" class="btn btn-ghost">Start free trial</a>
+        <ul><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Everything in Pro</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Accounting (P&amp;L / balance sheet)</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> e-invoice (GST) formats</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Unlimited staff logins</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Up to 3 outlets</li></ul>
+        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-advanced&amp;plan=advanced" class="btn btn-ghost">Try Advanced free for 7 days</a>
       </div>
       <div class="plan rv">
         <h3>Enterprise</h3>
         <div class="price">₹1,999<small>/mo</small></div>
         <div class="note">multi-outlet &amp; chains</div>
-        <ul><li><span class="material-symbols-outlined">check</span> Everything in Advanced</li><li><span class="material-symbols-outlined">check</span> Multi-outlet &amp; multi-currency</li><li><span class="material-symbols-outlined">check</span> API access &amp; white-label</li><li><span class="material-symbols-outlined">check</span> Priority support</li></ul>
-        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-enterprise&amp;plan=pro" class="btn btn-ghost">Start free trial</a>
+        <ul><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Everything in Advanced</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Multi-outlet &amp; multi-currency</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> API access &amp; white-label</li><li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> Priority support</li></ul>
+        <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=pricing-enterprise&amp;plan=pro" class="btn btn-ghost">Try Enterprise free for 7 days</a>
       </div>
     </div>
 
@@ -606,24 +769,59 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
           <tr><td>Menu items</td><td>60</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td><td>Unlimited</td></tr>
           <tr><td>Staff logins</td><td>1</td><td>5</td><td>10</td><td>Unlimited</td><td>Unlimited</td></tr>
           <tr><td>Outlets</td><td>1</td><td>1</td><td>1</td><td>3</td><td>3</td></tr>
-          <tr><td>Invoices &amp; receipts</td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>GST tax invoices (CGST/SGST + HSN)</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>WhatsApp marketing</td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>Loyalty &amp; points</td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>Memberships &amp; wallet</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>QR self-ordering</td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>Kitchen display (KDS)</td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>Captain ordering</td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>Inventory tracking</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>Advanced reports</td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>Zomato / Swiggy</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>E-invoice (GST)</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
-          <tr><td>Multi-outlet</td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="material-symbols-outlined yes">check</span></td><td><span class="material-symbols-outlined yes">check</span></td></tr>
+          <tr><td>Invoices &amp; receipts</td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>GST tax invoices (CGST/SGST + HSN)</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>WhatsApp marketing</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>Loyalty &amp; points</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>Memberships &amp; wallet</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>QR self-ordering</td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>Kitchen display (KDS)</td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>Captain ordering</td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>Inventory tracking</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>Advanced reports</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>Zomato / Swiggy</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>E-invoice (GST)</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <tr><td>Multi-outlet</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
         </tbody>
       </table>
     </div>
+    <p class="cmp-hint"><span class="material-symbols-outlined" aria-hidden="true" translate="no">swipe_left</span> Swipe the table sideways — the feature name stays put.</p>
     <p style="text-align:center;color:var(--muted);font-size:14px;margin-top:14px">GST tax invoices from Pro · e-invoice from Advanced. Starter and Growth print plain invoices and receipts.</p>
-    <p style="text-align:center;color:var(--muted);font-size:14px;margin-top:8px">Billed per register · 7-day free trial · no credit card required.</p>
+    <p style="text-align:center;color:var(--muted);font-size:14px;margin-top:8px">Billed per register · 7-day free trial on the plan you pick · no credit card required.</p>
+
+    <!-- TRUST BLOCK — there are no testimonials, ratings or customer counts yet
+         and none may be invented. Everything below is a checkable property of
+         the product, the billing terms or the live plan feed. -->
+    <div class="trust-block rv">
+      <h3>What you can hold us to</h3>
+      <p class="tb-sub">No ratings, no customer counts, no vague promises — just six things you can check before you type a single menu item.</p>
+      <div class="tb-grid">
+        <div class="tb-item">
+          <div class="tbi"><span class="material-symbols-outlined" aria-hidden="true" translate="no">credit_card_off</span></div>
+          <div><h4>No card, so no surprise charge</h4><p>The 7-day trial takes no card details. Nothing can be billed automatically, because there is nothing on file to bill.</p></div>
+        </div>
+        <div class="tb-item">
+          <div class="tbi"><span class="material-symbols-outlined" aria-hidden="true" translate="no">event_repeat</span></div>
+          <div><h4>Monthly, with no lock-in</h4><p>Billed per register, month to month. Stop at the end of any month. No annual contract, no exit fee, no renewal you have to argue your way out of.</p></div>
+        </div>
+        <div class="tb-item">
+          <div class="tbi"><span class="material-symbols-outlined" aria-hidden="true" translate="no">download</span></div>
+          <div><h4>Your data leaves with you</h4><p>CSV exports of sales, orders and menu are included from Growth upwards. What you type in, you can take out.</p></div>
+        </div>
+        <div class="tb-item">
+          <div class="tbi"><span class="material-symbols-outlined" aria-hidden="true" translate="no">wifi_off</span></div>
+          <div><h4>Service does not stop when the network does</h4><p>Orders are written on the phone and replayed when the network returns. Each one carries its own key, so a replayed order can never be charged twice.</p></div>
+        </div>
+        <div class="tb-item">
+          <div class="tbi"><span class="material-symbols-outlined" aria-hidden="true" translate="no">receipt_long</span></div>
+          <div><h4>GST, stated plainly</h4><p>CGST/SGST tax invoices with HSN per item start on Pro (₹799). E-invoice formats start on Advanced (₹999). Starter and Growth print plain invoices and receipts — we would rather say so here than at renewal.</p></div>
+        </div>
+        <div class="tb-item">
+          <div class="tbi"><span class="material-symbols-outlined" aria-hidden="true" translate="no">lock</span></div>
+          <div><h4>Your books stay yours</h4><p>Every query is scoped to your restaurant, admin sign-in needs two factors, card details are handled by Razorpay rather than by us, and data requests follow a published DPDP process.</p></div>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -672,11 +870,11 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
 </section>
 
 <!-- STATS BAND -->
-<section class="sec" style="padding-top:0">
+<section class="sec" id="band-sec" style="padding-top:0">
   <div class="wrap"><div class="band rv">
     <h2>Switch in an afternoon. Save every month.</h2>
     <p>Bring your menu with you — the import wizard reads a CSV or an export from your current POS. Monthly billing, no lock-in, and every report included on every plan.</p>
-    <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=band" class="btn btn-amber">Start free — it takes 5 minutes</a>
+    <a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=band&amp;plan=pro_plan" class="btn btn-amber">Start free — no card</a>
   </div></div>
 </section>
 
@@ -688,7 +886,10 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <details class="q rv"><summary>Which plans include GST tax invoices?</summary><div class="a">GST-compliant CGST/SGST tax invoices, with HSN per item, are included from Pro (₹799/mo) and above. E-invoice formats start on Advanced (₹999/mo). Starter and Growth print plain invoices and receipts, not GST tax invoices.</div></details>
       <details class="q rv"><summary>Does it work offline?</summary><div class="a">Yes. Billing and KOTs keep working with no internet and sync automatically when you're back online — service never stops during a rush.</div></details>
       <details class="q rv"><summary>Can I run it on my phone?</summary><div class="a">Absolutely. NamastePOS is mobile-first — run the whole restaurant from an Android phone or tablet, no bulky terminal required. iOS and web are supported too.</div></details>
-      <details class="q rv"><summary>Is there a free trial?</summary><div class="a">Yes — start free with no credit card. Set up in about 5 minutes and upgrade only when you're ready.</div></details>
+      <details class="q rv"><summary>Is there a free trial?</summary><div class="a">Yes. Whichever plan you pick starts with a 7-day free trial — no credit card. Pick Pro and you run Pro for 7 days, with GST tax invoices switched on.</div></details>
+      <details class="q rv"><summary>What happens after the 7 days?</summary><div class="a">Nothing is charged. There is no card on file, so no automatic billing can happen. Your account moves to the free Starter plan and you carry on billing, with the paid features switched off until you choose to upgrade.</div></details>
+      <details class="q rv"><summary>Can my staff use their own phones?</summary><div class="a">Yes. Staff sign in with their own phone number and a PIN, on their own Android or iOS phone. Starter includes 1 staff login, Growth 5 and Pro 10; Advanced and Enterprise are unlimited.</div></details>
+      <details class="q rv"><summary>Can I get my data out?</summary><div class="a">Yes. CSV exports of sales, orders and menu data are included from Growth upwards, and there is no lock-in period — stop at the end of any month and take your data with you.</div></details>
       <details class="q rv"><summary>Is there any lock-in contract?</summary><div class="a">No lock-in. Pricing is all-inclusive with no hidden report paywalls, and you can leave anytime.</div></details>
       <details class="q rv"><summary>How is NamastePOS different from legacy POS systems?</summary><div class="a">Same everyday features, but mobile-first and offline-ready at a lower, all-inclusive price — no annual lock-in and no paywall to see your own reports.</div></details>
     </div>
@@ -702,9 +903,9 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       <div>
         <div class="brand" style="font-size:22px">Namaste<span style="color:var(--amber)">POS</span></div>
         <p class="desc">Restaurant billing software for India — a restaurant POS app with offline billing software and KOT software built in. Mobile-first, made in India.</p>
-        <a href="https://pub-b587dcaedebf4ce59386af9fa20fac8c.r2.dev/NamastePOS.apk" class="btn btn-primary" style="margin-top:14px;display:inline-flex" download><span class="material-symbols-outlined">android</span> Download Android app</a>
+        <a href="https://pub-b587dcaedebf4ce59386af9fa20fac8c.r2.dev/NamastePOS.apk" class="btn btn-primary" style="margin-top:14px;display:inline-flex" download><span class="material-symbols-outlined" aria-hidden="true" translate="no">android</span> Download Android app</a>
       </div>
-      <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#solutions">Solutions</a><a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=footer">Start free</a><a href="https://app.namastepos.in/login">Sign in</a></div>
+      <div><h4>Product</h4><a href="#features">Features</a><a href="#pricing">Pricing</a><a href="#solutions">Solutions</a><a href="https://app.namastepos.in/register?utm_source=landing&amp;utm_medium=cta&amp;utm_content=footer&amp;plan=pro_plan">Start free</a><a href="https://app.namastepos.in/login">Sign in</a></div>
       <div><h4>Guides</h4><a href="/restaurant-billing-software">Restaurant billing software</a><a href="/gst-billing-software-restaurant">GST billing software</a><a href="/offline-restaurant-pos">Offline restaurant POS</a><a href="/kot-software">KOT software</a></div>
       <div><h4>Company</h4><a href="/blog/">Blog</a><a href="#faq">FAQ</a><a href="mailto:support@namastepos.in">Contact</a><a href="#product">How it works</a></div>
       <div><h4>Legal</h4><a href="/privacy.html">Privacy Policy</a><a href="/terms.html">Terms of Service</a></div>
@@ -778,8 +979,8 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     'kds','captain_mode','inventory_tracking','reports_advanced','aggregators',
     'einvoice_gst','multi_outlet'];
 
-  var YES='<span class="material-symbols-outlined yes">check</span>';
-  var NO='<span class="no">—</span>';
+  var YES='<span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span>';
+  var NO='<span class="no" aria-hidden="true">—</span><span class="sr">Not included</span>';
 
   function has(p,k){
     var fk=p.featureKeys||[];
@@ -800,7 +1001,9 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     return money(p.priceInr)+'<small>/mo</small>';
   }
   function noteHTML(p){
-    if((p.priceInr||0)<=0)return '7-day free trial · no card';
+    // The free plan is free FOREVER; the 7-day trial belongs to the paid cards.
+    // Printing "7-day free trial" here made Starter read as "expires in 7 days".
+    if((p.priceInr||0)<=0)return 'free forever · no card';
     return state.billing==='year'?'per register · 2 months free':'per register · billed monthly';
   }
   function limitsHTML(p){
@@ -831,9 +1034,11 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
       }
     }
     if(hl.length===0)hl.push('Billing & POS','Invoices & receipts','Live reports');
-    var lis=hl.map(function(t){return '<li><span class="material-symbols-outlined">check</span> '+t+'</li>';}).join('');
+    var lis=hl.map(function(t){return '<li><span class="material-symbols-outlined" aria-hidden="true" translate="no">check</span> '+t+'</li>';}).join('');
     var btn=pop?'btn-primary':'btn-ghost';
-    var cta=(p.priceInr||0)<=0?'Get started free':'Start free trial';
+    // Two labels only (was four across the page): free contexts say "free",
+    // paid cards name the length of what they are giving away.
+    var cta=(p.priceInr||0)<=0?'Start free — ₹0':'Try '+(p.name||'this plan')+' free for 7 days';
     // Acquisition CTA -> /register (the app root is auth-gated), with a UTM
     // that names the placement so GA4 can attribute which card converts.
     var slug=String(p.name||p.tierKind||('plan'+i)).toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'');

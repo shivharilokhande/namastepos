@@ -144,6 +144,30 @@ const env = {
   META_WA_OTP_TEMPLATE: process.env.META_WA_OTP_TEMPLATE || '',
   META_WA_LANG: process.env.META_WA_LANG || 'en',
 
+  // Dunning ladder templates (2026-09-05). Four escalating touches across the
+  // past_due grace plus a recovery message — the copy lives in the marketing
+  // repo at `content/emails/dunning-ladder.md`, which suggests the names
+  // np_dun_1_failed / np_dun_2_pending / np_dun_3_midpoint / np_dun_4_last_day
+  // / np_dun_recovered, all UTILITY category.
+  //
+  // THESE MUST BE APPROVED IN META BEFORE THEY CAN SEND. A business-initiated
+  // WhatsApp message outside the 24-hour service window is rejected unless the
+  // template is approved on the WABA, and the template name is an account-level
+  // fact this codebase cannot invent. So each var defaults to BLANK and
+  // dunningService then degrades that touch to email — the owner is always
+  // messaged, just on the slower channel, and nothing throws. Fill these in
+  // once the templates come back approved; no redeploy of logic is needed.
+  //
+  // Body variable order is fixed and must match the approved template:
+  //   {{1}} first name  {{2}} outlet  {{3}} amount (₹)  {{4}} plan
+  //   {{5}} grace end date (next debit date on the recovery message)
+  //   {{6}} payment link
+  META_WA_DUN_1_TEMPLATE: process.env.META_WA_DUN_1_TEMPLATE || '',
+  META_WA_DUN_2_TEMPLATE: process.env.META_WA_DUN_2_TEMPLATE || '',
+  META_WA_DUN_3_TEMPLATE: process.env.META_WA_DUN_3_TEMPLATE || '',
+  META_WA_DUN_4_TEMPLATE: process.env.META_WA_DUN_4_TEMPLATE || '',
+  META_WA_DUN_RECOVERED_TEMPLATE: process.env.META_WA_DUN_RECOVERED_TEMPLATE || '',
+
   // Redis (OPTIONAL) — only for cross-instance feature-cache invalidation when
   // running >1 backend instance. Unset = single-instance in-process cache
   // (fine today). Free options: Upstash, Render Key Value, Redis Cloud.

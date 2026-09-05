@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ffApi } from '@/api/namastepos';
+import type { SaveOffer } from '@/api/namastepos';
 import { apiError, getBusinessCache } from '@/api/client';
 import { trackUpgradePaid } from '@/lib/activation';
 import { formatINR, formatDate } from '@/lib/utils';
@@ -334,9 +335,94 @@ export function BillingPage() {
     onError: (e) => toast.error(apiError(e)),
   });
 
+  // ── Cancel flow (2026-09-05, churn batch) ─────────────────────────────
+  //
+  // "Cancel at period end" used to be one button that just cancelled. It now
+  // opens a two-screen flow: pick a reason, then see what that reason
+  // produces. The branching is the server's job (churnService.offerFor) — this
+  // component renders whatever comes back and, crucially, renders NO "stay"
+  // control when `offer.save` is false. That is what keeps a discount from
+  // ever appearing in front of somebody whose restaurant has closed.
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [reasonCode, setReasonCode] = useState<string>('');
+  const [reasonNote, setReasonNote] = useState('');
+  const [offer, setOffer] = useState<SaveOffer | null>(null);
+
+  const { data: cancelReasons = [] } = useQuery({
+    queryKey: ['cancel-reasons'],
+    queryFn: ffApi.cancelReasons,
+    // Static list; only fetched once the owner actually opens the flow.
+    enabled: cancelOpen,
+    staleTime: 60 * 60 * 1000,
+  });
+
+  const closeCancel = () => {
+    setCancelOpen(false);
+    setOffer(null);
+    setReasonCode('');
+    setReasonNote('');
+  };
+
+  const survey = useMutation({
+    mutationFn: () => ffApi.cancelSurvey(reasonCode, reasonNote || undefined),
+    onSuccess: (res) => setOffer(res.offer),
+    onError: (e) => toast.error(apiError(e)),
+  });
+
   const cancel = useMutation({
     mutationFn: ffApi.cancelSubscription,
-    onSuccess: () => { toast.success('Will cancel at period end'); qc.invalidateQueries({ queryKey: ['sub'] }); },
+    onSuccess: () => {
+      toast.success('Will cancel at period end — nothing is deleted');
+      closeCancel();
+      qc.invalidateQueries({ queryKey: ['sub'] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const pause = useMutation({
+    mutationFn: (months: 1 | 2 | 3) => ffApi.pauseSubscription(months, reasonCode || undefined),
+    onSuccess: () => {
+      toast.success('Paused. Billing stops and nothing is deleted.');
+      closeCancel();
+      qc.invalidateQueries({ queryKey: ['sub'] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const resume = useMutation({
+    mutationFn: ffApi.resumeSubscription,
+    onSuccess: () => {
+      toast.success('Resumed on the same plan');
+      qc.invalidateQueries({ queryKey: ['sub'] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  const downgrade = useMutation({
+    mutationFn: () => ffApi.changePlan('free'),
+    onSuccess: () => {
+      toast.success('Moved to Starter. Free, no expiry, nothing deleted.');
+      closeCancel();
+      qc.invalidateQueries({ queryKey: ['sub'] });
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+
+  // The export is a real file, so it downloads rather than navigating — the
+  // API client sends auth headers a plain <a href> could not.
+  const exportAccount = useMutation({
+    mutationFn: ffApi.exportAccount,
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `namastepos-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Your data is downloading');
+    },
     onError: (e) => toast.error(apiError(e)),
   });
 
@@ -398,6 +484,167 @@ export function BillingPage() {
           </Button>
         </div>
       )}
+
+      {/* 2026-09-05 — paused account. Says what still works, names the resume
+          date, and gives one button. No alarm colour: pausing is a normal,
+          deliberate thing to do and the banner should not read as a fault. */}
+      {sub?.pause?.paused && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex-1">
+            <div className="font-semibold text-amber-900">
+              Paused until {formatDate(sub.pause.pauseEndsAt)}
+            </div>
+            <div className="text-sm text-amber-800">
+              Billing has stopped and nothing is deleted. You can still open the app and
+              read every bill, report and customer. New bills start again when you resume —
+              we do it automatically on {formatDate(sub.pause.pauseEndsAt)}, or you can
+              resume now.
+            </div>
+          </div>
+          <Button variant="default" disabled={resume.isPending} onClick={() => resume.mutate()}>
+            Resume now
+          </Button>
+        </div>
+      )}
+
+      {/* ── Cancel flow ────────────────────────────────────────────────────
+          Screen 1 is the reason. Screen 2 is whatever that reason produced.
+          `offer.save === false` (missing_feature, switching, closing_down)
+          renders NO stay control — the only buttons are "go back" and
+          "confirm". A save offer in front of an owner whose restaurant has
+          shut is insulting, and this is where that rule is enforced in the
+          UI. */}
+      <Dialog open={cancelOpen} onOpenChange={(open) => { if (!open) closeCancel(); }}>
+        <DialogContent className="max-w-lg">
+          {!offer ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>Before you go — what went wrong?</DialogTitle>
+                <DialogDescription>
+                  One tap. It is the only way the product gets less annoying, and it
+                  decides what we can actually do for you on the next screen.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2">
+                {cancelReasons.map((r) => (
+                  <button
+                    key={r.code}
+                    type="button"
+                    onClick={() => setReasonCode(r.code)}
+                    className={`w-full text-left rounded-md border px-3 py-2 text-sm transition ${
+                      reasonCode === r.code
+                        ? 'border-primary bg-primary/5 font-medium'
+                        : 'border-border hover:bg-muted'
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+                <textarea
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                  rows={3}
+                  placeholder={
+                    cancelReasons.find((r) => r.code === reasonCode)?.noteRequired
+                      ? 'What was missing? (required — this goes to the founder)'
+                      : 'Anything else? (optional)'
+                  }
+                  value={reasonNote}
+                  onChange={(e) => setReasonNote(e.target.value)}
+                />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={closeCancel}>Never mind</Button>
+                <Button
+                  disabled={!reasonCode || survey.isPending}
+                  onClick={() => survey.mutate()}
+                >
+                  Continue
+                </Button>
+              </DialogFooter>
+            </>
+          ) : (
+            <>
+              <DialogHeader>
+                <DialogTitle>{offer.headline}</DialogTitle>
+                {offer.detail && <DialogDescription>{offer.detail}</DialogDescription>}
+              </DialogHeader>
+              {offer.save && (
+                <div className="space-y-3">
+                  {offer.options.map((o) => (
+                    <div key={o.action} className="rounded-md border border-border p-3">
+                      <div className="font-medium text-sm">{o.title}</div>
+                      <div className="text-sm text-muted-foreground mt-1">{o.detail}</div>
+                      {o.action === 'pause' && (
+                        <div className="flex gap-2 mt-2">
+                          {(o.months || [1, 2, 3]).map((m) => (
+                            <Button
+                              key={m}
+                              size="sm"
+                              variant="outline"
+                              disabled={pause.isPending}
+                              onClick={() => pause.mutate(m as 1 | 2 | 3)}
+                            >
+                              {m} month{m === 1 ? '' : 's'}
+                            </Button>
+                          ))}
+                        </div>
+                      )}
+                      {o.action === 'downgrade' && (
+                        <Button
+                          size="sm"
+                          className="mt-2"
+                          disabled={downgrade.isPending}
+                          onClick={() => downgrade.mutate()}
+                        >
+                          Move to Starter
+                        </Button>
+                      )}
+                      {o.action === 'annual' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="mt-2"
+                          onClick={() => {
+                            closeCancel();
+                            document.getElementById('choose-plan')?.scrollIntoView({ behavior: 'smooth' });
+                          }}
+                        >
+                          Switch to yearly
+                        </Button>
+                      )}
+                      {o.action === 'founder_call' && (
+                        <div className="text-xs text-muted-foreground mt-2">
+                          Reply to any NamastePOS message and we will book it.
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {!offer.save && offer.kind === 'goodbye' && (
+                <Button
+                  variant="outline"
+                  disabled={exportAccount.isPending}
+                  onClick={() => exportAccount.mutate()}
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Take a copy of my data
+                </Button>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setOffer(null)}>Back</Button>
+                <Button
+                  variant="destructive"
+                  disabled={cancel.isPending}
+                  onClick={() => cancel.mutate()}
+                >
+                  Cancel at period end
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* NP-127 — the current-plan card used to just vanish when the sub
           fetch failed (looks identical to "no subscription"). Same error +
@@ -488,9 +735,25 @@ export function BillingPage() {
               );
             })()}
             {sub.cancelAtPeriodEnd && <div className="text-destructive">Will not auto-renew</div>}
-            {sub.status === 'active' && !sub.cancelAtPeriodEnd && (
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => cancel.mutate()}>Cancel at period end</Button>
-            )}
+            <div className="flex flex-wrap gap-2 pt-2">
+              {sub.status === 'active' && !sub.cancelAtPeriodEnd && (
+                <Button variant="outline" size="sm" onClick={() => setCancelOpen(true)}>
+                  Cancel subscription
+                </Button>
+              )}
+              {(sub.cancelAtPeriodEnd || sub.status === 'paused') && (
+                <Button variant="default" size="sm" disabled={resume.isPending} onClick={() => resume.mutate()}>
+                  {sub.status === 'paused' ? 'Resume now' : 'Keep my plan'}
+                </Button>
+              )}
+              {/* The export is here, not buried in the cancel flow. An owner
+                  should never have to start cancelling to get a copy of their
+                  own menu. */}
+              <Button variant="ghost" size="sm" disabled={exportAccount.isPending} onClick={() => exportAccount.mutate()}>
+                <Download className="h-4 w-4 mr-1" />
+                Export my data
+              </Button>
+            </div>
           </CardContent>
         </Card>
         );

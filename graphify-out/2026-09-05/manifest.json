@@ -444,9 +444,9 @@
     "semantic_hash": "accae3828bf493031be70f2c264d7430"
   },
   "namastepos_backend/src/controllers/menuController.js": {
-    "mtime": 1788548313.6781585,
-    "seen": 1788551453.2566972,
-    "ast_hash": "096667462c34dad837742dbf5962b6d6",
+    "mtime": 1788518137.8973176,
+    "seen": 1788522652.1090078,
+    "ast_hash": "d7f6bf503dfc72312eb833fa19cfd9bc",
     "semantic_hash": ""
   },
   "namastepos_backend/src/controllers/opsController.js": {
@@ -606,9 +606,9 @@
     "semantic_hash": ""
   },
   "namastepos_backend/src/routes/menu.routes.js": {
-    "mtime": 1788548328.6635141,
-    "seen": 1788551453.257056,
-    "ast_hash": "4400440a11e35afc7d9e1eda4f141f85",
+    "mtime": 1788539977.012428,
+    "seen": 1788541318.921659,
+    "ast_hash": "75643f9189e41bc9a7b6383ac18570b3",
     "semantic_hash": ""
   },
   "namastepos_backend/src/routes/metaWhatsappWebhook.routes.js": {
@@ -906,9 +906,9 @@
     "semantic_hash": ""
   },
   "namastepos_backend/src/services/featureService.js": {
-    "mtime": 1788548098.9787614,
-    "seen": 1788551453.257704,
-    "ast_hash": "7b92c0fb3f8489f354da1a40528e532d",
+    "mtime": 1788540003.6053421,
+    "seen": 1788541318.922691,
+    "ast_hash": "9220edd06b96678334fefd695af677cc",
     "semantic_hash": ""
   },
   "namastepos_backend/src/services/foodCouponService.js": {
@@ -1596,9 +1596,9 @@
     "semantic_hash": ""
   },
   "namastepos_dashboard/src/api/client.ts": {
-    "mtime": 1788549030.601869,
-    "seen": 1788551453.259566,
-    "ast_hash": "dd20b72d1f9c54aa41a8e727e94d96bd",
+    "mtime": 1788542444.043473,
+    "seen": 1788543838.292216,
+    "ast_hash": "242fd951fe4552b9f9b013638044edea",
     "semantic_hash": ""
   },
   "namastepos_dashboard/src/api/guest.ts": {
@@ -1608,9 +1608,9 @@
     "semantic_hash": "5672ed356c777cb28f0f1498dabaa582"
   },
   "namastepos_dashboard/src/api/namastepos.ts": {
-    "mtime": 1788548584.7018437,
-    "seen": 1788551453.2595809,
-    "ast_hash": "a279125803ca2a3ce87a6d3969540bf7",
+    "mtime": 1788543808.7727432,
+    "seen": 1788543838.292217,
+    "ast_hash": "d7327d73a00980d3339ff5118269a51e",
     "semantic_hash": ""
   },
   "namastepos_dashboard/src/components/BillSplitDialog.tsx": {
@@ -1980,9 +1980,9 @@
     "semantic_hash": "61e782f8248bc2bc25d666c79f686e80"
   },
   "namastepos_dashboard/src/pages/MenuPage.tsx": {
-    "mtime": 1788548742.1534157,
-    "seen": 1788551453.260454,
-    "ast_hash": "a8cd21d42378b3c78b09ff845c1baea3",
+    "mtime": 1788534807.634931,
+    "seen": 1788541318.9266932,
+    "ast_hash": "1e74ded02e8c5bb9649c78aaa0b156d1",
     "semantic_hash": ""
   },
   "namastepos_dashboard/src/pages/ModifierGroupsPage.tsx": {
@@ -2100,9 +2100,9 @@
     "semantic_hash": "4e50e25ff2dbc9b8386446c7435afdb9"
   },
   "namastepos_dashboard/src/pages/SetupWizardPage.tsx": {
-    "mtime": 1788548812.9087024,
-    "seen": 1788551453.260714,
-    "ast_hash": "109608db5a7c3eb25adfee6db970be11",
+    "mtime": 1788534843.365834,
+    "seen": 1788541318.927061,
+    "ast_hash": "09497d274b84bcfc6cf17c3d7c4118ea",
     "semantic_hash": ""
   },
   "namastepos_dashboard/src/pages/StaffPage.tsx": {
@@ -4170,153 +4170,153 @@
     "semantic_hash": ""
   },
   "namastepos_landing/blog/bar-pub-pos-software.html": {
-    "mtime": 1788550563.622826,
-    "seen": 1788551453.264427,
-    "ast_hash": "5c5f3bb2aac51bf4db3250ff3d90bdb9",
+    "mtime": 1788533635.136537,
+    "seen": 1788541318.930756,
+    "ast_hash": "44c63fb7a2ad54685793b2cfbab9a7aa",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/best-restaurant-pos-software-india.html": {
-    "mtime": 1788550563.624704,
-    "seen": 1788551453.264427,
-    "ast_hash": "06710326a5f4957e93af33413b7294a2",
+    "mtime": 1788533635.1379259,
+    "seen": 1788541318.930756,
+    "ast_hash": "e3bad145cd72e805fc594c81c21a3524",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/billing-machine-vs-pos-app.html": {
-    "mtime": 1788550578.0026743,
-    "seen": 1788551453.264429,
-    "ast_hash": "774b729e49123c67279e99623d8d7817",
+    "mtime": 1788533635.1390145,
+    "seen": 1788541318.930757,
+    "ast_hash": "65705405d7fe974b00d5a74b00521ec9",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/cafe-billing-software.html": {
-    "mtime": 1788550578.003865,
-    "seen": 1788551453.264429,
-    "ast_hash": "c9eb0945ef1472055afc4d40d3beae22",
+    "mtime": 1788533635.1400971,
+    "seen": 1788541318.930758,
+    "ast_hash": "9a4312607344920a436b78b825b1c97b",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/cloud-kitchen-pos-software.html": {
-    "mtime": 1788550578.0049808,
-    "seen": 1788551453.26443,
-    "ast_hash": "1c6e125e93e850d503834e9585cd4e12",
+    "mtime": 1788533635.1414511,
+    "seen": 1788541318.930758,
+    "ast_hash": "0b0e9fd86ee515b5968903d2dc8e6d4e",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/digital-menu-for-restaurants.html": {
-    "mtime": 1788550578.0059586,
-    "seen": 1788551453.26443,
-    "ast_hash": "a6a6eeac561dbf093740b696bb6ff466",
+    "mtime": 1788533635.1424437,
+    "seen": 1788541318.930759,
+    "ast_hash": "e7fbd4ed3ec6af4400af826eb83d7e87",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/e-invoicing-for-restaurants-india.html": {
-    "mtime": 1788550578.0071104,
-    "seen": 1788551453.264431,
-    "ast_hash": "e3ee63ecbd74602c55804cd7868403e7",
+    "mtime": 1788533635.1434908,
+    "seen": 1788541318.930759,
+    "ast_hash": "2d49179e2a5293d6b23f9e00e0436488",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/free-restaurant-billing-software.html": {
-    "mtime": 1788550578.0081022,
-    "seen": 1788551453.264431,
-    "ast_hash": "19c6352b35809ca65b5abec0a9bc6f98",
+    "mtime": 1788533635.144446,
+    "seen": 1788541318.930759,
+    "ast_hash": "4332cefb94811ae3d7937528e338b054",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/gst-billing-software-for-restaurants.html": {
-    "mtime": 1788550578.0090952,
-    "seen": 1788551453.2644322,
-    "ast_hash": "c6af6bfc6a2fd650d012235f7c55bc72",
+    "mtime": 1788533635.1454265,
+    "seen": 1788541318.93076,
+    "ast_hash": "e8e943de332463cdcd9407815a15dfd3",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/how-to-start-a-restaurant-india.html": {
-    "mtime": 1788550578.010043,
-    "seen": 1788551453.2644322,
-    "ast_hash": "4517d0dab1ca5a37c96304d30f013575",
+    "mtime": 1788533635.1464896,
+    "seen": 1788541318.93076,
+    "ast_hash": "b4ceb987e1a6142513017310aacaa0b0",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/index.html": {
-    "mtime": 1788550590.8297188,
-    "seen": 1788551453.264433,
-    "ast_hash": "e3756f6dec44a89b9230ee5c631e0df2",
+    "mtime": 1788536210.794924,
+    "seen": 1788541318.9307609,
+    "ast_hash": "d1b6c3c5ea8c5f94c4600208ff59b7b4",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/inventory-management-restaurant.html": {
-    "mtime": 1788550578.0110867,
-    "seen": 1788551453.264433,
-    "ast_hash": "b7fabec43dbeef853109e6f3665a8479",
+    "mtime": 1788533635.149157,
+    "seen": 1788541318.9307609,
+    "ast_hash": "950c8f558387622794fc07ef96db39fa",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/kot-kds-kitchen-order-system.html": {
-    "mtime": 1788550578.012353,
-    "seen": 1788551453.2644339,
-    "ast_hash": "dfb06ab9c54e3ee6693228bfdbd94917",
+    "mtime": 1788533635.1505606,
+    "seen": 1788541318.930762,
+    "ast_hash": "0ad3493456b2dcc1922813ca3451d030",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/multi-outlet-restaurant-pos.html": {
-    "mtime": 1788550578.0134957,
-    "seen": 1788551453.2644339,
-    "ast_hash": "a03be578ce00b809f4f76fbf3929a1c5",
+    "mtime": 1788533635.1516612,
+    "seen": 1788541318.930762,
+    "ast_hash": "5c75181f1532382224eb1472e33cb68f",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/offline-restaurant-billing.html": {
-    "mtime": 1788550578.0145843,
-    "seen": 1788551453.264435,
-    "ast_hash": "de1f88154cdfdbff5355be3057b68f2d",
+    "mtime": 1788533635.1526985,
+    "seen": 1788541318.930762,
+    "ast_hash": "af296929cc25b95f5777c97fa56a62b9",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/qr-code-ordering-restaurants.html": {
-    "mtime": 1788550578.015764,
-    "seen": 1788551453.264435,
-    "ast_hash": "c25eaf086984df183006dc32fc681db2",
+    "mtime": 1788533635.1536021,
+    "seen": 1788541318.930763,
+    "ast_hash": "efd51a1f82cfc3214287697201fef1ea",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/qsr-takeaway-pos-software.html": {
-    "mtime": 1788550578.0167859,
-    "seen": 1788551453.264435,
-    "ast_hash": "8ce9060ac241072b6b7dcd4556e48c0e",
+    "mtime": 1788533635.154615,
+    "seen": 1788541318.930763,
+    "ast_hash": "d17e06275d923582893f3232fb38031a",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/reduce-food-wastage-restaurant.html": {
-    "mtime": 1788550578.0177493,
-    "seen": 1788551453.264436,
-    "ast_hash": "479469b33b32f8f560e9aea1d26bf5ba",
+    "mtime": 1788533635.1556401,
+    "seen": 1788541318.930764,
+    "ast_hash": "5be450e7f19cc1e6c5ac5641b830ef3b",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/restaurant-analytics-reports.html": {
-    "mtime": 1788550578.0187705,
-    "seen": 1788551453.264436,
-    "ast_hash": "0ca35a3b69cc3c25643f4f2ee3a6c17a",
+    "mtime": 1788533635.156873,
+    "seen": 1788541318.930764,
+    "ast_hash": "3e7b54ede33c41dbfb11e293cdfc07a3",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/restaurant-loyalty-program-software.html": {
-    "mtime": 1788550578.0224817,
-    "seen": 1788551453.264438,
-    "ast_hash": "6217eff2e4ea69514da2c5c492072abf",
+    "mtime": 1788533635.1580355,
+    "seen": 1788541318.9307652,
+    "ast_hash": "491da472d630358af1ef519d6048a2a8",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/restaurant-staff-management.html": {
-    "mtime": 1788550578.0248826,
-    "seen": 1788551453.264439,
-    "ast_hash": "c7e89bbc69a32b2549c1d2d0663c7ade",
+    "mtime": 1788533635.159061,
+    "seen": 1788541318.930766,
+    "ast_hash": "c9d08377f0744fe423abda77b6e245bb",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/switching-restaurant-pos.html": {
-    "mtime": 1788550623.1308188,
-    "seen": 1788551453.264439,
-    "ast_hash": "d439276e1589b280d4b983a0bc2bda01",
+    "mtime": 1788533635.160071,
+    "seen": 1788541318.930767,
+    "ast_hash": "8722d70c6930f0ea4b460f46c955c7f5",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/table-management-reservations.html": {
-    "mtime": 1788550578.0267315,
-    "seen": 1788551453.26444,
-    "ast_hash": "738daa990e52de0f844c4cee0a4624c3",
+    "mtime": 1788533635.16105,
+    "seen": 1788541318.930767,
+    "ast_hash": "52a9da0ffeebcd0f91fc9a9d185b6aee",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/upi-payments-for-restaurants.html": {
-    "mtime": 1788550578.0276506,
-    "seen": 1788551453.26444,
-    "ast_hash": "0c23d5d3887b5e1d9b959ec829aff7db",
+    "mtime": 1788533635.1621842,
+    "seen": 1788541318.930767,
+    "ast_hash": "5b5eee69f5a5353d62663a1165bc3f75",
     "semantic_hash": ""
   },
   "namastepos_landing/index.html": {
-    "mtime": 1788550544.9672248,
-    "seen": 1788551453.264441,
-    "ast_hash": "2be4cac01c9dd58c41dbccc88d7b27aa",
+    "mtime": 1788537886.4867985,
+    "seen": 1788541318.9307678,
+    "ast_hash": "8091f3f31072fc9dcdc50a83c86cb269",
     "semantic_hash": ""
   },
   "namastepos_landing/privacy.html": {
@@ -5382,9 +5382,9 @@
     "semantic_hash": ""
   },
   "namastepos_dashboard/src/lib/activation.ts": {
-    "mtime": 1788548591.2930965,
-    "seen": 1788551453.259969,
-    "ast_hash": "4f1ac1cad9e0adbc8876b3d427440d78",
+    "mtime": 1788535080.5420396,
+    "seen": 1788541318.925984,
+    "ast_hash": "69a1ac88898616177e6e2a43b1a872ff",
     "semantic_hash": ""
   },
   "namastepos_dashboard/src/lib/analytics.ts": {
@@ -5412,63 +5412,63 @@
     "semantic_hash": ""
   },
   "namastepos_landing/blog/bill-restaurant-order-in-3-taps.html": {
-    "mtime": 1788550563.6260524,
-    "seen": 1788551453.2644281,
-    "ast_hash": "dbc0291c8f2c2074633fc443b7d932e0",
+    "mtime": 1788536246.6763594,
+    "seen": 1788541318.930757,
+    "ast_hash": "772b9a5d090c361e8afd6392f569f04f",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/restaurant-bill-format-india.html": {
-    "mtime": 1788550578.0200975,
-    "seen": 1788551453.264437,
-    "ast_hash": "207c83ce7aae6aad62b82a426342568d",
+    "mtime": 1788536094.4480343,
+    "seen": 1788541318.930764,
+    "ast_hash": "7a2ead600a857f9247ed9a85c8a4ff37",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/restaurant-gst-rate-5-vs-18.html": {
-    "mtime": 1788550578.0213661,
-    "seen": 1788551453.264438,
-    "ast_hash": "1f1ee636cce873baf9153e29255b5798",
+    "mtime": 1788535839.559359,
+    "seen": 1788541318.9307652,
+    "ast_hash": "73597f65fae6b15e65f9f46b2b1cf850",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/restaurant-pos-cost-india.html": {
-    "mtime": 1788550578.0239565,
-    "seen": 1788551453.264438,
-    "ast_hash": "6728cb31553259d0617eb033023d5ffe",
+    "mtime": 1788535926.5260665,
+    "seen": 1788541318.930766,
+    "ast_hash": "f8424081da07ffbd91a73060e121a29f",
     "semantic_hash": ""
   },
   "namastepos_landing/blog/zomato-swiggy-payout-reconciliation.html": {
-    "mtime": 1788550578.028979,
-    "seen": 1788551453.26444,
-    "ast_hash": "7ce37decee5a8bc79bbe0d7549ce63f0",
+    "mtime": 1788536181.376203,
+    "seen": 1788541318.9307678,
+    "ast_hash": "83d2e1d4959b74ac5c6f0fff941a7451",
     "semantic_hash": ""
   },
   "namastepos_landing/gst-billing-software-restaurant.html": {
-    "mtime": 1788550544.9692755,
-    "seen": 1788551453.264441,
-    "ast_hash": "656e3061029315f43464776c421a266d",
+    "mtime": 1788534901.800546,
+    "seen": 1788541318.9307678,
+    "ast_hash": "281389e8c8116fc3c14df11bcd3ce091",
     "semantic_hash": ""
   },
   "namastepos_landing/kot-software.html": {
-    "mtime": 1788550544.9751914,
-    "seen": 1788551453.2644422,
-    "ast_hash": "15ef8b488a4ad3829d1fb1f9455a6d0d",
+    "mtime": 1788534912.742556,
+    "seen": 1788541318.930769,
+    "ast_hash": "40e0cfd0b7702850f00f2ae1e982d17b",
     "semantic_hash": ""
   },
   "namastepos_landing/llms.txt": {
-    "mtime": 1788550659.9104514,
-    "seen": 1788551453.2644422,
-    "ast_hash": "6781d210c60682c7e8e266b8c1267e73",
+    "mtime": 1788533723.8830893,
+    "seen": 1788541318.930769,
+    "ast_hash": "8d777a6924c1199113a6357398c5799d",
     "semantic_hash": ""
   },
   "namastepos_landing/offline-restaurant-pos.html": {
-    "mtime": 1788550544.9732795,
-    "seen": 1788551453.264443,
-    "ast_hash": "a90f834b716cb0cbea19ede051565e1c",
+    "mtime": 1788534906.9743388,
+    "seen": 1788541318.93077,
+    "ast_hash": "b893829f4316e47ab94eaf59e193407c",
     "semantic_hash": ""
   },
   "namastepos_landing/restaurant-billing-software.html": {
-    "mtime": 1788550544.971037,
-    "seen": 1788551453.2644548,
-    "ast_hash": "cb7808c181ade0abb7526956cc9711aa",
+    "mtime": 1788534426.061619,
+    "seen": 1788541318.9307818,
+    "ast_hash": "1ccc855546fae18e051096263f58cc35",
     "semantic_hash": ""
   },
   "namastepos_backend/db/migrations/087_trial_plan_and_grace.sql": {
@@ -5485,8 +5485,8 @@
   },
   "namastepos_backend/db/migrations/089_soft_order_limit_and_menu_cap_lift.sql": {
     "mtime": 1788542188.6995387,
-    "seen": 1788551453.2564218,
-    "ast_hash": "abbb612d1ef00a499a95afba0487f51b",
+    "seen": 1788543838.29211,
+    "ast_hash": "",
     "semantic_hash": ""
   },
   "namastepos_backend/tests/integration/softOrderLimit2026.test.js": {
@@ -5499,102 +5499,6 @@
     "mtime": 1788543093.7098505,
     "seen": 1788543838.292205,
     "ast_hash": "ff4a956bf5ba418a3d6fac1a87e0c89c",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/data/menu-templates/bakery.json": {
-    "mtime": 1788548150.978418,
-    "seen": 1788551453.256756,
-    "ast_hash": "a2f9af02f04450f5668bb6b99459c395",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/data/menu-templates/bar-pub.json": {
-    "mtime": 1788548176.1695392,
-    "seen": 1788551453.256757,
-    "ast_hash": "5140f949fb1562758266e2d2b456ff68",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/data/menu-templates/cafe.json": {
-    "mtime": 1788548035.7876682,
-    "seen": 1788551453.256758,
-    "ast_hash": "9dfd5fd491efb93b6f1ba779d1baf6f5",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/data/menu-templates/cloud-kitchen.json": {
-    "mtime": 1788548132.8619785,
-    "seen": 1788551453.256758,
-    "ast_hash": "f42f0350d677453e5dd0024f61ea170c",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/data/menu-templates/dhaba.json": {
-    "mtime": 1788548090.552776,
-    "seen": 1788551453.256759,
-    "ast_hash": "76824d7b8dd44c7e1e52b3b6a6ff5726",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/data/menu-templates/north-indian.json": {
-    "mtime": 1788548071.6880176,
-    "seen": 1788551453.256759,
-    "ast_hash": "44091f6ee6c106b60e2393229fa2c185",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/data/menu-templates/qsr-street-food.json": {
-    "mtime": 1788548052.0720532,
-    "seen": 1788551453.256759,
-    "ast_hash": "d5b461fcf21cef54809c3c2d14e576cf",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/data/menu-templates/south-indian-tiffin.json": {
-    "mtime": 1788548109.2981117,
-    "seen": 1788551453.2567601,
-    "ast_hash": "f0437c783aaf9c0ed9ba9740a91ea7d9",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/data/menu-templates/tea-stall.json": {
-    "mtime": 1788548018.754334,
-    "seen": 1788551453.2567601,
-    "ast_hash": "777957d3179cc574a53db4a6c506c1e1",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/services/menuTemplateService.js": {
-    "mtime": 1788548292.095671,
-    "seen": 1788551453.2579389,
-    "ast_hash": "384d33910550bbe9a035f31cb7aceb98",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/utils/menuTextParser.js": {
-    "mtime": 1788549272.8815703,
-    "seen": 1788551453.258581,
-    "ast_hash": "ea042a62495f6674393e61556a4cd27e",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/tests/integration/menuTemplates2026.test.js": {
-    "mtime": 1788549126.5682037,
-    "seen": 1788551453.258888,
-    "ast_hash": "0ee2182cb8e426d62e50fca37de181bb",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/tests/integration/proStaffClaim2026.test.js": {
-    "mtime": 1788548279.7784128,
-    "seen": 1788551453.258989,
-    "ast_hash": "5352fdec7baa9484640ccdd78a174647",
-    "semantic_hash": ""
-  },
-  "namastepos_dashboard/src/components/MenuPasteDialog.tsx": {
-    "mtime": 1788548670.0733156,
-    "seen": 1788551453.259708,
-    "ast_hash": "4a4be753a3be897bb88210ea9466cb0a",
-    "semantic_hash": ""
-  },
-  "namastepos_dashboard/src/components/MenuTemplateDialog.tsx": {
-    "mtime": 1788548628.1733584,
-    "seen": 1788551453.259708,
-    "ast_hash": "47735269ea88d35e2679a0ba218513fa",
-    "semantic_hash": ""
-  },
-  "namastepos_backend/src/data/menu-templates/README.md": {
-    "mtime": 1788547990.3304973,
-    "seen": 1788551453.264268,
-    "ast_hash": "7479c7e272eaec39415557c51e077607",
     "semantic_hash": ""
   }
 }

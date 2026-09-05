@@ -140,7 +140,63 @@ export interface Subscription {
   usage?: PlanUsage | null;
   grace?: PastDueGrace | null;
   overage?: PlanOverage | null;
+  pause?: PauseState | null;
   [key: string]: any;
+}
+
+// ── Cancel flow, pause, export (2026-09-05, churn batch) ─────────────────
+
+/** Present on the billing read only while the account is paused. */
+export interface PauseState {
+  paused: true;
+  pausedAt: string;
+  pauseEndsAt: string;
+  pauseMonths: number | null;
+  message: string;
+}
+
+export interface CancelReason {
+  code: string;
+  label: string;
+  /** Free text is mandatory for this reason (missing_feature). */
+  noteRequired: boolean;
+}
+
+export interface SaveOfferOption {
+  action: 'downgrade' | 'pause' | 'annual' | 'founder_call' | string;
+  title: string;
+  detail: string;
+  tier?: string;
+  months?: number[];
+}
+
+/**
+ * The offer the REASON produced.
+ *
+ * `save: false` means we are deliberately not trying to save them —
+ * missing_feature, switching and closing_down all return it, with an empty
+ * `options`. The UI must render those branches with NO "stay" button: a save
+ * offer shown to somebody whose restaurant has shut is insulting.
+ */
+export interface SaveOffer {
+  kind: 'downgrade_or_pause' | 'pause' | 'founder_note' | 'goodbye' | string;
+  save: boolean;
+  headline: string;
+  detail?: string;
+  exportPath?: string;
+  options: SaveOfferOption[];
+}
+
+export interface CancelSurveyResult {
+  survey: {
+    id: string;
+    reason: string;
+    reasonLabel: string;
+    note: string | null;
+    offerKind: string;
+    outcome: string;
+  };
+  offer: SaveOffer;
 }
 
 // ── Multi-outlet types (2026-09-03) ──────────────────────────────────────
@@ -772,6 +828,37 @@ export const ffApi = {
     const b = getBusinessCache();
     return api.post(`/businesses/${b.id}/billing/cancel`).then((r) => r.data);
   },
+  // ── Cancel flow / pause / export (2026-09-05, churn batch) ─────────────
+  //
+  // Cancelling is three calls, not one: reasons → survey (which returns the
+  // offer) → cancel. `cancelSubscription` above is unchanged and still works
+  // on its own, so a client that has not been updated keeps cancelling.
+  cancelReasons: (): Promise<CancelReason[]> => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/billing/cancel/reasons`).then((r) => r.data.reasons);
+  },
+  cancelSurvey: (reason: string, note?: string): Promise<CancelSurveyResult> => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/billing/cancel/survey`, { reason, note })
+      .then((r) => r.data);
+  },
+  pauseSubscription: (months: 1 | 2 | 3, reason?: string) => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/billing/pause`, { months, reason })
+      .then((r) => r.data);
+  },
+  resumeSubscription: () => {
+    const b = getBusinessCache();
+    return api.post(`/businesses/${b.id}/billing/resume`).then((r) => r.data);
+  },
+  // The owner's own data as a downloadable file. Deliberately not plan-gated
+  // server-side — see churnService.exportAccount.
+  exportAccount: (): Promise<Blob> => {
+    const b = getBusinessCache();
+    return api.get(`/businesses/${b.id}/billing/export`, { responseType: 'blob' })
+      .then((r) => r.data as Blob);
+  },
+
   invoices: () => {
     const b = getBusinessCache();
     return api.get(`/businesses/${b.id}/billing/invoices`).then((r) => r.data.invoices);

@@ -9,6 +9,16 @@
   </head>
   <body class="min-h-screen bg-background text-foreground antialiased">
     <div id="root"></div>
+    <!-- Without this the app is a literally blank white page for anyone whose
+         script is blocked or still downloading on a slow mobile connection,
+         which is where most first-time signups arrive from. -->
+    <noscript>
+      <div style="max-width:32rem;margin:12vh auto;padding:0 1.5rem;font-family:system-ui,sans-serif;line-height:1.6">
+        <h1 style="font-size:1.25rem;margin:0 0 .5rem">NamastePOS needs JavaScript</h1>
+        <p style="margin:0 0 1rem;color:#5B6B63">Turn JavaScript on and reload to create your account — 7-day free trial, no credit card.</p>
+        <p style="margin:0;color:#5B6B63">Prefer the app? Get it from <a href="https://namastepos.in/" style="color:#0E7C4A;font-weight:600">namastepos.in</a>.</p>
+      </div>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
