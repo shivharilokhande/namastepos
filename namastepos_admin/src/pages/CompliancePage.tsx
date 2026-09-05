@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { adminApi, Dsr, Grievance, Breach } from '@/api/admin';
+import { adminApi, Dsr, Grievance, Breach, GRIEVANCE_CATEGORIES, GrievanceCategory } from '@/api/admin';
 import { apiError } from '@/api/client';
 import { formatDateTime } from '@/lib/utils';
 import { useCan } from '@/lib/rbac';
@@ -129,6 +129,11 @@ function DsrTab() {
 
 function DsrDialog({ row, onClose }: { row: Dsr; onClose: () => void }) {
   const qc = useQueryClient();
+  // R3 Bug 3 (2026-09-06): PATCH /admin/compliance/dsr/:id is compliance.write.
+  // `finance` holds compliance.read only, so its Save used to 403 after the
+  // fact — same F-10 class BreachTab already fixed. Show, don't surprise.
+  const { can } = useCan();
+  const canWrite = can('compliance.write');
   const [status, setStatus] = useState(row.status);
   const [note, setNote] = useState('');
   const [proofHash, setProofHash] = useState(row.proofHash || '');
@@ -173,7 +178,8 @@ function DsrDialog({ row, onClose }: { row: Dsr; onClose: () => void }) {
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+          <Button onClick={() => save.mutate()} disabled={!canWrite || save.isPending}
+                  title={canWrite ? undefined : 'Needs compliance.write'}>
             {save.isPending ? 'Saving…' : 'Save'}
           </Button>
         </DialogFooter>
@@ -188,8 +194,10 @@ const GRV_STATUS: Record<string, any> = {
 };
 
 function GrievanceTab() {
+  const { can } = useCan(); // R3 Bug 3 — logging / updating grievances is compliance.write
   const [status, setStatus] = useState('');
   const [open, setOpen] = useState<Grievance | null>(null);
+  const [creating, setCreating] = useState(false);
   const { data: rows = [], isError, error, refetch } = useQuery<Grievance[]>({
     queryKey: ['compliance-grv', status],
     queryFn: () => adminApi.complianceGrievances({ status: status || undefined }),
@@ -198,13 +206,16 @@ function GrievanceTab() {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">{isError ? '—' : `${rows.length} grievances`}</p>
-        <select className="h-9 rounded-md border bg-background px-3 text-sm"
-          value={status} onChange={(e) => setStatus(e.target.value)}>
-          <option value="">All statuses</option>
-          {['received', 'acknowledged', 'resolved', 'rejected', 'escalated'].map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
+        <div className="flex gap-2">
+          <select className="h-9 rounded-md border bg-background px-3 text-sm"
+            value={status} onChange={(e) => setStatus(e.target.value)}>
+            <option value="">All statuses</option>
+            {['received', 'acknowledged', 'resolved', 'rejected', 'escalated'].map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+          {can('compliance.write') && <Button onClick={() => setCreating(true)}>Log grievance</Button>}
+        </div>
       </div>
       {isError && (
         <Card><CardContent className="py-10 text-center">
@@ -224,6 +235,7 @@ function GrievanceTab() {
                   <span className="font-medium truncate">{g.subject}</span>
                   <Badge variant="muted">{g.category}</Badge>
                   {overdue(g.ackDueAt, g.acknowledgedAt) && <Badge variant="destructive">Ack overdue</Badge>}
+                  {overdue(g.resolveDueAt, g.resolvedAt) && <Badge variant="destructive">Resolve overdue</Badge>}
                 </div>
                 <div className="text-sm text-muted-foreground truncate">
                   {g.complainantName || g.complainantEmail || g.complainantPhone || '—'} · {formatDateTime(g.createdAt)}
@@ -235,12 +247,15 @@ function GrievanceTab() {
         ))}
       </div>
       {open && <GrievanceDialog row={open} onClose={() => setOpen(null)} />}
+      {creating && <NewGrievanceDialog onClose={() => setCreating(false)} />}
     </div>
   );
 }
 
 function GrievanceDialog({ row, onClose }: { row: Grievance; onClose: () => void }) {
   const qc = useQueryClient();
+  const { can } = useCan(); // R3 Bug 3 — PATCH is compliance.write; finance is read-only
+  const canWrite = can('compliance.write');
   const [status, setStatus] = useState(row.status);
   const [resolutionNote, setResolutionNote] = useState(row.resolutionNote || '');
   const save = useMutation({
@@ -265,6 +280,13 @@ function GrievanceDialog({ row, onClose }: { row: Grievance; onClose: () => void
             {row.ackDueAt ? ` · ack due ${formatDateTime(row.ackDueAt)}` : ''}
             {row.resolveDueAt ? ` · resolve due ${formatDateTime(row.resolveDueAt)}` : ''}
           </div>
+          {(row.acknowledgedAt || row.resolvedAt) && (
+            <div className="text-muted-foreground text-xs">
+              {row.acknowledgedAt ? `Acknowledged ${formatDateTime(row.acknowledgedAt)}` : ''}
+              {row.acknowledgedAt && row.resolvedAt ? ' · ' : ''}
+              {row.resolvedAt ? `Closed ${formatDateTime(row.resolvedAt)}` : ''}
+            </div>
+          )}
           <div className="rounded-md border bg-muted/40 p-3 whitespace-pre-wrap">{row.body}</div>
           <div>
             <Label>Status</Label>
@@ -283,8 +305,95 @@ function GrievanceDialog({ row, onClose }: { row: Grievance; onClose: () => void
         </div>
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+          <Button onClick={() => save.mutate()} disabled={!canWrite || save.isPending}
+                  title={canWrite ? undefined : 'Needs compliance.write'}>
             {save.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// R3 Bug 3 (2026-09-06): the queue had no way in from the console — every
+// grievance had to arrive via the dashboard/mobile Privacy screens or the
+// public form, so support could not register a complaint received by phone,
+// email or WhatsApp (DPDP s.13 register) and the tab could not be exercised.
+// Files through the public endpoint (see adminApi.logGrievance), which needs
+// an explicit email or phone because the admin session is not a users row.
+function NewGrievanceDialog({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState({
+    complainantName: '', complainantEmail: '', complainantPhone: '',
+    businessId: '', category: 'other' as GrievanceCategory, subject: '', body: '',
+  });
+  const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+  const hasContact = !!(form.complainantEmail.trim() || form.complainantPhone.trim());
+  const create = useMutation({
+    mutationFn: () => adminApi.logGrievance({
+      complainantName: form.complainantName.trim() || undefined,
+      complainantEmail: form.complainantEmail.trim() || undefined,
+      complainantPhone: form.complainantPhone.trim() || undefined,
+      businessId: form.businessId.trim() || undefined,
+      category: form.category,
+      subject: form.subject.trim(),
+      body: form.body.trim(),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['compliance-grv'] });
+      toast.success('Grievance logged — acknowledgement clock started'); onClose();
+    },
+    onError: (e) => toast.error(apiError(e)),
+  });
+  return (
+    <Dialog open={true} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader><DialogTitle>Log a grievance</DialogTitle></DialogHeader>
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            For complaints received by phone, email or WhatsApp. The complainant gets the DPDP acknowledgement, so an email or phone is required.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Complainant name</Label>
+              <Input value={form.complainantName} onChange={(e) => set('complainantName', e.target.value)} />
+            </div>
+            <div>
+              <Label>Category</Label>
+              <select className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                value={form.category} onChange={(e) => set('category', e.target.value)}>
+                {GRIEVANCE_CATEGORIES.map((c) => <option key={c} value={c}>{c.replace('_', ' ')}</option>)}
+              </select>
+            </div>
+            <div>
+              <Label>Email {form.complainantPhone.trim() ? '' : '*'}</Label>
+              <Input type="email" value={form.complainantEmail} onChange={(e) => set('complainantEmail', e.target.value)} />
+            </div>
+            <div>
+              <Label>Phone {form.complainantEmail.trim() ? '' : '*'}</Label>
+              <Input value={form.complainantPhone} maxLength={20} onChange={(e) => set('complainantPhone', e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <Label>Business ID (optional — the tenant the complaint is against)</Label>
+            <Input value={form.businessId} onChange={(e) => set('businessId', e.target.value)} placeholder="UUID from Customers" />
+          </div>
+          <div>
+            <Label>Subject *</Label>
+            <Input value={form.subject} maxLength={255} onChange={(e) => set('subject', e.target.value)} />
+          </div>
+          <div>
+            <Label>Complaint *</Label>
+            <textarea className="w-full min-h-20 rounded-md border bg-background p-2 text-sm" maxLength={5000}
+              value={form.body} onChange={(e) => set('body', e.target.value)} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => create.mutate()}
+            disabled={!hasContact || !form.subject.trim() || !form.body.trim() || create.isPending}
+            title={hasContact ? undefined : 'Email or phone is required'}>
+            {create.isPending ? 'Logging…' : 'Log grievance'}
           </Button>
         </DialogFooter>
       </DialogContent>

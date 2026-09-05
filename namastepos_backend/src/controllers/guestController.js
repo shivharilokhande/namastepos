@@ -496,9 +496,16 @@ const getRunningSession = asyncHandler(async (req, res) => {
   // If every order in this session is already collected, the customer
   // has paid — surface that so the UI shows "Paid" instead of Pay Now.
   const anyUnpaid = orders.rows.some((o) => o.status !== 'collected');
+  // Round 3 (2026-09-06): same money contract as the staff running bill
+  // (tableService.sessionMoneyFromOrders) — additive next to `totals`/`paid`.
+  const money = tableService.sessionMoneyFromOrders(orders.rows);
   res.json({
     session: {
       id: session.id,
+      totalPaise: money.totalPaise,
+      paidPaise: money.paidPaise,
+      duePaise: money.duePaise,
+      isSettled: money.liveCount > 0 && money.duePaise === 0,
       openedAt: session.opened_at,
       customerName: session.customer_name,
       customerPhone: session.customer_phone,

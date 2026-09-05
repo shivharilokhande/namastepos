@@ -11,6 +11,7 @@ const Joi = require('joi');
 const asyncHandler = require('../utils/asyncHandler');
 const validate = require('../middleware/validate');
 const { requireRole, requireNotImpersonating } = require('../middleware/auth');
+const requireStaffPerm = require('../middleware/requireStaffPerm');
 const idempotent = require('../middleware/idempotent');
 
 const membership = require('../services/membershipService');
@@ -104,11 +105,21 @@ router.get(
     res.json({ card: gc ? { code: gc.code, balance: gc.balance_paise / 100, expiresAt: gc.expires_at } : null });
   }),
 );
+// Round 3 (2026-09-06, Bug 1b): "Top up wallet" lives on the order-taking
+// AND the settle screen now, so the gate is the `customers` OR `pos` staff
+// permission (cashier / waiter / captain by default) instead of owner+manager.
+// The plan gate is `loyalty`: /customers/* is mounted through
+// customers.routes.js first, whose router-level requireAddon('loyalty',
+// {orFeature}) 402s before this handler is reached. Body gains `method`
+// (cash|upi|card, default cash) — how the customer paid for the credit.
+// Response: { balance (legacy INR), wallet: { balancePaise, balanceInr },
+// transaction: { id, amountPaise, method } }.
 router.post(
   '/customers/:customerId/wallet/topup',
-  requireRole(['business_owner', 'staff_manager']),
+  requireStaffPerm(['customers', 'pos']),
   validate({ body: Joi.object({
     amountInr: Joi.number().positive().precision(2).required(),
+    method: Joi.string().valid('cash', 'upi', 'card').default('cash'),
     note: Joi.string().max(500).allow('', null),
   }) }),
   // NP-401 (2026-09-04): a top-up CREDITS the wallet by a relative amount and
@@ -120,6 +131,7 @@ router.post(
     req.params.customerId,
     req.body.amountInr,
     req.body.note,
+    { method: req.body.method || 'cash' },
   ))),
 );
 // 2026-08-25 (founder, wallet-as-tender): read API for the customer wallet

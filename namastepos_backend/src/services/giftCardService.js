@@ -64,9 +64,27 @@ async function findGiftCardByCode(businessId, code) {
 }
 
 // ── Customer wallets ────────────────────────────────────────────────
-async function topUpWallet(businessId, customerId, amountInr, note) {
-  const paise = Math.round(amountInr * 100);
+// Round 3 (2026-09-06, founder Bug 1b "Top up wallet" on both checkout
+// screens): the top-up now also records HOW the customer paid for the credit
+// (cash/upi/card) as a `payments` row with no order_id and
+// notes.source='wallet-topup', so the day's till (reportService.dailyReport
+// walletTopups / cashCollectedToday) reconciles — before, ₹500 handed over for
+// a wallet load was invisible to the cash report until it was spent. The
+// customer is tenant-scoped (404 on a foreign id) and the response keeps the
+// legacy `balance` (INR) next to the paise contract the clients now read.
+const TOPUP_METHODS = ['cash', 'upi', 'card'];
+async function topUpWallet(businessId, customerId, amountInr, note, { method = 'cash' } = {}) {
+  const paise = Math.round(Number(amountInr) * 100);
+  if (!(paise > 0)) throw new BadRequest('Top-up amount must be > 0');
+  if (!TOPUP_METHODS.includes(method)) {
+    throw new BadRequest(`method must be one of ${TOPUP_METHODS.join(', ')}`);
+  }
   return withTransaction(async (c) => {
+    const own = await c.query(
+      'SELECT id FROM customers WHERE business_id = $1 AND id = $2 LIMIT 1',
+      [businessId, customerId],
+    );
+    if (own.rowCount === 0) throw new NotFound('Customer not found');
     await c.query(
       `INSERT INTO customer_wallets (business_id, customer_id, balance_paise)
        VALUES ($1, $2, $3)
@@ -75,18 +93,33 @@ async function topUpWallet(businessId, customerId, amountInr, note) {
              updated_at = NOW()`,
       [businessId, customerId, paise],
     );
-    await c.query(
+    const led = await c.query(
       `INSERT INTO wallet_ledger
          (business_id, customer_id, kind, amount_paise, note)
-       VALUES ($1, $2, 'credit_top_up', $3, $4)`,
-      [businessId, customerId, paise, note || 'Top-up'],
+       VALUES ($1, $2, 'credit_top_up', $3, $4) RETURNING id`,
+      [businessId, customerId, paise, note || `Top-up (${method})`],
+    );
+    const ledgerId = led.rows[0].id;
+    // The money the customer handed over for the credit — a till entry.
+    await c.query(
+      `INSERT INTO payments (business_id, method, amount_paise, status, notes)
+       VALUES ($1, $2, $3, 'captured',
+               jsonb_build_object('source', 'wallet-topup',
+                                  'customerId', $4::text,
+                                  'ledgerId', $5::text))`,
+      [businessId, method, paise, customerId, ledgerId],
     );
     const r = await c.query(
       `SELECT balance_paise FROM customer_wallets
         WHERE business_id = $1 AND customer_id = $2`,
       [businessId, customerId],
     );
-    return { balance: parseFloat(r.rows[0].balance_paise) / 100 };
+    const balancePaise = Number(r.rows[0].balance_paise);
+    return {
+      balance: balancePaise / 100, // legacy key (INR)
+      wallet: { balancePaise, balanceInr: balancePaise / 100 },
+      transaction: { id: ledgerId, amountPaise: paise, method },
+    };
   });
 }
 

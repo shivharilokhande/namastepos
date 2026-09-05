@@ -345,6 +345,122 @@ async function lastExpiredForCustomer(businessId, customerId) {
   return r.rows[0] || null;
 }
 
+// ── Round 3 (2026-09-06, founder Bug 2): "membership used up → renew / buy" ──
+//
+// The POS confirm + settle screens need ONE answer to "does this diner's
+// membership still cover anything, and what can we sell them instead?". The
+// old lookup returned `membership` only while the sub was active AND
+// unexpired, and `expiredMembership` otherwise — an EXHAUSTED bundle (every
+// remaining qty 0, still inside its validity) looked exactly like a healthy
+// one, so the cashier saw "member" and nothing was discounted. This block
+// exposes the exhaustion explicitly and lists the plans on sale.
+
+// Resolve menu item names for [{menuItemId, qty}] bundle lines (bundles store
+// ids only). Unknown/deleted items keep the id and get name null.
+async function nameBundleLines(businessId, lines) {
+  const arr = Array.isArray(lines) ? lines : [];
+  const ids = [...new Set(arr.map((l) => l && l.menuItemId).filter(Boolean))];
+  const names = new Map();
+  if (ids.length > 0) {
+    const r = await query(
+      'SELECT id, name FROM menu_items WHERE business_id = $1 AND id = ANY($2::uuid[])',
+      [businessId, ids],
+    );
+    for (const row of r.rows) names.set(row.id, row.name);
+  }
+  return arr.filter((l) => l && l.menuItemId).map((l) => ({
+    menuItemId: l.menuItemId,
+    name: names.get(l.menuItemId) || l.name || null,
+    qty: Number(l.qty) || 0,
+  }));
+}
+
+/// The customer's CURRENT membership (latest 'active' subscription row — even
+/// when past expiry, so the POS can offer a renewal), or null when they never
+/// held one / cancelled. `exhausted` = the plan carries an item bundle and
+/// nothing is left of it; `expired` = past expires_at. `renewPricePaise` is the
+/// plan's current price, null when the plan was retired (cannot be renewed).
+async function activeMembershipContext(businessId, customerId) {
+  const r = await query(
+    `SELECT ms.id, ms.membership_id, ms.expires_at, ms.remaining, ms.started_at,
+            m.name, m.price_paise, m.validity_days, m.benefits, m.is_active
+       FROM membership_subscriptions ms
+       JOIN memberships m ON m.id = ms.membership_id
+      WHERE ms.business_id = $1 AND ms.customer_id = $2 AND ms.status = 'active'
+      ORDER BY ms.expires_at DESC, ms.created_at DESC LIMIT 1`,
+    [businessId, customerId],
+  );
+  if (r.rowCount === 0) return null;
+  const s = r.rows[0];
+  const bundle = Array.isArray(s.benefits?.items) ? s.benefits.items : [];
+  const remainingRaw = Array.isArray(s.remaining) ? s.remaining : [];
+  const remaining = await nameBundleLines(businessId, remainingRaw);
+  const hasBundle = bundle.length > 0;
+  const exhausted = hasBundle && remaining.every((l) => l.qty <= 0);
+  const expired = new Date(s.expires_at).getTime() <= Date.now();
+  return {
+    id: s.id,
+    membershipId: s.membership_id,
+    name: s.name,
+    remaining,
+    exhausted,
+    expired,
+    expiresAt: s.expires_at,
+    startedAt: s.started_at,
+    renewPricePaise: s.is_active ? Number(s.price_paise) : null,
+    validityDays: s.validity_days,
+  };
+}
+
+/// Plans currently on sale, with their bundle contents named — what the
+/// "buy / renew" card lists. Caller gates on the `memberships` plan feature.
+async function availableMemberships(businessId) {
+  const plans = await listMemberships(businessId);
+  const out = [];
+  for (const p of plans) {
+    out.push({
+      id: p.id,
+      name: p.name,
+      description: p.description || null,
+      pricePaise: Number(p.price_paise),
+      validityDays: p.validity_days,
+      includes: await nameBundleLines(businessId, p.benefits?.items),
+    });
+  }
+  return out;
+}
+
+/// Renew = sell the SAME plan to the SAME customer again (a fresh
+/// membership_subscriptions row with a full bundle). Goes through subscribe()
+/// so payment (wallet / breakdown / clientKey idempotency) behaves exactly like
+/// a first purchase. The old row is left as-is: the bundle auto-redeem in
+/// orderService picks the latest expiry, so the new one wins immediately.
+async function renewSubscription(businessId, subscriptionId, body = {}) {
+  if (typeof subscriptionId !== 'string'
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(subscriptionId)) {
+    throw new BadRequest('subscription id must be a valid id');
+  }
+  const q = await query(
+    `SELECT ms.customer_id, ms.membership_id, m.is_active
+       FROM membership_subscriptions ms
+       JOIN memberships m ON m.id = ms.membership_id
+      WHERE ms.business_id = $1 AND ms.id = $2`,
+    [businessId, subscriptionId],
+  );
+  if (q.rowCount === 0) throw new NotFound('Subscription not found');
+  if (!q.rows[0].is_active) {
+    throw new BadRequest('This membership plan has been retired — pick another plan');
+  }
+  const subscription = await subscribe(businessId, {
+    customerId: q.rows[0].customer_id,
+    membershipId: q.rows[0].membership_id,
+    paymentMethod: body.paymentMethod || 'cash',
+    paymentBreakdown: body.paymentBreakdown || null,
+    clientKey: body.clientKey || null,
+  });
+  return { subscription, renewedFrom: subscriptionId };
+}
+
 // ── Gift cards / wallet ──────────────────────────────────────────────────
 // NP-145 (2026-09-03): the dual-ledger gift-card/wallet functions
 // (issueGiftCard, listGiftCards, redeemGiftCard, walletTopup) were removed.
@@ -433,6 +549,9 @@ module.exports = {
   cancelSubscription,
   activeForCustomer,
   lastExpiredForCustomer,
+  activeMembershipContext,
+  availableMemberships,
+  renewSubscription,
   recordTip,
   tipReport,
 };

@@ -25,10 +25,15 @@ type Guest = { guestLabel: string; customerPhone?: string; amount?: number };
 export function BillSplitDialog({
   sessionId,
   totalInr,
+  paidInr = 0,
   onClose,
 }: {
   sessionId: string;
+  /** Round 3 (2026-09-06): the BALANCE due — KOTs already paid at "Pay &
+   *  place" are excluded by the caller (TablesPage → sessionDue). */
   totalInr: number;
+  /** What was already collected at order time (display only). */
+  paidInr?: number;
   onClose: () => void;
 }) {
   const qc = useQueryClient();
@@ -121,7 +126,14 @@ export function BillSplitDialog({
         <div className="space-y-4 text-sm">
           {/* Bill total */}
           <div className="rounded-lg bg-muted p-3 flex items-center justify-between">
-            <div className="text-muted-foreground">Total to split</div>
+            <div className="text-muted-foreground">
+              {paidInr > 0 ? 'Balance to split' : 'Total to split'}
+              {paidInr > 0 && (
+                <div className="text-[11px] text-emerald-700">
+                  {formatINR(paidInr, { decimals: true })} already paid at order time
+                </div>
+              )}
+            </div>
             <div className="font-bold text-xl">{formatINR(totalInr)}</div>
           </div>
 

@@ -526,7 +526,18 @@ router.patch('/compliance/dsr/:id', requirePermission('compliance.write'), audit
   (req) => ({ type: 'dsr', id: req.params.id }),
 ), ...compliance.adminUpdateDSR);
 
+// Round 3 (2026-09-06, Bug 3): full grievance desk — list, detail (+notes),
+// admin-side filing, status/assignment update, internal notes. Reads need
+// compliance.read (super_admin/finance/support), writes compliance.write
+// (super_admin/support). Every write is audit-logged.
 router.get('/compliance/grievances', requirePermission('compliance.read'), compliance.adminListGrievances);
+router.post(
+  '/compliance/grievances',
+  requirePermission('compliance.write'),
+  audit.middlewareLog('compliance', 'grievance-create', () => ({ type: 'grievance' })),
+  ...compliance.adminCreateGrievance,
+);
+router.get('/compliance/grievances/:id', requirePermission('compliance.read'), compliance.adminGetGrievance);
 router.patch(
   '/compliance/grievances/:id',
   requirePermission('compliance.write'),
@@ -536,6 +547,16 @@ router.patch(
     (req) => ({ type: 'grievance', id: req.params.id }),
   ),
   ...compliance.adminUpdateGrievance,
+);
+router.post(
+  '/compliance/grievances/:id/notes',
+  requirePermission('compliance.write'),
+  audit.middlewareLog(
+    'compliance',
+    'grievance-note',
+    (req) => ({ type: 'grievance', id: req.params.id }),
+  ),
+  ...compliance.adminAddGrievanceNote,
 );
 
 router.get('/compliance/breaches', requirePermission('audit.read'), compliance.adminListBreaches);

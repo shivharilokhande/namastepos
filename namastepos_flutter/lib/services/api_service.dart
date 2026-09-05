@@ -1639,6 +1639,42 @@ class ApiService {
     }
   }
 
+  /// POST /customers/:customerId/wallet/topup — credit the customer wallet
+  /// (2026-09-06, round 3 Bug 1b "Top up wallet"). The diner hands over
+  /// cash/UPI/card, the wallet is credited, and the bill is then paid from
+  /// the wallet. `method` is the round-3 contract field recording HOW the
+  /// top-up money came in. Returns the new balance in ₹ (null if the reply
+  /// carried none — caller re-reads via [walletFor]).
+  ///
+  /// `idempotencyKey` rides as the Idempotency-Key header (NP-401): a retry
+  /// of the same attempt after a timeout must not credit the diner twice.
+  Future<double?> topUpWallet(
+    String businessId,
+    String customerId, {
+    required double amountInr,
+    required String method,
+    String? note,
+    String? idempotencyKey,
+  }) async {
+    final r = await _wrap(() => _dio.post(
+          '/businesses/$businessId/customers/$customerId/wallet/topup',
+          data: {
+            'amountInr': double.parse(amountInr.toStringAsFixed(2)),
+            'method': method,
+            if (note != null && note.isNotEmpty) 'note': note,
+          },
+          options: idempotencyKey == null
+              ? null
+              : Options(headers: {'Idempotency-Key': idempotencyKey}),
+        ));
+    final m = (r as Map).cast<String, dynamic>();
+    final w = m['wallet'];
+    if (w is Map && w['balancePaise'] is num) return (w['balancePaise'] as num) / 100;
+    if (m['balanceInr'] is num) return (m['balanceInr'] as num).toDouble();
+    if (m['balance'] is num) return (m['balance'] as num).toDouble();
+    return null;
+  }
+
   /// POST /ops/sessions/:sessionId/close — settle a table session (v2 body).
   /// paymentBreakdown: 1-3 legs [{method: cash|upi|card|online|wallet,
   /// amountInr}] which must sum to (session total − discountInr −

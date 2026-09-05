@@ -18,12 +18,14 @@ import '../../services/printer_service.dart';
 // PaperSize is now re-exported from our local stub, no longer from esc_pos_utils.
 import '../../services/whatsapp_service.dart';
 import '../../utils/checkout_gates.dart';
+import '../../utils/checkout_money.dart';
 import '../../utils/error_humanizer.dart';
 import '../../utils/formatters.dart';
 import '../../utils/gst.dart';
 import '../../widgets/error_snackbar.dart';
 import '../../widgets/membership_offer_dialog.dart';
 import '../../widgets/primary_button.dart';
+import '../../widgets/wallet_topup_sheet.dart';
 import '../captain/captain_screen.dart' show pendingCaptainSession;
 
 class ConfirmOrderScreen extends StatefulWidget {
@@ -75,19 +77,18 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
   // use against the post-membership due.
   bool _useWallet = true;
   final _walletCap = TextEditingController();
-  double? _walletCapInr() {
-    final t = _walletCap.text.trim();
-    if (t.isEmpty) return null; // null = use full balance (server caps at due)
-    final v = double.tryParse(t);
-    return (v != null && v > 0) ? v : null;
-  }
+  // 2026-09-06 (round 3 Bug 1): the cap parser + body fields live in
+  // WalletTender so `flutter test` pins what the request carries.
+  double? _walletCapInr() => WalletTender.parseCap(_walletCap.text);
 
   // Membership context (2026-08-23): active bundle → server auto-applies
   // covered items as a discount at billing. Expired/absent → offer shown
   // at Pay & Place time (founder: the popup belongs where money changes
   // hands, not at phone entry).
-  Map<String, dynamic>? _membership;
-  Map<String, dynamic>? _expiredMembership;
+  // 2026-09-06 (round 3 Bug 2): normalised via MembershipStatus so an ACTIVE
+  // but EXHAUSTED bundle (every remaining qty = 0) is offered a renewal too,
+  // and the business's other plans are listed as purchasable options.
+  MembershipStatus _memberStatus = MembershipStatus.empty;
   bool _membershipOfferShown = false; // once per order
   double _membershipFeeInr = 0; // bought/renewed during THIS billing
 
@@ -169,6 +170,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         setState(() {
           _customer = null;
           _loyaltySettings = null;
+          _memberStatus = MembershipStatus.empty;
           _walletBalance = 0;
           _walletAvailable = false;
           _looking = false;
@@ -179,26 +181,31 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
       // Loyalty-only bits are dropped when the plan lacks the key, even if
       // the server happened to include them in the lookup payload.
       final st = gates.loyalty ? data['loyaltySettings'] : null;
-      final mem = gates.memberships
-          ? (data['membership'] as Map?)?.cast<String, dynamic>()
-          : null;
-      final expired = gates.memberships
-          ? (data['expiredMembership'] as Map?)?.cast<String, dynamic>()
-          : null;
+      final memberStatus = gates.memberships
+          ? MembershipStatus.fromLookup(data)
+          : MembershipStatus.empty;
       // Wallet balance ride-along (2026-08-25): fetched here (not lazily in
       // the split sheet) so the sheet can render the balance synchronously.
       // Best-effort — a failure just hides the wallet tender.
+      // 2026-09-06: the round-3 lookup carries `walletBalancePaise` inline;
+      // use it when present (one round-trip fewer at the till), else GET
+      // /wallet as before.
       double walletBal = 0;
       bool walletOk = false;
       if (cu != null && gates.loyalty) {
-        try {
-          final w = await ApiService.instance
-              .walletFor(biz.id, (cu as Map)['id'].toString());
-          if (w != null) {
-            walletBal = (w['balanceInr'] as num?)?.toDouble() ?? 0;
-            walletOk = true;
-          }
-        } catch (_) { /* wallet hidden */ }
+        if (data['walletBalancePaise'] is num) {
+          walletBal = (data['walletBalancePaise'] as num) / 100;
+          walletOk = true;
+        } else {
+          try {
+            final w = await ApiService.instance
+                .walletFor(biz.id, (cu as Map)['id'].toString());
+            if (w != null) {
+              walletBal = (w['balanceInr'] as num?)?.toDouble() ?? 0;
+              walletOk = true;
+            }
+          } catch (_) { /* wallet hidden */ }
+        }
       }
       if (!mounted) return;
       setState(() {
@@ -206,8 +213,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         _loyaltySettings = st != null
             ? LoyaltySettingsLite.fromMap(st as Map<String, dynamic>)
             : null;
-        _membership = mem;
-        _expiredMembership = expired; // offer fires at Pay & Place
+        _memberStatus = memberStatus; // renew/buy offer fires at Pay & Place
         _pointsToRedeem = 0;
         _walletBalance = walletBal;
         _walletAvailable = walletOk;
@@ -227,17 +233,34 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
   /// billing. KOT-only saves skip this — the settle flow offers instead.
   Future<void> _maybeOfferMembership() async {
     if (_membershipOfferShown) return;
-    if (_customer == null || _membership != null) return;
+    if (_customer == null || _memberStatus.usable) return;
     if (!CheckoutGates.of(context.read<AuthProvider>()).memberships) return;
     _membershipOfferShown = true;
+    await _offerMembership();
+  }
+
+  /// The renew / buy dialog (shared by the Pay & Place hook, the "used up"
+  /// card and the "Offer membership" chip — 2026-09-06, round 3 Bug 2).
+  /// Exhausted or expired → renew card listing the other plans as
+  /// alternatives; no membership → plan picker. A purchase adds the fee to
+  /// this billing and refreshes the lookup so the banner + bundle update.
+  Future<void> _offerMembership() async {
+    if (_customer == null) return;
+    if (!CheckoutGates.of(context.read<AuthProvider>()).memberships) return;
+    _membershipOfferShown = true; // never nag twice in one order
+    final plans = _memberStatus.available.isNotEmpty
+        ? _memberStatus.availableAsPlans
+        : null; // null → the dialog fetches /memberships itself
     final fee = await showMembershipOfferDialog(
       context,
       customerId: _customer!.id,
       customerLabel: _customer!.name ?? _customer!.phone,
-      expired: _expiredMembership,
+      expired: _memberStatus.needsRenewal ? _memberStatus.renewOffer : null,
+      reason: _memberStatus.exhausted ? 'used up' : 'expired',
+      plans: plans,
     );
     if (fee != null && mounted) {
-      setState(() => _membershipFeeInr = fee);
+      setState(() => _membershipFeeInr += fee);
       await _lookupCustomer(); // bundle is active now — refresh banner
     }
   }
@@ -281,6 +304,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
     bool printed = false;
     bool whatsAppSent = false;
     String? _printError; // P1 fix: surface printer failures to the owner
+    double? walletAfterInr; // server wallet balance after the order (Bug 1)
     // Activation funnel: capture the billed lines BEFORE the create clears
     // the cart. Menu price (not unitPrice) on purpose — the owner-authored
     // check compares against the setup wizard's default prices, and surge /
@@ -295,6 +319,15 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
       final discount = (double.tryParse(_discount.text.trim()) ?? 0) + _couponDiscount;
       final biz = auth.business!;
       _pendingClientId ??= const Uuid().v4(); // stable across retries
+      // 2026-09-06 (round 3 Bug 1): ONE builder for the wallet fields, unit
+      // tested — toggle ON → autoWallet:true; a typed cap → walletCapInr.
+      final walletFields = WalletTender.bodyFields(
+        useWallet: _useWallet && _walletBalance > 0,
+        walletAvailable: _walletAvailable,
+        kotOnly: kotOnly,
+        hasSplits: _splits != null && _splits!.isNotEmpty,
+        capText: _walletCap.text,
+      );
       order = await orders.createOrderFromCart(
         businessId: biz.id,
         source: _source,
@@ -327,11 +360,25 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
         // when the cashier left "Use wallet" on and isn't running a manual
         // split. Server draws the wallet down for the residual after the
         // membership bundle; walletCapInr caps it (default = full balance).
-        autoWallet: !kotOnly && _useWallet && _walletAvailable
-            && (_splits == null || _splits!.isEmpty),
-        walletCapInr: _walletCapInr(),
+        autoWallet: walletFields['autoWallet'] == true,
+        walletCapInr: walletFields['walletCapInr'] as double?,
       );
       _pendingClientId = null; // placed successfully — next order gets a new id
+
+      // Wallet balance AFTER the order (2026-09-06, round 3 Bug 1): re-read
+      // the server row so the "Order placed" dialog states the real remaining
+      // balance — the founder could not tell whether ₹84 had left the wallet.
+      // Best-effort; a failure just omits the line.
+      if (!kotOnly && _customer != null && _walletAvailable) {
+        try {
+          final w = await ApiService.instance.walletFor(biz.id, _customer!.id);
+          final bal = WalletTender.balanceFrom(w);
+          if (bal != null) {
+            walletAfterInr = bal;
+            if (mounted) setState(() => _walletBalance = bal);
+          }
+        } catch (_) { /* dialog omits the balance line */ }
+      }
 
       // Print (best-effort — never fails the order).
       // P1 fix (2026-08-22): errors were swallowed with just a debugPrint,
@@ -428,13 +475,19 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
     // Previously the dialog showed the gross total (and even told the cashier to
     // COLLECT total + membership), making them over-collect by the wallet amount.
     final o = order; // promoted non-null here; captured for the dialog closure
-    final walletPaid = (o.paymentBreakdown ?? const <Map<String, dynamic>>[])
-        .where((l) => (l['method'] as String?) == 'wallet')
-        .fold<double>(0, (s, l) => s + ((l['amountInr'] as num?)?.toDouble() ?? 0));
+    final walletPaid = WalletTender.walletPaid(o.paymentBreakdown);
     final netCollect = (o.total - walletPaid + _membershipFeeInr)
         .clamp(0, double.infinity)
         .toDouble();
     final showCollect = walletPaid > 0 || _membershipFeeInr > 0;
+    final walletAfter = walletAfterInr; // final copy → promotable in the closure
+    // Non-wallet legs (cash ₹36 …) so the cashier sees every tender the
+    // server recorded, not just the wallet share.
+    final otherLegs = (o.paymentBreakdown ?? const <Map<String, dynamic>>[])
+        .where((l) => (l['method'] as String?) != 'wallet')
+        .map((l) => '${(l['method'] ?? '').toString().toUpperCase()} '
+            '${AppFmt.money((l['amountInr'] as num?) ?? 0, decimals: true)}')
+        .join(' + ');
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -444,6 +497,10 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
           'Token #${o.orderNo} • ${AppFmt.money(o.total, decimals: true)}\n'
           '${walletPaid > 0
               ? "− Paid from wallet ${AppFmt.money(walletPaid, decimals: true)}\n"
+              : ""}'
+          '${walletPaid > 0 && otherLegs.isNotEmpty ? "− $otherLegs\n" : ""}'
+          '${walletAfter != null
+              ? "Wallet balance now ${AppFmt.money(walletAfter, decimals: true)}\n"
               : ""}'
           // Membership bought during this billing (order total already reflects
           // any bundle discount).
@@ -554,6 +611,32 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
     }
   }
 
+  /// "Top up wallet" (2026-09-06, round 3 Bug 1b): collect cash/UPI/card into
+  /// the diner's wallet, then re-evaluate — the toggle switches on and any
+  /// manual split is dropped so the wallet (now sufficient) pays the bill.
+  Future<void> _topUpWallet(double dueInr) async {
+    final cust = _customer;
+    if (cust == null) return;
+    final biz = context.read<AuthProvider>().business;
+    if (biz == null) return;
+    if (!CheckoutGates.of(context.read<AuthProvider>()).loyalty) return;
+    final shortBy = (dueInr - _walletBalance).clamp(0, double.infinity).toDouble();
+    final newBal = await showWalletTopUpSheet(
+      context,
+      businessId: biz.id,
+      customerId: cust.id,
+      suggestedInr: shortBy > 0 ? shortBy : null,
+      currentBalanceInr: _walletBalance,
+    );
+    if (newBal == null || !mounted) return;
+    setState(() {
+      _walletBalance = newBal;
+      _walletAvailable = true;
+      _useWallet = newBal > 0;
+      _splits = null; // wallet now covers it — no stale shortfall legs
+    });
+  }
+
   void _removeCoupon() => setState(() {
         _appliedCoupon = null;
         _couponDiscount = 0;
@@ -594,6 +677,20 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
     final gst = _gst(orders, auth);
     final total = _payable(orders, auth,
         discount: discount, loyaltyDiscount: loyaltyDiscount);
+    // Round 3 (2026-09-06): wallet maths for the rows + shortfall actions.
+    // `total` is already net of points; the wallet comes off next, so the
+    // cashier sees due = total − points − wallet like the founder asked.
+    final gates = CheckoutGates.of(auth);
+    final walletOn = _walletAvailable && gates.loyalty && _useWallet &&
+        _walletBalance > 0 && _splits == null;
+    final walletUse = walletOn
+        ? WalletTender.plannedUse(
+            due: total, balance: _walletBalance, cap: _walletCapInr())
+        : 0.0;
+    final walletShort = _walletAvailable && gates.loyalty && _splits == null &&
+        WalletTender.hasShortfall(due: total, balance: _walletBalance);
+    // What still has to be collected via the chosen method (or split legs).
+    final toCollect = (total - walletUse).clamp(0, double.infinity).toDouble();
 
     return Scaffold(
       // Bug fix (2026-08-20): make the back-arrow explicit + always pop
@@ -712,6 +809,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                         // (server would 400) — drop it (2026-08-25).
                         setState(() {
                           _customer = null;
+                          _memberStatus = MembershipStatus.empty;
                           _pointsToRedeem = 0;
                           _walletBalance = 0;
                           _walletAvailable = false;
@@ -726,7 +824,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                       }
                     },
                   ),
-                  if (_customer != null && _membership != null)
+                  if (_customer != null && _memberStatus.usable)
                     Container(
                       width: double.infinity,
                       margin: const EdgeInsets.only(top: 8),
@@ -737,16 +835,44 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        _membership!['remaining'] is List &&
-                                (_membership!['remaining'] as List).isNotEmpty
-                            ? '✓ ${_membership!['name'] ?? 'Membership'} member — '
+                        (_memberStatus.active!['remaining'] as List).isNotEmpty
+                            ? '✓ ${_memberStatus.name} member — '
                                 'bundle items are auto-discounted on the bill.'
-                            : '✓ ${_membership!['name'] ?? 'Membership'} member '
-                                '(no item bundle left on this plan).',
+                            : '✓ ${_memberStatus.name} member '
+                                '(no item bundle on this plan).',
                         style: const TextStyle(
                             color: AppColors.success,
                             fontWeight: FontWeight.w700,
                             fontSize: 12),
+                      ),
+                    ),
+                  // Round 3 Bug 2 (2026-09-06): membership exists but is used
+                  // up / expired → renew card (the dialog also lists the other
+                  // plans). Gated on `memberships` via _memberStatus (empty
+                  // without the key) — see _lookupCustomer.
+                  if (_customer != null && _memberStatus.needsRenewal)
+                    _MembershipRenewCard(
+                      status: _memberStatus,
+                      onRenew: _saving ? null : _offerMembership,
+                    ),
+                  // No membership at all but plans exist → compact chip; the
+                  // full popup still fires at Pay & Place if not used here.
+                  if (_customer != null &&
+                      !_memberStatus.hasActive &&
+                      _memberStatus.available.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: ActionChip(
+                          avatar: const Icon(Icons.card_membership,
+                              size: 16, color: AppColors.primary),
+                          label: Text(
+                              'Offer membership (${_memberStatus.available.length} '
+                              'plan${_memberStatus.available.length == 1 ? '' : 's'})'),
+                          visualDensity: VisualDensity.compact,
+                          onPressed: _saving ? null : _offerMembership,
+                        ),
                       ),
                     ),
                   if (_customer != null && _loyaltySettings != null && _loyaltySettings!.isActive)
@@ -764,7 +890,12 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                   // customer has a balance. Server uses it for the residual due
                   // AFTER the membership bundle; the rest goes to the method
                   // chosen below. Cashier can switch it off or cap the amount.
-                  if (_walletAvailable && _walletBalance > 0) ...[
+                  // Round 3 (2026-09-06): the whole wallet block is gated on the
+                  // `loyalty` plan key (CheckoutGates) — _walletAvailable is
+                  // only ever set under that gate, and the shortfall / top-up
+                  // affordances (Bug 1b) live here too. The block now also
+                  // renders for a ₹0 balance so "Top up wallet" is reachable.
+                  if (_customer != null && _walletAvailable && gates.loyalty) ...[
                     Container(
                       decoration: BoxDecoration(
                         color: AppColors.primary.withValues(alpha: 0.06),
@@ -772,9 +903,9 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                       ),
                       child: Column(children: [
                         SwitchListTile(
-                          value: _useWallet,
-                          onChanged: _splits != null
-                              ? null // wallet auto-apply is off while a manual split is set
+                          value: _useWallet && _walletBalance > 0,
+                          onChanged: (_splits != null || _walletBalance <= 0)
+                              ? null // off while a manual split is set / nothing to use
                               : (v) => setState(() => _useWallet = v),
                           title: const Text('Use wallet balance',
                               style: TextStyle(fontWeight: FontWeight.w600)),
@@ -785,7 +916,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                           ),
                           dense: true,
                         ),
-                        if (_useWallet)
+                        if (_useWallet && _walletBalance > 0 && _splits == null)
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                             child: TextField(
@@ -794,12 +925,67 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                               inputFormatters: [
                                 FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                               ],
+                              // Rebuild so the Wallet / To collect rows track the cap.
+                              onChanged: (_) => setState(() {}),
                               decoration: InputDecoration(
                                 isDense: true,
                                 labelText: 'Max wallet to use (optional)',
                                 hintText: 'Blank = up to ₹${_walletBalance.toStringAsFixed(0)}',
                                 border: const OutlineInputBorder(),
                               ),
+                            ),
+                          ),
+                        // Bug 1b: wallet < due → "Cover shortfall" (wallet pays
+                        // what it has, rest via the chosen method as explicit
+                        // paymentBreakdown legs) and "Top up wallet" (collect
+                        // cash/UPI/card into the wallet, then re-evaluate).
+                        if (walletShort)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  'Wallet is short by ${AppFmt.money(total - _walletBalance, decimals: true)} '
+                                  'for this bill (${AppFmt.money(total, decimals: true)}).',
+                                  style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.warning,
+                                      fontWeight: FontWeight.w700),
+                                ),
+                                const SizedBox(height: 6),
+                                Row(children: [
+                                  if (_walletBalance > 0)
+                                    Expanded(
+                                      child: OutlinedButton.icon(
+                                        icon: const Icon(Icons.call_split, size: 16),
+                                        label: Text(
+                                            'Cover shortfall via ${_payment.name.toUpperCase()}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis),
+                                        onPressed: _saving
+                                            ? null
+                                            : () => setState(() {
+                                                  _splits = WalletTender.shortfallLegs(
+                                                    due: total,
+                                                    balance: _walletBalance,
+                                                    method: _payment.name,
+                                                  );
+                                                }),
+                                      ),
+                                    ),
+                                  if (_walletBalance > 0) const SizedBox(width: 8),
+                                  Expanded(
+                                    child: ElevatedButton.icon(
+                                      icon: const Icon(Icons.add_card, size: 16),
+                                      label: const Text('Top up wallet',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis),
+                                      onPressed: _saving ? null : () => _topUpWallet(total),
+                                    ),
+                                  ),
+                                ]),
+                              ],
                             ),
                           ),
                       ]),
@@ -1054,6 +1240,55 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
                       ),
                     ],
                   ),
+                  // Round 3 Bug 1 (2026-09-06): the wallet share and what is
+                  // left to collect, so "did the wallet pay?" is answered
+                  // BEFORE Pay & place. Estimate — the server sizes the real
+                  // leg after the membership bundle; the placed-order dialog
+                  // shows the recorded legs.
+                  if (walletOn && walletUse > 0) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Text('Wallet',
+                            style: TextStyle(color: AppColors.primary)),
+                        const Spacer(),
+                        Text('-${AppFmt.money(walletUse, decimals: true)}',
+                            style: const TextStyle(color: AppColors.primary)),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Text('To collect via ${_payment.name.toUpperCase()}',
+                            style: const TextStyle(fontWeight: FontWeight.w700)),
+                        const Spacer(),
+                        Text(AppFmt.money(toCollect, decimals: true),
+                            style: TextStyle(
+                                fontWeight: FontWeight.w800,
+                                color: toCollect > 0
+                                    ? AppColors.textPrimary
+                                    : AppColors.success)),
+                      ],
+                    ),
+                  ],
+                  if (_splits != null && _splits!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        const Text('Split',
+                            style: TextStyle(color: AppColors.textSecondary)),
+                        const Spacer(),
+                        Text(
+                          _splits!
+                              .map((l) => '${(l['method'] ?? '').toString().toUpperCase()} '
+                                  '${AppFmt.money((l['amountInr'] as num?) ?? 0, decimals: true)}')
+                              .join(' + '),
+                          style: const TextStyle(
+                              fontSize: 12, color: AppColors.textSecondary),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   // Dine-in flow: "Save KOT" sends food prep to the kitchen
                   // WITHOUT settling payment yet — settle later from the
@@ -1204,6 +1439,70 @@ class _LoyaltyCard extends StatelessWidget {
                 style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
               ),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Round 3 Bug 2 (2026-09-06): "Membership `name` is used up — Renew ₹X".
+/// Tapping Renew opens the shared offer dialog, which also lists the other
+/// plans as purchasable options. Rendered only when [MembershipStatus.needsRenewal]
+/// and the `memberships` key is on (the status is empty otherwise).
+class _MembershipRenewCard extends StatelessWidget {
+  final MembershipStatus status;
+  final VoidCallback? onRenew;
+  const _MembershipRenewCard({required this.status, required this.onRenew});
+
+  @override
+  Widget build(BuildContext context) {
+    final why = status.exhausted ? 'is used up' : 'has expired';
+    final price = status.renewPricePaise;
+    final others = status.available
+        .where((p) => p['id'] != status.active?['membershipId'])
+        .length;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.warning.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.card_membership, color: AppColors.warning, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Membership ${status.name} $why',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 13)),
+                Text(
+                  others > 0
+                      ? 'Renew, or add one of $others other plan${others == 1 ? '' : 's'}.'
+                      : 'Renew to keep the bundle discounts on this bill.',
+                  style: const TextStyle(
+                      fontSize: 11, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          ElevatedButton(
+            onPressed: onRenew,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.warning,
+              foregroundColor: Colors.white,
+              visualDensity: VisualDensity.compact,
+            ),
+            child: Text(price > 0
+                ? 'Renew ${AppFmt.moneyPaise(price)}'
+                : 'Renew'),
+          ),
         ],
       ),
     );

@@ -22,13 +22,19 @@
 //     a port of the server's computeGstBreakdown) and `tax` is OMITTED from the
 //     create body so the server computes and persists GST from
 //     menu_items.gst_pct. Composition-scheme businesses see no GST rows.
+//   • Round 3 (2026-09-06, founder Bug 1/1b/2): the request body is built by
+//     the pure, unit-tested `buildOrderBody` (lib/checkout). The wallet row
+//     is shown in the totals (due = total − points − wallet) with an optional
+//     cap (`walletCapInr`); when the balance is short the cashier gets
+//     "Cover shortfall" (explicit wallet + tender legs) and "Top up wallet";
+//     a used-up membership shows a Renew card (MembershipOfferCard).
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   Plus, Minus, Search, Trash2, ShoppingCart, Sparkles, Crown, StickyNote, History,
-  Coins, X,
+  Coins,
 } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
@@ -45,6 +51,9 @@ import { formatINR } from '@/lib/utils';
 import { VoiceCommand, parseSpokenOrder } from '@/components/VoiceCommand';
 import { usePlan, useMe } from '@/hooks/usePlan';
 import { estimateGst, schemeChargesNoGst } from '@/lib/gstEstimate';
+import { buildOrderBody, planWallet } from '@/lib/checkout';
+import { WalletTopUpDialog } from '@/components/WalletTopUpDialog';
+import { MembershipOfferCard } from '@/components/MembershipOfferCard';
 
 // ── Pay-step endpoints without ffApi bindings (2026-08-25, founder) ──────
 // This dialog is currently their only dashboard consumer, so they live
@@ -57,16 +66,9 @@ function customerWalletApi(customerId: string) {
     .get(`/businesses/${b.id}/customers/${customerId}/wallet`)
     .then((r) => r.data as { balanceInr: number; transactions: any[] });
 }
-// Sell a membership at the counter. Backend treats this as a real payment
-// (records the tender, debits wallet if method='wallet').
-function subscribeMembershipApi(body: {
-  customerId: string; membershipId: string; paymentMethod: string;
-}) {
-  const b = getBusinessCache();
-  return api
-    .post(`/businesses/${b.id}/memberships/subscribe`, body)
-    .then((r) => r.data.subscription);
-}
+// Round 3 (2026-09-06): the inline cheapest-plan sell card + its
+// subscribeMembershipApi moved into the shared MembershipOfferCard (which
+// also handles the used-up → Renew case for Bug 2).
 
 // One split-payment leg. amountInr stays a STRING while typing so the
 // cashier can clear the field / type "12.5" without the input snapping —
@@ -173,10 +175,13 @@ export function NewOrderDialog({
   const [legs, setLegs] = useState<PayLeg[]>([
     { method: 'cash', amountInr: '' }, { method: 'upi', amountInr: '' },
   ]);
-  const [membershipDismissed, setMembershipDismissed] = useState(false);
-  const [sellingMembership, setSellingMembership] = useState(false);
-  const [membershipPayMethod, setMembershipPayMethod] =
-    useState<'cash' | 'upi' | 'card' | 'online'>('cash');
+  // Round 3 (2026-09-06, Bug 1/1b): optional cap on the wallet draw
+  // (string while typing; '' = no cap → server uses min(due, balance)),
+  // "Cover shortfall" mode (explicit wallet + tender legs) and the top-up
+  // dialog. Gated on the `loyalty` key ("Loyalty points & wallet").
+  const [walletCapInput, setWalletCapInput] = useState('');
+  const [coverShortfall, setCoverShortfall] = useState(false);
+  const [topUpOpen, setTopUpOpen] = useState(false);
   // Modifier picker state
   const [configuring, setConfiguring] = useState<any | null>(null);
   // Last added item — used to fetch upsell suggestions
@@ -369,8 +374,15 @@ export function NewOrderDialog({
   const payableTotal = Math.max(0, +(total - redeemValue).toFixed(2));
 
   // ── Split-payment math (2026-08-25, founder) ──────────────────────────
-  const walletBalance: number = walletInfo?.balanceInr ?? 0;
-  const walletAvailable = !!customerId && !!walletInfo && !walletError;
+  // Round 3: prefer the lookup's `walletBalancePaise` (fresh with the
+  // profile) and fall back to the /wallet read; either source counts as
+  // "available". Both are invalidated after every order / top-up.
+  const profileWalletPaise = customerProfile?.customer?.walletBalancePaise
+    ?? customerProfile?.walletBalancePaise;
+  const walletBalance: number = walletInfo?.balanceInr
+    ?? (profileWalletPaise != null ? Number(profileWalletPaise) / 100 : 0);
+  const walletAvailable = plan.has('loyalty') && !!customerId && !walletError
+    && (!!walletInfo || profileWalletPaise != null);
   // Wallet-as-tender auto-apply (2026-08-30): pre-checked when a balance exists;
   // server sizes it against the true post-membership due. Off while a manual
   // split is being built.
@@ -399,38 +411,36 @@ export function NewOrderDialog({
       setLegs((ls) => ls.some((l) => l.method === 'wallet')
         ? ls.map((l) => (l.method === 'wallet' ? { ...l, method: 'cash' as const } : l))
         : ls);
+      setCoverShortfall(false);
     }
   }, [walletAvailable]);
 
-  // ── Membership offer (2026-08-25, founder) ────────────────────────────
-  // Cheapest ACTIVE plan only — the counter pitch is an impulse upsell, so
-  // we lead with the lowest entry price. Raw rows → price_paise.
-  const cheapestPlan = useMemo(() => {
-    const active = (membershipPlans as any[]).filter(
-      (m) => m.is_active !== false && Number(m.price_paise) > 0,
-    );
-    if (active.length === 0) return null;
-    return active.reduce((min, m) =>
-      Number(m.price_paise) < Number(min.price_paise) ? m : min);
-  }, [membershipPlans]);
+  // ── Wallet draw on THIS order (round 3, 2026-09-06, Bug 1) ────────────
+  // Mirror of the server's autoWallet sizing — min(due, balance, cap) — so
+  // the totals show a "Wallet" line and the Pay button says what is really
+  // collected in cash/UPI/card. `walletShort` = the balance alone cannot
+  // cover the due (cap ignored) → offer Cover shortfall / Top up.
+  const walletCap: number | null = walletCapInput.trim() === ''
+    ? null : Math.max(0, parseFloat(walletCapInput) || 0);
+  const walletTenderOn = !splitOn && paymentMethod !== 'unpaid'
+    && walletAvailable && walletBalance > 0 && (autoWalletOn || coverShortfall);
+  const walletPlan = planWallet(payableTotal, walletBalance, coverShortfall ? null : walletCap);
+  const walletApplied = walletTenderOn ? walletPlan.walletInr : 0;
+  const collectNow = Math.max(0, +(payableTotal - walletApplied).toFixed(2));
+  const walletShort = planWallet(payableTotal, walletBalance, null);
+  // Cover-shortfall only means something while the wallet is actually short;
+  // if a top-up (or a smaller cart) fixes the gap, fall back to autoWallet.
+  useEffect(() => {
+    if (coverShortfall && !walletShort.shortfall) setCoverShortfall(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [walletShort.shortfall]);
 
-  const sellMembership = useMutation({
-    mutationFn: () => subscribeMembershipApi({
-      customerId: customerId!,
-      membershipId: cheapestPlan!.id,
-      paymentMethod: membershipPayMethod,
-    }),
-    onSuccess: () => {
-      toast.success(`${cheapestPlan?.name} membership sold — benefits now apply`);
-      setSellingMembership(false);
-      setMembershipDismissed(true);
-      // Refetch the profile so activeMembership lands and the auto-discount
-      // effect above kicks in on THIS very order.
-      qc.invalidateQueries({ queryKey: ['cust-profile', customerPhone] });
-      qc.invalidateQueries({ queryKey: ['cust-wallet'] });
-    },
-    onError: (e: any) => toast.error(apiError(e) || 'Could not sell membership'),
-  });
+  // Refetch everything money-related on the customer after a membership
+  // sale/renewal so the new bundle/discount applies to THIS very order.
+  const refetchCustomer = () => {
+    qc.invalidateQueries({ queryKey: ['cust-profile', customerPhone] });
+    qc.invalidateQueries({ queryKey: ['cust-wallet'] });
+  };
 
   // ── Menu filter / categories ──────────────────────────────────────────
   const filteredMenu = useMemo(() => {
@@ -474,60 +484,39 @@ export function NewOrderDialog({
       if (mode === 'pay' && splitOn && !splitValid) {
         throw new Error('Split payments must add up to the total (and stay within wallet balance)');
       }
-      const body: any = {
+      // Round 3 (2026-09-06): the body is assembled by the pure, unit-tested
+      // buildOrderBody (lib/checkout). Rules it enforces — `tax` OMITTED so
+      // the server computes GST from menu_items.gst_pct (review P0,
+      // 2026-09-05); KOT = 'unpaid' with no points/wallet/legs; points only
+      // with a customer phone; manual split → paymentBreakdown; Cover
+      // shortfall → explicit [wallet, tender] legs; else the wallet toggle →
+      // `autoWallet: true` (+ `walletCapInr`) and the server sizes the draw
+      // as min(due, balance, cap) against the true post-membership due.
+      const body = buildOrderBody({
+        mode,
         source,
-        tableNo: source === 'dineIn' ? (tableNo || null) : null,
-        tableId: source === 'dineIn' ? (tableId || null) : null,
-        tableSessionId: existingSession?.id || null,
-        items: cart.map((l) => ({
-          menuItemId: l.menuItemId,
-          name: l.name,
-          price: l.price,
-          qty: l.qty,
-          variantId: l.variantId || null,
-          variantLabel: l.variantLabel || null,
-          modifierLines: l.modifierLines || null,
-          // Bug #3b (2026-08-25): backend Joi item schema expects `note`
-          // (singular, ≤500 chars, allows null) — same field mobile sends.
-          note: l.note?.trim() || null,
-        })),
-        // 2026-09-05 (review P0): `tax` is deliberately OMITTED — not sent as
-        // 0. The server treats a missing tax as "compute GST from
-        // menu_items.gst_pct" (orderService `taxOmitted`), whereas an explicit
-        // 0 is honoured as a client assertion of ₹0 GST, which is exactly the
-        // bug this fixes. The GST shown above is only an estimate for the
-        // cashier; the persisted figure is the server's.
+        tableNo,
+        tableId,
+        existingSessionId: existingSession?.id || null,
+        cart,
         discount,
         discountIsPreTax,
-        paymentMethod: mode === 'kot' ? 'unpaid' : paymentMethod,
+        paymentMethod,
+        customerPhone,
+        customerName,
+        redeemPoints,
+        redemptionPoints: redemption?.points ?? null,
+        splitOn,
+        legs,
+        autoWalletOn,
+        walletAvailable,
+        walletBalanceInr: walletBalance,
+        walletCapInr: walletCap,
+        coverShortfall,
+        payableTotalInr: payableTotal,
         clientId: typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID() : undefined,
-      };
-      if (customerPhone) {
-        body.customerPhone = customerPhone;
-        if (customerName) body.customerName = customerName;
-      }
-      // Points redemption (2026-08-25): pay-mode only — a Save-KOT order is
-      // unpaid, redeeming against it would burn points before any money
-      // changes hands. Server re-caps against the live balance.
-      if (mode === 'pay' && redeemPoints && redemption && customerPhone) {
-        body.pointsToRedeem = redemption.points;
-      }
-      // Split payments (2026-08-25): strict breakdown; server derives the
-      // primary payment_method from the largest leg, so the single-method
-      // pick is irrelevant here. Wallet legs need customerPhone (sent above
-      // — the wallet option only renders once a customer is matched).
-      if (mode === 'pay' && splitOn) {
-        body.paymentBreakdown = legs.map((l) => ({
-          method: l.method,
-          amountInr: +(parseFloat(l.amountInr) || 0).toFixed(2),
-        }));
-      } else if (mode === 'pay' && autoWalletOn && walletAvailable && walletBalance > 0) {
-        // Wallet-as-tender auto-apply (2026-08-30): server sizes the wallet
-        // draw against the true post-membership due (which the client can't
-        // compute for bundle memberships) and routes the rest to paymentMethod.
-        body.autoWallet = true;
-      }
+      });
       return ffApi.createOrder(body);
     },
     onSuccess: (o: any, mode) => {
@@ -562,9 +551,14 @@ export function NewOrderDialog({
       // drawer instead of trusting the pre-create number.
       const serverTotal = Number(o?.total);
       const estimated = existingSession ? previousSubtotalInr + payableTotal : payableTotal;
+      // Round 3: say how much the wallet took — the founder's report was
+      // "wallet not deducted" when the UI never told the cashier it was.
+      const walletNote = mode === 'pay' && walletApplied > 0
+        ? ` · ${formatINR(walletApplied, { decimals: true })} from wallet`
+        : '';
       toast.success(mode === 'kot'
         ? `KOT #${o.orderNo} sent`
-        : `Order #${o.orderNo} placed — ${formatINR(Number.isFinite(serverTotal) ? serverTotal : estimated)}`);
+        : `Order #${o.orderNo} placed — ${formatINR(Number.isFinite(serverTotal) ? serverTotal : estimated)}${walletNote}`);
       if (mode === 'pay' && !existingSession && Number.isFinite(serverTotal)
           && Math.abs(serverTotal - payableTotal) > 0.01) {
         toast.warning(
@@ -872,48 +866,22 @@ export function NewOrderDialog({
                 </div>
               )}
 
-              {/* Membership offer card (2026-08-25, founder): matched
-                  customer with NO active membership + at least one plan on
-                  sale → pitch the cheapest plan. Dismissible and entirely
-                  non-blocking; Sell expands a mini-confirm with the tender. */}
-              {customerProfile?.customer && !customerProfile.activeMembership
-                && cheapestPlan && !membershipDismissed && (
-                <div className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-xs text-violet-900 space-y-2">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="flex items-center gap-1.5">
-                      <Crown className="h-3.5 w-3.5 shrink-0" />
-                      <span>Offer <strong>{cheapestPlan.name}</strong> membership
-                        {' '}({formatINR(Number(cheapestPlan.price_paise) / 100)})?</span>
-                    </span>
-                    <button onClick={() => setMembershipDismissed(true)}
-                      className="p-0.5 hover:bg-violet-100 rounded" title="Dismiss">
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                  {!sellingMembership ? (
-                    <Button size="sm" variant="outline" className="h-7 text-xs"
-                      onClick={() => setSellingMembership(true)}>
-                      Sell
-                    </Button>
-                  ) : (
-                    <div className="flex items-center gap-1.5">
-                      <select value={membershipPayMethod}
-                        onChange={(e) => setMembershipPayMethod(e.target.value as any)}
-                        className="h-7 rounded-md border border-input bg-background px-2 text-xs capitalize">
-                        {SPLIT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
-                      </select>
-                      <Button size="sm" className="h-7 text-xs"
-                        onClick={() => sellMembership.mutate()}
-                        disabled={sellMembership.isPending}>
-                        {sellMembership.isPending ? '…' : `Confirm ${formatINR(Number(cheapestPlan.price_paise) / 100)}`}
-                      </Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs"
-                        onClick={() => setSellingMembership(false)}>
-                        Back
-                      </Button>
-                    </div>
-                  )}
-                </div>
+              {/* Membership card (2026-08-25 offer → round 3, 2026-09-06,
+                  Bug 2): used-up/expired membership → "Renew ₹X" + other
+                  plans; no membership → compact "Offer membership". Sale =
+                  existing subscribe endpoint; then the profile refetches so
+                  the new bundle/discount applies to THIS order. Gated on the
+                  `memberships` key inside the card. */}
+              {customerProfile?.customer && customerId && (
+                <MembershipOfferCard
+                  customerId={customerId}
+                  customerLabel={customerProfile.customer.name || customerPhone}
+                  activeMembership={customerProfile.activeMembership}
+                  availableMemberships={customerProfile.availableMemberships}
+                  rawPlans={membershipPlans as any[]}
+                  walletBalanceInr={walletAvailable ? walletBalance : null}
+                  onPurchased={refetchCustomer}
+                />
               )}
 
               <div>
@@ -937,15 +905,64 @@ export function NewOrderDialog({
                           }`}>{m}</button>
                       ))}
                     </div>
-                    {walletAvailable && walletBalance > 0 && paymentMethod !== 'unpaid' && (
-                      <label className="flex items-start gap-2 text-xs cursor-pointer mt-2 p-2 rounded-md bg-primary/5">
-                        <input type="checkbox" checked={autoWalletOn} className="mt-0.5"
-                          onChange={(e) => setAutoWalletOn(e.target.checked)} />
-                        <span>
-                          Use wallet balance ({formatINR(walletBalance)}) — applied after membership;
-                          the rest is collected via <span className="uppercase font-semibold">{paymentMethod}</span>.
-                        </span>
-                      </label>
+                    {/* Wallet tender (round 3, 2026-09-06, Bug 1/1b). The
+                        toggle sends `autoWallet`; the cap sends `walletCapInr`;
+                        the row below shows exactly what the wallet takes and
+                        what is still collected. When the balance is short:
+                        "Cover shortfall" (wallet + tender as explicit legs)
+                        or "Top up wallet" (cash/UPI/card into the wallet
+                        first). Hidden for 'unpaid' — no tender, no wallet. */}
+                    {walletAvailable && paymentMethod !== 'unpaid' && (
+                      <div className="mt-2 p-2 rounded-md bg-primary/5 space-y-1.5 text-xs" data-testid="wallet-tender">
+                        {walletBalance > 0 ? (
+                          <>
+                            <label className="flex items-start gap-2 cursor-pointer">
+                              <input type="checkbox" checked={autoWalletOn || coverShortfall} className="mt-0.5"
+                                onChange={(e) => { setAutoWalletOn(e.target.checked); if (!e.target.checked) setCoverShortfall(false); }} />
+                              <span>
+                                Use wallet balance ({formatINR(walletBalance, { decimals: true })})
+                                {walletTenderOn && walletApplied > 0 && (
+                                  <> — <strong>{formatINR(walletApplied, { decimals: true })}</strong> from wallet
+                                    {collectNow > 0
+                                      ? <>, <strong>{formatINR(collectNow, { decimals: true })}</strong> via <span className="uppercase font-semibold">{paymentMethod}</span></>
+                                      : <>, nothing more to collect</>}
+                                  </>
+                                )}
+                              </span>
+                            </label>
+                            {(autoWalletOn || coverShortfall) && !coverShortfall && (
+                              <div className="flex items-center gap-2 pl-5">
+                                <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Max from wallet (₹)</Label>
+                                <Input type="number" min={0} step="0.01" value={walletCapInput}
+                                  onChange={(e) => setWalletCapInput(e.target.value)}
+                                  placeholder={payableTotal > 0 ? Math.min(walletBalance, payableTotal).toFixed(2) : '0.00'}
+                                  className="h-7 w-24 text-xs" data-testid="wallet-cap" />
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-muted-foreground">Wallet balance {formatINR(0, { decimals: true })}.</div>
+                        )}
+                        {walletShort.shortfall && payableTotal > 0 && (
+                          <div className="pl-5 space-y-1" data-testid="wallet-shortfall">
+                            <div className="text-amber-800">
+                              Wallet is short by <strong>{formatINR(walletShort.shortByInr, { decimals: true })}</strong>.
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {walletBalance > 0 && (
+                                <Button size="sm" variant={coverShortfall ? 'default' : 'outline'} className="h-7 text-xs"
+                                  onClick={() => { setCoverShortfall((v) => !v); setAutoWalletOn(true); }}>
+                                  {coverShortfall ? '✓ Covering shortfall' : 'Cover shortfall'} via {paymentMethod.toUpperCase()}
+                                </Button>
+                              )}
+                              <Button size="sm" variant="outline" className="h-7 text-xs"
+                                onClick={() => setTopUpOpen(true)}>
+                                Top up wallet
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </>
                 ) : (
@@ -962,6 +979,12 @@ export function NewOrderDialog({
                         className="text-xs text-primary font-semibold hover:underline">
                         Use wallet {formatINR(Math.min(walletBalance, payableTotal))}
                         {walletBalance < payableTotal ? ` + ${formatINR(payableTotal - walletBalance)} on another tender` : ''}
+                      </button>
+                    )}
+                    {walletAvailable && walletShort.shortfall && payableTotal > 0 && (
+                      <button type="button" onClick={() => setTopUpOpen(true)}
+                        className="ml-3 text-xs text-primary font-semibold hover:underline">
+                        Top up wallet
                       </button>
                     )}
                     {legs.map((leg, i) => (
@@ -1046,6 +1069,21 @@ export function NewOrderDialog({
                   <span>{existingSession ? 'New bill total' : 'Total'}</span>
                   <span>{formatINR(existingSession ? previousSubtotalInr + payableTotal : payableTotal)}</span>
                 </div>
+                {/* Wallet draw (round 3, 2026-09-06, Bug 1): the due the
+                    cashier collects = total − points − wallet. Only on this
+                    order's payable (an existing bill's earlier KOTs are
+                    settled from the table dialog). */}
+                {walletApplied > 0 && (
+                  <>
+                    <div className="flex justify-between text-emerald-700" data-testid="wallet-row">
+                      <span>Wallet</span><span>− {formatINR(walletApplied, { decimals: true })}</span>
+                    </div>
+                    <div className="flex justify-between font-semibold" data-testid="collect-row">
+                      <span>To collect via <span className="uppercase">{paymentMethod}</span></span>
+                      <span>{formatINR(collectNow, { decimals: true })}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1060,12 +1098,37 @@ export function NewOrderDialog({
             </Button>
           )}
           {/* Split mode gates Place until the legs balance (2026-08-25) */}
+          {/* Round 3: the button says what is COLLECTED now — the wallet part
+              is shown separately so "₹84 due / ₹84 from wallet" never reads
+              as "₹84 still to pay". */}
           <Button onClick={() => create.mutate('pay')}
-            disabled={create.isPending || cart.length === 0 || (splitOn && !splitValid)}>
-            {create.isPending ? '…' : `Pay & place — ${formatINR(existingSession ? previousSubtotalInr + payableTotal : payableTotal)}`}
+            disabled={create.isPending || cart.length === 0 || (splitOn && !splitValid)}
+            data-testid="pay-place">
+            {create.isPending ? '…' : walletApplied > 0
+              ? (collectNow > 0
+                ? `Pay & place — ${formatINR(collectNow, { decimals: true })} ${paymentMethod.toUpperCase()} + ${formatINR(walletApplied, { decimals: true })} wallet`
+                : `Pay & place — ${formatINR(walletApplied, { decimals: true })} from wallet`)
+              // Only THIS order is charged by Pay & place (earlier KOTs on
+              // the running bill are settled from the table dialog), so the
+              // label must not add previousSubtotalInr — that read as
+              // "pay the whole table again" (round 3).
+              : `Pay & place — ${formatINR(payableTotal)}`}
           </Button>
         </DialogFooter>
       </DialogContent>
+
+      {/* Wallet top-up (round 3, Bug 1b) — cash/UPI/card into the wallet,
+          then the wallet pays the bill. Balance refetches via ['cust-wallet']. */}
+      {topUpOpen && customerId && (
+        <WalletTopUpDialog
+          customerId={customerId}
+          customerLabel={customerProfile?.customer?.name || customerPhone}
+          currentBalanceInr={walletBalance}
+          suggestedInr={walletShort.shortByInr}
+          onClose={() => setTopUpOpen(false)}
+          onDone={() => { setTopUpOpen(false); setAutoWalletOn(true); }}
+        />
+      )}
 
       {/* Variant + modifier picker — opens when needed */}
       {configuring && (

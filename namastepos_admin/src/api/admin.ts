@@ -559,6 +559,21 @@ export const adminApi = {
     api.get<{ grievances: Grievance[] }>('/admin/compliance/grievances', { params }).then((r) => r.data.grievances),
   updateGrievance: (id: string, body: { status: string; resolutionNote?: string }) =>
     api.patch<{ id: string; status: string }>(`/admin/compliance/grievances/${id}`, body).then((r) => r.data),
+  // R3 Bug 3 (2026-09-06): record a grievance received out-of-band (phone /
+  // email / WhatsApp) so the DPDP s.13 register is complete and the queue can
+  // be exercised from the console. There is no /admin POST for grievances; the
+  // public filing endpoint (/v1/compliance/grievance — CSRF-exempt, 5 writes/
+  // min/IP) is the only writer. It ignores the admin cookie (no Bearer, and
+  // super-admin tokens are deliberately not linked to a users row), so an
+  // explicit complainantEmail or complainantPhone is REQUIRED or it 400s.
+  logGrievance: (body: {
+    complainantName?: string; complainantEmail?: string; complainantPhone?: string;
+    businessId?: string | null; category: GrievanceCategory; subject: string; body: string;
+  }) =>
+    // 2026-09-06: the admin desk endpoint (compliance.write, audited, not the
+    // public 10/min limiter). Response is { grievance, notes }; surface the row.
+    api.post<{ grievance: { id: string; status: string; ackDueAt: string; resolveDueAt: string; createdAt: string } }>(
+      '/admin/compliance/grievances', body).then((r) => r.data.grievance),
   complianceBreaches: (params: { status?: string; limit?: number } = {}) =>
     api.get<{ breaches: Breach[] }>('/admin/compliance/breaches', { params }).then((r) => r.data.breaches),
   logBreach: (body: {
@@ -700,6 +715,10 @@ export interface Dsr {
   handledBy: string | null; proofHash: string | null;
   createdAt: string; updatedAt: string;
 }
+// Mirrors the Joi `category` enum on POST /v1/compliance/grievance
+// (complianceController.grievanceBodySchema). Anything else 400s.
+export type GrievanceCategory = 'privacy' | 'data_misuse' | 'consent' | 'security' | 'billing' | 'other';
+export const GRIEVANCE_CATEGORIES: GrievanceCategory[] = ['privacy', 'data_misuse', 'consent', 'security', 'billing', 'other'];
 export interface Grievance {
   id: string; businessId: string | null; userId: string | null;
   complainantName: string | null; complainantEmail: string | null; complainantPhone: string | null;

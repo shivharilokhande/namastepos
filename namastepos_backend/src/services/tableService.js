@@ -1,7 +1,57 @@
 // NamastePOS backend - floors, tables, sessions
 
 const { query, withTransaction } = require('../config/db');
-const { NotFound, Conflict, BadRequest } = require('../utils/errors');
+const {
+  NotFound, Conflict, BadRequest, HttpError,
+} = require('../utils/errors');
+
+// Round 3 (2026-09-06, founder Bug 1): what a session still OWES.
+//
+// An order in a session is PAID when its payment_method is anything but
+// 'unpaid' — that is what "Pay & place" writes (cash/upi/card/online, or
+// 'wallet' when a wallet leg won), while "Save KOT" writes 'unpaid' and leaves
+// the money for Settle. The running bill used to expose only totalInr, so a
+// bill paid in full at Pay & place still showed the whole amount on the
+// Settle screen and the button stayed live; and closeSession sized its
+// autoWallet draw / validated its legs against the TOTAL, so pressing Settle
+// on that paid bill debited the wallet a second time. Every session payload
+// and the settle itself now go through this one definition.
+function sessionMoneyFromOrders(orders) {
+  const live = orders.filter((o) => o.status !== 'cancelled');
+  const paise = (v) => Math.round(parseFloat(v || 0) * 100);
+  const totalPaise = live.reduce((s, o) => s + paise(o.total), 0);
+  const paidPaise = live
+    .filter((o) => o.payment_method && o.payment_method !== 'unpaid')
+    .reduce((s, o) => s + paise(o.total), 0);
+  return {
+    totalPaise,
+    paidPaise,
+    duePaise: Math.max(0, totalPaise - paidPaise),
+    liveCount: live.length,
+  };
+}
+async function sessionMoney(q, businessId, sessionId) {
+  const r = await q(
+    `SELECT total, status, payment_method FROM orders
+      WHERE table_session_id = $1 AND business_id = $2`,
+    [sessionId, businessId],
+  );
+  return sessionMoneyFromOrders(r.rows);
+}
+// Decorate a raw table_sessions row (openSession/closeSession return the row
+// as-is, snake_case) with the four money fields the settle screens read.
+function withMoney(row, money) {
+  const closed = row.status !== 'open';
+  const totalPaise = closed ? Number(row.total_paise || 0) : money.totalPaise;
+  const paidPaise = closed ? totalPaise : money.paidPaise;
+  return {
+    ...row,
+    totalPaise,
+    paidPaise,
+    duePaise: Math.max(0, totalPaise - paidPaise),
+    isSettled: closed || (money.liveCount > 0 && totalPaise - paidPaise <= 0),
+  };
+}
 
 // Joined-tables endpoints take a tableId from the request body and feed it
 // into ANY($..) / array operators — reject junk up-front with a 400 instead
@@ -103,9 +153,25 @@ function serializeSession(s, orders = [], itemsByOrder = new Map(), joinedTables
   const sgstInr = sumOf('sgst');
   const igstInr = sumOf('igst');
   const pointsRedeemed = live.reduce((s, o) => s + (parseInt(o.pointsRedeemed, 10) || 0), 0);
+  // Round 3 (2026-09-06): paid / due / settled — see sessionMoneyFromOrders.
+  // A closed session reports its frozen total_paise as fully paid.
+  const money = sessionMoneyFromOrders(orders);
+  const isClosed = s.status !== 'open';
+  const totalPaise = isClosed ? Number(s.total_paise || 0) : money.totalPaise;
+  const paidPaise = isClosed ? totalPaise : money.paidPaise;
+  const duePaise = Math.max(0, totalPaise - paidPaise);
 
   return {
     id: s.id,
+    // Round 3 (2026-09-06, Bug 1) — additive contract for both settle screens:
+    // integer paise, and isSettled = "nothing left to collect" (closed, or an
+    // open session whose every live KOT was paid at Pay & place). Clients
+    // disable Settle / show "Paid" on isSettled; closing such a session frees
+    // the table without charging anything.
+    totalPaise,
+    paidPaise,
+    duePaise,
+    isSettled: isClosed || (money.liveCount > 0 && duePaise === 0),
     businessId: s.business_id,
     tableId: s.table_id,
     tableLabel: s.table_label,
@@ -142,6 +208,9 @@ function serializeSession(s, orders = [], itemsByOrder = new Map(), joinedTables
       total: parseFloat(o.total),
       status: o.status,
       paymentMethod: o.payment_method,
+      // Round 3 (2026-09-06): per-KOT paid flag so the bill can mark which
+      // tickets were settled at Pay & place.
+      isPaid: !!o.payment_method && o.payment_method !== 'unpaid',
       createdAt: o.created_at,
       itemCount: (itemsByOrder.get(o.id) || []).length,
     })),
@@ -327,7 +396,11 @@ async function openSession(businessId, tableId, body, openedByUserId) {
         WHERE business_id = $2 AND id = $3`,
       [session.id, businessId, tableId],
     );
-    return session;
+    // Round 3 (2026-09-06): a fresh session owes nothing yet — same money
+    // contract as every other session payload (isSettled=false: no KOTs).
+    return withMoney(session, {
+      totalPaise: 0, paidPaise: 0, duePaise: 0, liveCount: 0,
+    });
   });
 }
 
@@ -454,6 +527,21 @@ async function unjoinTable(businessId, sessionId, tableId) {
 //     the next diner's QR scan attach to an already-paid bill).
 async function closeSession(businessId, sessionId, closedByUserId, paymentMethod = 'cash', discountInr = 0, paymentBreakdown = null, shortfallInr = 0, autoWallet = false, walletCapInr = null, pointsToRedeem = 0, opts = {}) {
   return withTransaction(async (client) => {
+    // Round 3 (2026-09-06, Bug 1): lock the session first and answer a
+    // re-settle with a clean 409 ALREADY_SETTLED instead of the old 404 "Open
+    // session not found" (which read as "gone" to the clients and to the
+    // offline outbox). Locking here also serialises two concurrent settles of
+    // the same table so only one can ever move money.
+    const lock = await client.query(
+      `SELECT id, status FROM table_sessions
+        WHERE business_id = $1 AND id = $2 FOR UPDATE`,
+      [businessId, sessionId],
+    );
+    if (lock.rowCount === 0) throw new NotFound('Session not found');
+    if (lock.rows[0].status !== 'open') {
+      throw new HttpError(409, 'This bill is already settled', 'ALREADY_SETTLED');
+    }
+
     // Settle-time discount (2026-08-22, founder request): applied starting
     // at the HEAD order (smallest order_no) of the session so it's auditable
     // on the bill and flows into reports/leakage like any other discount.
@@ -468,12 +556,17 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
     // its own total, and each order's stored `discount` is exactly what was
     // subtracted from it — so SUM(per-order discounts) == the applied
     // discount and no order ever goes negative. Same transaction as before.
+    //
+    // Round 3 (2026-09-06): only UNPAID KOTs take the settle discount (and
+    // the points redemption below). A KOT paid at Pay & place has already
+    // been collected — discounting it now would shrink a total whose money is
+    // already in the till / wallet ledger, so the bill and the legs disagree.
     const disc = Math.max(0, Number(discountInr) || 0);
     if (disc > 0) {
       const sessOrders = await client.query(
         `SELECT id, total FROM orders
           WHERE table_session_id = $1 AND business_id = $2
-            AND status <> 'cancelled'
+            AND status <> 'cancelled' AND payment_method = 'unpaid'
           ORDER BY order_no ASC
           FOR UPDATE`,
         [sessionId, businessId],
@@ -517,9 +610,12 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
       if (loyaltyOn) {
         const settings = await loyalty.getSettings(businessId);
         if (settings.isActive && settings.redemptionValuePaise > 0) {
+          // Round 3 (2026-09-06): head = oldest UNPAID KOT; points can only
+          // discount what is still due (see the discount note above).
           const headRow = await client.query(
             `SELECT id, total FROM orders
               WHERE table_session_id = $1 AND business_id = $2 AND status <> 'cancelled'
+                AND payment_method = 'unpaid'
               ORDER BY order_no ASC LIMIT 1 FOR UPDATE`,
             [sessionId, businessId],
           );
@@ -534,7 +630,8 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
           if (headRow.rowCount > 0 && custId) {
             const sumQ = await client.query(
               `SELECT COALESCE(SUM(total), 0) AS total FROM orders
-                WHERE table_session_id = $1 AND business_id = $2 AND status <> 'cancelled'`,
+                WHERE table_session_id = $1 AND business_id = $2 AND status <> 'cancelled'
+                  AND payment_method = 'unpaid'`,
               [sessionId, businessId],
             );
             const sessionTotalPaise = Math.round(parseFloat(sumQ.rows[0].total) * 100);
@@ -580,13 +677,15 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
     // 2026-09-05 (review #5): tenant-scoped — orderService now refuses a
     // foreign tableSessionId, and this filter is the belt to that brace, so
     // a stray row from another business can never inflate this settle.
-    const totals = await client.query(
-      `SELECT COALESCE(SUM(total), 0) AS total
-         FROM orders
-        WHERE table_session_id = $1 AND business_id = $2 AND status <> 'cancelled'`,
-      [sessionId, businessId],
+    // Round 3 (2026-09-06, Bug 1): total = every live KOT; paid = the KOTs
+    // already collected at Pay & place; the settle only ever moves
+    // `outstandingPaise` (= total − paid). Same definition the running bill
+    // reports as duePaise, so what the screen shows is what gets charged.
+    const money = await sessionMoney(
+      (sql, vals) => client.query(sql, vals), businessId, sessionId,
     );
-    const totalPaise = Math.round(parseFloat(totals.rows[0].total) * 100);
+    const { totalPaise } = money;
+    const outstandingPaise = money.duePaise;
 
     const upd = await client.query(
       `UPDATE table_sessions
@@ -606,18 +705,23 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
     // session total — it was only clamped to ≥0, so a caller could book an
     // arbitrary debt (e.g. shortfallInr=999999 on a ₹500 bill) onto the
     // customer's wallet via the allowNegative debit below.
+    // Round 3 (2026-09-06): clamped to what is still OUTSTANDING, not the
+    // session total — a paid KOT cannot be underpaid.
     const shortPaise = Math.min(
-      totalPaise,
+      outstandingPaise,
       Math.round(Math.max(0, Number(shortfallInr) || 0) * 100),
     );
     let breakdownPrimary = null; // largest leg's method → orders.payment_method
 
     // Wallet-as-tender auto-apply on settle (2026-08-30): mirror the order
-    // create path. The due here is the session total minus any shortfall; the
-    // orders already carry their membership/discount, so this due is final.
+    // create path. The due here is the OUTSTANDING amount minus any shortfall;
+    // the orders already carry their membership/discount, so this due is final.
     // Draw min(due, balance, cap) from the session customer's wallet and route
     // the rest to `paymentMethod`, then let the existing wallet-leg path below
     // debit + validate. Skipped if the caller already sent explicit legs.
+    // Round 3 (2026-09-06): when nothing is outstanding (bill paid at Pay &
+    // place) this sizes to 0 → no legs → no debit. That was the founder's
+    // double-charge: it used to size against the session TOTAL.
     if (autoWallet && !(Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0)) {
       const custQ = await client.query(
         `SELECT customer_id FROM orders
@@ -627,7 +731,7 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
         [sessionId, businessId],
       );
       const custId = custQ.rows[0]?.customer_id || null;
-      const duePaise = totalPaise - shortPaise;
+      const duePaise = outstandingPaise - shortPaise;
       if (custId && duePaise > 0) {
         const balRow = await client.query(
           `SELECT balance_paise FROM customer_wallets
@@ -651,14 +755,24 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
 
     if (shortPaise > 0 || (Array.isArray(paymentBreakdown) && paymentBreakdown.length > 0)) {
       const ordersQ = await client.query(
-        `SELECT id, order_no, customer_id FROM orders
+        `SELECT id, order_no, customer_id, payment_method FROM orders
           WHERE table_session_id = $1 AND business_id = $2
             AND status <> 'cancelled'
           ORDER BY order_no ASC`,
         [sessionId, businessId],
       );
-      const head = ordersQ.rows[0];
+      // Round 3 (2026-09-06): legs/shortfall land on the oldest UNPAID KOT —
+      // hanging them on a KOT that already carries its own Pay & place legs
+      // would double-count that ticket in the tender report.
+      const head = ordersQ.rows.find((o) => o.payment_method === 'unpaid') || ordersQ.rows[0];
       if (!head) throw new BadRequest('Session has no orders to settle');
+      if (outstandingPaise <= 0) {
+        throw new HttpError(
+          409,
+          'Nothing left to collect — this bill was paid at Pay & place',
+          'ALREADY_SETTLED',
+        );
+      }
       // First identified customer across the session's KOTs — wallet
       // debits (payment leg or shortfall debt) need a real customer.
       // WHY-caveat (2026-08-25, review finding #5): with JOINED tables one
@@ -693,12 +807,14 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
           amountPaise: Math.round((l.amountInr || 0) * 100),
         }));
         const sumPaise = legs.reduce((s, l) => s + l.amountPaise, 0);
-        // Legs cover what was actually PAID = session total − shortfall.
-        const duePaise = totalPaise - shortPaise;
+        // Legs cover what is actually collected NOW = outstanding − shortfall
+        // (Round 3, 2026-09-06: was session total − shortfall, which made a
+        // client re-collect KOTs already paid at Pay & place).
+        const duePaise = outstandingPaise - shortPaise;
         if (Math.abs(sumPaise - duePaise) > 1) {
           throw new BadRequest(
             `paymentBreakdown legs total ₹${(sumPaise / 100).toFixed(2)} but the `
-            + `session total due is ₹${(duePaise / 100).toFixed(2)} — they must match`,
+            + `session due is ₹${(duePaise / 100).toFixed(2)} — they must match`,
           );
         }
         const walletPaise = legs
@@ -787,7 +903,12 @@ async function closeSession(businessId, sessionId, closedByUserId, paymentMethod
       [businessId, sessionId],
     );
 
-    const closed = upd.rows[0];
+    // Round 3 (2026-09-06): same money contract as the running bill
+    // (totalPaise / paidPaise / duePaise / isSettled) on the settle response,
+    // additive next to the raw snake_case row the clients already read.
+    const closed = withMoney(upd.rows[0], {
+      totalPaise, paidPaise: totalPaise, duePaise: 0, liveCount: 1,
+    });
     // 2026-09-05 (review #3): caller-supplied work that must commit WITH the
     // settle (the guest path records the online payment here).
     if (typeof opts.afterSettleInTx === 'function') {
@@ -887,7 +1008,9 @@ async function abandonSession(businessId, sessionId, closedByUserId) {
         WHERE business_id = $1 AND current_session_id = $2`,
       [businessId, sessionId],
     );
-    return upd.rows[0];
+    return withMoney(upd.rows[0], {
+      totalPaise: 0, paidPaise: 0, duePaise: 0, liveCount: 0,
+    });
   });
 }
 
@@ -966,4 +1089,5 @@ module.exports = {
   serializeFloor,
   serializeTable,
   serializeSession,
+  sessionMoneyFromOrders,
 };

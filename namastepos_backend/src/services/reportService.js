@@ -217,7 +217,29 @@ async function dailyReport(businessId, dateStr) {
   const tendersTotal = Object.values(tenders).reduce((s, v) => s + v, 0);
   // Cash actually collected today = everything EXCEPT the wallet draw-down
   // (wallet is prepaid money recognised as sales on spend, not new cash today).
-  const cashCollectedToday = Math.round((tendersTotal - (tenders.wallet || 0)) * 100) / 100;
+  // Round 3 (2026-09-06, Bug 1b): money handed over to LOAD a wallet (POST
+  // /customers/:id/wallet/topup → payments row with no order, notes.source =
+  // 'wallet-topup') is real cash/upi in the till today even though no order
+  // was sold — add it back so the drawer count matches the report.
+  const topupRows = await query(
+    `SELECT method::text AS method, COALESCE(SUM(amount_paise), 0)::bigint AS paise
+       FROM payments
+      WHERE business_id = $1
+        AND order_id IS NULL
+        AND status = 'captured'
+        AND notes->>'source' = 'wallet-topup'
+        AND (created_at AT TIME ZONE 'Asia/Kolkata')::date = $2::date
+      GROUP BY method`,
+    [businessId, dateStr],
+  );
+  const walletTopupTenders = topupRows.rows.reduce((acc, r) => {
+    acc[r.method] = (parseInt(r.paise, 10) || 0) / 100;
+    return acc;
+  }, {});
+  const walletTopupsInr = Object.values(walletTopupTenders).reduce((s, v) => s + v, 0);
+  const cashCollectedToday = Math.round(
+    (tendersTotal - (tenders.wallet || 0) + walletTopupsInr) * 100,
+  ) / 100;
   const dr = discRows.rows[0] || {};
   const discountBreakdown = {
     pointsValue: Math.round((parseInt(dr.points_paise, 10) || 0)) / 100,
@@ -238,6 +260,10 @@ async function dailyReport(businessId, dateStr) {
     tenders,
     tendersTotal: Math.round(tendersTotal * 100) / 100,
     walletCollected: tenders.wallet || 0,
+    // Round 3 (2026-09-06): wallet loads taken today, by tender, and their
+    // total — already included in cashCollectedToday.
+    walletTopupTenders,
+    walletTopupsInr: Math.round(walletTopupsInr * 100) / 100,
     cashCollectedToday,
     discountBreakdown,
     statusCounts, // FF-242

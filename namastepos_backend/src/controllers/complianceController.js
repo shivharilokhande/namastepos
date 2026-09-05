@@ -314,31 +314,94 @@ const adminUpdateDSR = [
   }),
 ];
 
+// Round 3 (2026-09-06, Bug 3) — admin grievance desk. Query filters:
+// ?status=received|acknowledged|resolved|rejected|escalated
+// &businessId=<uuid> &assignedTo=<admin uuid> &limit=1..500
 const adminListGrievances = asyncHandler(async (req, res) => {
   const grievances = await svc.listGrievances({
     status: req.query.status || null,
     businessId: req.query.businessId || null,
+    assignedTo: req.query.assignedTo || null,
     limit: parseInt(req.query.limit || '100', 10),
   });
   res.json({ grievances });
 });
 
+const adminGetGrievance = asyncHandler(async (req, res) => {
+  res.json(await svc.getGrievance(req.params.id));
+});
+
+// POST /admin/compliance/grievances — log a complaint received out-of-band.
+// Same category enum as the public filing endpoint; complainant contact is
+// mandatory (an admin is not a users row). 201 { grievance, notes }.
+const adminCreateGrievanceSchema = {
+  body: Joi.object({
+    businessId: Joi.string().uuid().allow(null),
+    complainantName: Joi.string().max(255).allow('', null),
+    complainantEmail: Joi.string().email().allow('', null),
+    complainantPhone: Joi.string().max(20).allow('', null),
+    category: Joi.string().valid('privacy', 'data_misuse', 'consent', 'security', 'billing', 'other').default('other'),
+    subject: Joi.string().min(3).max(255).required(),
+    body: Joi.string().min(3).max(5000).required(),
+    assignedTo: Joi.string().uuid().allow(null),
+    note: Joi.string().max(2000).allow('', null),
+  }).or('complainantEmail', 'complainantPhone'),
+};
+const adminCreateGrievance = [
+  validate(adminCreateGrievanceSchema),
+  asyncHandler(async (req, res) => {
+    const out = await svc.adminFileGrievance({
+      adminId: req.user.id,
+      businessId: req.body.businessId || null,
+      complainantName: req.body.complainantName || null,
+      complainantEmail: req.body.complainantEmail || null,
+      complainantPhone: req.body.complainantPhone || null,
+      category: req.body.category,
+      subject: req.body.subject,
+      body: req.body.body,
+      assignedTo: req.body.assignedTo || null,
+      note: req.body.note || null,
+    });
+    res.status(201).json(out);
+  }),
+];
+
+// PATCH /admin/compliance/grievances/:id — any of: status (+resolutionNote),
+// assignedTo (admin uuid | null to un-assign), note (internal log line).
+// Responds with the full serialized grievance + notes.
 const adminUpdateGrievanceSchema = {
   body: Joi.object({
-    status: Joi.string().valid('received', 'acknowledged', 'resolved', 'rejected', 'escalated').required(),
+    status: Joi.string().valid('received', 'acknowledged', 'resolved', 'rejected', 'escalated'),
     resolutionNote: Joi.string().max(2000).allow('', null),
-  }),
+    assignedTo: Joi.string().uuid().allow(null),
+    note: Joi.string().max(2000).allow('', null),
+  }).min(1),
 };
 const adminUpdateGrievance = [
   validate(adminUpdateGrievanceSchema),
   asyncHandler(async (req, res) => {
     const out = await svc.updateGrievance({
       id: req.params.id,
-      status: req.body.status,
+      status: req.body.status || null,
       resolutionNote: req.body.resolutionNote || null,
       handledBy: req.user.id,
+      // undefined = leave assignment alone; null = un-assign.
+      assignedTo: Object.prototype.hasOwnProperty.call(req.body, 'assignedTo')
+        ? (req.body.assignedTo || null) : undefined,
+      note: req.body.note || null,
     });
     res.json(out);
+  }),
+];
+
+// POST /admin/compliance/grievances/:id/notes { body } → 201 { note }
+const adminAddGrievanceNote = [
+  validate({ body: Joi.object({ body: Joi.string().min(1).max(2000).required() }) }),
+  asyncHandler(async (req, res) => {
+    const note = await svc.addGrievanceNote({
+      id: req.params.id, adminId: req.user.id, body: req.body.body,
+    });
+    res.status(201).json({ note });
   }),
 ];
 
@@ -469,7 +532,10 @@ module.exports = {
   adminListDSRs,
   adminUpdateDSR,
   adminListGrievances,
+  adminGetGrievance,
+  adminCreateGrievance,
   adminUpdateGrievance,
+  adminAddGrievanceNote,
   adminListBreaches,
   adminLogBreach,
   adminUpdateBreach,

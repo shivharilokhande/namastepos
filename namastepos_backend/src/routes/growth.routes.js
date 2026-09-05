@@ -153,6 +153,35 @@ router.post(
   )),
 );
 
+// Round 3 (2026-09-06, founder Bug 2): renew an exhausted / expired membership
+// from the POS card. Sells the SAME plan to the SAME customer again (a new
+// membership_subscriptions row with a full bundle) via membershipService
+// .subscribe, so wallet / breakdown payment and clientKey idempotency behave
+// exactly like /memberships/subscribe. The featureGate '/memberships' rule
+// does NOT match this path ('-memberships', not '/memberships'), so the plan
+// gate is explicit: requireFeature('memberships'). Staff gate = `pos` or
+// `customers` permission — the cashier who rings the bill renews the card.
+// Body: { paymentMethod: cash|upi|card|online|wallet, paymentBreakdown?, clientKey? }
+// → 201 { subscription, renewedFrom: <old subscription id> }
+router.post(
+  '/customer-memberships/:id/renew',
+  require('../middleware/requireFeature')('memberships'),
+  require('../middleware/requireStaffPerm')(['pos', 'customers']),
+  validate({ body: Joi.object({
+    clientKey: Joi.string().max(64).allow(null),
+    paymentMethod: Joi.string().valid('cash', 'upi', 'card', 'online', 'wallet').default('cash'),
+    paymentBreakdown: Joi.array().items(Joi.object({
+      method: Joi.string().valid('cash', 'upi', 'card', 'online', 'wallet').required(),
+      amountInr: Joi.number().positive().required(),
+    })).min(1).max(3)
+      .allow(null),
+  }) }),
+  idempotent('POST /customer-memberships/:id/renew'),
+  asyncHandler(async (req, res) => res.status(201).json(
+    await membership.renewSubscription(req.params.businessId, req.params.id, req.body),
+  )),
+);
+
 // ── Site (online ordering brand site) ───────────────────────────────────
 router.get('/site', asyncHandler(async (req, res) => res.json({ site: await site.get(req.params.businessId) })));
 router.put(

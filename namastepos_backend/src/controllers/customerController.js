@@ -36,6 +36,27 @@ const adjustBody = Joi.object({
   note: Joi.string().max(500).allow('', null),
 });
 
+// Round 3 (2026-09-06, founder Bug 2): the "membership used up → renew or
+// buy another" card on the POS confirm + settle screens. Additive next to the
+// legacy `membership` / `expiredMembership` keys:
+//   activeMembership     — { id, membershipId, name, remaining:[{menuItemId,
+//                          name, qty}], exhausted, expired, expiresAt,
+//                          renewPricePaise } or null
+//   availableMemberships — plans on sale [{ id, name, pricePaise,
+//                          validityDays, includes:[…] }]; [] when the tenant's
+//                          plan lacks the `memberships` feature (the POS then
+//                          hides the buy list — never derive it from the tier).
+async function membershipContext(businessId, customerId) {
+  const out = { activeMembership: null, availableMemberships: [] };
+  try {
+    const membershipSvc = require('../services/membershipService');
+    out.activeMembership = await membershipSvc.activeMembershipContext(businessId, customerId);
+    const entitled = await require('../services/featureService').hasFeature(businessId, 'memberships');
+    if (entitled) out.availableMemberships = await membershipSvc.availableMemberships(businessId);
+  } catch (_) { /* membership tables may predate migration 020/055 */ }
+  return out;
+}
+
 module.exports = {
   list: [
     validate({ query: listQuery }),
@@ -48,7 +69,10 @@ module.exports = {
     const customer = await customers.byId(req.params.businessId, req.params.customerId);
     const orders = await customers.recentOrders(req.params.businessId, req.params.customerId);
     const txns = await loyalty.listTransactions(req.params.businessId, req.params.customerId);
-    res.json({ customer, recentOrders: orders, loyaltyTransactions: txns });
+    const ctx = await membershipContext(req.params.businessId, req.params.customerId);
+    res.json({
+      customer, recentOrders: orders, loyaltyTransactions: txns, ...ctx,
+    });
   }),
   lookup: asyncHandler(async (req, res) => {
     const customer = await customers.byPhone(req.params.businessId, req.query.phone);
@@ -66,7 +90,10 @@ module.exports = {
         expiredMembership = await membershipSvc.lastExpiredForCustomer(req.params.businessId, customer.id);
       }
     } catch (_) { /* membership tables may predate migration 020/055 */ }
-    res.json({ customer, loyaltySettings: settings, membership, expiredMembership });
+    const ctx = await membershipContext(req.params.businessId, customer.id);
+    res.json({
+      customer, loyaltySettings: settings, membership, expiredMembership, ...ctx,
+    });
   }),
   upsert: [
     validate({ body: upsertBody }),

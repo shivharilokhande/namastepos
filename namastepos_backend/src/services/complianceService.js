@@ -442,30 +442,27 @@ async function fileGrievance({
   };
 }
 
-async function listGrievances({ status = null, businessId = null, limit = 100 } = {}) {
-  const params = [];
-  const where = [];
-  if (status) {
-    if (!GRIEVANCE_STATUS.has(status)) throw new BadRequest(`Unknown status "${status}"`);
-    params.push(status); where.push(`status = $${params.length}`);
-  }
-  if (businessId) { params.push(businessId); where.push(`business_id = $${params.length}`); }
-  params.push(Math.min(Math.max(limit, 1), 500));
+// Round 3 (2026-09-06, Bug 3): one serializer for every admin grievance
+// payload (list / detail / create / update) so the console reads a single
+// shape. `assignedTo` + `assignedToEmail` are the case owner (migration 099);
+// `handledBy` is still "who last changed the status".
+const GRIEVANCE_SELECT = `
+  SELECT g.id, g.business_id, g.user_id, g.complainant_name, g.complainant_email,
+         g.complainant_phone, g.category, g.subject, g.body, g.status,
+         g.acknowledged_at, g.resolved_at, g.resolution_note, g.handled_by,
+         g.assigned_to, au.email AS assigned_to_email,
+         g.ack_due_at, g.resolve_due_at, g.created_at, g.updated_at,
+         b.name AS business_name,
+         (SELECT COUNT(*)::int FROM grievance_notes n WHERE n.grievance_id = g.id) AS note_count
+    FROM grievance_complaints g
+    LEFT JOIN admin_users au ON au.id = g.assigned_to
+    LEFT JOIN businesses  b  ON b.id  = g.business_id`;
 
-  const r = await query(
-    `SELECT id, business_id, user_id, complainant_name, complainant_email,
-            complainant_phone, category, subject, body, status,
-            acknowledged_at, resolved_at, resolution_note, handled_by,
-            ack_due_at, resolve_due_at, created_at, updated_at
-       FROM grievance_complaints
-      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-      ORDER BY created_at DESC
-      LIMIT $${params.length}`,
-    params,
-  );
-  return r.rows.map((g) => ({
+function serializeGrievance(g) {
+  return {
     id: g.id,
     businessId: g.business_id,
+    businessName: g.business_name || null,
     userId: g.user_id,
     complainantName: g.complainant_name,
     complainantEmail: g.complainant_email,
@@ -478,32 +475,138 @@ async function listGrievances({ status = null, businessId = null, limit = 100 } 
     resolvedAt: g.resolved_at,
     resolutionNote: g.resolution_note,
     handledBy: g.handled_by,
+    assignedTo: g.assigned_to || null,
+    assignedToEmail: g.assigned_to_email || null,
+    noteCount: g.note_count || 0,
     ackDueAt: g.ack_due_at,
     resolveDueAt: g.resolve_due_at,
     createdAt: g.created_at,
     updatedAt: g.updated_at,
-  }));
+  };
 }
 
-async function updateGrievance({ id, status, resolutionNote = null, handledBy = null }) {
-  if (!GRIEVANCE_STATUS.has(status)) throw new BadRequest(`Unknown status "${status}"`);
+async function listGrievances({
+  status = null, businessId = null, assignedTo = null, limit = 100,
+} = {}) {
+  const params = [];
+  const where = [];
+  if (status) {
+    if (!GRIEVANCE_STATUS.has(status)) throw new BadRequest(`Unknown status "${status}"`);
+    params.push(status); where.push(`g.status = $${params.length}`);
+  }
+  if (businessId) { params.push(businessId); where.push(`g.business_id = $${params.length}`); }
+  if (assignedTo) { params.push(assignedTo); where.push(`g.assigned_to = $${params.length}`); }
+  params.push(Math.min(Math.max(limit, 1), 500));
+
+  const r = await query(
+    `${GRIEVANCE_SELECT}
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      ORDER BY g.created_at DESC
+      LIMIT $${params.length}`,
+    params,
+  );
+  return r.rows.map(serializeGrievance);
+}
+
+async function getGrievance(id) {
+  const r = await query(`${GRIEVANCE_SELECT} WHERE g.id = $1`, [id]);
+  if (!r.rows[0]) throw new NotFound('Grievance not found');
+  const notes = await query(
+    `SELECT n.id, n.body, n.created_at, n.admin_id, au.email AS admin_email
+       FROM grievance_notes n
+       LEFT JOIN admin_users au ON au.id = n.admin_id
+      WHERE n.grievance_id = $1
+      ORDER BY n.created_at DESC`,
+    [id],
+  );
+  return {
+    grievance: serializeGrievance(r.rows[0]),
+    notes: notes.rows.map((n) => ({
+      id: n.id,
+      body: n.body,
+      adminId: n.admin_id,
+      adminEmail: n.admin_email || null,
+      createdAt: n.created_at,
+    })),
+  };
+}
+
+// Admin-side filing (Round 3, Bug 3): a complaint that arrived by phone /
+// email / WhatsApp. Reuses fileGrievance (same SLA clocks, same ack email) but
+// the filer is an admin, not a users row, so a complainant contact is
+// mandatory — and the admin can attach an opening note in the same call.
+async function adminFileGrievance({ adminId, note = null, ...body }) {
+  if (!body.complainantEmail && !body.complainantPhone) {
+    throw new BadRequest('complainantEmail or complainantPhone is required when an admin logs a grievance');
+  }
+  const created = await fileGrievance({ ...body, userId: null });
+  if (body.assignedTo) {
+    await updateGrievance({ id: created.id, assignedTo: body.assignedTo, handledBy: adminId });
+  }
+  if (note && String(note).trim()) {
+    await addGrievanceNote({ id: created.id, adminId, body: String(note).trim() });
+  }
+  return getGrievance(created.id);
+}
+
+async function addGrievanceNote({ id, adminId = null, body }) {
+  if (!body || !String(body).trim()) throw new BadRequest('note body is required');
+  const exists = await query('SELECT id FROM grievance_complaints WHERE id = $1', [id]);
+  if (!exists.rows[0]) throw new NotFound('Grievance not found');
+  const r = await query(
+    `INSERT INTO grievance_notes (grievance_id, admin_id, body)
+     VALUES ($1, $2, $3) RETURNING id, body, admin_id, created_at`,
+    [id, adminId, String(body).trim()],
+  );
+  return {
+    id: r.rows[0].id, body: r.rows[0].body, adminId: r.rows[0].admin_id, createdAt: r.rows[0].created_at,
+  };
+}
+
+// Round 3 (2026-09-06): `status` is optional now — an admin may only assign
+// the case (`assignedTo`, an active admin_users id; null un-assigns) or
+// append an internal `note` without touching the status. Returns the full
+// serialized row (the old `{ id, status }` keys are still present on it).
+async function updateGrievance({
+  id, status = null, resolutionNote = null, handledBy = null, assignedTo, note = null,
+}) {
+  if (status != null && !GRIEVANCE_STATUS.has(status)) throw new BadRequest(`Unknown status "${status}"`);
+  if (status == null && resolutionNote == null && assignedTo === undefined && !note) {
+    throw new BadRequest('Nothing to update — send status, resolutionNote, assignedTo or note');
+  }
+  if (assignedTo) {
+    const a = await query(
+      'SELECT id FROM admin_users WHERE id = $1 AND is_active = TRUE',
+      [assignedTo],
+    );
+    if (!a.rows[0]) throw new BadRequest('assignedTo must be an active admin');
+  }
   const r = await query(
     `UPDATE grievance_complaints
-        SET status = $2,
-            acknowledged_at = CASE WHEN $2 IN ('acknowledged','resolved','rejected','escalated')
+        SET status = COALESCE($2::varchar, status),
+            -- 2026-09-06 (admin Compliance → Grievances "not working"): $2 was
+            -- bound to a varchar column AND compared to text literals, so
+            -- Postgres raised 42P08 "inconsistent types deduced for parameter"
+            -- and every status change 500'd. Cast once, everywhere.
+            acknowledged_at = CASE WHEN $2::varchar IN ('acknowledged','resolved','rejected','escalated')
                                     AND acknowledged_at IS NULL THEN now()
                                   ELSE acknowledged_at END,
-            resolved_at     = CASE WHEN $2 IN ('resolved','rejected') AND resolved_at IS NULL THEN now()
+            resolved_at     = CASE WHEN $2::varchar IN ('resolved','rejected') AND resolved_at IS NULL THEN now()
                                   ELSE resolved_at END,
             resolution_note = COALESCE($3, resolution_note),
-            handled_by      = COALESCE($4, handled_by),
+            handled_by      = CASE WHEN $2::varchar IS NULL THEN handled_by ELSE COALESCE($4, handled_by) END,
+            assigned_to     = CASE WHEN $6::boolean THEN $5::uuid ELSE assigned_to END,
             updated_at      = now()
       WHERE id = $1
-      RETURNING id`,
-    [id, status, resolutionNote, handledBy],
+      RETURNING id, status`,
+    [id, status, resolutionNote, handledBy, assignedTo || null, assignedTo !== undefined],
   );
   if (!r.rows[0]) throw new NotFound('Grievance not found');
-  return { id: r.rows[0].id, status };
+  if (note && String(note).trim()) {
+    await addGrievanceNote({ id, adminId: handledBy, body: note });
+  }
+  const full = await getGrievance(id);
+  return { ...full.grievance, notes: full.notes };
 }
 
 // ────────────────────────────────────────────────────────────────────
@@ -776,6 +879,9 @@ module.exports = {
   // Grievance
   fileGrievance,
   listGrievances,
+  getGrievance,
+  adminFileGrievance,
+  addGrievanceNote,
   updateGrievance,
   // Breach
   logBreach,

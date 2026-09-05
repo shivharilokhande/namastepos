@@ -14,11 +14,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { NewOrderDialog } from '@/components/NewOrderDialog';
 import { BillSplitDialog } from '@/components/BillSplitDialog';
 import { FloorCanvas } from '@/components/FloorCanvas';
+import { WalletTopUpDialog } from '@/components/WalletTopUpDialog';
+import { MembershipOfferCard } from '@/components/MembershipOfferCard';
 import { ffApi } from '@/api/namastepos';
 import { api, apiError, getBusinessCache } from '@/api/client';
 import { trackFirstBill } from '@/lib/activation';
 import { usePlan } from '@/hooks/usePlan';
 import { formatINR, formatDateTime } from '@/lib/utils';
+import { planWallet, sessionDue, shortfallBreakdown } from '@/lib/checkout';
 
 // ── Joined tables API (2026-08-25, founder request) ─────────────────────
 // One big party across several physical tables shares ONE session/bill.
@@ -43,7 +46,14 @@ function unjoinTableApi(sessionId: string, tableId: string) {
 // endpoint is called locally — same pattern as join/unjoin above.
 function closeSessionApi(
   sessionId: string,
-  body: { paymentMethod: string; paymentBreakdown?: { method: string; amountInr: number }[]; shortfallInr?: number },
+  body: {
+    paymentMethod: string;
+    paymentBreakdown?: { method: string; amountInr: number }[];
+    shortfallInr?: number;
+    pointsToRedeem?: number;
+    autoWallet?: boolean;
+    walletCapInr?: number;
+  },
 ) {
   const b = getBusinessCache();
   return api
@@ -645,6 +655,12 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
   ]);
   const [shortfallOpen, setShortfallOpen] = useState(false);
   const [shortfallInput, setShortfallInput] = useState(0);
+  // Round 3 (2026-09-06, Bug 1/1b): optional cap on the wallet draw
+  // (`walletCapInr`), "Cover shortfall" (explicit wallet + tender legs) and
+  // the top-up dialog. Gated on the `loyalty` key ("Loyalty points & wallet").
+  const [walletCapInput, setWalletCapInput] = useState('');
+  const [coverShortfall, setCoverShortfall] = useState(false);
+  const [topUpOpen, setTopUpOpen] = useState(false);
 
   // Resolve the session's customer → id (customer-history lookup, the same
   // endpoint NewOrderDialog uses) → wallet balance for the wallet tender.
@@ -662,8 +678,21 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
     enabled: !!custId,
     retry: false,
   });
-  const walletBalance: number = walletInfo?.balanceInr ?? 0;
-  const walletAvailable = !!custId && !!walletInfo && !walletError;
+  // Round 3: the lookup's `walletBalancePaise` is a second (fresh) source;
+  // the /wallet read stays authoritative when present.
+  const profileWalletPaise = custProfile?.customer?.walletBalancePaise
+    ?? custProfile?.walletBalancePaise;
+  const walletBalance: number = walletInfo?.balanceInr
+    ?? (profileWalletPaise != null ? Number(profileWalletPaise) / 100 : 0);
+  const walletAvailable = plan.has('loyalty') && !!custId && !walletError
+    && (!!walletInfo || profileWalletPaise != null);
+  // Membership plans (raw rows) as the fallback for the renew/offer card.
+  const { data: membershipPlans = [] } = useQuery({
+    queryKey: ['memberships'],
+    queryFn: () => ffApi.listMemberships(),
+    retry: false,
+    enabled: plan.has('memberships') && !!custId,
+  });
 
   // Loyalty points redemption at settle (2026-09-01, founder). Mirror of
   // NewOrderDialog's cap: floor(bill × maxRedemptionPct% ÷ value-per-point),
@@ -698,7 +727,11 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
       // 2026-08-25: full close body. Legs must sum to (session total −
       // shortfall) ±₹0.01 — validated client-side below before the button
       // enables, and again server-side inside the settle txn.
-      const body: any = { paymentMethod };
+      // Round 3 (2026-09-06): a bill already collected at order time must
+      // never be collected again — the button is disabled, and this is the
+      // belt to that brace.
+      if (due.isSettled) throw new Error('This bill is already paid');
+      const body: Parameters<typeof closeSessionApi>[1] = { paymentMethod };
       if (shortfallOpen && shortfallInput > 0) body.shortfallInr = shortfallInput;
       // Loyalty points redeemed at settle — server re-caps and books the
       // discount + points debit inside the close txn (mirrors order path).
@@ -708,11 +741,16 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
           method: l.method,
           amountInr: +(parseFloat(l.amountInr) || 0).toFixed(2),
         }));
+      } else if (coverActive && walletBalance > 0) {
+        // Cover shortfall (round 3, Bug 1b): wallet pays what it has, the
+        // rest goes to the chosen tender — explicit legs summing to the due.
+        body.paymentBreakdown = shortfallBreakdown(totalDue, walletBalance, paymentMethod);
       } else if (autoWalletSettle && walletAvailable && walletBalance > 0) {
         // Wallet-as-tender auto-apply at settle (2026-08-30): server draws the
         // session customer's wallet for the due and routes the rest to
         // paymentMethod. Only on single-tender (not a manual split).
         body.autoWallet = true;
+        if (walletCap != null) body.walletCapInr = walletCap;
       }
       return closeSessionApi(sessionId, body);
     },
@@ -730,12 +768,15 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
       });
       toast.success(splitOn
         ? 'Bill settled — split payment recorded'
-        : `Bill settled — paid by ${paymentMethod.toUpperCase()}`);
+        : walletApplied > 0
+          ? `Bill settled — ${formatINR(walletApplied, { decimals: true })} from wallet${collectNow > 0 ? `, ${formatINR(collectNow, { decimals: true })} by ${paymentMethod.toUpperCase()}` : ''}`
+          : `Bill settled — paid by ${paymentMethod.toUpperCase()}`);
       qc.invalidateQueries({ queryKey: ['ops-tables'] });
       qc.invalidateQueries({ queryKey: ['cust-wallet'] });
+      qc.invalidateQueries({ queryKey: ['cust-profile'] });
       onClosed();
     },
-    onError: (e) => toast.error(apiError(e)),
+    onError: (e: any) => toast.error(apiError(e) || e?.message || 'Could not settle'),
   });
 
   // Joined tables (2026-08-25) — attach/detach extra free tables to THIS
@@ -855,23 +896,45 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
   const freeTables = allTables.filter((t: any) => t.status === 'available');
 
   // ── Settle math (2026-08-25, founder) ─────────────────────────────────
-  // Shortfall is clamped to the bill so the due can't go negative; the
-  // split legs must then cover exactly what's actually PAID (total − short).
-  const sessionTotal = Number(session.totalInr) || 0;
+  // Round 3 (2026-09-06, Bug 1): `due` is what is STILL owed — the server's
+  // duePaise/paidPaise/isSettled when present, else total − Σ(orders paid at
+  // "Pay & place"). A KOT paid at order time (wallet/cash/…) must not be
+  // asked for again at settle; when nothing is owed the bill shows "Paid"
+  // and Settle is disabled (Release table closes the session).
+  const due = sessionDue(session);
+  const sessionTotal = due.totalInr;
+  // Shortfall is clamped to the balance due so the due can't go negative;
+  // the split legs must then cover exactly what's actually PAID (due − short).
   const shortfall = shortfallOpen
-    ? Math.min(Math.max(0, Number(shortfallInput) || 0), sessionTotal)
+    ? Math.min(Math.max(0, Number(shortfallInput) || 0), due.dueInr)
     : 0;
-  // Points cap against the LIVE bill (mirrors server + NewOrderDialog).
+  // Points cap against the LIVE balance due (mirrors server + NewOrderDialog).
   const maxRedeemablePoints = (() => {
     if (!loyaltyAvailable) return 0;
     if (custPoints < (Number(loyaltySettings?.minRedemptionPoints) || 0)) return 0;
-    const capInr = sessionTotal * ((Number(loyaltySettings?.maxRedemptionPct) || 0) / 100);
+    const capInr = due.dueInr * ((Number(loyaltySettings?.maxRedemptionPct) || 0) / 100);
     return Math.max(0, Math.min(custPoints, Math.floor(capInr / pointValueInr)));
   })();
   const redeemPoints = Math.min(Math.max(0, pointsToRedeem), maxRedeemablePoints);
   const loyaltyDiscount = +(redeemPoints * pointValueInr).toFixed(2);
-  // Points reduce what must be collected — legs settle (total − short − points).
-  const totalDue = Math.max(0, +(sessionTotal - shortfall - loyaltyDiscount).toFixed(2));
+  // Points reduce what must be collected — legs settle (due − short − points).
+  const totalDue = Math.max(0, +(due.dueInr - shortfall - loyaltyDiscount).toFixed(2));
+  // Wallet draw on this settle (round 3): min(due, balance, cap), so the
+  // dialog shows "₹X from wallet, ₹Y via CASH" and the Settle button says
+  // what is really collected. `walletShort` ignores the cap → offer Cover
+  // shortfall / Top up wallet when the balance alone can't cover the due.
+  const walletCap: number | null = walletCapInput.trim() === ''
+    ? null : Math.max(0, parseFloat(walletCapInput) || 0);
+  const walletShort = planWallet(totalDue, walletBalance, null);
+  // Cover-shortfall only means something while the wallet IS short (a top-up
+  // or points may close the gap) — derived, not an effect, because this sits
+  // below the early return above.
+  const coverActive = coverShortfall && walletAvailable && walletShort.shortfall;
+  const walletTenderOn = !splitOn && walletAvailable && walletBalance > 0
+    && (autoWalletSettle || coverActive);
+  const walletPlan = planWallet(totalDue, walletBalance, coverActive ? null : walletCap);
+  const walletApplied = walletTenderOn ? walletPlan.walletInr : 0;
+  const collectNow = Math.max(0, +(totalDue - walletApplied).toFixed(2));
   const legSum = settleLegs.reduce((s, l) => s + (parseFloat(l.amountInr) || 0), 0);
   const settleRemaining = +(totalDue - legSum).toFixed(2);
   const walletLegInr = settleLegs
@@ -893,7 +956,8 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
   const activeOrders = orders.filter((o: any) => o.status !== 'cancelled');
   const allPaidUpfront =
     activeOrders.length > 0 &&
-    activeOrders.every((o: any) => o.paymentMethod && o.paymentMethod !== 'unpaid');
+    (due.isSettled ||
+      activeOrders.every((o: any) => o.paymentMethod && o.paymentMethod !== 'unpaid'));
 
   const onReleasePaidClick = () => {
     if (!window.confirm(
@@ -936,7 +1000,10 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                   ` + ${joinedTables.map((jt: any) => jt.label).join(', ')}`}
                 {' '}· Running bill
               </span>
-              <Badge variant="warning" className="text-[10px]">OPEN</Badge>
+              {/* Round 3: PAID once nothing is owed (collected at order time) */}
+              {due.isSettled
+                ? <Badge variant="success" className="text-[10px]" data-testid="session-paid-badge">PAID</Badge>
+                : <Badge variant="warning" className="text-[10px]">OPEN</Badge>}
             </DialogTitle>
           </DialogHeader>
 
@@ -958,6 +1025,25 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
             </div>
             {session.customerPhone && (
               <div className="text-xs">📞 {session.customerPhone}{session.customerName ? ` · ${session.customerName}` : ''}</div>
+            )}
+            {/* Membership renew / offer at settle (round 3, 2026-09-06,
+                Bug 2). Gated on `memberships` inside the card; refetches the
+                lookup after a sale so the bundle applies now. */}
+            {custId && !due.isSettled && (
+              <MembershipOfferCard
+                compact
+                customerId={custId}
+                customerLabel={session.customerName || session.customerPhone}
+                activeMembership={custProfile?.activeMembership}
+                availableMemberships={custProfile?.availableMemberships}
+                rawPlans={membershipPlans as any[]}
+                walletBalanceInr={walletAvailable ? walletBalance : null}
+                onPurchased={() => {
+                  qc.invalidateQueries({ queryKey: ['cust-profile', custPhone] });
+                  qc.invalidateQueries({ queryKey: ['cust-wallet'] });
+                  qc.invalidateQueries({ queryKey: ['session', sessionId] });
+                }}
+              />
             )}
             {session.notes && <div className="text-xs italic text-muted-foreground">"{session.notes}"</div>}
 
@@ -1156,13 +1242,51 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                   <span>Round-off</span><span>{formatINR(session.roundOffInr)}</span>
                 </div>
               )}
-              <div className="flex justify-between font-bold text-lg border-t pt-2 mt-1">
-                <span>Total due</span><span>{formatINR(session.totalInr)}</span>
+              <div className={`flex justify-between border-t pt-2 mt-1 ${due.paidInr > 0 ? 'font-semibold' : 'font-bold text-lg'}`}>
+                <span>{due.paidInr > 0 ? 'Bill total' : 'Total due'}</span><span>{formatINR(sessionTotal)}</span>
               </div>
+              {/* Round 3 (2026-09-06, Bug 1): what was already collected at
+                  order time ("Pay & place" — wallet/cash/…), and what is
+                  still owed. Legs come from the server's payments[] when it
+                  sends them, else one per paid KOT. */}
+              {due.paidLegs.length > 0 && (
+                <div className="text-xs space-y-0.5 pt-1" data-testid="paid-legs">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted-foreground">Already paid</div>
+                  {due.paidLegs.map((l, i) => (
+                    <div key={i} className="flex justify-between text-emerald-700">
+                      <span className="capitalize">
+                        {l.method}{l.orderNo != null ? <span className="text-muted-foreground"> · KOT #{l.orderNo}</span> : null}
+                      </span>
+                      <span>− {formatINR(l.amountInr, { decimals: true })}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {due.paidInr > 0 && (
+                <div className="flex justify-between font-bold text-lg border-t pt-2 mt-1" data-testid="balance-due">
+                  <span>Balance due</span>
+                  <span className={due.isSettled ? 'text-emerald-700' : ''}>
+                    {due.isSettled ? 'Paid' : formatINR(due.dueInr, { decimals: true })}
+                  </span>
+                </div>
+              )}
             </div>
 
+            {/* Nothing left to collect (round 3): say so instead of showing
+                tenders — the cashier was re-charging tables paid at order time. */}
+            {orders.length > 0 && due.isSettled && (
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50 p-3 text-sm text-emerald-800 flex items-center gap-2"
+                data-testid="settled-panel">
+                <BadgeCheck className="h-4 w-4 shrink-0" />
+                <span>
+                  This bill is <strong>paid</strong> — nothing more to collect.
+                  Use <strong>Release table</strong> to free {joinedTables.length > 0 ? 'the tables' : 'the table'}.
+                </span>
+              </div>
+            )}
+
             {/* Payment method picker, only when there's something to settle */}
-            {orders.length > 0 && (
+            {orders.length > 0 && !due.isSettled && (
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -1192,15 +1316,61 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                         </button>
                       ))}
                     </div>
-                    {walletAvailable && walletBalance > 0 && (
-                      <label className="flex items-start gap-2 text-xs cursor-pointer mt-2 p-2 rounded-md bg-primary/5">
-                        <input type="checkbox" checked={autoWalletSettle} className="mt-0.5"
-                          onChange={(e) => setAutoWalletSettle(e.target.checked)} />
-                        <span>
-                          Use wallet balance ({formatINR(walletBalance)}) — the rest is
-                          collected via <span className="uppercase font-semibold">{paymentMethod}</span>.
-                        </span>
-                      </label>
+                    {/* Wallet tender at settle (round 3, 2026-09-06, Bug 1/1b):
+                        toggle → autoWallet (+ walletCapInr); the row shows what
+                        the wallet takes vs what is collected; short balance →
+                        Cover shortfall (explicit legs) or Top up wallet. */}
+                    {walletAvailable && (
+                      <div className="mt-2 p-2 rounded-md bg-primary/5 space-y-1.5 text-xs" data-testid="settle-wallet-tender">
+                        {walletBalance > 0 ? (
+                          <>
+                            <label className="flex items-start gap-2 cursor-pointer">
+                              <input type="checkbox" checked={autoWalletSettle || coverActive} className="mt-0.5"
+                                onChange={(e) => { setAutoWalletSettle(e.target.checked); if (!e.target.checked) setCoverShortfall(false); }} />
+                              <span>
+                                Use wallet balance ({formatINR(walletBalance, { decimals: true })})
+                                {walletTenderOn && walletApplied > 0 && (
+                                  <> — <strong>{formatINR(walletApplied, { decimals: true })}</strong> from wallet
+                                    {collectNow > 0
+                                      ? <>, <strong>{formatINR(collectNow, { decimals: true })}</strong> via <span className="uppercase font-semibold">{paymentMethod}</span></>
+                                      : <>, nothing more to collect</>}
+                                  </>
+                                )}
+                              </span>
+                            </label>
+                            {(autoWalletSettle || coverActive) && !coverActive && (
+                              <div className="flex items-center gap-2 pl-5">
+                                <Label className="text-[11px] text-muted-foreground whitespace-nowrap">Max from wallet (₹)</Label>
+                                <Input type="number" min={0} step="0.01" value={walletCapInput}
+                                  onChange={(e) => setWalletCapInput(e.target.value)}
+                                  placeholder={totalDue > 0 ? Math.min(walletBalance, totalDue).toFixed(2) : '0.00'}
+                                  className="h-7 w-24 text-xs" />
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div className="text-muted-foreground">Wallet balance {formatINR(0, { decimals: true })}.</div>
+                        )}
+                        {walletShort.shortfall && totalDue > 0 && (
+                          <div className="pl-5 space-y-1" data-testid="settle-wallet-shortfall">
+                            <div className="text-amber-800">
+                              Wallet is short by <strong>{formatINR(walletShort.shortByInr, { decimals: true })}</strong>.
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {walletBalance > 0 && (
+                                <Button size="sm" variant={coverActive ? 'default' : 'outline'} className="h-7 text-xs"
+                                  onClick={() => { setCoverShortfall((v) => !v); setAutoWalletSettle(true); }}>
+                                  {coverActive ? '✓ Covering shortfall' : 'Cover shortfall'} via {paymentMethod.toUpperCase()}
+                                </Button>
+                              )}
+                              <Button size="sm" variant="outline" className="h-7 text-xs"
+                                onClick={() => setTopUpOpen(true)}>
+                                Top up wallet
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     )}
                   </>
                 ) : (
@@ -1217,6 +1387,12 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                         className="text-xs text-primary font-semibold hover:underline">
                         Use wallet {formatINR(Math.min(walletBalance, totalDue))}
                         {walletBalance < totalDue ? ` + ${formatINR(totalDue - walletBalance)} on another tender` : ''}
+                      </button>
+                    )}
+                    {walletAvailable && walletShort.shortfall && totalDue > 0 && (
+                      <button type="button" onClick={() => setTopUpOpen(true)}
+                        className="ml-3 text-xs text-primary font-semibold hover:underline">
+                        Top up wallet
                       </button>
                     )}
                     {settleLegs.map((leg, i) => (
@@ -1317,9 +1493,9 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
                     ) : (
                       <div className="mt-1.5 space-y-1.5">
                         <Label className="text-xs">Shortfall (₹)</Label>
-                        <Input type="number" min={0} max={sessionTotal} value={shortfallInput}
+                        <Input type="number" min={0} max={due.dueInr} value={shortfallInput}
                           onChange={(e) => setShortfallInput(
-                            Math.min(Math.max(0, +e.target.value || 0), sessionTotal))}
+                            Math.min(Math.max(0, +e.target.value || 0), due.dueInr))}
                           className="h-8" />
                         {shortfall > 0 && (
                           <div className="text-xs text-amber-700">
@@ -1393,7 +1569,9 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
             <Button
               variant="outline"
               onClick={() => setSplitting(true)}
-              disabled={orders.length === 0 || !session.totalInr}
+              // Round 3: nothing to split once the bill is paid; the split
+              // dialog receives the BALANCE due, not the gross bill.
+              disabled={orders.length === 0 || due.isSettled || due.dueInr <= 0}
             >
               <Users className="mr-1 h-4 w-4" /> Split bill
             </Button>
@@ -1401,16 +1579,38 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
             {/* 2026-08-25: split mode gates Settle until the legs balance;
                 a shortfall without an identified customer is blocked (the
                 server would refuse the wallet debt anyway). */}
+            {/* Round 3 (2026-09-06, Bug 1): DISABLED + "Paid" once nothing is
+                owed; otherwise the label says what is collected now (wallet
+                part shown separately). */}
             <Button
               onClick={() => close.mutate()}
-              disabled={close.isPending || orders.length === 0
+              disabled={close.isPending || orders.length === 0 || due.isSettled
                 || (splitOn && !splitValid) || shortfallBlocked}
+              data-testid="settle-button"
             >
-              {close.isPending ? '…' : `Settle ${formatINR(totalDue)}`}
+              {close.isPending ? '…'
+                : due.isSettled ? 'Paid'
+                  : walletApplied > 0
+                    ? (collectNow > 0
+                      ? `Settle ${formatINR(collectNow, { decimals: true })} ${paymentMethod.toUpperCase()} + ${formatINR(walletApplied, { decimals: true })} wallet`
+                      : `Settle ${formatINR(walletApplied, { decimals: true })} from wallet`)
+                    : `Settle ${formatINR(totalDue)}`}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Wallet top-up at settle (round 3, Bug 1b). */}
+      {topUpOpen && custId && (
+        <WalletTopUpDialog
+          customerId={custId}
+          customerLabel={session.customerName || session.customerPhone || 'Customer'}
+          currentBalanceInr={walletBalance}
+          suggestedInr={walletShort.shortByInr}
+          onClose={() => setTopUpOpen(false)}
+          onDone={() => { setTopUpOpen(false); setAutoWalletSettle(true); }}
+        />
+      )}
 
       {addingItems && (
         <NewOrderDialog
@@ -1437,7 +1637,8 @@ function SessionDialog({ sessionId, onClose, onClosed }: any) {
       {splitting && (
         <BillSplitDialog
           sessionId={session.id}
-          totalInr={session.totalInr || 0}
+          totalInr={due.dueInr}
+          paidInr={due.paidInr}
           onClose={() => {
             setSplitting(false);
             qc.invalidateQueries({ queryKey: ['session', sessionId] });

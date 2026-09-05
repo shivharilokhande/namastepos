@@ -49,10 +49,15 @@ async function makeSessionWithOrders(biz, totalsInr, { orderNoStart = 1 } = {}) 
   );
   const orderIds = [];
   for (let i = 0; i < totalsInr.length; i += 1) {
+    // Round 3 (2026-09-06): a KOT saved into a running session is 'unpaid'
+    // until Settle (that is what "Save KOT" writes); the column default 'cash'
+    // would read as "paid at Pay & place" and the settle discount only ever
+    // touches what is still due.
     const o = await query(
       `INSERT INTO orders
-         (business_id, order_no, source, subtotal, tax, discount, total, table_session_id)
-       VALUES ($1, $2, 'dineIn', $3, 0, 0, $3, $4) RETURNING id`,
+         (business_id, order_no, source, subtotal, tax, discount, total, table_session_id,
+          payment_method)
+       VALUES ($1, $2, 'dineIn', $3, 0, 0, $3, $4, 'unpaid') RETURNING id`,
       [biz.id, orderNoStart + i, totalsInr[i], sessionId],
     );
     orderIds.push(o.rows[0].id);

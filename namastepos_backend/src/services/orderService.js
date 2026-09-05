@@ -1672,13 +1672,22 @@ async function create(businessId, body, opts = {}) {
             'Wallet payment requires a customer on the order — send customerPhone',
           );
         }
-        await require('./giftCardService').debitWalletTx(
+        const debit = await require('./giftCardService').debitWalletTx(
           client,
           businessId,
           customerRow.id,
           walletPaise,
           { reason: 'order_payment', orderId: orderRow.id, note: `Order #${orderRow.order_no} payment` },
         );
+        // Round 3 (2026-09-06, founder Bug 1): hand the post-debit balance back
+        // on the create response so the POS can refresh "wallet ₹x" without a
+        // second lookup (the founder saw the pre-order balance after paying).
+        const balancePaise = Math.round(Number(debit.balanceAfterInr) * 100);
+        orderRow._wallet = {
+          balancePaise,
+          balanceInr: balancePaise / 100,
+          debitedPaise: walletPaise,
+        };
       }
       // One payments row per leg — same persistence the legacy `splits`
       // path uses, so receipts/exports that read `payments` keep working.
@@ -1708,6 +1717,9 @@ async function create(businessId, body, opts = {}) {
     // fresh object) so the POS still sees `order.redeem` as before.
     const out = serializeOrder(orderRow, itemRows);
     if (orderRow._redeemResult) out.redeem = orderRow._redeemResult;
+    // Round 3 (2026-09-06): `wallet` is present only when a wallet leg paid
+    // part of this order — { balancePaise, balanceInr, debitedPaise }.
+    if (orderRow._wallet) out.wallet = orderRow._wallet;
     return out;
   }).then(async (result) => {
     // Bump usage AFTER the txn commits (best-effort, doesn't roll back the order)

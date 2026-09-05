@@ -19,6 +19,7 @@ import 'package:provider/provider.dart';
 import '../../constants/colors.dart';
 import '../../constants/feature_keys.dart';
 import '../../utils/checkout_gates.dart';
+import '../../utils/checkout_money.dart';
 import '../../utils/error_humanizer.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/customer.dart' show LoyaltySettingsLite;
@@ -33,6 +34,7 @@ import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/membership_offer_dialog.dart';
 import '../../widgets/home_drawer_button.dart';
 import '../../widgets/plan_gate.dart';
+import '../../widgets/wallet_topup_sheet.dart';
 
 /// Captain → "Add items" pre-binds the next POS order to this session so
 /// the confirm screen sends `tableSessionId` + `tableId` automatically.
@@ -479,29 +481,21 @@ class _CaptainScreenState extends State<CaptainScreen> {
     final orders = ((session['orders'] as List?) ?? const []).cast<Map>();
     final activeOrders =
         orders.where((o) => o['status'] != 'cancelled').toList();
-    // Paid upfront = at least one live KOT and EVERY one already carrying a
-    // real payment method (the "Pay & place" flow) — only then does the
-    // "Release table (already paid)" shortcut make sense.
-    final allPaidUpfront = activeOrders.isNotEmpty &&
-        activeOrders.every((o) {
-          final pm = (o['paymentMethod'] as String?) ?? '';
-          return pm.isNotEmpty && pm != 'unpaid';
-        });
     // Pending-balance fix (2026-08-25, founder): a session can be PART paid
     // (customer paid at "Pay & place", then ordered more) or FULLY paid.
     // Settle must collect only the UNPAID portion, and be disabled when
-    // nothing is pending. Sum per-KOT totals split by payment state.
-    double paidTotal = 0, pendingTotal = 0;
-    for (final o in activeOrders) {
-      final pm = (o['paymentMethod'] as String?) ?? '';
-      final t = (o['total'] as num?)?.toDouble() ?? 0;
-      if (pm.isNotEmpty && pm != 'unpaid') {
-        paidTotal += t;
-      } else {
-        pendingTotal += t;
-      }
-    }
-    final hasPending = pendingTotal > 0.005;
+    // nothing is pending.
+    // Round 3 Bug 1 (2026-09-06): the maths moved to SessionDue — it prefers
+    // the server's totalPaise/paidPaise/duePaise/isSettled (round-3 contract)
+    // and falls back to the per-KOT paymentMethod sums on an older server.
+    // It also collects the tender legs (wallet ₹84, cash ₹36 …) for the bill.
+    final due = SessionDue.fromSession(session);
+    final paidTotal = due.paidInr;
+    final pendingTotal = due.dueInr;
+    final hasPending = due.hasDue;
+    // Paid upfront = live KOTs and nothing left to collect (every KOT paid at
+    // "Pay & place") — only then does "Release table (already paid)" make sense.
+    final allPaidUpfront = activeOrders.isNotEmpty && due.isSettled;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -600,16 +594,29 @@ class _CaptainScreenState extends State<CaptainScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text('Already paid', style: TextStyle(color: Colors.grey)),
-                  Text('− ${AppFmt.money(paidTotal)}',
+                  Text('− ${AppFmt.money(paidTotal, decimals: true)}',
                       style: const TextStyle(color: AppColors.success)),
                 ],
               ),
+              // Tender legs (round 3, 2026-09-06): "wallet ₹84 · cash ₹36" so
+              // the cashier sees HOW the paid part was collected.
+              if (due.legs.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    due.legs
+                        .map((l) => '${l.method.toUpperCase()} '
+                            '${AppFmt.money(l.amountInr, decimals: true)}')
+                        .join(' · '),
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
+                ),
               const SizedBox(height: 2),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text('Pending', style: TextStyle(fontWeight: FontWeight.w700)),
-                  Text(AppFmt.money(pendingTotal),
+                  Text(hasPending ? AppFmt.money(pendingTotal, decimals: true) : 'Paid',
                       style: TextStyle(
                           fontWeight: FontWeight.w800,
                           color: hasPending ? AppColors.error : AppColors.success)),
@@ -676,8 +683,10 @@ class _CaptainScreenState extends State<CaptainScreen> {
                     // shows the pending amount so it's obvious what will be
                     // collected. Settle passes PENDING, not the whole total,
                     // so already-paid KOTs are never re-charged.
+                    // Round 3 Bug 1: duePaise == 0 || isSettled → "Paid" and
+                    // DISABLED, so an already-paid bill can't be charged twice.
                     label: Text(hasPending
-                        ? 'Settle ${AppFmt.money(pendingTotal)}'
+                        ? 'Settle ${AppFmt.money(pendingTotal, decimals: true)}'
                         : 'Paid'),
                     onPressed: !hasPending
                         ? null
@@ -813,9 +822,12 @@ class _CaptainScreenState extends State<CaptainScreen> {
       try {
         final data = await ApiService.instance
             .lookupCustomer(widget.businessId, customerPhone);
-        final mem = data?['membership'];
-        final expired =
-            (data?['expiredMembership'] as Map?)?.cast<String, dynamic>();
+        // Round 3 Bug 2 (2026-09-06): MembershipStatus reads both the new
+        // `activeMembership`/`availableMemberships` shape and the legacy
+        // one, and flags an ACTIVE bundle that is used up (remaining = 0).
+        final memberStatus = gates.memberships
+            ? MembershipStatus.fromLookup(data)
+            : MembershipStatus.empty;
         final custId = ((data?['customer'] as Map?)?['id'])?.toString();
         customerId = custId;
         final Object? st = gates.loyalty ? (data?['loyaltySettings']) : null;
@@ -825,12 +837,23 @@ class _CaptainScreenState extends State<CaptainScreen> {
         customerPoints = gates.loyalty
             ? (((data?['customer'] as Map?)?['pointsBalance']) as num?)?.toInt() ?? 0
             : 0;
-        if (gates.memberships && mem == null && custId != null && mounted) {
+        // Wallet balance rides inline on the round-3 lookup.
+        if (gates.loyalty && data?['walletBalancePaise'] is num) {
+          walletBalance = (data!['walletBalancePaise'] as num) / 100;
+          walletAvailable = true;
+        }
+        // Popup card: no membership → buy; exhausted / expired → renew (the
+        // dialog lists the other plans as purchasable options too).
+        if (gates.memberships && !memberStatus.usable && custId != null && mounted) {
           final fee = await showMembershipOfferDialog(
             context,
             customerId: custId,
             customerLabel: customerName ?? customerPhone,
-            expired: expired,
+            expired: memberStatus.needsRenewal ? memberStatus.renewOffer : null,
+            reason: memberStatus.exhausted ? 'used up' : 'expired',
+            plans: memberStatus.available.isNotEmpty
+                ? memberStatus.availableAsPlans
+                : null,
           );
           if (fee != null) membershipFee = fee;
         }
@@ -838,7 +861,7 @@ class _CaptainScreenState extends State<CaptainScreen> {
       // Wallet balance for the 'wallet' split-leg option. Any error (402 =
       // loyalty addon missing) just hides wallet — same as the dashboard.
       // Skipped outright without the `loyalty` key (no guaranteed 402).
-      if (customerId != null && gates.loyalty) {
+      if (customerId != null && gates.loyalty && !walletAvailable) {
         try {
           final w = await ApiService.instance
               .walletFor(widget.businessId, customerId);
@@ -918,6 +941,21 @@ class _CaptainScreenState extends State<CaptainScreen> {
               !walletOver &&
               legs.length >= 2 &&
               legs.every((l) => _legAmount(l.ctl) > 0);
+          // Round 3 Bug 1b (2026-09-06): wallet cannot cover the due →
+          // offer "Cover shortfall" (wallet + rest via cash/UPI/card as
+          // explicit legs) and "Top up wallet". The wallet block is gated on
+          // `loyalty` (walletAvailable is only set under that key).
+          final walletShort = walletAvailable &&
+              gates.loyalty &&
+              WalletTender.hasShortfall(due: legsTarget, balance: walletBalance);
+          // What the wallet toggle will draw / leave to collect (estimate;
+          // server sizes the real leg) — Bug 1: due = total − points − wallet.
+          final walletDraw = (useWallet && walletBalance > 0)
+              ? WalletTender.plannedUse(
+                  due: legsTarget,
+                  balance: walletBalance,
+                  cap: _walletCapOrNull(walletCapCtl))
+              : 0.0;
           return SafeArea(
             child: Padding(
               padding: EdgeInsets.only(
@@ -1106,20 +1144,97 @@ class _CaptainScreenState extends State<CaptainScreen> {
                     // customer has a positive balance. On = server draws
                     // wallet first (up to the optional cap), remainder via
                     // the method tapped below.
-                    if (walletAvailable && walletBalance > 0) ...[
+                    if (walletAvailable && gates.loyalty) ...[
                       SwitchListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                         title: Text(
-                            'Use wallet balance (${AppFmt.money(walletBalance)})',
+                            'Use wallet balance (${AppFmt.money(walletBalance, decimals: true)})',
                             style: const TextStyle(fontWeight: FontWeight.w700)),
-                        subtitle: const Text(
-                            'Pays part of the bill from wallet; collect the rest below',
-                            style: TextStyle(fontSize: 11)),
-                        value: useWallet,
-                        onChanged: (v) => setSheetState(() => useWallet = v),
+                        subtitle: Text(
+                            useWallet && walletDraw > 0
+                                ? 'Wallet −${AppFmt.money(walletDraw, decimals: true)} · '
+                                    'collect ${AppFmt.money(legsTarget - walletDraw, decimals: true)} below'
+                                : 'Pays part of the bill from wallet; collect the rest below',
+                            style: const TextStyle(fontSize: 11)),
+                        value: useWallet && walletBalance > 0,
+                        onChanged: walletBalance <= 0
+                            ? null
+                            : (v) => setSheetState(() => useWallet = v),
                       ),
-                      if (useWallet)
+                      if (walletShort)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Text(
+                                'Wallet is short by '
+                                '${AppFmt.money(legsTarget - walletBalance, decimals: true)} '
+                                'for this bill.',
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: AppColors.warning,
+                                    fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  if (walletBalance > 0) ...[
+                                    const Text('Cover shortfall via',
+                                        style: TextStyle(fontSize: 12)),
+                                    for (final m in const ['cash', 'upi', 'card'])
+                                      ActionChip(
+                                        label: Text(m.toUpperCase()),
+                                        visualDensity: VisualDensity.compact,
+                                        onPressed: () => Navigator.pop(sheetCtx, {
+                                          'pm': m,
+                                          'discount': discount,
+                                          'shortfall': shortfall,
+                                          'pointsToRedeem': pointsToRedeem,
+                                          // Explicit legs: wallet = balance,
+                                          // remainder = m (sum == due).
+                                          'legs': WalletTender.shortfallLegs(
+                                            due: legsTarget,
+                                            balance: walletBalance,
+                                            method: m,
+                                          ),
+                                        }),
+                                      ),
+                                  ],
+                                  ActionChip(
+                                    avatar: const Icon(Icons.add_card, size: 16),
+                                    label: const Text('Top up wallet'),
+                                    visualDensity: VisualDensity.compact,
+                                    onPressed: customerId == null
+                                        ? null
+                                        : () async {
+                                            final newBal = await showWalletTopUpSheet(
+                                              sheetCtx,
+                                              businessId: widget.businessId,
+                                              customerId: customerId!,
+                                              suggestedInr: legsTarget - walletBalance,
+                                              currentBalanceInr: walletBalance,
+                                            );
+                                            if (newBal == null) return;
+                                            // Re-evaluate: the toggle turns on and
+                                            // the shortfall row disappears when the
+                                            // wallet now covers the due.
+                                            setSheetState(() {
+                                              walletBalance = newBal;
+                                              useWallet = newBal > 0;
+                                            });
+                                          },
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (useWallet && walletBalance > 0)
                         Padding(
                           padding: const EdgeInsets.only(bottom: 8),
                           child: TextField(
