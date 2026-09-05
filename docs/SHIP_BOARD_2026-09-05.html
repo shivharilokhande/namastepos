@@ -1,0 +1,215 @@
+<title>NamastePOS Ship Board</title>
+<style>
+  :root{
+    --bg:#f7f6f3; --card:#fff; --ink:#14161a; --dim:#5f6672; --line:#e3e1dc;
+    --ok:#1a7f4b; --okbg:#e8f5ee; --warn:#8a5a00; --warnbg:#fdf3e0;
+    --stop:#a32b2b; --stopbg:#fbeceb; --accent:#1f4fd8;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#14161a; --card:#1c1f25; --ink:#eceef2; --dim:#9aa2b1; --line:#2c313a;
+    --ok:#5fd39b; --okbg:#12301f; --warn:#e8bc6a; --warnbg:#332714;
+    --stop:#f08b86; --stopbg:#331a19; --accent:#7ea2ff;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#14161a; --card:#1c1f25; --ink:#eceef2; --dim:#9aa2b1; --line:#2c313a;
+    --ok:#5fd39b; --okbg:#12301f; --warn:#e8bc6a; --warnbg:#332714;
+    --stop:#f08b86; --stopbg:#331a19; --accent:#7ea2ff;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);
+    font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+    margin:0;padding:28px 20px 60px}
+  .wrap{max-width:960px;margin:0 auto}
+  h1{font-size:26px;letter-spacing:-.02em;margin:0 0 4px}
+  .sub{color:var(--dim);font-size:14px;margin:0 0 26px}
+  .sub b{color:var(--ink);font-weight:600}
+  h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;
+    color:var(--dim);margin:32px 0 12px;font-weight:600}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+    padding:16px 18px;margin-bottom:10px}
+  .top{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+  .top h3{margin:0;font-size:16px;font-weight:600;letter-spacing:-.01em;flex:1;min-width:200px}
+  .pill{font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+    padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .p-ok{background:var(--okbg);color:var(--ok)}
+  .p-warn{background:var(--warnbg);color:var(--warn)}
+  .p-stop{background:var(--stopbg);color:var(--stop)}
+  .body{margin:10px 0 0;color:var(--dim);font-size:14px}
+  .body b{color:var(--ink);font-weight:600}
+  .body code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;
+    background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .gates{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+  .g{font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    border:1px solid var(--line);border-radius:6px;padding:3px 8px;color:var(--dim)}
+  .g b{color:var(--ok);font-weight:600}
+  .g.bad b{color:var(--stop)}
+  .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:24px}
+  .s{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .s .n{font-size:20px;font-weight:650;letter-spacing:-.02em}
+  .s .l{font-size:11.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+  .note{border-left:3px solid var(--line);padding:2px 0 2px 14px;margin:12px 0 0;
+    color:var(--dim);font-size:13.5px}
+  a{color:var(--accent)}
+  footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--line);
+    color:var(--dim);font-size:13px}
+</style>
+
+<div class="wrap">
+  <h1>Ship board</h1>
+  <p class="sub">NamastePOS &middot; <b>5 September 2026</b> &middot; four features that were pretending to work, plus the CI failure that surfaced on the way out</p>
+
+  <div class="strip">
+    <div class="s"><div class="n">791</div><div class="l">tests passing</div></div>
+    <div class="s"><div class="n">2</div><div class="l">commits pushed</div></div>
+    <div class="s"><div class="n">1.0.19</div><div class="l">app version</div></div>
+    <div class="s"><div class="n">0</div><div class="l">lint errors</div></div>
+  </div>
+
+  <h2>What shipped</h2>
+
+  <div class="card">
+    <div class="top">
+      <h3>E-invoice &amp; e-way bill stop fabricating numbers</h3>
+      <span class="pill p-ok">done</span>
+    </div>
+    <p class="body">
+      <code>generateIrn()</code> computed a correct NIC SHA256 but never called the IRP, so
+      <b>every IRN in production was fabricated</b> &mdash; and Advanced is sold at &#8377;999
+      partly on &ldquo;e-invoice&rdquo;. A restaurant filing against one of those has a tax
+      problem, not a software problem.
+      New <code>irpGateway.js</code> refuses in production instead of falling back to the stub.
+      Outside production the demo survives but is branded at the value, the row and the document:
+      <code>DEMO-NOT-A-VALID-IRN-&hellip;</code> is neither 64 hex nor 12 digits, so it cannot be
+      typed into a portal.
+    </p>
+    <p class="note">
+      Migration 093 also created the columns migration 046 only <i>thought</i> it created &mdash;
+      024 had already made <code>eway_bills</code>, so 046&rsquo;s <code>CREATE TABLE IF NOT
+      EXISTS</code> was a silent no-op and <code>POST /eway-bills</code> had been a 500 in every
+      environment.
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="top">
+      <h3>Copy corrected, and a guard so it stays correct</h3>
+      <span class="pill p-ok">done</span>
+    </div>
+    <p class="body">
+      Every plan mention now reads <b>&ldquo;e-invoice ready (GSP connection required)&rdquo;</b>
+      &mdash; landing page, four commercial pages, <code>llms.txt</code>, the dashboard and the
+      Flutter billing screen. The feature key stays: it gates a capability that genuinely exists,
+      and pulling it would revoke access from paying tenants to fix a sentence.
+      The claims guard gained a notion of credential-gated features, so a claim like this now fails
+      CI unless the copy carries the qualifier. The old guard compared copy to feature keys and
+      could not see &ldquo;key exists, integration is a stub&rdquo;.
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="top">
+      <h3>Voice POS re-enabled</h3>
+      <span class="pill p-ok">done</span>
+    </div>
+    <p class="body">
+      The blocker was <b>stale twice over</b>: <code>connectivity_plus</code> is ^7.3.1 now, and
+      <code>speech_to_text</code> 7.x dropped <code>package:js</code> for
+      <code>dart:js_interop</code>. Resolved clean, nothing forced, nothing downgraded.
+      Real OS recognisers, a prompt-free probe so opening New Order never throws a permission sheet,
+      and honest degradation for each failure &mdash; no recogniser, denied, offline, silence,
+      unsupported locale.
+    </p>
+    <p class="note">
+      Not oversold: mixed Hindi/English recognition is <b>not reliable</b>. Default locale is
+      <code>en_IN</code> rather than <code>hi_IN</code>, because Devanagari output cannot match a
+      menu row stored in Latin script. So nothing reaches the cart without a tap &mdash; the confirm
+      sheet shows the transcript, flags low-confidence guesses and lists what it could not match.
+      Realistically a fast path for a few high-frequency items, not hands-free ordering.
+    </p>
+  </div>
+
+  <div class="card">
+    <div class="top">
+      <h3>iOS stops offering a printer flow that cannot work</h3>
+      <span class="pill p-ok">done</span>
+    </div>
+    <p class="body">
+      Apple gates classic Bluetooth, and the cheap 80mm printers Indian restaurants actually own
+      are not MFi &mdash; but iOS was showing the Android scan screen anyway. An owner tapped scan,
+      got an empty list, and concluded the app was broken.
+      iOS now explains why in one plain sentence and offers what works: AirPrint and share-to-PDF,
+      via the <code>printing</code> dependency already in the tree. <b>Android is untouched.</b>
+    </p>
+    <p class="note">
+      The print-agent queue is described but deliberately not linked: it carries kitchen tickets
+      only, never customer bills, and nothing issues the agent token yet. A button there would have
+      been a second dead end.
+    </p>
+  </div>
+
+  <h2>Found on the way out</h2>
+
+  <div class="card">
+    <div class="top">
+      <h3>The audit trail was fire-and-forget</h3>
+      <span class="pill p-ok">fixed</span>
+    </div>
+    <p class="body">
+      CI failed on one assertion after the first push: <code>mark-paid</code> returned 201, the next
+      test read <code>audit_log</code>, and the row was not there. The same suite passed 786/786
+      locally.
+      <b>Not a flaky test.</b> <code>middlewareLog</code> wraps the synchronous
+      <code>res.json</code> and called <code>log()</code> without awaiting it, so the client was told
+      the action succeeded while the INSERT was still in flight. A process exiting in that window
+      drops the record entirely &mdash; and the error was swallowed by a bare <code>catch</code>
+      with no logging, so the trail could stop recording for days and still look complete.
+    </p>
+    <p class="note">
+      The regression test asserts the <i>ordering</i>, not a timing: the wrapped
+      <code>res.json</code> must not reach the underlying send synchronously. Verified in both
+      directions &mdash; restored to fire-and-forget it fails deterministically, which the two
+      row-existence tests alone did not, because on a fast local database a fire-and-forget INSERT
+      usually wins the race. That luck is exactly what let this reach CI.
+    </p>
+  </div>
+
+  <h2>Gates</h2>
+  <div class="card">
+    <div class="gates">
+      <span class="g">jest <b>791/791</b></span>
+      <span class="g">eslint <b>0 errors</b></span>
+      <span class="g">tsc dashboard <b>clean</b></span>
+      <span class="g">tsc admin <b>clean</b></span>
+      <span class="g">vite build <b>x2 ok</b></span>
+      <span class="g">flutter analyze <b>no issues</b></span>
+      <span class="g">flutter test <b>37/37</b></span>
+      <span class="g">migrations <b>90 x2</b></span>
+      <span class="g">claims guard <b>368 ok</b></span>
+    </div>
+    <p class="body" style="margin-top:14px">
+      Pushed as <code>89a9615</code> and <code>e94ec89</code>. APK v1.0.19+20 is live on R2
+      (72,143,774 bytes, byte-for-byte the local build); iOS Runner.app built at 44.4MB.
+    </p>
+  </div>
+
+  <h2>Still not real, and now labelled that way</h2>
+  <div class="card">
+    <div class="top">
+      <h3>Needs you, not code</h3>
+      <span class="pill p-warn">blocked on founder</span>
+    </div>
+    <p class="body">
+      <b>GSP credentials</b> &mdash; e-invoice and e-way bill cannot file with the government until
+      a GSP/IRP account exists. Until then production refuses rather than fabricating, which is the
+      correct behaviour but is not the feature.<br>
+      <b>Existing IRN rows</b> &mdash; migration 093 marks every pre-existing row
+      <code>is_stub</code>. Worth running the count query in the migration header to see how many
+      customers ever saw one.
+    </p>
+  </div>
+
+  <footer>
+    Every claim on this page was verified against the live code, the live API or a gate run &mdash;
+    not against a draft.
+  </footer>
+</div>

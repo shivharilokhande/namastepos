@@ -91,9 +91,14 @@ dependencies:
   # Thermal printer — Bluetooth ESC/POS. We use the *_plus forks so the
   # `image: ^4.x` requirement from pdf 3.10 isn't broken. Pair printers
   # via OS Bluetooth Settings; the app discovers already-paired devices.
-  # Android: works with any classic-BT ESC/POS printer (cheap 80mm
-  #   units, Epson, Star, etc.).
-  # iOS: limited to MFi-certified printers (Apple gates classic BT).
+  # Android ONLY. Works with any classic-BT ESC/POS printer (cheap 80mm
+  # units, Epson, Star, etc.).
+  # iOS does not use this at all any more. Apple gates classic BT to
+  # MFi-certified hardware, and the printers Indian restaurants actually own
+  # are not certified — so the scan always came back empty and the app looked
+  # broken. PrinterService.supportsBluetoothPrinting is false on iOS and the
+  # setup screen offers AirPrint / share-to-PDF instead (see
+  # lib/services/receipt_pdf.dart).
   print_bluetooth_thermal: ^1.1.0
   esc_pos_utils_plus: ^2.0.4
 
