@@ -450,6 +450,21 @@ function requireNotImpersonating(req, _res, next) {
   return next();
 }
 
+/**
+ * Drop every in-process auth cache. TEST-INFRA ONLY.
+ *
+ * `resetDb()` drops and recreates the public schema, but these Maps live in the
+ * Node process and survive it — so a suite could answer from a membership or an
+ * admin-active flag belonging to a database that no longer exists. That is the
+ * cross-suite flake that has failed CI intermittently all day (most recently
+ * GET /v1/auth/me returning 403 in a full run while passing 16/16 in
+ * isolation). Clearing the DB without clearing the caches is only half a reset.
+ */
+function _clearAuthCachesForTests() {
+  _roleCache.clear();
+  _adminActiveCache.clear();
+}
+
 module.exports = {
   requireAuth,
   requireSuperAdmin,
@@ -461,4 +476,5 @@ module.exports = {
   // that mutate business_users, and for tests.
   invalidateMembership,
   _currentMembership,
+  _clearAuthCachesForTests,
 };

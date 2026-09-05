@@ -9,9 +9,21 @@ on:
   # Lets you demand a full signed release build on any branch, on demand —
   # see the `if:` on the APK steps in the mobile job.
   workflow_dispatch:
+  # 08:30 IST daily, for `marketing-claims-live` only. The live plan ladder is
+  # edited in the super-admin console, not in this repo, so a plan change can
+  # make the marketing site wrong with no commit to hang a check on. This is
+  # the only thing that notices that.
+  schedule:
+    - cron: '0 3 * * *'
 
 jobs:
+  # NOTE ON `if: github.event_name != 'schedule'` (repeated on every job below
+  # except marketing-claims-live): the daily cron exists ONLY to re-check the
+  # marketing copy against the live plan feed. Actions minutes are metered and
+  # the Flutter jobs alone are several minutes a run, so the nightly trigger
+  # must not drag the whole matrix along with it.
   backend:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -62,7 +74,17 @@ jobs:
         timeout-minutes: 10
         run: npx jest --runInBand --forceExit
 
+      # Blocking, and already covered by the jest run above
+      # (tests/integration/marketingClaims.test.js). Repeated here as its own
+      # step purely so the human-readable report — plan, claim, file, line, and
+      # what the feed actually says — lands in the job log instead of being
+      # buried in an assertion diff. Uses the PINNED snapshot, no network.
+      - name: Marketing claims vs the plan feed (pinned)
+        working-directory: namastepos_backend
+        run: node scripts/marketing-claims.js
+
   dashboard:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -82,6 +104,7 @@ jobs:
   # the entire Flutter app — the client most restaurants actually run — could
   # break on main without anyone noticing. Both are now gated.
   admin:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -111,6 +134,7 @@ jobs:
   #      block a deploy. When it complains, fix the code and bump the pin
   #      together, deliberately.
   mobile:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -172,6 +196,7 @@ jobs:
   # Early warning only — never blocks a deploy. Tells us what the NEXT Flutter
   # upgrade will demand, before we take it.
   mobile-next:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -186,3 +211,50 @@ jobs:
       - name: Analyze on latest stable (advisory)
         working-directory: namastepos_flutter
         run: flutter analyze
+
+  # ── The marketing-claim guard, second half ────────────────────────────────
+  # Same relationship to `backend` as mobile-next has to mobile: the blocking
+  # gate is PINNED and hermetic (tests/fixtures/plan-feed.json replayed through
+  # listPlans()), and this one runs the SAME checker against the real endpoint.
+  #
+  # It exists because the live plan ladder is not in this repo. Prices, limits
+  # and feature grants are edited in the super-admin console, so a plan change
+  # can make namastepos.in wrong without a single commit — nothing else in CI
+  # would ever notice. Hence the daily cron as well as per-push.
+  #
+  # continue-on-error: a Render cold start or a DNS blip must never block a
+  # deploy. When this goes red for real, the fix is deliberate: refresh
+  # namastepos_backend/tests/fixtures/plan-feed.json from the live endpoint AND
+  # correct the copy in the same commit, so the pin and the world agree again.
+  marketing-claims-live:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+      - name: Claims vs the LIVE plan feed (advisory)
+        working-directory: namastepos_backend
+        run: node scripts/marketing-claims.js --live
+      - name: Has the pinned snapshot drifted from production?
+        working-directory: namastepos_backend
+        run: |
+          curl -sS --max-time 60 https://api.namastepos.in/v1/public/plans > /tmp/live.json
+          node -e '
+            const fs = require("fs");
+            const norm = (p) => ({
+              tier: p.tier, tierKind: p.tierKind, name: p.name,
+              priceInr: p.priceInr, priceYearlyInr: p.priceYearlyInr,
+              limits: p.limits, features: p.features,
+              featureKeys: [...(p.featureKeys || [])].sort(),
+            });
+            const read = (f) => JSON.parse(fs.readFileSync(f, "utf8")).plans.map(norm);
+            const pinned = JSON.stringify(read("tests/fixtures/plan-feed.json"), null, 1);
+            const live = JSON.stringify(read("/tmp/live.json"), null, 1);
+            if (pinned === live) { console.log("snapshot matches production"); process.exit(0); }
+            console.error("tests/fixtures/plan-feed.json no longer matches production.");
+            console.error("Refresh it and re-check the copy in the same commit:");
+            console.error("  curl -sS https://api.namastepos.in/v1/public/plans | python3 -m json.tool \\");
+            console.error("    > namastepos_backend/tests/fixtures/plan-feed.json");
+            process.exit(1);
+          '

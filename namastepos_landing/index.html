@@ -781,7 +781,13 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
           <tr><td>Advanced reports</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
           <tr><td>Zomato / Swiggy</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
           <tr><td>E-invoice (GST)</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
-          <tr><td>Multi-outlet</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
+          <!-- Advanced is NOT a multi-outlet plan. It carries limits.businesses = 3,
+               but nothing in the app reads that number: outlet groups are gated on
+               the `multi_outlet` FEATURE KEY, which only Enterprise grants. Showing
+               a tick here (and the businesses>1 shim that used to do the same in
+               renderCompare below) is what put "Advanced does multi-outlet" on the
+               site. Corrected 2026-09-05 against /v1/public/plans. -->
+          <tr><td>Multi-outlet</td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="no" aria-hidden="true">—</span><span class="sr">Not included</span></td><td><span class="material-symbols-outlined yes" aria-hidden="true" translate="no">check</span><span class="sr">Included</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -986,7 +992,11 @@ footer{background:var(--surface);border-top:1px solid var(--line);padding:54px 0
     var fk=p.featureKeys||[];
     if(k==='reports_advanced'){return (p.features&&p.features.reports==='advanced')||fk.indexOf('reports_advanced')>-1;}
     if(k==='aggregators'){return (p.features&&p.features.aggregators===true)||fk.indexOf('aggregators')>-1;}
-    if(k==='multi_outlet'){return fk.indexOf('multi_outlet')>-1||((p.limits&&p.limits.businesses)>1)||((p.limits&&p.limits.businesses)<0);}
+    // multi_outlet is a FEATURE KEY, never an inference from limits.businesses.
+    // The old `businesses>1` fallback ticked Multi-outlet for Advanced, which
+    // has businesses:3 but no multi_outlet grant - so the app 402s the whole
+    // /outlet-groups surface for an Advanced tenant the page had told yes.
+    if(k==='multi_outlet'){return fk.indexOf('multi_outlet')>-1;}
     return fk.indexOf(k)>-1;
   }
 

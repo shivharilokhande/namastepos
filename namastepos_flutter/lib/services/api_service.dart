@@ -402,6 +402,69 @@ class ApiService {
     await _wrap(() => _dio.delete('/businesses/$businessId/menu/$id'));
   }
 
+  // ── The three ways past the menu wall (2026-09-05) ───────────────────────
+  //
+  // Typing 30-80 dishes with prices ON A PHONE is 45-90 minutes and it sits
+  // between signup and the first bill. The web dashboard got templates and
+  // paste-a-menu today; these four calls are the mobile half of the SAME
+  // endpoints — no new backend logic, no client-side parsing, no client-side
+  // prices. Every path ends at POST /menu/bulk, so the plan-cap pre-check and
+  // the all-or-nothing transaction apply identically to CSV, template and
+  // paste. Tenant scope is the ownership-checked `businessId` in the path,
+  // exactly like every other call in this file.
+
+  /// GET /businesses/:id/menu/templates — the picker list. Summaries only
+  /// (name, tagline, item count, categories, a 3-item sample); the full item
+  /// list needs [getMenuTemplate].
+  Future<List<dynamic>> listMenuTemplates(String businessId) async {
+    final r = await _wrap(
+        () => _dio.get('/businesses/$businessId/menu/templates'));
+    return (r as Map)['templates'] as List? ?? const [];
+  }
+
+  /// GET /businesses/:id/menu/templates/:slug — one template with every item,
+  /// so the owner can read all 34 rows and their GST before loading them.
+  Future<Map<String, dynamic>> getMenuTemplate(
+      String businessId, String slug) async {
+    final r = await _wrap(
+        () => _dio.get('/businesses/$businessId/menu/templates/$slug'));
+    return ((r as Map)['template'] as Map).cast<String, dynamic>();
+  }
+
+  /// POST /businesses/:id/menu/templates/:slug/apply.
+  ///
+  /// The slug is the ONLY thing the client sends — every name, price, category
+  /// and GST slab comes off the server's own disk, so no price can be injected
+  /// through this route. The apply is a MERGE: items whose names the business
+  /// already has are skipped, never re-priced or removed, and come back in
+  /// `alreadyPresent`. Applying twice therefore inserts nothing the second
+  /// time, which is what makes a double-tap safe.
+  ///
+  /// Returns { template, inserted, skipped, alreadyPresent[], errors[] }.
+  /// Throws the standard PLAN_LIMIT 403 (whole template refused, nothing
+  /// half-imported) when it would not fit the plan's menu-item cap.
+  Future<Map<String, dynamic>> applyMenuTemplate(
+      String businessId, String slug) async {
+    final r = await _wrap(() =>
+        _dio.post('/businesses/$businessId/menu/templates/$slug/apply'));
+    return (r as Map).cast<String, dynamic>();
+  }
+
+  /// POST /businesses/:id/menu/parse-text — parse-only, WRITES NOTHING.
+  ///
+  /// Returns { items[], unparsed[], categories[], stats }. The owner edits the
+  /// preview and the confirmed rows go back through [bulkImportMenu], which is
+  /// where the cap and the transaction live. There is deliberately no way to
+  /// send a price to this endpoint.
+  Future<Map<String, dynamic>> parseMenuText(
+      String businessId, String text) async {
+    final r = await _wrap(() => _dio.post(
+      '/businesses/$businessId/menu/parse-text',
+      data: {'text': text},
+    ));
+    return (r as Map).cast<String, dynamic>();
+  }
+
   // ── Orders ───────────────────────────────────────────────────────────────
   Future<Map<String, dynamic>> createOrder(
       String businessId, Map<String, dynamic> body) async {

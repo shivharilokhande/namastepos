@@ -42,6 +42,20 @@ jest.mock('../src/services/googleService', () => ({
 
 async function resetDb() {
   const migrationsDir = path.join(__dirname, '..', 'db', 'migrations');
+  // Clear the IN-PROCESS caches before the schema goes.
+  //
+  // Dropping the database is only half a reset: the role cache (30s TTL), the
+  // admin-active cache and the feature cache (60s TTL) are Maps in this Node
+  // process and survive it happily. A suite could then answer from a
+  // membership belonging to a database that no longer exists — which is the
+  // cross-suite flake that failed CI intermittently through 2026-09-05,
+  // including GET /v1/auth/me returning 403 in a full run while the same suite
+  // passed 16 of 16 in isolation. Cheap to clear, and it removes a whole class
+  // of "passes alone, fails together".
+  // eslint-disable-next-line global-require
+  require('../src/middleware/auth')._clearAuthCachesForTests();
+  // eslint-disable-next-line global-require
+  require('../src/services/featureService').clearAllCaches();
   // Drop and recreate public schema for a fully clean slate.
   await query('DROP SCHEMA IF EXISTS public CASCADE');
   await query('CREATE SCHEMA public');

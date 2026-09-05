@@ -20,6 +20,17 @@ class Business {
   // 'dine_in' (waiter serves), 'self_pickup' (guest collects), or
   // 'hybrid' (per-table decides). Wizard writes this on step 0.
   final String defaultServiceMode;
+  // 2026-09-05 (backend migration 092) — the GST scheme the owner declared in
+  // the setup wizard. One of 'regular' (5%, no ITC — the common case),
+  // 'composition' (no GST on the bill; they issue a bill of supply) or
+  // 'specified_premises' (18% with ITC). Defaults to 'regular' for every
+  // account that has not answered, which is the behaviour they already had.
+  //
+  // It is NOT a display preference: the backend uses it to pick the default
+  // gst_pct on new menu items and to refuse to put GST on a composition
+  // dealer's bill at all. The app reads it so the printed bill can say
+  // "Bill of supply" rather than showing a tax invoice with no tax on it.
+  final String gstScheme;
   final DateTime createdAt;
 
   Business({
@@ -36,6 +47,7 @@ class Business {
     this.address,
     this.onboarded = true,
     this.defaultServiceMode = 'hybrid',
+    this.gstScheme = 'regular',
     required this.createdAt,
   });
 
@@ -49,6 +61,7 @@ class Business {
     String? bankIfsc,
     String? upiId,
     String? address,
+    String? gstScheme,
   }) {
     return Business(
       id: id,
@@ -62,6 +75,9 @@ class Business {
       bankIfsc: bankIfsc ?? this.bankIfsc,
       upiId: upiId ?? this.upiId,
       address: address ?? this.address,
+      onboarded: onboarded,
+      defaultServiceMode: defaultServiceMode,
+      gstScheme: gstScheme ?? this.gstScheme,
       createdAt: createdAt,
     );
   }
@@ -81,6 +97,7 @@ class Business {
         onboarded: m['onboarded'] as bool? ?? true,
         defaultServiceMode:
             m['defaultServiceMode'] as String? ?? 'hybrid',
+        gstScheme: m['gstScheme'] as String? ?? 'regular',
         createdAt: DateTime.tryParse(m['createdAt']?.toString() ?? '') ??
             DateTime.now(),
       );
@@ -99,6 +116,7 @@ class Business {
         'address': address,
         'onboarded': onboarded,
         'defaultServiceMode': defaultServiceMode,
+        'gstScheme': gstScheme,
         'createdAt': createdAt.toIso8601String(),
       };
 }

@@ -473,6 +473,11 @@ async function updateBusiness(id, patch) {
     'google_maps_url', 'google_place_id',
     // 2026-08-26 — tax identity for GST-compliant subscription invoices (062).
     'legal_name', 'fssai', 'pan',
+    // 2026-09-05 — declared GST scheme (092). The owner answers this once in
+    // the setup wizard; it decides the default slab on new menu items and
+    // whether their bills carry GST at all. Validated against the same three
+    // values by authController's updateBusinessSchema.
+    'gst_scheme',
   ];
   const updates = [];
   const values = [];
@@ -535,6 +540,12 @@ function serializeBusiness(b) {
     // FF-252 — surfaced to dashboard/wizard so owners can choose the
     // default service style once. hybrid = per-table (default).
     defaultServiceMode: b.default_service_mode || 'hybrid',
+    // 2026-09-05 (092) — surfaced so the app/dashboard setup flow can show
+    // the owner what they are on today, and so the mobile bill printer knows
+    // to print a bill of supply rather than a tax invoice for a composition
+    // dealer. 'regular' for every business that has not answered yet, which
+    // is the behaviour they already have.
+    gstScheme: b.gst_scheme || 'regular',
     createdAt: b.created_at,
     // R14: multi-currency. Dashboard's formatINR() picks this up from the
     // business cache and uses Intl.NumberFormat with the right locale.

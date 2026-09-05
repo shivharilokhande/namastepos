@@ -29,6 +29,9 @@ import '../../utils/image_url.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
 import '../../widgets/plan_gate.dart' show upgradeTargetPhrase;
+import 'menu_paste_screen.dart';
+import 'menu_start_routes.dart';
+import 'menu_template_screen.dart';
 
 class MenuEditorScreen extends StatefulWidget {
   const MenuEditorScreen({super.key});
@@ -53,8 +56,42 @@ class _MenuEditorScreenState extends State<MenuEditorScreen> {
         leading: (ModalRoute.of(context)?.isFirst ?? true) ? const HomeDrawerButton() : null,
         title: const Text('Menu editor'),
         actions: [
+          // The two import routes have to stay reachable once the menu is NOT
+          // empty. The owner who typed three dishes, realised how long the
+          // rest would take and came looking for a shortcut is exactly the
+          // person these were built for — and they never see an empty state
+          // again. Loading a template on a non-empty menu is safe: the server
+          // merges by name and skips anything already there.
+          PopupMenuButton<MenuStartRoute>(
+            icon: const Icon(Icons.playlist_add),
+            tooltip: 'Add many items at once',
+            onSelected: _startRoute,
+            itemBuilder: (_) => const [
+              PopupMenuItem(
+                value: MenuStartRoute.template,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.auto_awesome, size: 18),
+                  title: Text('Load a ready menu'),
+                  subtitle: Text('Pick a kind of kitchen · about 2 min'),
+                ),
+              ),
+              PopupMenuItem(
+                value: MenuStartRoute.paste,
+                child: ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.content_paste, size: 18),
+                  title: Text('Paste a menu as text'),
+                  subtitle: Text('Check every row before it saves'),
+                ),
+              ),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.add),
+            tooltip: 'Add one item',
             onPressed: () => _openEdit(null),
           ),
         ],
@@ -78,7 +115,15 @@ class _MenuEditorScreenState extends State<MenuEditorScreen> {
           ),
           Expanded(
             child: items.isEmpty
-                ? const Center(child: Text('No items — tap + to add one'))
+                // 2026-09-05 — the empty state used to be one line, "No items
+                // — tap + to add one", shown whether the menu was genuinely
+                // empty or the search had simply matched nothing. That is the
+                // same conflation the dashboard had (it said "No items match
+                // these filters" to owners whose menu was empty), and it is
+                // wrong in both directions: it tells an owner with 60 items
+                // that they have none, and it tells an owner with none that
+                // their only option is to type 45 minutes of dishes by hand.
+                ? _emptyState(menu)
                 : ListView.separated(
                     itemCount: items.length,
                     separatorBuilder: (_, __) => const Divider(height: 1),
@@ -89,6 +134,131 @@ class _MenuEditorScreenState extends State<MenuEditorScreen> {
       ),
     bottomNavigationBar: const HomeBottomNav(),
     );
+  }
+
+  /// Two genuinely different situations, told apart and worded honestly.
+  ///
+  ///   A. The menu is EMPTY. This is the activation wall, and the screen's job
+  ///      is to offer the three real ways past it with the time each takes —
+  ///      not to point at a "+" button and imply that typing 60 dishes on a
+  ///      phone is the plan.
+  ///   B. The menu has items but the SEARCH or the category filter matched
+  ///      none of them. Nothing is wrong; the filter is just narrow. Offering
+  ///      "load a starter menu" here would be nonsense.
+  Widget _emptyState(MenuProvider menu) {
+    if (menu.loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final filtered =
+        _search.isNotEmpty || menu.selectedCategory != 'All';
+    if (menu.items.isNotEmpty && filtered) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.search_off, size: 34, color: AppColors.textHint),
+              const SizedBox(height: 10),
+              Text(
+                _search.isNotEmpty
+                    ? 'Nothing in your menu matches "$_search".'
+                    : 'Nothing in ${menu.selectedCategory}.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'You have ${menu.items.length} item'
+                '${menu.items.length == 1 ? '' : 's'} in total.',
+                style: const TextStyle(
+                    fontSize: 12, color: AppColors.textSecondary),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton(
+                onPressed: () {
+                  setState(() => _search = '');
+                  menu.selectedCategory = 'All';
+                },
+                child: const Text('Clear the filter'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // The menu really is empty — offer the three routes.
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 28),
+      children: [
+        // If the load failed we are looking at an empty CACHE, not an empty
+        // menu. Saying "your menu is empty" to an owner with 60 items and no
+        // signal would be a lie, so say what actually happened.
+        if (menu.error != null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.warning.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border:
+                  Border.all(color: AppColors.warning.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.cloud_off,
+                    size: 15, color: AppColors.warning),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(menu.error!,
+                      style: const TextStyle(fontSize: 12)),
+                ),
+                TextButton(
+                  onPressed: () => menu.refresh(),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+        ],
+        const Text('Your menu is empty',
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 4),
+        const Text(
+          'You need a menu before you can take an order. Three ways to get '
+          'one in — pick whichever fits what you already have.',
+          style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+        ),
+        const SizedBox(height: 14),
+        MenuStartRoutes(
+          manualLabel: 'Type them in one by one',
+          manualSubtitle: 'Fine for a short menu, or to add the last few.',
+          onPick: _startRoute,
+        ),
+      ],
+    );
+  }
+
+  /// Route dispatch shared by the empty state. Each import screen refreshes
+  /// MenuProvider itself with its own `menu_ready` source, so there is nothing
+  /// to do on return but let the list rebuild.
+  Future<void> _startRoute(MenuStartRoute route) async {
+    switch (route) {
+      case MenuStartRoute.template:
+        await Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const MenuTemplateScreen()));
+        break;
+      case MenuStartRoute.paste:
+        await Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const MenuPasteScreen()));
+        break;
+      case MenuStartRoute.manual:
+        if (!mounted) return;
+        _openEdit(null);
+        break;
+    }
   }
 
   Widget _row(MenuItem m) {

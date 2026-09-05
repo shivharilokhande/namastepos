@@ -165,6 +165,22 @@ async function applyTemplate(businessId, slug) {
   );
   const have = new Set(existing.rows.map((r) => r.name));
 
+  // 2026-09-05 (migration 092) — THE TEMPLATE'S 5% IS NOT THE LAST WORD.
+  // Every template on disk ships `defaultGstPct: 5` because that is right for
+  // most restaurants, and until today that default was the owner's only
+  // signal. If they told us at setup that they are on the composition scheme
+  // (they charge the diner no GST) or in specified premises (18% with ITC),
+  // loading a menu must not quietly put 5% on 34 items.
+  //
+  // 'regular' keeps the per-item slab off disk untouched — templates do carry
+  // genuine per-item variation and that is worth preserving. The other two
+  // schemes are whole-business facts, so they override every row.
+  // eslint-disable-next-line global-require
+  const gstScheme = require('./gstSchemeService');
+  const scheme = await gstScheme.getScheme(businessId);
+  const schemeGstPct = gstScheme.defaultGstPct(scheme);
+  const overrideGst = scheme !== gstScheme.REGULAR;
+
   const alreadyPresent = [];
   const rows = [];
   for (const it of tpl.items) {
@@ -178,7 +194,7 @@ async function applyTemplate(businessId, slug) {
       category: it.category,
       description: it.description,
       isVeg: it.isVeg,
-      gstPct: it.gstPct,
+      gstPct: overrideGst ? schemeGstPct : it.gstPct,
       hsnCode: it.hsnCode,
       // Templates never guess an opening stock: `create()` reads stock 0 as
       // "unlimited" (migration 084), which is right for a menu nobody has

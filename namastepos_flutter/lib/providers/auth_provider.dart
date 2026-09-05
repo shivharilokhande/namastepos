@@ -440,6 +440,40 @@ class AuthProvider extends ChangeNotifier {
     return raw.replaceAll('ApiException(null): ', '').replaceAll('Exception: ', '');
   }
 
+  /// Persist the owner's declared GST scheme (backend migration 092).
+  ///
+  /// Kept out of [updateBusiness] deliberately. That method diffs a whole
+  /// Business against the cached one and sends what changed, which is right
+  /// for a settings form; this is a single compliance answer that has to land
+  /// on the server at the moment it is given — the setup wizard writes it
+  /// BEFORE its menu step, so a starter menu loaded thirty seconds later gets
+  /// the correct GST slab on every item rather than the 5% default.
+  ///
+  /// `scheme` is one of 'regular' | 'composition' | 'specified_premises';
+  /// anything else is refused here rather than by the backend's Joi validator.
+  /// Returns true when the server accepted it.
+  Future<bool> setGstScheme(String scheme) async {
+    const allowed = {'regular', 'composition', 'specified_premises'};
+    if (!allowed.contains(scheme)) return false;
+    final cur = _business;
+    if (cur == null) return false;
+    if (cur.gstScheme == scheme) return true; // already what the server holds
+    try {
+      final resp =
+          await ApiService.instance.updateMyBusiness({'gst_scheme': scheme});
+      final updated = resp['business'];
+      _business = updated is Map<String, dynamic>
+          ? Business.fromMap(updated)
+          : cur.copyWith(gstScheme: scheme);
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = _humanize(e.toString());
+      notifyListeners();
+      return false;
+    }
+  }
+
   /// Persist edits to the signed-in user's active business and refresh
   /// the local cache from the server's response. Returns true on success.
   /// Earlier this only updated local state — meaning the dashboard

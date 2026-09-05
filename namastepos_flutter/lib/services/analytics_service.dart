@@ -674,8 +674,13 @@ class Activation {
   /// Safe to call on every menu refresh: it exits before doing any work if
   /// the milestone has already fired or the threshold is not met.
   /// `source` uses the web vocabulary ('wizard' | 'manual' | 'bulk_csv' |
-  /// 'migrate'); mobile has no CSV/migrate path, so it is always 'manual' or
-  /// 'wizard'.
+  /// 'migrate' | 'template' | 'paste') — identical strings on both platforms,
+  /// because a funnel whose property values differ per client cannot be
+  /// joined. 2026-09-05: mobile now ships the same 'template' (a starter menu
+  /// loaded in one tap) and 'paste' (a menu pasted as text) routes the
+  /// dashboard got, so those two values now arrive from here too. Mobile
+  /// still has no CSV or POS-migration path, so 'bulk_csv' and 'migrate'
+  /// remain web-only.
   static Future<void> menuReady(
     List<({String name, num price, bool active})> items,
     String source, {

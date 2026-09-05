@@ -789,7 +789,40 @@ async function create(businessId, body, opts = {}) {
     let gstBreakdown = null;
     let cgst = 0; let sgst = 0; let
       igst = 0;
-    const itemsWithGst = items.filter((it) => it.gst_pct || it.gstPct);
+
+    // ── 2026-09-05 (migration 092): the composition scheme ────────────────
+    //
+    // A composition dealer pays GST out of their own pocket on turnover and
+    // charges the DINER nothing — they hand out a BILL OF SUPPLY, not a tax
+    // invoice. Every menu item they create already defaults to 0% (see
+    // menuService.create), but that is not enough on its own:
+    //
+    //   • items created BEFORE they answered the setup question still carry
+    //     5%, and
+    //   • the ORDER_TAX_ENFORCE recompute below reads the slab straight off
+    //     `menu_items.gst_pct`. The day that env flips from 'log' to
+    //     'enforce', it would start ADDING 5% to a composition dealer's bills
+    //     from those older rows, silently, on every order.
+    //
+    // So the scheme wins here, at the bill, over anything the menu or the
+    // client says. Read on the transaction's own client — no extra pool
+    // connection, and it is a single primary-key lookup.
+    // eslint-disable-next-line global-require
+    const gstSchemes = require('./gstSchemeService');
+    const billsWithoutGst = gstSchemes.chargesNoGst(
+      await gstSchemes.getScheme(businessId, client),
+    );
+    if (billsWithoutGst && Number(tax) !== 0) {
+      // The client (an older app build, or a till configured before the
+      // owner answered) sent a tax figure. `total` above was built from it,
+      // so remove that component rather than leaving the bill unbalanced.
+      total = Math.max(0, round2(total - round2(Number(body.tax || 0))));
+      tax = 0;
+    }
+
+    const itemsWithGst = billsWithoutGst
+      ? []
+      : items.filter((it) => it.gst_pct || it.gstPct);
     if (itemsWithGst.length > 0) {
       // NP-201: the slab still comes from the client here (legacy back-compat,
       // superseded by the server recompute below) but the AMOUNT it applies to
@@ -832,7 +865,10 @@ async function create(businessId, body, opts = {}) {
     // client-supplied source/channel strings no longer grant the exemption.
     const channelTaxAuthoritative = trustedChannel;
     let serverGst = null;
-    if (menuById.size > 0) {
+    // 092: a composition dealer's bill carries no GST, full stop. Leaving
+    // serverGst null here is what keeps the enforce branch below from
+    // re-adding it off `menu_items.gst_pct`.
+    if (menuById.size > 0 && !billsWithoutGst) {
       // NP-201: gst_pct and the base it applies to now BOTH come from the
       // menu snapshot taken (and row-locked) at the top of this txn — the
       // extra SELECT this used to run is gone, and the base is no longer the

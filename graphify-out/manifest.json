@@ -372,9 +372,9 @@
     "semantic_hash": ""
   },
   "namastepos_backend/src/config/env.js": {
-    "mtime": 1788535783.828477,
-    "seen": 1788541318.920964,
-    "ast_hash": "b38deeb3bce248bc9652218348aabb08",
+    "mtime": 1788601186.349494,
+    "seen": 1788602220.4081311,
+    "ast_hash": "1f2961253ec4e9f5349edd54bd17ce43",
     "semantic_hash": ""
   },
   "namastepos_backend/src/config/logger.js": {
@@ -408,9 +408,9 @@
     "semantic_hash": ""
   },
   "namastepos_backend/src/controllers/billingController.js": {
-    "mtime": 1788542402.0971594,
-    "seen": 1788543838.292118,
-    "ast_hash": "1640590868a0c8c5e1566f8759e22e38",
+    "mtime": 1788601902.7762833,
+    "seen": 1788602220.4082282,
+    "ast_hash": "83516faf1bba1a6362e9127b82900edc",
     "semantic_hash": ""
   },
   "namastepos_backend/src/controllers/complianceController.js": {
@@ -552,9 +552,9 @@
     "semantic_hash": ""
   },
   "namastepos_backend/src/routes/billing.routes.js": {
-    "mtime": 1788515888.1381187,
-    "seen": 1788516965.201077,
-    "ast_hash": "23e6e0bf5dd72215253430d47eb6a8c6",
+    "mtime": 1788601410.0023723,
+    "seen": 1788602220.408895,
+    "ast_hash": "fb060db8dbe85c2fec5fa249dc3f77dc",
     "semantic_hash": ""
   },
   "namastepos_backend/src/routes/compliance.routes.js": {
@@ -630,9 +630,9 @@
     "semantic_hash": ""
   },
   "namastepos_backend/src/routes/orders.routes.js": {
-    "mtime": 1788542516.9625113,
-    "seen": 1788543838.292136,
-    "ast_hash": "7d82e9c6b8f0e5ad88314adc2672354c",
+    "mtime": 1788601363.7137935,
+    "seen": 1788602220.409178,
+    "ast_hash": "e4a115c286108469a84b380655c6e371",
     "semantic_hash": ""
   },
   "namastepos_backend/src/routes/publicSite.routes.js": {
@@ -822,9 +822,9 @@
     "semantic_hash": ""
   },
   "namastepos_backend/src/services/cronWorker.js": {
-    "mtime": 1788535952.2759342,
-    "seen": 1788541318.9224079,
-    "ast_hash": "d74ccc0f72f4eee920c964bbe1ca164b",
+    "mtime": 1788601437.3412278,
+    "seen": 1788602220.40984,
+    "ast_hash": "582b0188bb154213cb141e01a6b9f4c0",
     "semantic_hash": ""
   },
   "namastepos_backend/src/services/customerAdminService.js": {
@@ -876,9 +876,9 @@
     "semantic_hash": "38474952f9175fc2b9c5e5a278465171"
   },
   "namastepos_backend/src/services/dunningService.js": {
-    "mtime": 1788536081.213378,
-    "seen": 1788541318.922592,
-    "ast_hash": "bcf306dc0779421341ff4dff261b36fc",
+    "mtime": 1788601172.0840468,
+    "seen": 1788602220.41001,
+    "ast_hash": "0854ad5a15761acee038426c03f4b08c",
     "semantic_hash": ""
   },
   "namastepos_backend/src/services/emailService.js": {
@@ -1206,9 +1206,9 @@
     "semantic_hash": ""
   },
   "namastepos_backend/src/services/subscriptionService.js": {
-    "mtime": 1788542848.237218,
-    "seen": 1788543838.292177,
-    "ast_hash": "91ada212fd720f6fd836e362945ccb4c",
+    "mtime": 1788601357.8621247,
+    "seen": 1788602220.411168,
+    "ast_hash": "83a0e574f4b9d4b18e69b1806e036ec8",
     "semantic_hash": ""
   },
   "namastepos_backend/src/services/supportService.js": {
@@ -1608,9 +1608,9 @@
     "semantic_hash": "5672ed356c777cb28f0f1498dabaa582"
   },
   "namastepos_dashboard/src/api/namastepos.ts": {
-    "mtime": 1788548584.7018437,
-    "seen": 1788551453.2595809,
-    "ast_hash": "a279125803ca2a3ce87a6d3969540bf7",
+    "mtime": 1788601784.4368193,
+    "seen": 1788602220.413107,
+    "ast_hash": "a9858882721dce408113abf305c7281a",
     "semantic_hash": ""
   },
   "namastepos_dashboard/src/components/BillSplitDialog.tsx": {
@@ -1842,9 +1842,9 @@
     "semantic_hash": "0e37415d08bc6212bd3765b9ff98fa59"
   },
   "namastepos_dashboard/src/pages/BillingPage.tsx": {
-    "mtime": 1788538978.514316,
-    "seen": 1788541318.9262311,
-    "ast_hash": "2d6c895937cb7d93c4c6acd41018fe9d",
+    "mtime": 1788601839.7309053,
+    "seen": 1788602220.414058,
+    "ast_hash": "0e36f4f2e1aad79f7db37620cda76c1d",
     "semantic_hash": ""
   },
   "namastepos_dashboard/src/pages/BulkImportPage.tsx": {
@@ -2052,9 +2052,9 @@
     "semantic_hash": "fa06f83541151c42ceccffa913ca53f9"
   },
   "namastepos_dashboard/src/pages/RegisterPage.tsx": {
-    "mtime": 1788536629.2443116,
-    "seen": 1788541318.926921,
-    "ast_hash": "00c999199f26c594ade4f7d5700cd451",
+    "mtime": 1788601436.0115206,
+    "seen": 1788602220.41484,
+    "ast_hash": "b7c2282377f8ae0ee53cecc715ac74e4",
     "semantic_hash": ""
   },
   "namastepos_dashboard/src/pages/ReportsPage.tsx": {
@@ -4116,9 +4116,9 @@
     "semantic_hash": ""
   },
   "namastepos_dashboard/index.html": {
-    "mtime": 1787639671.3901713,
-    "seen": 1788263774.585588,
-    "ast_hash": "83dba72fcefb9a2f6f6ec60fc0b81a1e",
+    "mtime": 1788601490.9447374,
+    "seen": 1788602220.420806,
+    "ast_hash": "b5085329c1c5f980b715821702f3eff5",
     "semantic_hash": ""
   },
   "namastepos_dashboard/testsprite_tests/tmp/code_summary.yaml": {
@@ -4314,9 +4314,9 @@
     "semantic_hash": ""
   },
   "namastepos_landing/index.html": {
-    "mtime": 1788550544.9672248,
-    "seen": 1788551453.264441,
-    "ast_hash": "2be4cac01c9dd58c41dbccc88d7b27aa",
+    "mtime": 1788601296.62634,
+    "seen": 1788602220.421483,
+    "ast_hash": "84851af31bd1de2e8ea8bc60a7cf27bc",
     "semantic_hash": ""
   },
   "namastepos_landing/privacy.html": {
@@ -5346,9 +5346,9 @@
     "semantic_hash": ""
   },
   "namastepos_backend/src/services/planEntitlement.js": {
-    "mtime": 1788535818.6751459,
-    "seen": 1788541318.9232068,
-    "ast_hash": "e34c0ea588c5ad673e2553c1e60ea807",
+    "mtime": 1788601340.3523743,
+    "seen": 1788602220.410656,
+    "ast_hash": "dd976472373e8412e6c71d9e1afdd47b",
     "semantic_hash": ""
   },
   "namastepos_backend/src/services/planTiers.js": {
@@ -5595,6 +5595,24 @@
     "mtime": 1788547990.3304973,
     "seen": 1788551453.264268,
     "ast_hash": "7479c7e272eaec39415557c51e077607",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/db/migrations/090_pro_staff_claim.sql": {
+    "mtime": 1788548028.2091506,
+    "seen": 1788602220.407902,
+    "ast_hash": "383962451baced59a112c1e4c77345d1",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/src/services/churnService.js": {
+    "mtime": 1788601332.1893768,
+    "seen": 1788602220.409784,
+    "ast_hash": "36076ac96c2b3e8515aa382442566596",
+    "semantic_hash": ""
+  },
+  "namastepos_backend/tests/integration/churnPrevention2026.test.js": {
+    "mtime": 1788601731.02298,
+    "seen": 1788602220.411724,
+    "ast_hash": "60288e76cd50d3ffab68fe655be30e38",
     "semantic_hash": ""
   }
 }

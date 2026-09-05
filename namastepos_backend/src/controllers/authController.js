@@ -56,6 +56,12 @@ const updateBusinessSchema = {
     onboarded: Joi.boolean(),
     // FF-252 — chosen in the setup wizard. `hybrid` = per-table decides.
     default_service_mode: Joi.string().valid('dine_in', 'self_pickup', 'hybrid'),
+    // 2026-09-05 (migration 092) — the GST scheme the owner is registered
+    // under, asked once in the setup wizard. Drives the default gst_pct on new
+    // menu items and, for composition dealers, zeroes GST on their bills. The
+    // valid() list is the same three values as the 092 CHECK constraint, so an
+    // unknown scheme is refused here rather than by the database.
+    gst_scheme: Joi.string().valid('regular', 'composition', 'specified_premises'),
     // 2026-08-25 (founder: Google reviews) — owner pastes their Google Maps
     // link (or the Place ID directly) in dashboard Settings; reviewsService
     // resolves + calls the Places Details API with it. '' clears the field,

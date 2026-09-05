@@ -134,6 +134,26 @@ async function create(businessId, body, client = null) {
     ? !!body.trackStock
     : (stock != null && Number(stock) !== 0);
 
+  // 2026-09-05 (migration 092) — the GST slab an omitted `gstPct` falls back
+  // to is the BUSINESS's declared scheme, not the literal 5 that used to sit
+  // in the SQL below. A composition dealer charges the diner nothing (0), a
+  // specified-premises restaurant charges 18, everyone else 5 — which is what
+  // the hardcoded default meant all along, it just never asked.
+  //
+  // Resolved here, once, only when the caller did not send a slab. bulkImport
+  // resolves it ONCE for the whole file and stamps every row, so a 200-row
+  // CSV does not run 200 of these reads; `body.gstPct` is always set by the
+  // time those rows reach us.
+  //
+  // The COALESCE($19, 5) in the INSERT below is belt-and-braces only now:
+  // `gstPct` is already scheme-resolved and non-null by the time it is bound.
+  // It stays so a future caller passing an explicit null still lands on a
+  // valid slab rather than violating the NOT NULL.
+  const gstPct = body.gstPct != null
+    ? body.gstPct
+    // eslint-disable-next-line global-require
+    : await require('./gstSchemeService').defaultGstPctFor(businessId, client);
+
   try {
     const r = await run(
       `INSERT INTO menu_items
@@ -148,7 +168,7 @@ async function create(businessId, body, client = null) {
         stock, reorderLevel, isActive, isVeg, imageUrl,
         isCombo, comboItems ? JSON.stringify(comboItems) : null,
         prepMinutes, displayOrder, tags,
-        body.gstPct, body.hsnCode, trackStock],
+        gstPct, body.hsnCode, trackStock],
     );
     return serialize(r.rows[0]);
   } catch (err) {
@@ -376,6 +396,13 @@ async function bulkImport(businessId, items, { enforcePlanCap = true } = {}) {
   const variantFirstRow = new Map(); // lower(name) → 1-based row of first variant
   const createdByName = new Map(); // lower(name) → menu_item id created this batch
   let variantsApplied = 0;
+  // 2026-09-05 (092) — the slab a row without a `gst_pct` column falls back
+  // to. Resolved ONCE for the whole file rather than per row: a 200-row CSV
+  // must not run 200 identical reads of the same business, and every row in
+  // one file belongs to one business by definition.
+  // eslint-disable-next-line global-require
+  const schemeGstPct = await require('./gstSchemeService')
+    .defaultGstPctFor(businessId);
 
   // ── Pass 1: parse + validate every row. Nothing is written yet, which is
   // what lets the cap be checked against the real number of new items.
@@ -427,8 +454,11 @@ async function bulkImport(businessId, items, { enforcePlanCap = true } = {}) {
         sku: get('sku', 'SKU') || null,
         unit: get('unit', 'Unit') || 'piece',
         stock: Number(get('stock', 'Stock') || 0),
+        // A file that names a GST column still wins — an owner who put the
+        // slab in their export knows something we don't. Otherwise fall back
+        // to the business's declared scheme (was a hardcoded 5).
         gstPct: get('gst_pct', 'gstPct', 'GST') != null
-          ? Number(get('gst_pct', 'gstPct', 'GST')) : 5,
+          ? Number(get('gst_pct', 'gstPct', 'GST')) : schemeGstPct,
         hsnCode: get('hsn_code', 'hsnCode', 'HSN') || null,
         isActive: String(get('is_active', 'isActive', 'Active') ?? 'true').toLowerCase() !== 'false',
         isVeg: String(get('is_veg', 'isVeg', 'Veg') ?? 'true').toLowerCase() !== 'false',

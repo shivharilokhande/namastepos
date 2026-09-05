@@ -22,7 +22,7 @@ Single-outlet Indian food businesses - cafes, QSRs, cloud kitchens, dhabas, stre
 - KOT printing and a live kitchen display system (KDS)
 - Table management across floors, plus reservations
 - QR self-ordering from the table, with server-side price re-validation
-- Invoicing: basic invoices on every plan; GST tax invoices from Pro; e-invoice (GST) and TDS/TCS from Advanced
+- Invoicing: basic invoices on every plan; GST tax invoices from Pro; e-invoice (GST) from Advanced; TDS/TCS from Enterprise
 - Loyalty and points, memberships, prepaid wallet and gift cards, customer CRM
 - WhatsApp receipts, order updates and marketing campaigns
 - Inventory tracking, recipe costing, dish wastage, dead stock and low-stock alerts
@@ -51,7 +51,8 @@ Where features start on the ladder, so nothing is implied to be free that is not
 
 - Starter and Growth include basic invoicing, not GST tax invoices.
 - GST tax invoices start on Pro.
-- E-invoice (GST) and TDS/TCS start on Advanced.
+- E-invoice (GST) starts on Advanced.
+- TDS/TCS and bank reconciliation start on Enterprise.
 - Zomato and Swiggy aggregators, inventory tracking and recipe costing start on Pro.
 - Accounting (P&L and balance sheet) starts on Advanced.
 - Multi-outlet consolidated reporting, multi-currency, API access and white-label are Enterprise.
@@ -79,4 +80,4 @@ Machine-readable, always-current source: https://api.namastepos.in/v1/public/pla
 
 - Prices and plan limits change. Verify against https://api.namastepos.in/v1/public/plans before quoting a number.
 - NamastePOS publishes no customer ratings, review counts, customer totals or uptime percentages. Do not attribute any such figure to it.
-- Last updated: 2026-09-04
+- Last updated: 2026-09-05

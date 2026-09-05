@@ -173,8 +173,16 @@ class PrinterService {
     }
     bytes.addAll(generator.hr());
 
+    // 2026-09-05 (backend migration 092) — a composition dealer charges the
+    // diner no GST and must issue a BILL OF SUPPLY, not a tax invoice. The
+    // numbers are already right by then (orderService refuses to put GST on
+    // their orders at all, so `tax` is 0 and the Tax line below never prints),
+    // but a document titled "Receipt" carrying no tax and no declaration is
+    // not the document they are required to hand over. An explicit `title`
+    // from the caller still wins — this only replaces the default.
+    final composition = business.gstScheme == 'composition';
     bytes.addAll(generator.text(
-      title ?? 'Receipt',
+      title ?? (composition ? 'BILL OF SUPPLY' : 'Receipt'),
       styles: const PosStyles(align: PosAlign.center, bold: true),
     ));
     if (duplicate) {
@@ -202,6 +210,10 @@ class PrinterService {
     bytes.addAll(generator.hr());
 
     final subtotal = order.subtotal;
+    // `tax` is 0 for a composition dealer because the SERVER refuses to put
+    // GST on their orders (orderService, migration 092) — this printer does
+    // not have to zero anything, and deliberately does not try: a bill that
+    // disagrees with the order row stored against it is worse than either.
     final tax      = order.tax;
     final total    = order.total;
     bytes.addAll(generator.row([
@@ -230,6 +242,14 @@ class PrinterService {
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
     ]));
+    // The statutory declaration that has to appear on a composition dealer's
+    // bill of supply. Printed verbatim; nothing here is a paraphrase.
+    if (composition) {
+      bytes.addAll(generator.text(
+        'Composition taxable person, not eligible to collect tax on supplies',
+        styles: const PosStyles(align: PosAlign.center),
+      ));
+    }
     bytes.addAll(generator.hr());
 
     bytes.addAll(generator.text(
@@ -297,8 +317,15 @@ class PrinterService {
     final billNo = sessId.length >= 8
         ? sessId.substring(sessId.length - 8).toUpperCase()
         : sessId.toUpperCase();
+    // 2026-09-05 (backend migration 092) — this heading was an unconditional
+    // 'TAX INVOICE', which is exactly the wrong document for a composition
+    // dealer: they charge the diner no GST and are required to issue a BILL
+    // OF SUPPLY. The totals are already right (orderService puts no GST on
+    // their orders), so this is the last thing on the printed bill that
+    // still said otherwise.
+    final composition = business.gstScheme == 'composition';
     bytes.addAll(generator.text(
-      'TAX INVOICE',
+      composition ? 'BILL OF SUPPLY' : 'TAX INVOICE',
       styles: const PosStyles(align: PosAlign.center, bold: true),
     ));
     bytes.addAll(generator.text(
@@ -413,6 +440,14 @@ class PrinterService {
         styles: const PosStyles(align: PosAlign.right, bold: true),
       ),
     ]));
+    // The statutory declaration that has to appear on a composition dealer's
+    // bill of supply. Printed verbatim; nothing here is a paraphrase.
+    if (composition) {
+      bytes.addAll(generator.text(
+        'Composition taxable person, not eligible to collect tax on supplies',
+        styles: const PosStyles(align: PosAlign.center),
+      ));
+    }
     bytes.addAll(generator.hr());
 
     bytes.addAll(generator.text(

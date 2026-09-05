@@ -76,7 +76,14 @@ class MenuProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> load(String businessId) async {
+  /// [source] is the activation-funnel attribution for `menu_ready` — the
+  /// wire vocabulary shared with the web dashboard: 'wizard' | 'manual' |
+  /// 'bulk_csv' | 'migrate' | 'template' | 'paste'. It only matters on the
+  /// single refresh that crosses the 3-item threshold; every ordinary refresh
+  /// leaves it at 'manual'. The two import screens pass their own source so
+  /// "median signup to first bill BY menu route" can be read later, which is
+  /// the whole reason those screens exist.
+  Future<void> load(String businessId, {String source = 'manual'}) async {
     // NP-115: refuse to load a business that isn't the signed-in one.
     if (businessId != _authBusinessId) {
       debugPrint('MENU load skipped: $businessId != auth $_authBusinessId');
@@ -119,7 +126,7 @@ class MenuProvider extends ChangeNotifier {
     // every refresh: it exits immediately once the milestone has fired or
     // while the owner is still under the 3-item threshold.
     // ignore: unawaited_futures
-    _maybeTrackMenuReady(businessId);
+    _maybeTrackMenuReady(businessId, source);
   }
 
   /// Fires `menu_ready` the first time the owner has >= 3 ACTIVE menu items
@@ -127,9 +134,11 @@ class MenuProvider extends ChangeNotifier {
   /// do not count — see Activation.countOwnerAuthored, which uses the same
   /// pre-fill table as the dashboard).
   ///
-  /// `source` is always 'manual' on mobile: the app has no CSV-import or
-  /// POS-migration path, both of which exist only on the dashboard.
-  Future<void> _maybeTrackMenuReady(String businessId) async {
+  /// `source` names the route the menu arrived by. 'manual' for hand-typed
+  /// items, 'template' for a loaded starter menu and 'paste' for a pasted
+  /// one — the same three strings the dashboard sends, because a funnel that
+  /// spells them differently on each platform cannot be joined.
+  Future<void> _maybeTrackMenuReady(String businessId, String source) async {
     final a = AnalyticsService.instance;
     if (a.disabled) return;
     try {
@@ -144,7 +153,7 @@ class MenuProvider extends ChangeNotifier {
       if (Activation.countOwnerAuthored(rows) >= 3) {
         cap = await _menuItemCap(businessId);
       }
-      await Activation.menuReady(rows, 'manual', planItemCap: cap);
+      await Activation.menuReady(rows, source, planItemCap: cap);
     } catch (_) { /* analytics never surfaces an error to the menu screen */ }
   }
 
@@ -181,7 +190,7 @@ class MenuProvider extends ChangeNotifier {
     final bid = _businessId;
     if (bid != null) {
       // ignore: unawaited_futures
-      _maybeTrackMenuReady(bid);
+      _maybeTrackMenuReady(bid, 'manual');
     }
   }
 
@@ -191,10 +200,10 @@ class MenuProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> refresh() async {
+  Future<void> refresh({String source = 'manual'}) async {
     // NP-115: no-op when signed out or holding another tenant's data.
     if (_businessId == null || _businessId != _authBusinessId) return;
-    await load(_businessId!);
+    await load(_businessId!, source: source);
   }
 
   MenuItem? byId(String id) {
