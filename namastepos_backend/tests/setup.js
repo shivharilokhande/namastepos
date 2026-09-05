@@ -3,20 +3,17 @@
 // Each test suite gets a clean schema. We stub Google verification so tests
 // don't need real Google credentials, and stamp a synthetic business per test.
 
-process.env.NODE_ENV = 'test';
-process.env.JWT_SECRET = 'test-secret-do-not-use-in-prod';
-process.env.GOOGLE_CLIENT_IDS = 'test-client.apps.googleusercontent.com';
-process.env.LOG_LEVEL = 'error';
-process.env.DATABASE_URL = process.env.DATABASE_URL
-  || 'postgresql://namastepos:namastepos@localhost:5432/namastepos_test';
-// Review 2026-08-28: cap the pool in tests. The default DB_POOL_MAX=30 × N jest
-// workers blows past Postgres max_connections ("too many clients"). Must be set
-// BEFORE requiring src/config/db (which builds the pool at import time).
-process.env.DB_POOL_MAX = process.env.DB_POOL_MAX || '2';
+// Env defaults (NODE_ENV, JWT_SECRET, DATABASE_URL, pool sizing) now live in
+// tests/env-defaults.js and are applied by Jest `setupFiles`, i.e. before the
+// test file's first require. Setting them here was not early enough: most
+// DB suites require something under src/ above their `require('../setup')`,
+// so src/config/db had already built its pool from the raw .env. Required
+// again here only so `tests/setup.js` still stands on its own outside Jest.
+require('./env-defaults');
 
 const fs = require('fs');
 const path = require('path');
-const { query } = require('../src/config/db');
+const { query, pool } = require('../src/config/db');
 const { issueAccessToken } = require('../src/utils/jwt');
 
 // Stub Google ID token verification → return a fake profile.
@@ -146,11 +143,25 @@ function tokenFor(business) {
 }
 
 /**
- * No-op in per-suite teardown — the pool is shared across all integration
- * suites in a single Jest process (`--runInBand`). Closing it after one suite
- * makes every subsequent suite fail with "Cannot use a pool after calling
- * end on the pool". Actual teardown happens via globalTeardown.js.
+ * Close THIS test file's pg pool.
+ *
+ * This used to be a no-op, on the theory that "the pool is shared across all
+ * integration suites in a single Jest process (`--runInBand`)" so closing it
+ * would make later suites fail with "Cannot use a pool after calling end on
+ * the pool". That was a misdiagnosis. Jest gives every test FILE its own module
+ * registry, so each file re-requires src/config/db and gets its OWN `new Pool`;
+ * ending one cannot affect another (verified with a two-file probe: file A
+ * called pool.end(), file B then queried happily on a pool with ending=false).
+ * The cost of the no-op was that ~57 suites believed they were cleaning up
+ * while sockets piled up until Postgres refused new connections mid-run.
+ *
+ * Idempotent, and no longer load-bearing: tests/jest-environment.js closes the
+ * pool in environment teardown for every file, so a suite that forgets to call
+ * this — or a new suite that never knew about it — still cleans up.
  */
-async function closePool() { /* see globalTeardown.js */ }
+async function closePool() {
+  if (pool.ending) return;
+  await pool.end().catch(() => {});
+}
 
 module.exports = { resetDb, makeBusiness, tokenFor, closePool };

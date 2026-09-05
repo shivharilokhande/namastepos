@@ -61,14 +61,19 @@
     "pm2": "^5.4.0"
   },
   "jest": {
-    "testEnvironment": "node",
+    "testEnvironment": "<rootDir>/tests/jest-environment.js",
     "testPathIgnorePatterns": [
       "/node_modules/",
       "/db/"
     ],
     "maxWorkers": 1,
     "testTimeout": 30000,
-    "globalTeardown": "<rootDir>/tests/globalTeardown.js",
+    "setupFiles": [
+      "<rootDir>/tests/env-defaults.js"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/tests/pool-registry.js"
+    ],
     "collectCoverageFrom": [
       "src/**/*.js",
       "!src/server.js"
