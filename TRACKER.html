@@ -62,7 +62,7 @@
 <div class="wrap">
   <h1>NamastePOS tracker</h1>
   <p class="sub">Tick items off as you clear them — your progress is saved in this browser.
-    Last updated 6 Sep 2026, at commit <code>4b50e19</code> — full code review, see
+    Last updated 6 Sep 2026, at commit <code>8f96b87</code> — full code review + rounds 2/3, see
     <a href="CODE_REVIEW_2026-09-05.html">CODE_REVIEW_2026-09-05.html</a> (verified live:
     <code>curl -s https://api.namastepos.in/v1/health | jq -r .commit</code>).</p>
 
@@ -95,22 +95,16 @@
 <script>
 const ITEMS = [
   {g:'From the 6 Sep code review — decisions and checks only you can make', items:[
-    {id:'cr_install', k:'you', t:'Install app v1.0.22 and bill one item on phone AND web',
-     d:'Both tills now show <b>CGST/SGST on every bill</b> and stop sending <code>tax: 0</code> — the server computes GST from the menu slab. Until yesterday every mobile and every web order was recorded with ₹0 GST. Check a receipt matches the cash collected. APK is on R2; iOS install is yours.'},
-    {id:'cr_recurring', k:'you', t:'Recurring invoices: pull it from Advanced/Enterprise or ask me to build it',
-     d:'The key is on two paid plan cards and <b>no backend exists</b> — the dashboard page told owners to "use the API". It now says "coming soon". Same class as <code>api_access</code>, <code>white_label</code>, <code>marketplace_addons</code>: sold, deliver nothing. Untick them in Admin → Plans, or say build.'},
-    {id:'cr_zerogst', k:'you', t:'Count tax invoices already issued with ₹0 GST',
-     d:'<code>SELECT count(*) FROM tax_invoices WHERE cgst_paise = 0 AND sgst_paise = 0 AND igst_paise = 0 AND total_paise &gt; 0;</code> on production. They are <b>not rewritten</b>; if any were handed to a customer, cancel and reissue.'},
-    {id:'cr_aggr', k:'you', t:'Check tenants with aggregator credentials but no <code>aggregators</code> key',
-     d:'Webhook orders for a plan without the key are now <b>parked (202)</b> instead of ingested. Zomato/Swiggy is Pro+. Query: <code>SELECT b.name, p.tier FROM aggregator_configs ac JOIN businesses b ON b.id=ac.business_id JOIN subscriptions s ON s.business_id=b.id JOIN plans p ON p.id=s.plan_id;</code> — anyone on Starter/Growth needs an upgrade or an override before they miss an order.'},
-    {id:'cr_sweep', k:'you', t:'Read-only check before the first nightly billing sweep',
-     d:'<code>SELECT business_id, status, current_period_end FROM subscriptions WHERE status=\'active\' AND cancel_at_period_end AND current_period_end &lt; NOW() - INTERVAL \'3 days\';</code> — these rows lived forever on a paid plan; the sweep moves them to cancelled (→ Starter). Make sure none is a customer you expect to keep.'},
-    {id:'cr_money', k:'you', t:'Three billing policy decisions',
-     d:'<b>(1)</b> Upgrades in prod forfeit the unused remainder of the old period (no proration reaches Razorpay) — accept, or I wire <code>start_at</code> on the new subscription. <b>(2)</b> A suspended tenant keeps being debited — cancel the mandate on suspend, or refund on restore? <b>(3)</b> Paid addon cancel is immediate — switch to cancel-at-period-end?'},
-    {id:'cr_b2b', k:'you', t:'B2B invoice template: who may save it?',
-     d:'Page is read-only for now (it was silently overwriting the receipt template). Backend store still needs building. Should Save need <code>custom_branding</code> (Enterprise) or just <code>b2b_invoice</code> (Pro+)?'},
-    {id:'cr_inv', k:'you', t:'Inventory on web for Starter, mobile Pro+ — which is right?',
-     d:'Web gates <code>/inventory</code> on <code>menu_basic</code>; mobile gates its drawer tile on <code>inventory_tracking</code>. Pick one and I align the other.'},
+    {id:'cr_install', k:'you', t:'Install app v1.0.23 and bill one item on phone AND web',
+     d:'Both tills now show <b>CGST/SGST on every bill</b> and stop sending <code>tax: 0</code> — the server computes GST from the menu slab. Until yesterday every mobile and every web order was recorded with ₹0 GST. Then the flow you reported: points + wallet at Pay &amp; place, Settle shows Paid/disabled, shortfall + top-up, membership renew card. APK v1.0.23 is on R2 (the public link may serve the old bytes for a while — edge cache); iOS install is yours.'},
+    {id:'cr_money', k:'you', t:'One billing decision left: proration on upgrade',
+     d:'Prod upgrades still forfeit the unused remainder of the old period (no proration reaches Razorpay). Fix = new subscription with <code>start_at = current_period_end</code> — the plumbing exists (used by resume/restore) but it touches live payments, so verify once in Razorpay test mode and say go. Suspend→mandate and paid-addon cancel timing were decided and shipped (cancel at cycle end / period end).'},
+    {id:'cr_checks', k:'you', t:'Open Admin → Operations → Review checks',
+     d:'Your prod SQL is now a page: ₹0-GST invoices already issued, stub IRNs, tenants with aggregator credentials but no <code>aggregators</code> key (their webhook orders are parked), lapsed cancel-at-period-end rows before the nightly sweep, suspended tenants, DB SSL mode, tax mode, sold-but-unenforced keys. Counts, samples and the SQL, super-admin only.'},
+    {id:'cr_voice_back', k:'you', t:'Enterprise has <code>voice_pos</code> again — did you re-add it?',
+     d:'You removed it on 5 Sep (the pinned feed recorded that). On 6 Sep production shows it back on Enterprise; no code path re-adds keys, so it was ticked in Admin → Plans. If unintended, untick it. The pinned feed was refreshed to match production so <code>marketing-claims-live</code> is green again.'},
+    {id:'cr_topup_role', k:'you', t:'May cashiers take wallet top-ups?',
+     d:'Server allows staff with <code>customers</code> or <code>pos</code>. If you want it owner/manager only, say so (one line).'},
   ]},
   {g:'Blocked on you — nobody else can do these', items:[
     {id:'gsp', k:'you', t:'Get GSP / IRP credentials',
@@ -127,14 +121,10 @@ const ITEMS = [
      d:'The leak you reported is fixed and 13 other fail-open gates were found alongside it. Worth confirming on the Mumbai Pavbhaji and Pulao account. Note propagation is <b>~5 min</b>, not instant.'},
   ]},
   {g:'Needs me — not done yet', items:[
-    {id:'me_variants', k:'me', t:'Mobile order lines do not send variantId / modifierLines',
-     d:'Found during the review, pre-existing: the app prices a variant line locally but the body carries only the base item, so the server (NP-201) re-prices to the base price. Online receipts are safe (printed from the server row); split-leg targets can mismatch. Needs OrderItem + body + sqflite changes — <b>next release</b>.'},
-    {id:'me_perms', k:'me', t:'requireStaffPerm on POST /orders, cancel-collected, session open, customers',
-     d:'Kitchen/driver tokens can still create orders, void a collected bill or read the customer ledger. Exact middleware lines are in the review; deferred because it changes what waiters/captains may do — confirm the role matrix first.'},
-    {id:'me_b2b', k:'me', t:'B2B invoice template backend store',
-     d:'Blocked on your answer above (who may save). Design: own table + Joi + route gated on the chosen key; then the dashboard page becomes editable again.'},
-    {id:'me_vitest', k:'me', t:'Dashboard unit tests (vitest)',
-     d:'The dashboard has tsc + eslint + build in CI now, but no test runner. Install attempt crashed npm mid-session; retry and add tests for fail-closed entitlements and RequireFeature.'},
+    {id:'me_admin_tests', k:'me', t:'Admin console has no unit-test runner',
+     d:'tsc + eslint + build gate it in CI now; vitest like the dashboard is the next step.'},
+    {id:'me_proration', k:'me', t:'Wire proration on upgrade once you approve (see above)',
+     d:'<code>createSubscription({ startAt: current_period_end })</code> on plan change up, plan swapped immediately. Blocked on your Razorpay test-mode check.'},
   ]},
   {g:'Known limits — working as designed, but you should know', items:[
     {id:'voicesec', k:'risk', t:'Voice gating is a UI decision, not a security boundary',
@@ -143,6 +133,26 @@ const ITEMS = [
      d:'Default locale is <code>en_IN</code>, not <code>hi_IN</code> — Devanagari output cannot match a menu row stored in Latin script. Realistically a fast path for a few high-frequency items, not hands-free ordering. Nothing reaches the cart without a tap.'},
     {id:'prop', k:'risk', t:'Entitlement changes are ~5–10s on an active till, ~7 min on an idle one',
      d:'The <code>X-Plan-Version</code> header is now compared on responses the app already receives (KDS 5s, captain 8s, orders 10s, every bill written), so an in-use till updates in seconds. The 5-minute poll stays as the backstop for an app parked on a screen making no requests, and because the header is best-effort when the backend 60s cache is cold.'},
+  ]},
+  {g:'Fixed 6 Sep — rounds 2 and 3 (8d4f6c9, 8f96b87) — 1080 backend / 62 dashboard / 193 Flutter tests', items:[
+    {id:'r3_wallet', k:'fixed', t:'Wallet at Pay &amp; place and at Settle (your bug)',
+     d:'Server debited the wallet correctly at Pay &amp; place, but the session never knew it was paid: Settle showed the full ₹84 and — worse — <b>debited the wallet a second time</b> because it sized the draw against the session total. Sessions now carry paid/due/settled; Settle charges only the balance, shows the legs already taken, is disabled at ₹0, re-settle is a 409. Both tills show due = total − points − wallet and refresh the balance.'},
+    {id:'r3_shortfall', k:'fixed', t:'Cover shortfall / Top up wallet on both screens, both clients',
+     d:'Wallet short → wallet leg + remainder to cash/UPI/card, or a top-up sheet (cash/UPI/card into the wallet, counted in the day\'s cash) — order screen and settle screen, mobile and web.'},
+    {id:'r3_membership', k:'fixed', t:'Membership used up → renew card + other memberships',
+     d:'Lookup now says exhausted/expired with the renew price and lists the business\'s other memberships; both clients show the card at checkout and settle, gated on <code>memberships</code>.'},
+    {id:'r3_grievance', k:'fixed', t:'Admin → Compliance → Grievances',
+     d:'Every status change 500\'d: Postgres refused a parameter bound to a varchar column and text literals at once (42P08). Fixed; plus admin filing, notes, assignment, overdue badge.'},
+    {id:'r2_built', k:'fixed', t:'Recurring invoices, API access, White label — built, not pulled',
+     d:'All three were sold on Advanced/Enterprise and did nothing. Now: recurring schedules → real tax invoices on a cadence; read-only tenant API keys (<code>X-API-Key</code>); white-label brand on guest pages, public site and receipts. Each gated on its key; registry says so and the drift test agrees.'},
+    {id:'r2_perms', k:'fixed', t:'Kitchen/driver tokens could create orders and void collected bills',
+     d:'Staff permissions on POST /orders (pos), order reads, status flips (orders|kds), collected-order cancel (owner/manager), session open (tables), customers.'},
+    {id:'r2_variants', k:'fixed', t:'Mobile variant/modifier lines were re-priced to the base item',
+     d:'The app priced "Large + extra cheese" locally but sent only the base item, so the server charged the base price. Lines now carry variant + modifiers; KOT tickets name the choice for both clients.'},
+    {id:'r2_admin', k:'fixed', t:'Admin: effective features per customer, Review checks page, one feature picker, RBAC-gated buttons',
+     d:'Plus "Offer yearly" toggle (was a no-op), businesses limit on custom plans, plan names instead of codes, /account for 2FA, <code>suspended</code> status everywhere, eslint in CI.'},
+    {id:'r2_b2b', k:'fixed', t:'B2B invoice template has its own store',
+     d:'Gated on <code>b2b_invoice</code> (Pro+); the page no longer overwrites the receipt template. Inventory on web now gated like mobile (<code>inventory_tracking</code>).'},
   ]},
   {g:'Fixed 6 Sep (code review) — 943/943 backend, 131/131 Flutter, live at 4b50e19', items:[
     {id:'cr1', k:'fixed', t:'Five ways to hold a paid plan for free',
