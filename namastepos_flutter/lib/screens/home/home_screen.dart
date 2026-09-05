@@ -94,6 +94,15 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   /// than AuthProvider.entitlementMaxAge, so the real cost is one /auth/me
   /// every five minutes — the same order as the backend's own 60s feature
   /// cache, and nothing while signed out.
+  ///
+  /// STILL THE BACKSTOP, NOT THE MECHANISM (updated 2026-09-05). The API
+  /// client now watches the backend's `X-Plan-Version` header on responses
+  /// the app is already making and refreshes within seconds of a change
+  /// (services/plan_version_watcher.dart). That covers a POS in use; it
+  /// cannot cover an app parked on a screen making no requests, or a tenant
+  /// whose backend feature cache has gone cold (the header is best-effort
+  /// server-side). This timer is why those cases are still bounded — do not
+  /// remove it.
   Timer? _planTimer;
 
   @override

@@ -121,7 +121,26 @@ PASS tests/integration/expenses-reports.test.js
 | DELETE | `/v1/businesses/:bid/expenses/:expenseId` | Soft-delete |
 | GET  | `/v1/businesses/:bid/reports/daily?date=YYYY-MM-DD`  | Daily P&L (revenue by source, expenses by category, top items) |
 | GET  | `/v1/businesses/:bid/reports/monthly?month=YYYY-MM`  | Monthly P&L with daily series |
-| GET  | `/health` or `/v1/health` | Liveness probe |
+| GET  | `/health` | Shallow liveness probe (no DB) + build marker |
+| GET  | `/v1/health` | Deep health — pings the DB (503 `degraded` if wedged) + build marker |
+
+### Verifying a deploy from outside
+
+Both health endpoints carry the deployed build marker, so "did my push go
+live?" is answerable without opening the Render dashboard:
+
+```bash
+curl -s https://api.namastepos.in/v1/health | jq -r '.commit, .branch, .startedAt'
+# efe5691
+# main
+# 2026-09-05T09:14:02.118Z
+```
+
+`commit` is the short SHA from Render's auto-injected `RENDER_GIT_COMMIT`
+(`GIT_COMMIT` works too for non-Render builds); it degrades to `"unknown"`
+locally, in tests and in CI where no such var exists — the field is always
+present. `startedAt` / `uptimeSeconds` make a restart visible even when the
+commit is unchanged. See `src/config/buildInfo.js`.
 
 All non-`/auth` endpoints require `Authorization: Bearer <jwt>` and enforce
 *tenant isolation* — the `:bid` in the URL must match the authenticated

@@ -10,6 +10,7 @@ const rateLimit = require('express-rate-limit');
 
 const env = require('./config/env');
 const logger = require('./config/logger');
+const { buildInfo } = require('./config/buildInfo');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 
 const authRoutes = require('./routes/auth.routes');
@@ -193,9 +194,30 @@ function buildApp() {
     }));
   }
 
-  // Health — QA-10 P2: deep health now pings the DB so a wedged connection
-  // pool shows up as unhealthy instead of "ok".
-  app.get('/health', (_req, res) => res.json({ status: 'ok', env: env.NODE_ENV }));
+  // Health — TWO endpoints, deliberately different, both public.
+  //
+  //   GET /health      SHALLOW liveness. No DB, no I/O at all. This is the
+  //                    "is the process answering" probe.
+  //   GET /v1/health   DEEP health. QA-10 P2: pings the DB (ONE query, the
+  //                    health_db_ping() function from migration 011) so a
+  //                    wedged connection pool shows up as 503/degraded
+  //                    instead of a cheerful "ok". UptimeRobot hits this
+  //                    every 5 minutes.
+  //
+  // 2026-09-05 — both now also carry the BUILD MARKER (commit / branch /
+  // startedAt / uptimeSeconds) from config/buildInfo.js, which is what makes
+  // a deploy verifiable from outside: `curl .../v1/health | jq -r .commit`
+  // answers "is my push live?" without opening the Render dashboard, and
+  // startedAt distinguishes a fresh deploy from a process that never
+  // restarted. Deliberately the SAME block on both so it does not matter
+  // which one a caller happens to have wired up. buildInfo() is pure — two
+  // env reads and a regex — so this adds no I/O and, importantly, NO second
+  // DB round-trip to the 5-minutely probe.
+  app.get('/health', (_req, res) => res.json({
+    status: 'ok',
+    env: env.NODE_ENV,
+    ...buildInfo(),
+  }));
   app.get(`${env.API_PREFIX}/health`, async (_req, res) => {
     let db = 'down';
     try {
@@ -208,6 +230,7 @@ function buildApp() {
       status,
       service: 'namastepos-api',
       version: env.APP_VERSION || require('../package.json').version,
+      ...buildInfo(),
       db,
       timestamp: new Date().toISOString(),
     });

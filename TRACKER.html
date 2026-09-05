@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NamastePOS Tracker</title>
+<style>
+  :root{
+    --bg:#f7f6f3;--card:#fff;--ink:#14161a;--dim:#5f6672;--line:#e3e1dc;
+    --ok:#1a7f4b;--okbg:#e8f5ee;--warn:#8a5a00;--warnbg:#fdf3e0;
+    --stop:#a32b2b;--stopbg:#fbeceb;--info:#1f4fd8;--infobg:#e9eefc;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme=light]){
+    --bg:#14161a;--card:#1c1f25;--ink:#eceef2;--dim:#9aa2b1;--line:#2c313a;
+    --ok:#5fd39b;--okbg:#12301f;--warn:#e8bc6a;--warnbg:#332714;
+    --stop:#f08b86;--stopbg:#331a19;--info:#7ea2ff;--infobg:#18203a;
+  }}
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);margin:0;padding:24px 18px 70px;
+    font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1000px;margin:0 auto}
+  h1{font-size:25px;letter-spacing:-.02em;margin:0 0 3px}
+  .sub{color:var(--dim);font-size:13.5px;margin:0 0 20px}
+  .strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:9px;margin-bottom:18px}
+  .s{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:11px 13px}
+  .s .n{font-size:21px;font-weight:650;letter-spacing:-.02em}
+  .s .l{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.06em;margin-top:1px}
+  .bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;align-items:center}
+  .f{font:inherit;font-size:12.5px;background:var(--card);color:var(--dim);cursor:pointer;
+    border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+  .f[aria-pressed=true]{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:600}
+  .reset{margin-left:auto;font-size:12px;color:var(--dim);background:none;border:none;
+    cursor:pointer;text-decoration:underline;font-family:inherit}
+  h2{font-size:11.5px;text-transform:uppercase;letter-spacing:.09em;color:var(--dim);
+    margin:26px 0 9px;font-weight:600}
+  .item{background:var(--card);border:1px solid var(--line);border-radius:11px;
+    padding:13px 15px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start}
+  .item.done{opacity:.5}
+  .item.done .t{text-decoration:line-through}
+  input[type=checkbox]{margin-top:3px;width:17px;height:17px;flex-shrink:0;cursor:pointer;accent-color:var(--ok)}
+  .main{flex:1;min-width:0}
+  .t{font-weight:600;font-size:15px;letter-spacing:-.01em;margin:0 0 3px}
+  .d{color:var(--dim);font-size:13.5px;margin:0}
+  .d b{color:var(--ink);font-weight:600}
+  .d code{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--bg);
+    border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+  .tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+  .tag{font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+    padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .you{background:var(--stopbg);color:var(--stop)}
+  .me{background:var(--infobg);color:var(--info)}
+  .fixed{background:var(--okbg);color:var(--ok)}
+  .risk{background:var(--warnbg);color:var(--warn)}
+  .note{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--info);
+    border-radius:8px;padding:11px 14px;color:var(--dim);font-size:13.5px;margin-bottom:8px}
+  .note b{color:var(--ink)}
+  footer{margin-top:30px;padding-top:14px;border-top:1px solid var(--line);color:var(--dim);font-size:12.5px}
+  @media (max-width:560px){.strip{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>NamastePOS tracker</h1>
+  <p class="sub">Tick items off as you clear them — your progress is saved in this browser.
+    Last updated 5 Sep 2026, at commit <code>efe5691</code>.</p>
+
+  <div class="strip">
+    <div class="s"><div class="n" id="cYou">0</div><div class="l">Needs you</div></div>
+    <div class="s"><div class="n" id="cMe">0</div><div class="l">Needs me</div></div>
+    <div class="s"><div class="n" id="cRisk">0</div><div class="l">Known limits</div></div>
+    <div class="s"><div class="n" id="cDone">0</div><div class="l">Ticked off</div></div>
+  </div>
+
+  <div class="bar">
+    <button class="f" data-f="all" aria-pressed="true">All</button>
+    <button class="f" data-f="you" aria-pressed="false">Needs you</button>
+    <button class="f" data-f="me" aria-pressed="false">Needs me</button>
+    <button class="f" data-f="risk" aria-pressed="false">Known limits</button>
+    <button class="f" data-f="fixed" aria-pressed="false">Fixed today</button>
+    <button class="f" data-f="open" aria-pressed="false">Hide ticked</button>
+    <button class="reset" id="reset">clear ticks</button>
+  </div>
+
+  <div id="list"></div>
+
+  <footer>
+    Every "fixed" item below was verified by a gate run, a live fetch, or a
+    deliberate break-and-revert — not by a draft. Items under "needs me" are work
+    I have not done yet, stated as such.
+  </footer>
+</div>
+
+<script>
+const ITEMS = [
+  {g:'Blocked on you — nobody else can do these', items:[
+    {id:'gsp', k:'you', t:'Get GSP / IRP credentials',
+     d:'Until these exist, e-invoice and e-way bill <b>cannot file with the government</b>. Production now refuses rather than inventing an IRN, which is correct but is not the feature. Advanced is sold at ₹999 partly on this.'},
+    {id:'irncount', k:'you', t:'Run the stub-IRN row count on production',
+     d:'Migration 093 marked every pre-existing IRN <code>is_stub</code>. Nobody knows if that is 3 rows or 300 — i.e. how many customers received a fabricated IRN. The query is in the migration header. <b>If any of them filed against one, that is a conversation to have before they get a notice.</b>'},
+    {id:'render', k:'you', t:'Confirm Render deployed efe5691',
+     d:'API is healthy and Render auto-deploys on push, but no public endpoint carries a commit marker, so I could not verify it from outside. One look at your Render dashboard settles it.'},
+    {id:'ssl', k:'you', t:'Check DB_SSL_VERIFY on Render',
+     d:'<code>db.js</code> falls through to <code>rejectUnauthorized:false</code> unless <code>PG_CA_CERT</code> or <code>DB_SSL_VERIFY=true</code> is set. If unset, the Neon connection is encrypted but unverified. Setting it to <code>true</code> also makes the pg v9 deprecation warning irrelevant.'},
+    {id:'voicetest', k:'you', t:'Re-test Voice POS on the phone (matching was rebuilt)',
+     d:'You found "amul pavbhaji" → Kolhapuri. Matching is now IDF-weighted: Amul goes 0.667 → 1.000, Kolhapuri drops to 0.420, and bare "pav bhaji" asks instead of picking. <b>That fix has never been spoken to on a real device</b> — only unit tests. App v1.0.20+21 is on your iPhone.'},
+    {id:'iosprint', k:'you', t:'Tap the iOS print buttons once',
+     d:'AirPrint and share-to-PDF are verified only by rendering a PDF in a test, never by tapping the button on the device.'},
+    {id:'gating', k:'you', t:'Confirm Voice POS is now gone for the Enterprise customer',
+     d:'The leak you reported is fixed and 13 other fail-open gates were found alongside it. Worth confirming on the Mumbai Pavbhaji and Pulao account. Note propagation is <b>~5 min</b>, not instant.'},
+  ]},
+  {g:'Needs me — not done yet', items:[
+    {id:'attach', k:'me', t:'"Fix everything shown here" — no attachment arrived',
+     d:'Your message referenced something shown, but no screenshot or list came through. <b>Resend it and I will work through it.</b> This tracker covers everything I currently know about.'},
+    {id:'graphify', k:'me', t:'Decide on graphify-out/ (58 MB, 364 tracked files)',
+     d:'Nothing reads it — the only reference in the repo is a <code>.gitattributes</code> merge driver for it. It regenerates on every commit, so 33 files are permanently dirty and it dumped ~36,000 lines of generated diff into one commit today. I would gitignore it and <code>git rm -r --cached</code>, keeping files on disk. <b>Not done — your call, since it is the one change here that is not trivially reversible.</b>'},
+    {id:'disk', k:'me', t:'Reclaim ~4.9 GB of build artefacts',
+     d:'Folder is 6.2 GB. <code>namastepos_flutter/build</code> 4.2 G, <code>.dart_tool</code> 557 M, <code>.wrangler</code> 67 M, a stale loose <code>NamastePOS.apk</code> 67 M, root <code>tests/node_modules</code> 27 M. None tracked, all regenerable. <b>Not deleted — say go.</b>'},
+    {id:'stopwords', k:'me', t:'Stopword list for voice',
+     d:'IDF weighting makes filler words cost more: "ek butter naan dena bhai" scores 0.437 (was 0.500). Still matches, but the margin above the 0.34 reject floor is thinner. If owners speak in sentences, a stopword list is the right follow-up — not more weighting.'},
+    {id:'artifact', k:'me', t:'Publish this tracker as a shareable live page',
+     d:'The Artifact publish needs an approval card this session cannot show, so this is a file in your repo instead. It works fully offline in your browser; ticks are saved locally.'},
+  ]},
+  {g:'Known limits — working as designed, but you should know', items:[
+    {id:'voicesec', k:'risk', t:'Voice gating is a UI decision, not a security boundary',
+     d:'Recognition runs on-device with no NamastePOS server in the path, so there is no request to reject. Every <i>other</i> feature gate sits in front of a route <code>featureGate.js</code> already enforces.'},
+    {id:'hinglish', k:'risk', t:'Mixed Hindi/English recognition is not reliable',
+     d:'Default locale is <code>en_IN</code>, not <code>hi_IN</code> — Devanagari output cannot match a menu row stored in Latin script. Realistically a fast path for a few high-frequency items, not hands-free ordering. Nothing reaches the cart without a tap.'},
+    {id:'prop', k:'risk', t:'Entitlement changes take ~5 minutes, not effect immediately',
+     d:'Add the backend 60s feature cache for worst case. There is no push channel for entitlements and I did not invent one.'},
+    {id:'alu', k:'risk', t:'"alu" still does not match "aloo"',
+     d:'Three letters vs four; the edit-distance bound needs both ≥ 4 and going to 3 stops discriminating. This wants a transliteration alias table, not a looser bound.'},
+  ]},
+  {g:'Fixed today — verified, deployed', items:[
+    {id:'f1', k:'fixed', t:'E-invoice was fabricating IRNs in production',
+     d:'<code>generateIrn()</code> computed a correct NIC hash and never called the IRP. <b>Every IRN in production was fake.</b> Production now refuses; demo emits <code>DEMO-NOT-A-VALID-IRN-…</code>, which cannot be typed into a portal.'},
+    {id:'f2', k:'fixed', t:'POST /eway-bills was a 500 in every environment',
+     d:'Migration 024 already made <code>eway_bills</code>, so 046’s <code>CREATE TABLE IF NOT EXISTS</code> was a silent no-op and the columns never existed. Migration 093 creates them.'},
+    {id:'f3', k:'fixed', t:'Audit trail was fire-and-forget',
+     d:'The client was told an action succeeded while its audit INSERT was still in flight, and a bare <code>catch</code> meant the trail could stop recording silently. CI caught it. The row now commits before the acknowledgement.'},
+    {id:'f4', k:'fixed', t:'14 fail-open entitlement gates',
+     d:'Including <b>memberships gated on the wrong key entirely</b> (<code>loyalty</code> while the server enforces <code>memberships</code>), captain mode reachable by three doors with one gated, and menu variants that let an owner type data the server then refused.'},
+    {id:'f5', k:'fixed', t:'iOS showed a printer flow Apple blocks',
+     d:'Owners tapped scan, got an empty list, concluded the app was broken. iOS now explains why and offers AirPrint / share-to-PDF.'},
+    {id:'f6', k:'fixed', t:'Feature drift now fails CI',
+     d:'One backend registry drives the admin picker; a drift test breaks the build when backend, admin and mobile disagree. Keys nothing enforces are flagged <b>ungated</b> in amber.'},
+  ]},
+];
+
+const KEY='namastepos-tracker-v1';
+let done={}; try{done=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){done={}}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(done))}catch(e){}};
+let filter='all';
+
+const TAGS={you:['Needs you','you'],me:['Needs me','me'],risk:['Known limit','risk'],fixed:['Fixed','fixed']};
+
+function render(){
+  const list=document.getElementById('list');
+  list.innerHTML='';
+  let n={you:0,me:0,risk:0,done:0};
+  for(const sec of ITEMS){
+    const vis=sec.items.filter(it=>{
+      if(filter==='open') return !done[it.id];
+      if(filter==='all') return true;
+      return it.k===filter;
+    });
+    for(const it of sec.items){ if(it.k!=='fixed'&&n[it.k]!==undefined&&!done[it.id]) n[it.k]++; if(done[it.id]) n.done++; }
+    if(!vis.length) continue;
+    const h=document.createElement('h2'); h.textContent=sec.g; list.appendChild(h);
+    for(const it of vis){
+      const d=document.createElement('div');
+      d.className='item'+(done[it.id]?' done':'');
+      const [label,cls]=TAGS[it.k];
+      d.innerHTML='<input type="checkbox" '+(done[it.id]?'checked':'')+' aria-label="done">'+
+        '<div class="main"><p class="t">'+it.t+'</p><p class="d">'+it.d+'</p>'+
+        '<div class="tags"><span class="tag '+cls+'">'+label+'</span></div></div>';
+      d.querySelector('input').addEventListener('change',e=>{
+        if(e.target.checked) done[it.id]=1; else delete done[it.id];
+        save(); render();
+      });
+      list.appendChild(d);
+    }
+  }
+  document.getElementById('cYou').textContent=n.you;
+  document.getElementById('cMe').textContent=n.me;
+  document.getElementById('cRisk').textContent=n.risk;
+  document.getElementById('cDone').textContent=n.done;
+}
+
+document.querySelectorAll('.f').forEach(b=>b.addEventListener('click',()=>{
+  filter=b.dataset.f;
+  document.querySelectorAll('.f').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));
+  render();
+}));
+document.getElementById('reset').addEventListener('click',()=>{done={};save();render();});
+render();
+</script>
+</body>
+</html>

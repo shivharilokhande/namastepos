@@ -199,6 +199,12 @@ const env = {
   // sentry.js / emailService / onboardingEmailService / reviewsService /
   // authController. Declared here so the config surface is complete.
   SENTRY_DSN: process.env.SENTRY_DSN || '',
+  // APP_VERSION is the RELEASE name (Sentry release, /v1/health `version`).
+  // It is NOT a deploy marker — it has read "1.0.0" for every deploy ever.
+  // The deployed commit SHA lives in src/config/buildInfo.js, which reads the
+  // platform-injected RENDER_GIT_COMMIT / RENDER_GIT_BRANCH (or generic
+  // GIT_COMMIT / GIT_BRANCH). Those are values the PLATFORM tells us rather
+  // than values we choose, so they are not declared here; see that file.
   APP_VERSION: process.env.APP_VERSION || '',
   APP_URL: process.env.APP_URL || '',
   SMTP_HOST: process.env.SMTP_HOST || '',

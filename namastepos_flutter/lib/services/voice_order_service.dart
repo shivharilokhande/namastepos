@@ -638,6 +638,298 @@ class VoiceOrderService {
     '५': '5', '६': '6', '७': '7', '८': '8', '९': '9',
   };
 
+  // ── Filler ("stopwords") ──────────────────────────────────────────────────
+  //
+  // Owners do not speak in item names, they speak in sentences: "ek butter
+  // naan dena bhai", "two masala dosa please". Every one of those extra words
+  // used to cost real score, because the IDF weighting gives a token that is
+  // on NO menu row the HIGHEST weight of the lot — exactly right for a
+  // mis-heard dish word, exactly wrong for "bhai". "ek butter naan dena bhai"
+  // scored 0.437 against Butter Naan, a hair over the 0.34 reject floor.
+  //
+  // The fix is a stopword list, not more weighting: words that carry no dish
+  // information are dropped BEFORE they reach the matcher, so they neither
+  // help nor hurt.
+  //
+  // TWO RULES THIS LIST ALWAYS LOSES TO:
+  //
+  //  1. THE MENU WINS. A token that appears in a live menu item name is never
+  //     filler, whatever this set says. A place with "Chai Wala Special" on
+  //     the board must still be able to order it, and the list is checked
+  //     against the actual menu on every parse — see [_stripFiller].
+  //
+  //  2. A NUMBER IS NEVER FILLER. Every single-word entry is checked against
+  //     [_numWords] before it is dropped, so no entry — this list's or one the
+  //     founder adds later — can quietly turn "do chai" into one chai.
+  //
+  // Which is why `ek` is deliberately NOT here even though it is filler-shaped
+  // in "ek chai dena": it MEANS one, it is already consumed as a quantity, and
+  // dropping it as politeness would be dropping the count. Same for `do` (2),
+  // `a`/`an` (1), `couple` (2), `half` (1). Leaving them in costs nothing — a
+  // leading or trailing quantity is stripped off before matching anyway.
+  //
+  // Also deliberately absent, because they change what is ordered rather than
+  // decorate it: `hot`, `cold`, `garam`, `thanda`, `plain`, `special`, `pack`,
+  // `parcel`, `half`. And `banana`, which is a fruit, not the verb "banana".
+  static const Set<String> _fillerWords = {
+    // English politeness and carrier words
+    'please', 'pls', 'plz', 'kindly', 'thanks', 'thank', 'thanx', 'thankyou',
+    'ty', 'sorry', 'hi', 'hello', 'hey', 'yo',
+    'sir', 'madam', 'maam', 'mam', 'boss', 'bro', 'dude', 'buddy', 'chef',
+    'waiter',
+    'i', 'im', 'id', 'ill', 'ive', 'me', 'my', 'mine', 'we', 'us', 'our',
+    'you', 'your', 'u',
+    'want', 'wants', 'wanted', 'wanna', 'need', 'needs', 'needed', 'like',
+    'would', 'will', 'gonna',
+    'give', 'gimme', 'get', 'bring', 'take', 'send', 'make', 'made', 'add',
+    'put', 'keep', 'have', 'has', 'had',
+    'can', 'could', 'should', 'may', 'might', 'must',
+    'the', 'some', 'any', 'that', 'this', 'these', 'those', 'it', 'its',
+    'is', 'are', 'am', 'be',
+    'for', 'to', 'of', 'from', 'at', 'in', 'on',
+    'just', 'only', 'quick', 'quickly', 'fast',
+    'ok', 'okay', 'okey', 'fine', 'sure', 'right', 'yes', 'yeah', 'yep',
+    // Hindi / Marathi address and filler, as an en_IN recogniser spells it
+    'bhai', 'bhaiya', 'bhaiyya', 'bhaisaab', 'bhaisahab', 'dada', 'anna',
+    'kaka', 'yaar', 'yar', 'arre', 'arey',
+    'achha', 'accha', 'acha', 'achcha', 'theek', 'thik', 'thike', 'teek',
+    'haan', 'han', 'haa', 'ji', 'jee', 'na', 'naa', 're',
+    // Hindi / Marathi "give me / make me" verbs
+    'dena', 'denaa', 'dedo', 'dede', 'dedena', 'de',
+    'dijiye', 'dijie', 'dijeye', 'dijiyega',
+    'chahiye', 'chaiye', 'chahiya', 'chahie', 'chaahiye',
+    'karo', 'kar', 'karna', 'kardo', 'karke', 'kardena',
+    'lagao', 'laga', 'lagana', 'lagado',
+    'lao', 'laao', 'la', 'le', 'lena', 'leke', 'lekar',
+    'bhejo', 'bhej', 'bhejdo',
+    'banao', 'bana', 'banado', 'banake',
+    'milega', 'milenge', 'milta', 'hoga', 'hai', 'hain', 'ho', 'hona',
+    'zara', 'jara', 'thoda', 'thodi',
+    'wala', 'wali', 'vala', 'vali', 'walla',
+    'ye', 'yeh', 'wo', 'woh', 'vo', 'isko', 'usko',
+    'bas', 'bass', 'sirf',
+    'abhi', 'jaldi', 'jaldee', 'turant', 'fatafat',
+  };
+
+  /// The ONE place a token that IS a number word may be dropped.
+  ///
+  /// "chai de do" is "give me tea", not "tea, two" — `do` there is the verb
+  /// "do/give", not दो. Rule 2 above blocks that word individually and can
+  /// never be relaxed; these fixed two-word constructions are matched whole
+  /// instead, so `do` is only ever discarded when the word in front of it
+  /// proves it is a verb. Everything else keeps its count: "do chai de do"
+  /// still orders two.
+  static const Set<String> _fillerPhrases = {
+    'de do', 'de doh', 'de dho', 'de de', 'de dena', 'de dijiye',
+    'kar do', 'kar doh', 'kar de', 'kar dena', 'kar dijiye',
+    'bana do', 'bana de', 'bana dena',
+    'laga do', 'laga de',
+    'bhej do', 'bhej de',
+    'la do', 'la de', 'le aao', 'le aa',
+  };
+
+  // ── Transliteration aliases ───────────────────────────────────────────────
+  //
+  // "alu" does not reach "aloo" and never could: [_wordsMatch] only attempts a
+  // fuzzy comparison at four characters and up, because at three an edit
+  // distance of one covers a third of the word and stops discriminating
+  // ("dal" would reach "dam", "das", "del"). Loosening the bound is the wrong
+  // lever. The right one is this: an Indian dish name has half a dozen
+  // romanisations of the SAME word, and which one a speech model emits is an
+  // accident of the model, not a difference in the food.
+  //
+  // So every token — on the spoken side AND on the menu side — is mapped to
+  // one canonical spelling before anything is compared ([_tokens] does it, so
+  // the IDF weights are computed over canonical forms too and the two halves
+  // of the matcher can never disagree about it). "alu"/"aalu" and a menu
+  // reading "Aloo Paratha" meet at `aloo`; a menu that spells it "Alu
+  // Paratha" meets a speaker saying "aloo" at the same place.
+  //
+  // THE RISK, AND WHY EVERY ENTRY BELOW IS A SPELLING AND NEVER A SYNONYM:
+  // aliasing collapses distinctions, and a collapsed distinction is a wrong
+  // item on a real customer's bill. Two different dishes must never land on
+  // the same canonical string, so this table only ever joins spellings of one
+  // word. Deliberately excluded, each of them a pair a "helpful" alias would
+  // have merged into a wrong order:
+  //
+  //   curd -> dahi, egg -> anda, onion -> kanda   translations, not spellings;
+  //                                               a menu may sell both names
+  //                                               as different lines.
+  //   tikki -> tikka        Aloo Tikki is a patty, Paneer Tikka is grilled.
+  //   chana -> chole        the pulse vs the finished curry.
+  //   pulao -> biryani      different dishes, different prices.
+  //   parotta -> paratha    Malabar parotta is its own item on menus that
+  //                         also sell aloo paratha.
+  //   kadi/kadhi -> kadai   Kadai Paneer (a wok) vs Punjabi Kadhi (a curry).
+  //                         `kadi` is a plausible spelling of BOTH, so it is
+  //                         left un-aliased rather than guessed at.
+  //   bada -> vada          `bada` means "big" in Hindi.
+  //   cha -> chai           `cha` is also the Marathi possessive particle.
+  //   chhana -> chana       chhana is Bengali curd cheese.
+  //
+  // TO EXTEND: add the variant to the right list, or add a new
+  // `'canonical': ['variant', ...]` line. A variant must appear exactly once
+  // in the whole table and must never be the canonical form of another line —
+  // `voice_order_parse_test.dart` fails the build if either happens.
+  static const Map<String, List<String>> _aliasGroups = {
+    // Vegetables and staples
+    'aloo': ['alu', 'aalu', 'aaloo', 'allu', 'alloo', 'aluu'],
+    'gobi': ['gobhi', 'gobbi', 'gobee', 'gobhee', 'ghobi'],
+    'palak': ['paalak', 'palaak'],
+    'matar': ['mutter', 'muttar', 'mattar', 'matter'],
+    'bhindi': ['bhendi', 'bendi', 'bhindee'],
+    'baingan': ['baigan', 'bengan', 'baingun', 'bhaingan'],
+    'kanda': ['kaanda', 'kandaa'],
+    'lauki': ['louki', 'lauqi'],
+    'methi': ['methee'],
+    'mirchi': ['mirch', 'mirchee', 'mirchy'],
+    'nimbu': ['neembu', 'nimboo', 'limbu'],
+    'kaju': ['kaaju', 'kajoo'],
+    'badam': ['baadam'],
+    'jeera': ['zeera', 'zira', 'jira', 'jeeraa'],
+    'kheera': ['khira', 'kheere'],
+    'chana': ['channa', 'chanaa'],
+    'rajma': ['rajmah', 'raajma'],
+    'soya': ['soia', 'soyaa'],
+    'paneer': ['panir', 'panner', 'panneer', 'paner'],
+    'cheese': ['cheez', 'cheeze', 'chees', 'chiz', 'chease'],
+    'amul': ['amool', 'amol', 'aamul'],
+    'ghee': ['ghi'],
+    'malai': ['malaai', 'malayi'],
+    'makhani': ['makhni', 'makani', 'makkhani'],
+    'masala': ['masaala', 'massala', 'masla', 'masaalaa'],
+    'tandoori': ['tanduri', 'tandori', 'tandoory'],
+    'shahi': ['shaahi'],
+    'lachha': ['laccha', 'lachcha', 'lacha'],
+    'kolhapuri': ['kolapuri', 'kohlapuri', 'kolhapury'],
+    'schezwan': ['szechwan', 'sichuan', 'shezwan', 'schezuan', 'sezwan'],
+    'kadai': ['kadhai', 'karahi', 'kadhaai', 'karhai'],
+    'kadhi': ['kadhee'],
+    'korma': ['kurma', 'qorma', 'kormaa'],
+    'tawa': ['tava', 'tawaa'],
+    'handi': ['handee'],
+    // Breads
+    'roti': ['rotti', 'rooti', 'rotee', 'roty'],
+    'naan': ['nan', 'nann'],
+    'paratha': ['parantha', 'prantha', 'paranthaa', 'parathaa'],
+    'kulcha': ['kulchaa', 'kulchha'],
+    'puri': ['poori', 'pooree', 'purii', 'poorie'],
+    'bhature': ['bhatura', 'bhaturey', 'bature'],
+    'chapati': ['chapathi', 'chappati', 'chapatti', 'chappathi'],
+    'rumali': ['roomali', 'rumaali', 'roomaali'],
+    'thepla': ['thepala', 'theplaa'],
+    'pav': ['paav', 'pao', 'pauv', 'paw'],
+    // Dishes
+    'bhaji': ['bhajee', 'bhajji', 'bhaaji', 'bhajii', 'baji', 'bajji'],
+    'chole': ['chhole', 'chola', 'chhola', 'cholay', 'choley'],
+    'sabzi': ['sabji', 'subzi', 'subji', 'sabzee', 'sabjee'],
+    'dal': ['daal', 'dhal', 'dahl'],
+    'dahi': ['dahee', 'dhai', 'dahii', 'dhahi'],
+    'raita': ['rayta', 'raitha', 'rayata'],
+    'keema': ['kheema', 'qeema', 'khima', 'kima'],
+    'biryani': ['biriyani', 'briyani', 'biriani', 'biryaani', 'biriyaani'],
+    'pulao': ['pulav', 'pulaw', 'pilav', 'pullao'],
+    'khichdi': ['khichadi', 'khichri', 'kichdi', 'khichari'],
+    'tikka': ['tika', 'tikkaa', 'teeka'],
+    'tikki': ['tikkee', 'tiki', 'tikkii'],
+    'chaap': ['chap'],
+    'chaat': ['chat', 'chatt', 'chaats'],
+    'kofta': ['koftaa'],
+    'bhurji': ['burji', 'bhurjee'],
+    'omelette': ['omlet', 'omlette', 'omelet'],
+    'chicken': ['chiken', 'chikken', 'chikan', 'chickan'],
+    'mutton': ['muttan', 'mutan'],
+    'anda': ['aanda'],
+    // South Indian
+    'dosa': ['dosai', 'dhosa', 'dosae', 'thosai', 'dhosai'],
+    'idli': ['idly', 'iddli', 'idlee', 'idlly'],
+    'vada': ['wada', 'vadaa', 'wadaa'],
+    'sambar': ['sambhar', 'sambaar', 'sambhaar', 'saambar'],
+    'rasam': ['rassam', 'rasham'],
+    'uttapam': ['uthappam', 'uttappam', 'oothappam', 'uttapa', 'uthapam'],
+    'chutney': ['chatni', 'chutni', 'chatney', 'chutny'],
+    // Snacks
+    'samosa': ['samoosa', 'samosaa', 'samoza', 'sumosa'],
+    'pakora': ['pakoda', 'pakodas', 'pakoray', 'pakhora'],
+    'kachori': ['kachauri', 'kachodi', 'kachauree'],
+    'misal': ['missal', 'misaal'],
+    'usal': ['ussal', 'usaal'],
+    'poha': ['pohe', 'powa'],
+    'upma': ['uppma', 'uppuma', 'upama'],
+    'dhokla': ['dokla', 'dhokhla'],
+    'khaman': ['khamman'],
+    'sev': ['shev'],
+    'papad': ['pappad', 'papadam', 'papadum'],
+    'momo': ['momos', 'momoz', 'momoes', 'moomo'],
+    'manchurian': ['manchuria', 'manchurain', 'manchoorian'],
+    'frankie': ['franky', 'frankee'],
+    'sandwich': ['sandwitch', 'sandwhich'],
+    'maggi': ['magi', 'maggie'],
+    'thali': ['thaali', 'thalee'],
+    // Sweets and drinks
+    'jalebi': ['jilebi', 'jalebee', 'jilipi'],
+    'barfi': ['burfi', 'barfee', 'burfee', 'barfii'],
+    'rasgulla': ['rasagolla', 'rosogolla', 'rasgoola', 'rasogolla'],
+    'gulab': ['gulaab'],
+    'jamun': ['jaamun', 'jamoon'],
+    'kheer': ['khir', 'kheerr', 'kheir'],
+    'kulfi': ['kulfee', 'qulfi'],
+    'falooda': ['faluda', 'phalooda', 'faloodha'],
+    'shrikhand': ['srikhand', 'shreekhand'],
+    'modak': ['modhak'],
+    'chai': ['chaai', 'chaay', 'chay', 'chaii'],
+    'lassi': ['lassee', 'lassy', 'lasi', 'laasi'],
+    'shikanji': ['shikanjvi', 'shikanjee'],
+    'coffee': ['cofee', 'coffe'],
+  };
+
+  /// Flattened `variant -> canonical`. Built once; the table above is the
+  /// thing to edit.
+  static final Map<String, String> _alias = _buildAliasIndex();
+
+  static Map<String, String> _buildAliasIndex() {
+    final out = <String, String>{};
+    _aliasGroups.forEach((canonical, variants) {
+      for (final v in variants) {
+        // Both of these would be silent: a variant listed twice would take
+        // whichever canonical came last, and a variant that is elsewhere a
+        // canonical would make folding depend on order. Neither is allowed to
+        // reach a customer's bill, and asserts are live in test builds.
+        assert(!out.containsKey(v), 'voice alias "$v" is listed twice');
+        assert(!_aliasGroups.containsKey(v),
+            'voice alias "$v" is also a canonical form');
+        out[v] = canonical;
+      }
+    });
+    return out;
+  }
+
+  /// The alias table as `variant -> canonical`, for tests and for a future
+  /// settings screen that lets an owner see what the matcher folds together.
+  static Map<String, String> get aliasTable => Map.unmodifiable(_alias);
+
+  /// Canonical spelling of a whole phrase: every token folded through
+  /// [_aliasGroups]. Exposed so a test can prove that no two rows of a real
+  /// menu collapse onto the same string — the single failure mode aliasing
+  /// introduces, and the one that would put the wrong item on a bill.
+  static String canonical(String text) => _tokens(text.toLowerCase()).join(' ');
+
+  /// Pairs that [_wordsMatch] must NEVER fuzzy-join, even though they are one
+  /// edit (or one prefix) apart. These are DIFFERENT DISHES whose canonical
+  /// spellings happen to look alike; without this, the same near-miss the
+  /// fuzzy matcher exists to forgive turns Paneer Tikka into Aloo Tikki.
+  /// Written as canonical forms, `a|b` with the smaller first.
+  static const Set<String> _neverFuzzy = {
+    'tikka|tikki', // grilled skewer vs potato patty
+    'kadai|kadhi', // wok dish vs yogurt curry
+    'chaap|chaat', // soya chaap vs papdi chaat
+    'jeera|kheera', // cumin vs cucumber
+    'kheer|kheera', // milk pudding vs cucumber
+    'soda|soya', // a drink vs soya chaap
+    'roti|rotli', // Punjabi roti vs Gujarati rotli
+    'thai|thali', // Thai curry vs a thali
+  };
+
   /// Splits an utterance into "N × dish" lines against the live menu.
   ///
   /// Handles the quantity leading ("two paneer tikka", "do chai") AND
@@ -661,13 +953,23 @@ class VoiceOrderService {
     final unmatched = <String>[];
 
     // Token weights are a property of THIS menu, so they are computed once
-    // per utterance and shared by every candidate comparison below.
+    // per utterance and shared by every candidate comparison below. So is the
+    // vocabulary the filler list has to lose to.
     final idf = _Idf.build(menu);
+    final vocab = _menuVocab(menu);
 
     for (final raw in chunks) {
       final spoken = raw.trim();
       if (spoken.isEmpty) continue;
       var parts = spoken.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+      if (parts.isEmpty) continue;
+
+      // Filler comes off BEFORE the quantity is read, not after: "butter naan
+      // do dena" has to still find its trailing 2 once `dena` is gone.
+      parts = _stripFiller(parts, vocab);
+      // A chunk that was nothing but politeness ("please", "bhai") is not a
+      // failed order, it is not an order — reporting it as unmatched would
+      // put noise in front of the owner on every polite sentence.
       if (parts.isEmpty) continue;
 
       var qty = 1;
@@ -722,6 +1024,44 @@ class VoiceOrderService {
       }
     }
     return VoiceParseResult(lines, unmatched);
+  }
+
+  /// Every canonical token that appears in a live menu item name. The filler
+  /// list is checked against this on every parse, so a stopword that is also
+  /// somebody's dish ("Chai Wala Special") is never dropped.
+  static Set<String> _menuVocab(List<MenuItem> menu) {
+    final out = <String>{};
+    for (final m in menu) {
+      out.addAll(_tokens(m.name.toLowerCase()));
+    }
+    return out;
+  }
+
+  /// Remove the words that carry no dish information. See [_fillerWords] for
+  /// the two rules this can never break: the menu wins, and a number is never
+  /// filler.
+  static List<String> _stripFiller(List<String> parts, Set<String> vocab) {
+    bool onMenu(String t) => vocab.contains(_canonWord(t));
+
+    // Fixed phrases first. This is the only pass allowed to drop a number
+    // word, and only because the verb in front of it proves the `do` in
+    // "chai de do" is "give", not दो.
+    var out = parts;
+    for (var i = 0; i + 1 < out.length;) {
+      if (_fillerPhrases.contains('${out[i]} ${out[i + 1]}') &&
+          !onMenu(out[i]) &&
+          !onMenu(out[i + 1])) {
+        out = <String>[...out.sublist(0, i), ...out.sublist(i + 2)];
+        continue;
+      }
+      i++;
+    }
+
+    return out
+        .where((t) => !(_fillerWords.contains(t) &&
+            !_numWords.containsKey(t) &&
+            !onMenu(t)))
+        .toList();
   }
 
   /// Anything at or below this is noise, not a match. An unmatched line is
@@ -786,6 +1126,12 @@ class VoiceOrderService {
   /// telling miss of all. The score is matched weight over the weight of
   /// everything in play — the item's own words plus whatever was said and not
   /// found — so it stays in 0..1 and a full match still scores 1.0.
+  ///
+  /// That last property is what made a stopword list, rather than more
+  /// weighting, the right answer to "ek butter naan dena bhai": every word of
+  /// politeness in it was a maximum-weight miss. Filler is removed in [parse]
+  /// before it ever gets here, so this function does not need to know that
+  /// owners speak in sentences.
   static double _similarity(String spoken, String itemName, _Idf idf) {
     if (spoken == itemName) return 1.0;
     final a = _tokens(spoken);
@@ -825,24 +1171,46 @@ class VoiceOrderService {
   }
 
   /// The one tokenizer both halves of the matcher use, so a menu name and an
-  /// utterance can never be split by different rules.
-  static List<String> _tokens(String s) =>
-      s.split(RegExp(r'[\s\-_/()]+')).where((w) => w.isNotEmpty).toList();
+  /// utterance can never be split — or spelled — by different rules.
+  ///
+  /// Canonicalisation lives HERE and nowhere else. That is what makes it a
+  /// step rather than a pile of special cases: the spoken side, the menu side
+  /// and the IDF weights are all built from this one function, so `alu` and a
+  /// menu reading `Aloo` are the same token everywhere or in no place at all.
+  static List<String> _tokens(String s) => s
+      .split(RegExp(r'[\s\-_/()]+'))
+      .where((w) => w.isNotEmpty)
+      .map(_canonWord)
+      .toList();
+
+  /// One token folded onto its canonical spelling. Unknown words pass
+  /// through — the table is a shortlist of known romanisations, not a
+  /// dictionary, and a word it has never heard of must stay exactly as spoken.
+  static String _canonWord(String w) => _alias[w] ?? w;
 
   static bool _wordsMatch(String a, String b) {
     if (a == b) return true;
+    // Look-alikes that are genuinely different dishes are settled before any
+    // fuzzy rule gets a say — see [_neverFuzzy].
+    if (_neverFuzzy.contains(a.compareTo(b) < 0 ? '$a|$b' : '$b|$a')) {
+      return false;
+    }
     if (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a))) {
       return true;
     }
     // One typo/mishearing on a word long enough for the check to mean
-    // something ("panner" → "paneer", "amol" → "amul", "gobhi" → "gobi").
+    // something — a genuine slip like "kolapuri", not a known spelling of the
+    // word ("panner", "gobhi", "alu" and the rest are folded by the alias
+    // table before they ever reach here).
     //
     // The bound is 4, not 5, because Indian dish names carry their
     // distinguishing word in four letters constantly — amul, aloo, gobi,
     // corn, jain, dahi, soya — and at 5 none of those could ever survive a
     // single mis-heard vowel. It is NOT 3: at three letters an edit distance
     // of one covers a third of the word and stops discriminating at all
-    // ("dal" would match "dam", "das", "del").
+    // ("dal" would match "dam", "das", "del"). Three-letter romanisations
+    // that DO need joining — pav/pao, nan/naan, alu/aloo — are the alias
+    // table's job, which is exactly why it exists.
     if (a.length >= 4 && b.length >= 4 && (a.length - b.length).abs() <= 1) {
       return _editDistanceWithin1(a, b);
     }

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'analytics_service.dart';
+import 'plan_version_watcher.dart';
 import 'upsell_hints.dart';
 
 class ApiException implements Exception {
@@ -68,6 +69,17 @@ class ApiService {
   /// letting a raw "authentication" error surface on an inner screen.
   void Function()? onAuthExpired;
 
+  /// Entitlement staleness detector (2026-09-05). Reads the backend's
+  /// `X-Plan-Version` fingerprint off responses this app is already making —
+  /// see plan_version_watcher.dart for the full trace. Fed from the ONE
+  /// response path in [_authInterceptor] so a new endpoint cannot forget it.
+  final PlanVersionWatcher _planVersions = PlanVersionWatcher();
+
+  /// AuthProvider wires its existing refreshPlan() in here. Same shape as
+  /// [onAuthExpired]: the service owns the detection, the provider owns the
+  /// state.
+  set onPlanVersionChanged(PlanRefresh? cb) => _planVersions.onChanged = cb;
+
   /// Public session check used on app launch/resume: returns true if we hold
   /// (or can mint) a valid access token. Never throws.
   Future<bool> ensureFreshToken() => _refresh();
@@ -113,6 +125,11 @@ class ApiService {
   Future<void> clearTokens() async {
     await _secure.delete(key: _tokenKey);
     await _secure.delete(key: _refreshKey);
+    // The plan fingerprint belongs to the session that just ended. Without
+    // this, the NEXT tenant's first header would read as a change and fire a
+    // pointless refresh — and, worse, this device would be one response away
+    // from acting on a fingerprint it inherited from someone else's plan.
+    _planVersions.reset();
   }
 
   /// FB-07 (2026-09-01): revoke the refresh token SERVER-SIDE on logout. Local
@@ -140,7 +157,23 @@ class ApiService {
         }
         handler.next(options);
       },
+      // ── Entitlement staleness (2026-09-05) ──────────────────────────────
+      // THE chokepoint. Every successful response in the app passes through
+      // here exactly once, so reading `X-Plan-Version` here — rather than at
+      // call sites — is what makes it impossible for an endpoint added next
+      // month to forget. The watcher decides whether the fingerprint moved;
+      // it seeds on the first header, de-duplicates, guards against storms
+      // and recursion, and never throws.
+      onResponse: (resp, handler) {
+        _planVersions.note(resp.headers.value(kPlanVersionHeader));
+        handler.next(resp);
+      },
       onError: (e, handler) async {
+        // The header rides on FAILED responses too, and a 402 FEATURE_LOCKED
+        // is precisely the moment the plan changed under a running app — so
+        // the error path reads it as well. `e.response` is null on a network
+        // failure, which note() treats as "nothing learned".
+        _planVersions.note(e.response?.headers.value(kPlanVersionHeader));
         // Activation funnel (2026-09-04): every plan-cap refusal, wherever in
         // the app it happened. This interceptor is the ONE place every
         // request's failure passes through, which is why the hook lives here

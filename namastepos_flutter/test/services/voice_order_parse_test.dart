@@ -247,6 +247,274 @@ void main() {
     });
   });
 
+  // ── Follow-up 1: filler words ───────────────────────────────────────────
+  //
+  // The IDF weighting fixed the wrong-bhaji bug but taxed ordinary speech,
+  // because a token on no menu row carries the HIGHEST weight as a miss —
+  // right for a mis-heard dish word, wrong for "bhai". Measured before the
+  // stopword list went in:
+  //     "ek butter naan dena bhai"  -> 0.437  (was 0.500 pre-IDF)
+  //     "two masala dosa please"    -> 0.586  (was 0.667 pre-IDF)
+  // Both cleared the 0.34 floor, neither cleared the 0.72 confidence bar, so
+  // an owner who speaks in sentences got every line flagged as a guess.
+  group('filler words must not cost score', () {
+    test('"ek butter naan dena bhai" is an exact match once filler is gone', () {
+      final r = VoiceOrderService.parse('ek butter naan dena bhai', menu);
+      final line = r.lines.single;
+      expect(line.name, 'Butter Naan');
+      expect(line.qty, 1);
+      expect(line.score, greaterThan(0.9),
+          reason: 'was 0.437 — the politeness must be free, not taxed');
+      expect(line.confident, isTrue);
+      expect(r.unmatched, isEmpty,
+          reason: '"dena"/"bhai" are not dishes we failed to find');
+    });
+
+    test('"two masala dosa please" is an exact match once filler is gone', () {
+      final r = VoiceOrderService.parse('two masala dosa please', menu);
+      final line = r.lines.single;
+      expect(line.name, 'Masala Dosa');
+      expect(line.qty, 2);
+      expect(line.score, greaterThan(0.9), reason: 'was 0.586');
+      expect(line.confident, isTrue);
+    });
+
+    test('a whole sentence of English carrier words still finds the dish', () {
+      final r = VoiceOrderService.parse(
+          'can i get two paneer tikka please boss', menu);
+      expect(r.lines.single.name, 'Paneer Tikka');
+      expect(r.lines.single.qty, 2);
+      expect(r.lines.single.confident, isTrue);
+    });
+
+    test('filler does not stop two lines being told apart', () {
+      final r = VoiceOrderService.parse(
+          'bhai ek masala chai dena aur do butter naan de do', menu);
+      expect(r.lines.map((l) => '${l.qty}x${l.name}').toList(),
+          ['1xMasala Chai', '2xButter Naan']);
+    });
+
+    test('an utterance that is nothing but politeness is not a failed order',
+        () {
+      final r = VoiceOrderService.parse('haan bhai please', menu);
+      expect(r.lines, isEmpty);
+      expect(r.unmatched, isEmpty);
+    });
+  });
+
+  // `ek` is the ambiguous one: filler-shaped in "ek chai dena", but it MEANS
+  // one. It is kept out of the stopword list entirely and every stopword is
+  // additionally checked against the number words before it is dropped, so no
+  // entry — now or one the founder adds later — can delete a count.
+  group('filler stripping must never destroy a quantity', () {
+    test('"ek chai" still orders exactly one chai', () {
+      final r = VoiceOrderService.parse('ek chai', menu);
+      expect(r.lines.single.name, 'Masala Chai');
+      expect(r.lines.single.qty, 1);
+    });
+
+    test('"ek chai dena bhai" still orders exactly one chai', () {
+      final r = VoiceOrderService.parse('ek chai dena bhai', menu);
+      expect(r.lines.single.qty, 1);
+    });
+
+    test('"do" survives every filler word around it', () {
+      expect(VoiceOrderService.parse('do masala chai dena', menu).lines.single.qty, 2);
+      expect(VoiceOrderService.parse('bhai do masala chai', menu).lines.single.qty, 2);
+      expect(
+          VoiceOrderService.parse('masala chai do dena', menu).lines.single.qty, 2,
+          reason: 'filler comes off BEFORE the trailing quantity is read');
+    });
+
+    test('"de do" is the verb "give", not the number two', () {
+      final one = VoiceOrderService.parse('masala chai de do', menu);
+      expect(one.lines.single.qty, 1,
+          reason: '"chai de do" is "give me tea", not "tea, two"');
+
+      final two = VoiceOrderService.parse('do masala chai de do', menu);
+      expect(two.lines.single.qty, 2,
+          reason: 'the real count in front must survive the verb behind');
+    });
+
+    test('a filler word that is also a menu word loses to the menu', () {
+      // "wala" is filler ("chai wala do"), and it is also on this board.
+      final board = <MenuItem>[
+        _item('Chai Wala Special', price: 45),
+        _item('Butter Naan', price: 40),
+      ];
+      final r = VoiceOrderService.parse('do chai wala special', board);
+      expect(r.lines.single.name, 'Chai Wala Special');
+      expect(r.lines.single.qty, 2);
+      expect(r.lines.single.confident, isTrue);
+
+      // Same word, a menu that does NOT sell it: now it is filler again.
+      final plain = VoiceOrderService.parse('do chai wala', menu);
+      expect(plain.lines.single.name, 'Masala Chai');
+      expect(plain.lines.single.qty, 2);
+    });
+  });
+
+  // ── Follow-up 2: transliteration aliases ────────────────────────────────
+  //
+  // "alu" could never reach "aloo": the fuzzy rule needs four characters and
+  // "alu" is three, and dropping the bound to three makes edit distance stop
+  // discriminating. Aliases are the fix — one canonical spelling applied to
+  // BOTH sides before anything is compared.
+  group('transliteration aliases', () {
+    final indian = <MenuItem>[
+      _item('Aloo Paratha', price: 70),
+      _item('Aloo Gobi', price: 180),
+      _item('Paneer Tikka', price: 250),
+      _item('Masala Chai', price: 30),
+    ];
+
+    test('"alu paratha" matches Aloo Paratha', () {
+      final r = VoiceOrderService.parse('do alu paratha', indian);
+      expect(r.lines.single.name, 'Aloo Paratha');
+      expect(r.lines.single.qty, 2);
+      expect(r.lines.single.confident, isTrue);
+      expect(r.lines.single.ambiguous, isFalse);
+    });
+
+    test('every common spelling of aloo reaches the same dish', () {
+      for (final said in ['alu', 'aalu', 'aaloo', 'allu', 'aloo']) {
+        final r = VoiceOrderService.parse('$said paratha', indian);
+        expect(r.lines.single.name, 'Aloo Paratha', reason: 'said "$said"');
+      }
+    });
+
+    test('gobi and gobhi are the same word in both directions', () {
+      expect(VoiceOrderService.parse('aloo gobhi', indian).lines.single.name,
+          'Aloo Gobi');
+      // ...and a menu spelled the other way must accept the plain spelling.
+      final other = <MenuItem>[_item('Alu Gobhi', price: 180), ...menu];
+      expect(VoiceOrderService.parse('aloo gobi', other).lines.single.name,
+          'Alu Gobhi');
+    });
+
+    test('a three-letter alias works where fuzzy matching cannot', () {
+      // "pav"/"paav"/"pao" are all three or four letters; edit distance is
+      // not allowed to touch them, so only the table can join them.
+      final board = <MenuItem>[
+        _item('Vada Pav', price: 25),
+        _item('Misal Pav', price: 90),
+      ];
+      expect(VoiceOrderService.parse('wada paav', board).lines.single.name,
+          'Vada Pav');
+      expect(VoiceOrderService.parse('missal pao', board).lines.single.name,
+          'Misal Pav');
+    });
+
+    test('canonicalisation is applied to the menu side too', () {
+      expect(VoiceOrderService.canonical('Alu Gobhi'), 'aloo gobi');
+      expect(VoiceOrderService.canonical('Aaloo Gobi'), 'aloo gobi');
+      expect(VoiceOrderService.canonical('Chhole Bhature'), 'chole bhature');
+      expect(VoiceOrderService.canonical('Panner Tikka'), 'paneer tikka');
+    });
+
+    test('no alias is listed twice, and none is also a canonical form', () {
+      final table = VoiceOrderService.aliasTable;
+      final canonicals = table.values.toSet();
+      for (final variant in table.keys) {
+        expect(canonicals.contains(variant), isFalse,
+            reason: '"$variant" is both a variant and a canonical form, so '
+                'folding would depend on the order of the table');
+      }
+    });
+  });
+
+  // THE risk aliasing introduces: collapse two dishes onto one string and the
+  // wrong item goes on a real customer's bill. This is the guard.
+  group('canonicalisation must never merge two different dishes', () {
+    // A realistic north-Indian / Maharashtrian / South-Indian board, chosen
+    // to carry every look-alike pair the alias table could plausibly have
+    // merged.
+    final realistic = <String>[
+      'Aloo Paratha', 'Lachha Paratha', 'Malabar Parotta', 'Tandoori Roti',
+      'Rumali Roti', 'Butter Naan', 'Garlic Naan', 'Amritsari Kulcha',
+      'Aloo Gobi', 'Aloo Tikki', 'Paneer Tikka', 'Kadai Paneer',
+      'Punjabi Kadhi', 'Malai Kofta', 'Kaju Curry', 'Dal Tadka',
+      'Dal Makhani', 'Chana Masala', 'Chole Bhature', 'Rajma Chawal',
+      'Veg Biryani', 'Veg Pulao', 'Jeera Rice', 'Kheera Raita',
+      'Dahi Vada', 'Curd Rice', 'Vada Pav', 'Batata Vada', 'Medu Vada',
+      'Pav Bhaji', 'Kanda Bhaji', 'Batata Bhaji', 'Misal Pav', 'Usal Pav',
+      'Masala Dosa', 'Rava Dosa', 'Idli Sambar', 'Rasam Rice',
+      'Soya Chaap', 'Papdi Chaat', 'Sev Puri', 'Bhel Puri', 'Pani Puri',
+      'Paneer Bhurji', 'Egg Bhurji', 'Chicken Keema', 'Mutton Korma',
+      'Gulab Jamun', 'Rasgulla', 'Kheer', 'Shrikhand', 'Kulfi Falooda',
+      'Masala Chai', 'Sweet Lassi', 'Cold Coffee', 'Fresh Lime Soda',
+      'Veg Manchurian', 'Schezwan Noodles', 'Veg Thali', 'Thai Green Curry',
+    ];
+
+    test('no two menu items canonicalise to the same string', () {
+      final seen = <String, String>{};
+      for (final name in realistic) {
+        final key = VoiceOrderService.canonical(name);
+        expect(seen.containsKey(key), isFalse,
+            reason: '"$name" and "${seen[key]}" both canonicalise to "$key" — '
+                'the wrong one would land on a customer\'s bill');
+        seen[key] = name;
+      }
+      expect(seen.length, realistic.length);
+    });
+
+    test('look-alikes that are different dishes stay apart when spoken', () {
+      final board = realistic.map(_item).toList();
+
+      // Aliasing keeps them distinct; the fuzzy rule must not put them back
+      // together — "tikka"/"tikki" are one edit apart.
+      expect(VoiceOrderService.parse('paneer tikka', board).lines.single.name,
+          'Paneer Tikka');
+      expect(VoiceOrderService.parse('aloo tikki', board).lines.single.name,
+          'Aloo Tikki');
+      expect(VoiceOrderService.parse('kadai paneer', board).lines.single.name,
+          'Kadai Paneer');
+      expect(VoiceOrderService.parse('punjabi kadhi', board).lines.single.name,
+          'Punjabi Kadhi');
+      expect(VoiceOrderService.parse('jeera rice', board).lines.single.name,
+          'Jeera Rice');
+      expect(VoiceOrderService.parse('kheera raita', board).lines.single.name,
+          'Kheera Raita');
+      expect(VoiceOrderService.parse('soya chaap', board).lines.single.name,
+          'Soya Chaap');
+      expect(VoiceOrderService.parse('papdi chaat', board).lines.single.name,
+          'Papdi Chaat');
+      expect(VoiceOrderService.parse('veg pulao', board).lines.single.name,
+          'Veg Pulao');
+      expect(VoiceOrderService.parse('veg biryani', board).lines.single.name,
+          'Veg Biryani');
+    });
+
+    test('a two-item board of pure look-alikes does not cross over', () {
+      final pair = <MenuItem>[
+        _item('Paneer Tikka', price: 250),
+        _item('Aloo Tikki', price: 60),
+      ];
+      final a = VoiceOrderService.parse('do paneer tikka', pair);
+      expect(a.lines.single.name, 'Paneer Tikka');
+      expect(a.lines.single.qty, 2);
+
+      final b = VoiceOrderService.parse('teen aloo tikki', pair);
+      expect(b.lines.single.name, 'Aloo Tikki');
+      expect(b.lines.single.qty, 3);
+    });
+
+    test('the bare word alone does not cross over either', () {
+      // This is what the never-fuzzy guard is FOR. "tikka" and "tikki" are one
+      // edit apart, so without it a lone "tikki" scores 0.5 against BOTH rows,
+      // ties, and hands back Paneer Tikka — the ₹250 line — as the head guess
+      // for a ₹60 order.
+      final pair = <MenuItem>[
+        _item('Paneer Tikka', price: 250),
+        _item('Aloo Tikki', price: 60),
+      ];
+      final r = VoiceOrderService.parse('do tikki', pair);
+      expect(r.lines.single.name, 'Aloo Tikki');
+      expect(r.lines.single.ambiguous, isFalse);
+      expect(r.lines.single.qty, 2);
+    });
+  });
+
   group('degenerate input', () {
     test('empty', () {
       expect(VoiceOrderService.parse('', menu).isEmpty, isTrue);

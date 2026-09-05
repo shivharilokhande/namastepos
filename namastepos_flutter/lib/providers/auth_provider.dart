@@ -20,7 +20,32 @@ class AuthProvider extends ChangeNotifier {
     // the login screen instead of letting an "authentication" error surface
     // on an inner screen.
     ApiService.instance.onAuthExpired = _onAuthExpired;
+    // 2026-09-05 — entitlement staleness. The API client watches the backend's
+    // `X-Plan-Version` header on responses this app is already making and
+    // calls back here the moment the fingerprint moves. See
+    // services/plan_version_watcher.dart. This does NOT replace HomeScreen's
+    // 5-minute poll, which remains the backstop for an app that is making no
+    // requests at all.
+    ApiService.instance.onPlanVersionChanged = _onPlanVersionChanged;
     _bootstrap();
+  }
+
+  /// The plan fingerprint changed server-side. Go straight to [refreshPlan] —
+  /// the SAME path the poll and every explicit refresh use, so there is only
+  /// ever one writer of `_plan` / `_role` / `_permissions`.
+  ///
+  /// Deliberately NOT [refreshPlanIfStale]: that no-ops for
+  /// [entitlementMaxAge] after the last fetch, and a fingerprint change is
+  /// positive evidence that the cached answer is wrong regardless of its age.
+  /// Suppressing it would reintroduce the very window this closes.
+  ///
+  /// Never throws — refreshPlan() swallows its own failures, and the watcher
+  /// catches anything that escapes.
+  Future<void> _onPlanVersionChanged() async {
+    // A header seen while signed out (a request in flight across a logout)
+    // must not resurrect a session's plan fetch.
+    if (_status != AuthStatus.authenticated) return;
+    await refreshPlan();
   }
 
   void _onAuthExpired() {
