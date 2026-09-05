@@ -17,9 +17,16 @@
 // Performance: an in-process Map cache keyed by businessId. Invalidate on
 // plan change by calling clearCache(businessId) from subscriptionService.
 
+const crypto = require('crypto');
 const { query, withTransaction } = require('../config/db');
 const cacheBus = require('../utils/cacheBus');
 const entitlement = require('./planEntitlement');
+// THE catalog of feature keys. This module used to carry its own
+// WELL_KNOWN_FEATURE_KEYS array; three separate "restore the orphans"
+// commits later, that array moved to config/featureRegistry.js, which the
+// drift audit compares against the gates and the plan data. Do not re-add a
+// local list here — read that file's header first.
+const registry = require('../config/featureRegistry');
 // Ordered tier-kind ladder + rank helpers. Single source of truth — read the
 // header of that file before touching anything tier-related.
 const planTiers = require('./planTiers');
@@ -188,9 +195,76 @@ async function _load(businessId) {
     tier: resolved.tier,
     tierKind: resolved.tier_kind,
     features,
+    // A short fingerprint of the ENTITLEMENT this tenant currently has. See
+    // planVersion() below for why it exists.
+    version: _fingerprint(resolved.tier, resolved.tier_kind, features),
   };
   cache.set(businessId, entry);
   return entry;
+}
+
+/**
+ * Fingerprint of a tenant's effective entitlement: plan code + kind + the
+ * merged feature set. Stable across processes (same inputs → same digest) and
+ * cheap; 12 hex chars is ample for "did this change?".
+ */
+function _fingerprint(tier, tierKind, featureSet) {
+  const payload = `${tier || ''}|${tierKind || ''}|${[...featureSet].sort().join(',')}`;
+  return crypto.createHash('sha1').update(payload).digest('hex').slice(0, 12);
+}
+
+/**
+ * The tenant's current plan version, from the same cache the gates read.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * WHY (2026-09-05 feature-sync audit, Task 4 — propagation)
+ * ══════════════════════════════════════════════════════════════════════════
+ * When the founder removes a feature from a plan in the admin console the
+ * SERVER is correct immediately: setTierFeatures → clearAllCaches() → local
+ * handlers run synchronously and Redis fans the invalidation out to every
+ * other instance, and planSummary() re-reads the database on every /auth/me
+ * regardless of the cache. There is no server-side lag to fix.
+ *
+ * The lag is entirely in the clients, and it is not symmetric:
+ *   * dashboard — usePlan() refetches /auth/me every 60s. Bounded, fine.
+ *   * mobile    — AuthProvider.refreshPlan() runs on login, on
+ *                 AppLifecycleState.resumed, and after an in-app purchase.
+ *                 There is NO periodic refresh. A POS tablet that stays in
+ *                 the app all day — which is exactly what a POS tablet does —
+ *                 never re-reads its entitlement. The delay is UNBOUNDED.
+ *
+ * For a route-gated feature the damage is contained: the API stops answering
+ * within 60s, so the stale button 402s. For a feature the server has no
+ * surface to gate (voice_pos: speech recognition runs on-device) there is
+ * nothing to 402 and the customer keeps it until the app is backgrounded or
+ * restarted. That is the bug behind the founder's report.
+ *
+ * The server side of the fix is this fingerprint, surfaced as the
+ * `X-Plan-Version` response header on every authenticated business request
+ * (middleware/featureGate.js) and as `planVersion` in /auth/me. A client
+ * already polls SOMETHING every few seconds — orders, KDS, tables — so it can
+ * notice the header changed and call /auth/me, without adding a poll and
+ * without waiting for a foreground transition. Reading the header is the
+ * client's half; this is ours.
+ */
+async function planVersion(businessId) {
+  let entry = cache.get(businessId);
+  if (!entry || entry.expires < Date.now()) {
+    entry = await _load(businessId);
+  }
+  return entry.version;
+}
+
+/**
+ * The cached fingerprint if one is already loaded and fresh, else null.
+ * Non-blocking and side-effect free — used by the response header so that
+ * stamping it never adds a database round trip to a request that did not
+ * otherwise need one.
+ */
+function planVersionIfCached(businessId) {
+  const entry = cache.get(businessId);
+  if (!entry || entry.expires < Date.now()) return null;
+  return entry.version;
 }
 
 /** True if the business's active plan includes `featureKey`. */
@@ -230,6 +304,10 @@ async function planSummary(businessId) {
     nextTierKind: nextKind || null,
     nextTierLabel: nextKind ? planTiers.labelOf(nextKind) : null,
     features: [...entry.features],
+    // Additive (2026-09-05). Same value as the X-Plan-Version response header;
+    // a client that stored it can tell, from any ordinary API call, that its
+    // entitlement changed and this summary is stale. See planVersion().
+    planVersion: entry.version,
   };
 }
 
@@ -271,68 +349,72 @@ function tierLabel(tierKind) {
 
 // Push 14d — feature catalog: the master list of every feature key the
 // app knows about. We derive it from two sources:
-//   1. Anything already attached to a plan in plan_features
-//   2. A hard-coded "well-known" list so the admin can add features that
-//      no plan grants yet (e.g. a new feature shipping next week).
+//   1. config/featureRegistry.js — THE registry, so the admin can grant a
+//      feature that no plan carries yet (one shipping next week), and so the
+//      drift audit has a fixed point to compare the gates against.
+//   2. Anything already attached to a plan in plan_features, so a key minted
+//      by an older deploy stays visible and removable instead of becoming an
+//      invisible grant.
 // The union of the two is what the super-admin picker shows.
-const WELL_KNOWN_FEATURE_KEYS = [
-  // starter-tier core
-  'pos', 'orders', 'token_generation', 'tables_single_floor',
-  'menu_basic', 'reports_basic', 'expenses', 'invoice_basic',
-  'staff_lite', 'customers_basic',
-  // pro additions
-  'tables_multi_floor', 'menu_variants_modifiers', 'kds', 'captain_mode',
-  'driver_mode', 'loyalty', 'customers_crm', 'aggregators',
-  'reservations', 'wastage', 'daily_closing', 'b2b_invoice', 'qr_ordering',
-  'whatsapp_marketing', 'auto_whatsapp_order',
-  'recipe_costing', 'bill_split',
-  // 'staff_unlimited' is a CLAIM, not a gate — nothing in this codebase
-  // branches on it; the staff cap is enforced solely from
-  // `plans.limits.staff` by subscriptionService.enforceLimit. It stays in the
-  // catalog so the admin can grant it to the plans where it is TRUE
-  // (limits.staff = -1). Migration 090 removed it from the Rs 799 Pro plan,
-  // which caps staff at 10 — read that file before granting it anywhere.
-  'staff_unlimited', 'voice_pos',
-  // FF-402 restore-orphans: Inventory screen was wired into the mobile
-  // drawer under this feature key but the catalog forgot to expose it,
-  // so the admin plans editor couldn't toggle it on. Adding here makes
-  // it appear in the Features multi-select on every plan.
-  'inventory_tracking',
-  // Dedicated keys for the reports/invoice drawer tiles so each can be
-  // toggled per-plan independently (not bundled inside reports_basic /
-  // invoice_basic). Mobile drawer gates by these.
-  'tax_invoices', 'pnl_statement', 'registers',
-  // enterprise additions
-  'multi_outlet', 'accounting_pnl_bs', 'einvoice_gst', 'recurring_invoices',
-  'bank_reconcile', 'surge_pricing', 'heat_map',
-  'forecast', 'dead_stock', 'bulk_import', 'api_access', 'white_label',
-  'tds_tcs', 'multi_currency_fx',
-  // FF-402 restore-orphans catalog sweep — these three keys are still
-  // referenced by middleware/featureGate.js to gate live routes
-  // (`/memberships`, `/reviews`, `/marketplace`) but were previously
-  // dropped from the well-known list, so the admin's plan-features
-  // picker couldn't turn them on. Restoring them here so every feature
-  // the app actually enforces is grantable per-plan.
-  'memberships',
-  'reviews',
-  'marketplace_addons',
-  // 2026-09-03 (plans/addons audit): bill-template editing is now gated by
-  // this key (granted by the custom-branding addon's grants_features, or
-  // per-plan / per-business override). Must be in the catalog so the admin
-  // plan editor + custom-plan builder can grant it.
-  'custom_branding',
-  // Migration 034 grants this to pro/enterprise and app code checks for
-  // it, but it was missing from the well-known catalog so it never
-  // appeared in the admin picker either. Restoring here.
-  'dashboard_access',
-];
+//
+// 2026-09-05: this list used to live here as WELL_KNOWN_FEATURE_KEYS, a hand-
+// maintained array that had to be edited every time a gate was added and
+// silently didn't get edited three times (FF-402's "restore-orphans" commits,
+// dashboard_access, custom_branding). It now lives in config/featureRegistry.js
+// with an enforcement declaration per key, and
+// tests/integration/featureRegistryDrift.test.js fails the build when the
+// registry, the gates and the plan data disagree. DO NOT re-introduce a second
+// list in this file or in the admin console.
+//
+// READING THE LIST FROM OUTSIDE NODE (the Flutter entitlement test, a CI shell
+// step): use docs/feature-catalog.json — the registry published as data,
+// regenerated by `node scripts/feature-registry-audit.js --write` and asserted
+// fresh by the drift test. Do NOT regex a JavaScript source file for it.
+
+/**
+ * Back-compat alias for the array that used to live here. Derived, so it can
+ * never disagree with the registry. Kept because callers (and at least one
+ * cross-repo test) refer to the old name.
+ */
+const WELL_KNOWN_FEATURE_KEYS = registry.keys();
 
 async function listFeatureCatalog() {
   const r = await query('SELECT DISTINCT feature_key FROM plan_features');
   const fromDb = r.rows.map((row) => row.feature_key);
   // Deduplicate union, sorted for stable UI.
-  const all = Array.from(new Set([...WELL_KNOWN_FEATURE_KEYS, ...fromDb])).sort();
+  const all = Array.from(new Set([...registry.keys(), ...fromDb])).sort();
   return all;
+}
+
+/**
+ * The same catalog with the metadata the admin console needs to render it:
+ * `label`, `group` (section heading) and `enforcement`. The console used to
+ * keep its OWN bucket map and its OWN label map — two more lists to drift —
+ * so both now come from here.
+ *
+ * A key that exists in plan_features but not in the registry is still
+ * returned, marked `enforcement: 'unregistered'` in group "Unregistered", so
+ * the founder can SEE and remove a stale grant instead of it being invisible.
+ * The drift test fails on any such key, so in a healthy build there are none.
+ */
+async function listFeatureCatalogDetailed() {
+  const r = await query('SELECT DISTINCT feature_key FROM plan_features');
+  const known = new Set(registry.keys());
+  const rows = registry.catalog();
+  for (const row of r.rows) {
+    if (row.feature_key && !known.has(row.feature_key)) {
+      rows.push({
+        key: row.feature_key,
+        label: row.feature_key,
+        group: 'Unregistered',
+        enforcement: 'unregistered',
+        why: 'Present in plan_features but absent from config/featureRegistry.js — '
+          + 'nothing in the product reads it. Remove it from the plans that carry it, '
+          + 'or register it.',
+      });
+    }
+  }
+  return rows.sort((a, b) => a.key.localeCompare(b.key));
 }
 
 async function listTierFeatures(planTier, fallbackTierKind) {
@@ -389,10 +471,14 @@ function cacheStatus() {
 }
 
 module.exports = {
+  WELL_KNOWN_FEATURE_KEYS,
   resolveTierKind,
   cacheStatus,
   hasFeature,
   planSummary,
+  planVersion,
+  planVersionIfCached,
+  listFeatureCatalogDetailed,
   clearCache,
   clearAllCaches,
   nextTierUp,

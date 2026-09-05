@@ -412,6 +412,33 @@ export const adminApi = {
   // clients poll /auth/me.
   featureCatalog: () =>
     api.get<{ features: string[] }>('/admin/feature-catalog').then((r) => r.data.features),
+  // 2026-09-05 (feature-sync audit). The SAME endpoint, with the label, the
+  // section and the enforcement kind the backend registry declares.
+  //
+  // This page used to keep its own `buckets` map deciding which section each
+  // key belonged to, and a separate label map lived in the owner dashboard.
+  // Both drifted: a key added to the backend fell into "Advanced" whatever it
+  // was, and unrecognised keys rendered as raw snake_case. Worse, neither map
+  // could say the thing that actually mattered on 2026-09-05 — that a key the
+  // founder was about to grant is enforced by NOTHING. Sections, labels and
+  // that warning now all come from src/config/featureRegistry.js, which the
+  // drift test holds to the real gates.
+  featureCatalogDetailed: () =>
+    api.get<{ features: string[]; catalog?: FeatureCatalogEntry[]; groups?: string[] }>(
+      '/admin/feature-catalog',
+    ).then((r): { catalog: FeatureCatalogEntry[]; groups: string[] } => ({
+      // Fall back to the flat list when talking to an older backend, so the
+      // picker degrades to "one ungrouped section" rather than to empty.
+      // The return type is annotated so BOTH branches collapse to
+      // FeatureCatalogEntry[]. Without it TypeScript infers a union of two
+      // array types, and every consumer then has to narrow an entry that is
+      // structurally identical either way.
+      catalog: r.data.catalog
+        ?? (r.data.features ?? []).map((key): FeatureCatalogEntry => ({
+          key, label: key, group: 'Features', enforcement: 'unknown',
+        })),
+      groups: r.data.groups ?? [],
+    })),
   tierFeatures: (tierKind: string) =>
     api.get<{ features: string[] }>(`/admin/tier-features/${tierKind}`).then((r) => r.data.features),
   setTierFeatures: (tierKind: string, features: string[]) =>
@@ -630,8 +657,17 @@ export const adminApi = {
   // plan feature picker and the overrides dropdown both rendered empty
   // ("No feature keys available"). The real endpoint is /admin/feature-catalog
   // → { features: string[] }.
+  // 2026-09-05: prefer the rich `catalog` (label + group + enforcement) so the
+  // custom-plan builder, the per-business override dropdown and the add-on
+  // "grants features" picker all show the same names and sections as the plan
+  // editor — from the backend registry, with no list of their own.
   listFeatureKeys: () =>
     api.get<any>('/admin/feature-catalog').then((r) => {
+      if (Array.isArray(r.data?.catalog)) {
+        return (r.data.catalog as FeatureCatalogEntry[]).map((c): FeatureKey => ({
+          key: c.key, label: c.label, group: c.group, enforcement: c.enforcement,
+        }));
+      }
       const raw = Array.isArray(r.data)
         ? r.data
         : (r.data?.features ?? r.data?.keys ?? []);
@@ -709,7 +745,23 @@ export interface RetentionPreview {
 }
 
 // ── Custom plans + feature overrides ───────────────────────────────────
-export interface FeatureKey { key: string; label?: string }
+/**
+ * One row of GET /admin/feature-catalog's `catalog`. Mirrors an entry in the
+ * backend's src/config/featureRegistry.js — the single place a feature key is
+ * declared. `enforcement` says what actually gates the key:
+ *   route | middleware | service  a backend gate returns 402 without it
+ *   client                        no server surface; a client honours the key
+ *   ungated                       nothing enforces it — the console warns
+ *   unregistered                  a plan_features row for a key nothing reads
+ */
+export interface FeatureCatalogEntry {
+  key: string;
+  label: string;
+  group: string;
+  enforcement: 'route' | 'middleware' | 'service' | 'client' | 'ungated' | 'unregistered' | 'unknown';
+  why?: string;
+}
+export interface FeatureKey { key: string; label?: string; group?: string; enforcement?: string }
 export interface FeatureOverride { featureKey: string; mode: 'enable' | 'disable' }
 export interface CustomPlanLimits {
   staff: number; tables: number; floors: number;

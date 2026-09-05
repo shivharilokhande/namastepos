@@ -17,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/home_bottom_nav.dart';
@@ -64,7 +65,7 @@ class _ModifierGroupsScreenState extends State<ModifierGroupsScreen> {
       // five-plan ladder that is not necessarily the plan that unlocks this.
       setState(() => _error = e.statusCode == 402
           ? 'Modifier groups need '
-              '${upgradeTargetPhrase(auth, 'menu_variants_modifiers')}. '
+              '${upgradeTargetPhrase(auth, Features.menuVariantsModifiers)}. '
               'Upgrade to manage them.'
           : 'Couldn\'t load modifier groups: ${e.message}');
     } catch (e) {
@@ -285,7 +286,7 @@ class _ModifierGroupEditScreenState extends State<_ModifierGroupEditScreen> {
       // use_build_context_synchronously warns about, and CI fails on warnings.
       _toast(e.statusCode == 402
           ? 'Managing modifier groups needs '
-              '${upgradeTargetPhrase(auth, 'menu_variants_modifiers')}'
+              '${upgradeTargetPhrase(auth, Features.menuVariantsModifiers)}'
           : 'Save failed: ${e.message}');
     } catch (e) {
       _toast('Save failed: $e');

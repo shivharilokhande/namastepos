@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../models/menu_item.dart';  // for MenuUnitX.short extension
 import '../../models/order.dart';
 import '../../providers/auth_provider.dart';
@@ -139,7 +140,7 @@ class DashboardScreen extends StatelessWidget {
                         icon: Icons.trending_up_rounded,
                         color: AppColors.success,
                         onTap: () => Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => auth.has('pnl_statement')
+                            builder: (_) => auth.has(Features.pnlStatement)
                                 ? const IncomeStatementScreen(todayDefault: true)
                                 : const MonthlyReportScreen())),
                       ),
@@ -157,7 +158,7 @@ class DashboardScreen extends StatelessWidget {
                         icon: Icons.account_balance_wallet_rounded,
                         color: profit >= 0 ? AppColors.success : AppColors.error,
                         onTap: () => Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => auth.has('pnl_statement')
+                            builder: (_) => auth.has(Features.pnlStatement)
                                 ? const IncomeStatementScreen(todayDefault: true)
                                 : const MonthlyReportScreen())),
                       ),
@@ -167,7 +168,7 @@ class DashboardScreen extends StatelessWidget {
                         icon: Icons.pie_chart_rounded,
                         color: AppColors.info,
                         onTap: () => Navigator.push(context, MaterialPageRoute(
-                            builder: (_) => auth.has('pnl_statement')
+                            builder: (_) => auth.has(Features.pnlStatement)
                                 ? const IncomeStatementScreen(todayDefault: true)
                                 : const MonthlyReportScreen())),
                       ),
@@ -186,22 +187,29 @@ class DashboardScreen extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        Expanded(
-                          child: _quickAction(
-                            context,
-                            icon: Icons.table_restaurant_rounded,
-                            label: 'Tables',
-                            color: AppColors.primary,
-                            onTap: () {
-                              final biz = auth.business;
-                              if (biz == null) return;
-                              Navigator.push(context, MaterialPageRoute(
-                                builder: (_) => CaptainScreen(businessId: biz.id),
-                              ));
-                            },
+                        // 2026-09-05 entitlement audit: this quick action
+                        // pushed CaptainScreen with no plan check, while the
+                        // drawer tile and the Tables tab both gate on
+                        // `captain_mode` (/captain/* is server-gated on it).
+                        // Three doors, one of them unlocked.
+                        if (auth.has(Features.captainMode)) ...[
+                          Expanded(
+                            child: _quickAction(
+                              context,
+                              icon: Icons.table_restaurant_rounded,
+                              label: 'Tables',
+                              color: AppColors.primary,
+                              onTap: () {
+                                final biz = auth.business;
+                                if (biz == null) return;
+                                Navigator.push(context, MaterialPageRoute(
+                                  builder: (_) => CaptainScreen(businessId: biz.id),
+                                ));
+                              },
+                            ),
                           ),
-                        ),
-                        Container(width: 1, height: 36, color: AppColors.divider),
+                          Container(width: 1, height: 36, color: AppColors.divider),
+                        ],
                         Expanded(
                           child: _quickAction(
                             context,

@@ -24,8 +24,37 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/colors.dart';
+import '../constants/feature_keys.dart';
 import '../providers/auth_provider.dart';
 import '../utils/role_permissions.dart';
+
+/// Which bottom-nav tabs this user may see — role AND plan.
+///
+/// 2026-09-05 entitlement audit. `RolePerms.visibleTabs` answers only the
+/// staff-permission half. Tab 3 ("Tables") renders CaptainScreen, which lives
+/// entirely on `/captain/*` — routes featureGate.js gates on `captain_mode`.
+/// The DRAWER tile for Captain was plan-gated; this tab, showing the same
+/// screen, was not, so removing captain_mode from a plan hid the tile and
+/// left the tab. Same class of bug as the Voice POS mic.
+///
+/// Fails closed with AuthProvider.has: while entitlements are unknown the
+/// tab is not offered. Every other tab is baseline (Home / POS / Orders /
+/// Reports / More carry no server feature rule), so none is filtered here.
+List<int> planAwareVisibleTabs(AuthProvider auth) {
+  final visible = <int>[
+    ...RolePerms.visibleTabs(auth.role, permissions: auth.permissions),
+  ];
+  if (!auth.has(Features.captainMode)) visible.remove(3);
+  // Never leave the bar with nothing to draw (NavigationBar asserts >= 2).
+  if (visible.length < 2) {
+    for (final fallback in [1, 5]) {
+      if (!visible.contains(fallback)) visible.add(fallback);
+      if (visible.length >= 2) break;
+    }
+    visible.sort();
+  }
+  return visible;
+}
 
 /// Shared source of truth for HomeScreen's active tab. Read/written by
 /// HomeScreen and by `HomeBottomNav.onDestinationSelected`.
@@ -94,8 +123,7 @@ class HomeBottomNav extends StatelessWidget {
       return const SizedBox.shrink();
     }
     final auth = context.watch<AuthProvider>();
-    final visibleIndices =
-        RolePerms.visibleTabs(auth.role, permissions: auth.permissions);
+    final visibleIndices = planAwareVisibleTabs(auth);
     if (visibleIndices.isEmpty) {
       return const SizedBox.shrink();
     }

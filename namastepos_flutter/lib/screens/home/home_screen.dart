@@ -1,9 +1,12 @@
 // NamastePOS - Home shell with bottom navigation
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../models/business.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/expenses_provider.dart';
@@ -77,10 +80,30 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   bool _booted = false;
   VoidCallback? _tabListener;
 
+  /// Keeps entitlements from going stale on a phone that never leaves the
+  /// foreground.
+  ///
+  /// 2026-09-05. Before this the ONLY things that re-read the plan were an
+  /// app-resume, a relaunch, and the billing/marketplace screens. A counter
+  /// tablet that sits open all shift therefore kept a feature the founder had
+  /// removed hours earlier — which is how the Voice POS report reached him at
+  /// all. HomeScreen is mounted for the whole signed-in session (every other
+  /// screen is pushed ON TOP of it), so one timer here covers the app.
+  ///
+  /// refreshPlanIfStale() is a no-op unless the last server answer is older
+  /// than AuthProvider.entitlementMaxAge, so the real cost is one /auth/me
+  /// every five minutes — the same order as the backend's own 60s feature
+  /// cache, and nothing while signed out.
+  Timer? _planTimer;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _planTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      if (!mounted) return;
+      context.read<AuthProvider>().refreshPlanIfStale();
+    });
     // Rebuild HomeScreen whenever the shared tab notifier changes so the
     // IndexedStack switches even when a pushed screen flips the tab.
     _tabListener = () {
@@ -137,6 +160,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _planTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     if (_tabListener != null) {
       homeTabIndex.removeListener(_tabListener!);
@@ -182,8 +206,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         // KDS for kitchen). Without this they land on the empty welcome
         // placeholder until they tap a tab.
         final auth = context.read<AuthProvider>();
-        final visible = RolePerms.visibleTabs(
-          auth.role, permissions: auth.permissions);
+        final visible = planAwareVisibleTabs(auth);
         if (visible.isNotEmpty && !visible.contains(_index)) {
           setState(() => _index = visible.first);
         }
@@ -516,21 +539,21 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               if (_can('captain'))
                 PlanGate.tile(
-                  featureKey: 'captain_mode',
+                  featureKey: Features.captainMode,
                   icon: Icons.groups,
                   title: 'Captain (floor)',
                   onTap: () { _closeDrawer(); _openCaptain(); },
                 ),
               if (_can('driver'))
                 PlanGate.tile(
-                  featureKey: 'driver_mode',
+                  featureKey: Features.driverMode,
                   icon: Icons.delivery_dining,
                   title: 'Driver (delivery)',
                   onTap: () { _closeDrawer(); _openDriver(); },
                 ),
               if (_can('kds'))
                 PlanGate.tile(
-                  featureKey: 'kds',
+                  featureKey: Features.kds,
                   icon: Icons.restaurant,
                   title: 'Kitchen (KDS)',
                   onTap: () {
@@ -558,7 +581,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               if (_can('modifier_groups'))
                 PlanGate.tile(
-                  featureKey: 'menu_variants_modifiers',
+                  featureKey: Features.menuVariantsModifiers,
                   icon: Icons.tune,
                   title: 'Modifier groups',
                   onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -581,21 +604,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ));
                   },
                 ),
+              // 2026-09-05 entitlement audit: this was a plain ListTile with
+              // no plan gate at all, while featureGate.js gates every
+              // /reviews route on `reviews`. A Starter tenant could open the
+              // screen and got an empty list (listReviews swallows the 402) —
+              // a paid feature advertised as broken rather than as locked.
               if (_can('customers'))
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.reviews),
-                  title: const Text('Reviews'),
-                  onTap: () {
-                    _closeDrawer();
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const ReviewsScreen(),
-                    ));
-                  },
+                PlanGate.tile(
+                  featureKey: Features.reviews,
+                  icon: Icons.reviews,
+                  title: 'Reviews',
+                  showLockedAsUpgrade: true,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const ReviewsScreen())),
                 ),
               if (_can('reservations'))
                 PlanGate.tile(
-                  featureKey: 'reservations',
+                  featureKey: Features.reservations,
                   icon: Icons.event,
                   title: 'Reservations',
                   onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -620,13 +645,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // Mobile Pass 2 (2026-08-25): `|| _can('orders')` added so the
               // Refunds history tile below has a section header to sit under
               // (cashiers/captains have `orders` but not the report keys).
-              if ((_can('tax_invoices')      && (auth.has('tax_invoices'))) ||
-                  (_can('pnl_statement')     && (auth.has('pnl_statement'))) ||
+              if ((_can('tax_invoices')      && (auth.has(Features.taxInvoices))) ||
+                  (_can('pnl_statement')     && (auth.has(Features.pnlStatement))) ||
                   ((_can('income_register') || _can('expense_register') || _can('invoice_register'))
-                       && (auth.has('registers'))) ||
+                       && (auth.has(Features.registers))) ||
                   _can('orders'))
                 _drawerSection('Reports & invoices'),
-              if (_can('tax_invoices') && (auth.has('tax_invoices')))
+              if (_can('tax_invoices') && (auth.has(Features.taxInvoices)))
                 ListTile(
                   dense: true,
                   leading: const Icon(Icons.receipt_long),
@@ -637,7 +662,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       builder: (_) => const TaxInvoicesScreen()));
                   },
                 ),
-              if (_can('pnl_statement') && (auth.has('pnl_statement')))
+              if (_can('pnl_statement') && (auth.has(Features.pnlStatement)))
                 ListTile(
                   dense: true,
                   leading: const Icon(Icons.account_balance_outlined),
@@ -652,7 +677,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // "Registers" tile. Tap opens the tabbed RegisterReportsScreen
               // landing on whichever tab they have permission for first.
               if ((_can('income_register') || _can('expense_register') || _can('invoice_register'))
-                  && (auth.has('registers')))
+                  && (auth.has(Features.registers)))
                 ListTile(
                   dense: true,
                   leading: const Icon(Icons.list_alt),
@@ -708,7 +733,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // `inventory_tracking` AND the staff role has permission.
               if (_can('inventory'))
                 PlanGate.tile(
-                  featureKey: 'inventory_tracking',
+                  featureKey: Features.inventoryTracking,
                   icon: Icons.inventory_2_outlined,
                   title: 'Inventory',
                   // Owner asked us to make sure Inventory is visibly
@@ -721,7 +746,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               if (_can('wastage'))
                 PlanGate.tile(
-                  featureKey: 'wastage',
+                  featureKey: Features.wastage,
                   icon: Icons.delete_outline,
                   title: 'Log wastage',
                   // Sync-fix (2026-08-22): match Inventory / Memberships
@@ -734,7 +759,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               if (_can('daily_closing'))
                 PlanGate.tile(
-                  featureKey: 'daily_closing',
+                  featureKey: Features.dailyClosing,
                   icon: Icons.point_of_sale,
                   title: 'Daily closing',
                   showLockedAsUpgrade: true,
@@ -754,7 +779,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 _drawerSection('Growth tools'),
               if (_can('memberships'))
                 PlanGate.tile(
-                  featureKey: 'loyalty',
+                  // 2026-09-05 entitlement audit: this said `loyalty`, but
+                  // the screen behind it calls /memberships, which
+                  // featureGate.js gates on `memberships`. A plan with
+                  // loyalty and not memberships (the two are separate rows
+                  // in the picker) opened the tile onto a 402. Gate on the
+                  // key the server actually enforces.
+                  featureKey: Features.memberships,
                   icon: Icons.card_membership,
                   title: 'Memberships',
                   // Show even when plan doesn't include `loyalty` yet —
@@ -770,7 +801,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               // both are loyalty/marketing tools and travel together.
               if (_can('memberships'))
                 PlanGate.tile(
-                  featureKey: 'loyalty',
+                  featureKey: Features.loyalty,
                   icon: Icons.local_offer,
                   title: 'Coupons',
                   showLockedAsUpgrade: true,
@@ -779,7 +810,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               if (_can('surge'))
                 PlanGate.tile(
-                  featureKey: 'surge_pricing',
+                  featureKey: Features.surgePricing,
                   icon: Icons.flash_on,
                   title: 'Surge pricing',
                   onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -787,7 +818,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 ),
               if (_can('qr_codes'))
                 PlanGate.tile(
-                  featureKey: 'qr_ordering',
+                  featureKey: Features.qrOrdering,
                   icon: Icons.qr_code_2,
                   title: 'QR codes',
                   onTap: () => Navigator.push(context, MaterialPageRoute(
@@ -809,17 +840,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     ));
                   },
                 ),
+              // 2026-09-05 entitlement audit: ungated, but saving a bill
+              // template goes through requireFeature('custom_branding')
+              // (sprint1Extras.routes.js). The owner could design a receipt
+              // and only learn it was a paid add-on when Save 402'd.
               if (_can('bill_template'))
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.receipt_long),
-                  title: const Text('Bill template'),
-                  onTap: () {
-                    _closeDrawer();
-                    Navigator.push(context, MaterialPageRoute(
-                      builder: (_) => const BillTemplateScreen(),
-                    ));
-                  },
+                PlanGate.tile(
+                  featureKey: Features.customBranding,
+                  icon: Icons.receipt_long,
+                  title: 'Bill template',
+                  showLockedAsUpgrade: true,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const BillTemplateScreen())),
                 ),
               // Drawer addition (2026-08-25): printer pairing/setup existed
               // (Bluetooth/network thermal printers) but was never linked.
@@ -942,7 +974,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     // first tab they DO have access to (typically POS).
                     // Without this they'd land on the empty welcome screen
                     // on first launch even though POS was a tap away.
-                    final visible = RolePerms.visibleTabs(role, permissions: perms);
+                    final visible = planAwareVisibleTabs(auth);
                     int idx = _index;
                     if (!visible.contains(idx)) {
                       idx = visible.isNotEmpty ? visible.first : 0;
@@ -978,7 +1010,15 @@ class _CaptainTab extends StatelessWidget {
     if (biz == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    return CaptainScreen(businessId: biz.id);
+    // 2026-09-05 entitlement audit: the tab is normally filtered out of the
+    // bar by planAwareVisibleTabs, but the IndexedStack builds every child
+    // and the tab index is a shared ValueNotifier any pushed screen can
+    // write. Gate the CONTENT too, so there is no route to CaptainScreen
+    // that skips the check.
+    return PlanGate(
+      featureKey: Features.captainMode,
+      child: CaptainScreen(businessId: biz.id),
+    );
   }
 }
 
@@ -1033,7 +1073,14 @@ class _KitchenTab extends StatelessWidget {
     if (biz == null) {
       return const Center(child: CircularProgressIndicator());
     }
-    return KdsScreen(businessId: biz.id);
+    // 2026-09-05 entitlement audit: the drawer's Kitchen tile is plan-gated
+    // but this Home-tab variant — where a `staff_kitchen` login actually
+    // LANDS — was not. featureGate.js gates /kds/ and /ops/kot/ on `kds`, so
+    // an unentitled kitchen user got a board that could never load a ticket.
+    return PlanGate(
+      featureKey: Features.kds,
+      child: KdsScreen(businessId: biz.id),
+    );
   }
 }
 

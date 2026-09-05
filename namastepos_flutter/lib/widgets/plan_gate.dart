@@ -53,10 +53,28 @@ class PlanGate extends StatelessWidget {
   final Widget? lockedWidget;
   const PlanGate({super.key, required this.featureKey, required this.child, this.lockedWidget});
 
+  /// The imperative form, for the many gated surfaces that are a button, a
+  /// menu action or a dialog rather than a whole screen — an `if` in a build
+  /// method, not a wrapper widget.
+  ///
+  /// Use this (or `context.watch<AuthProvider>().has(...)`) rather than
+  /// reading PlanInfo directly, and always pass a `Features.` constant:
+  /// constants/feature_keys.dart is the single list, and
+  /// test/entitlements_test.dart fails the build on a raw string literal.
+  ///
+  /// Watches, so a plan change that arrives while the screen is open rebuilds
+  /// it. Fails closed via AuthProvider.has — unknown entitlements deny.
+  static bool allows(BuildContext context, String featureKey) =>
+      context.watch<AuthProvider>().has(featureKey);
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     if (auth.has(featureKey)) return child;
+    // Entitlements not resolved yet: deny (that is the whole point) but say
+    // nothing about plans. An "Upgrade to X" pitch here would be a guess
+    // shown to an owner who may well be paying for this already.
+    if (!auth.entitlementsKnown) return const _EntitlementsLoading();
     return lockedWidget ?? _DefaultLocked(featureKey: featureKey);
   }
 
@@ -78,6 +96,12 @@ class PlanGate extends StatelessWidget {
   }) =>
       Builder(builder: (ctx) {
         final auth = ctx.watch<AuthProvider>();
+        // Until entitlements are known, show NOTHING — not even the locked
+        // "upgrade" variant. A drawer row that offers to sell a feature the
+        // owner already bought is as wrong as one that hands out a feature
+        // they did not. The row appears (locked or unlocked) the moment
+        // /auth/me answers, which on a warm start is before first paint.
+        if (!auth.entitlementsKnown) return const SizedBox.shrink();
         final unlocked = auth.has(featureKey);
         if (!unlocked && !showLockedAsUpgrade) {
           return const SizedBox.shrink();
@@ -148,6 +172,16 @@ class _LockedBadge extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Shown by [PlanGate] while we do not yet know what the business is entitled
+/// to. Deliberately says nothing about plans — see the note at the call site.
+class _EntitlementsLoading extends StatelessWidget {
+  const _EntitlementsLoading();
+  @override
+  Widget build(BuildContext context) => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
 }
 
 class _DefaultLocked extends StatelessWidget {

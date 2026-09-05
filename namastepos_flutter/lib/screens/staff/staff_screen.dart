@@ -12,6 +12,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../utils/error_humanizer.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/subscription_provider.dart';
@@ -411,26 +412,30 @@ class _StaffEditSheetState extends State<_StaffEditSheet> {
     'tables': null,           // tables_single_floor on Starter is fine
     'bill_template': null,
     'thermal_printer': null,
-    'reports': 'reports_basic',
-    'pnl_statement': 'reports_basic',
-    'income_register': 'reports_basic',
-    'expense_register': 'reports_basic',
-    'invoice_register': 'reports_basic',
-    'tax_invoices': 'invoice_basic',
+    // Values are Features.* constants, never literals — constants/
+    // feature_keys.dart is the single list and test/entitlements_test.dart
+    // fails the build on a raw string here. A typo in this map used to mean
+    // a permanently-disabled checkbox nobody could explain.
+    'reports': Features.reportsBasic,
+    'pnl_statement': Features.reportsBasic,
+    'income_register': Features.reportsBasic,
+    'expense_register': Features.reportsBasic,
+    'invoice_register': Features.reportsBasic,
+    'tax_invoices': Features.invoiceBasic,
     'menu_editor': null,
-    'modifier_groups': 'menu_variants_modifiers',
+    'modifier_groups': Features.menuVariantsModifiers,
     'customers': null,
-    'reservations': 'reservations',
-    'wastage': 'wastage',
-    'daily_closing': 'daily_closing',
-    'kds': 'kds',
-    'captain': 'captain_mode',
-    'driver': 'driver_mode',
-    'surge': 'surge_pricing',
-    'qr_codes': 'qr_ordering',
-    'aggregators': 'aggregators',
-    'whatsapp_marketing': 'whatsapp_marketing',
-    'auto_whatsapp_order': 'auto_whatsapp_order',
+    'reservations': Features.reservations,
+    'wastage': Features.wastage,
+    'daily_closing': Features.dailyClosing,
+    'kds': Features.kds,
+    'captain': Features.captainMode,
+    'driver': Features.driverMode,
+    'surge': Features.surgePricing,
+    'qr_codes': Features.qrOrdering,
+    'aggregators': Features.aggregators,
+    'whatsapp_marketing': Features.whatsappMarketing,
+    'auto_whatsapp_order': Features.autoWhatsappOrder,
   };
   static const _labels = <String, String>{
     'home': 'Home dashboard',

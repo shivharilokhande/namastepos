@@ -18,6 +18,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../models/customer.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/menu_provider.dart';
@@ -26,6 +27,7 @@ import '../../utils/error_humanizer.dart';
 import '../../utils/formatters.dart';
 import '../orders/order_detail_screen.dart';
 import '../../widgets/membership_plan_dialog.dart';
+import '../../widgets/plan_gate.dart';
 
 // Humanized wallet-ledger labels (2026-08-25, parity with the dashboard's
 // WALLET_REASON_LABELS). Keys are the raw `kind` values giftCardService
@@ -585,7 +587,16 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                     const SizedBox(height: 16),
                   ],
                   // Membership
-                  _sectionTitle('Membership'),
+                  // 2026-09-05 entitlement audit: the whole block was drawn
+                  // for every tenant, but /memberships is gated on
+                  // `memberships`. "Add membership" opened a picker that
+                  // could only ever fail. An ACTIVE membership still shows —
+                  // if the business is holding a customer's money, hiding
+                  // that because a plan changed would be worse than showing
+                  // it — but the sell/cancel actions follow the entitlement.
+                  if (activeMembership != null ||
+                      PlanGate.allows(context, Features.memberships))
+                    _sectionTitle('Membership'),
                   if (activeMembership != null) ...[
                     ListTile(
                       contentPadding: EdgeInsets.zero,
@@ -630,7 +641,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                           style: TextStyle(color: AppColors.error)),
                       onPressed: _cancelBusy ? null : _cancelMembership,
                     ),
-                  ] else
+                  ] else if (PlanGate.allows(context, Features.memberships))
                     OutlinedButton.icon(
                       // NP-116: progress + disabled while the buy flow is in
                       // flight so a double-tap can't start a second sale.

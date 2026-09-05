@@ -1,0 +1,370 @@
+{
+  "_comment": "GENERATED — do not edit. Source: src/config/featureRegistry.js. Regenerate with `node scripts/feature-registry-audit.js --write`.",
+  "groups": [
+    "Core",
+    "Menu",
+    "Tables",
+    "Kitchen & ops",
+    "Delivery",
+    "Customers & marketing",
+    "Reports",
+    "Billing & accounting",
+    "Advanced"
+  ],
+  "features": [
+    {
+      "key": "pos",
+      "label": "POS / billing screen",
+      "group": "Core",
+      "enforcement": "ungated"
+    },
+    {
+      "key": "orders",
+      "label": "Orders",
+      "group": "Core",
+      "enforcement": "client",
+      "clients": [
+        "dashboard"
+      ]
+    },
+    {
+      "key": "token_generation",
+      "label": "Token / queue numbers",
+      "group": "Core",
+      "enforcement": "ungated"
+    },
+    {
+      "key": "expenses",
+      "label": "Expense book",
+      "group": "Core",
+      "enforcement": "client",
+      "clients": [
+        "dashboard"
+      ]
+    },
+    {
+      "key": "staff_lite",
+      "label": "Staff accounts",
+      "group": "Core",
+      "enforcement": "client",
+      "clients": [
+        "dashboard"
+      ]
+    },
+    {
+      "key": "staff_unlimited",
+      "label": "Unlimited staff accounts",
+      "group": "Core",
+      "enforcement": "ungated"
+    },
+    {
+      "key": "dashboard_access",
+      "label": "Web dashboard access",
+      "group": "Core",
+      "enforcement": "ungated"
+    },
+    {
+      "key": "custom_branding",
+      "label": "Custom bill branding",
+      "group": "Core",
+      "enforcement": "middleware"
+    },
+    {
+      "key": "menu_basic",
+      "label": "Menu management",
+      "group": "Menu",
+      "enforcement": "client",
+      "clients": [
+        "dashboard"
+      ]
+    },
+    {
+      "key": "menu_variants_modifiers",
+      "label": "Variants & modifiers",
+      "group": "Menu",
+      "enforcement": "route"
+    },
+    {
+      "key": "inventory_tracking",
+      "label": "Inventory tracking",
+      "group": "Menu",
+      "enforcement": "client",
+      "clients": [
+        "mobile"
+      ]
+    },
+    {
+      "key": "recipe_costing",
+      "label": "Recipe costing",
+      "group": "Menu",
+      "enforcement": "route"
+    },
+    {
+      "key": "wastage",
+      "label": "Wastage log",
+      "group": "Menu",
+      "enforcement": "route"
+    },
+    {
+      "key": "dead_stock",
+      "label": "Dead-stock report",
+      "group": "Menu",
+      "enforcement": "route"
+    },
+    {
+      "key": "bulk_import",
+      "label": "Bulk menu import",
+      "group": "Menu",
+      "enforcement": "route"
+    },
+    {
+      "key": "tables_single_floor",
+      "label": "Tables (single floor)",
+      "group": "Tables",
+      "enforcement": "client",
+      "clients": [
+        "dashboard"
+      ]
+    },
+    {
+      "key": "tables_multi_floor",
+      "label": "Multiple floors",
+      "group": "Tables",
+      "enforcement": "ungated"
+    },
+    {
+      "key": "reservations",
+      "label": "Reservations & wait-list",
+      "group": "Tables",
+      "enforcement": "route"
+    },
+    {
+      "key": "bill_split",
+      "label": "Split bill / split payment",
+      "group": "Tables",
+      "enforcement": "route"
+    },
+    {
+      "key": "kds",
+      "label": "Kitchen display (KDS/KOT)",
+      "group": "Kitchen & ops",
+      "enforcement": "route"
+    },
+    {
+      "key": "captain_mode",
+      "label": "Captain ordering",
+      "group": "Kitchen & ops",
+      "enforcement": "route"
+    },
+    {
+      "key": "voice_pos",
+      "label": "Voice POS (speak an order)",
+      "group": "Kitchen & ops",
+      "enforcement": "client",
+      "clients": [
+        "mobile"
+      ]
+    },
+    {
+      "key": "daily_closing",
+      "label": "Day-end closing",
+      "group": "Kitchen & ops",
+      "enforcement": "route"
+    },
+    {
+      "key": "surge_pricing",
+      "label": "Surge / happy-hour pricing",
+      "group": "Kitchen & ops",
+      "enforcement": "route"
+    },
+    {
+      "key": "driver_mode",
+      "label": "Driver app & assignments",
+      "group": "Delivery",
+      "enforcement": "route"
+    },
+    {
+      "key": "aggregators",
+      "label": "Aggregator orders (online)",
+      "group": "Delivery",
+      "enforcement": "route"
+    },
+    {
+      "key": "qr_ordering",
+      "label": "QR self-ordering",
+      "group": "Delivery",
+      "enforcement": "route"
+    },
+    {
+      "key": "customers_basic",
+      "label": "Customer directory",
+      "group": "Customers & marketing",
+      "enforcement": "client",
+      "clients": [
+        "mobile"
+      ]
+    },
+    {
+      "key": "customers_crm",
+      "label": "Customer CRM (segments, history)",
+      "group": "Customers & marketing",
+      "enforcement": "ungated"
+    },
+    {
+      "key": "loyalty",
+      "label": "Loyalty points & wallet",
+      "group": "Customers & marketing",
+      "enforcement": "route"
+    },
+    {
+      "key": "memberships",
+      "label": "Memberships / prepaid packs",
+      "group": "Customers & marketing",
+      "enforcement": "route"
+    },
+    {
+      "key": "reviews",
+      "label": "Customer reviews",
+      "group": "Customers & marketing",
+      "enforcement": "route"
+    },
+    {
+      "key": "whatsapp_marketing",
+      "label": "WhatsApp marketing",
+      "group": "Customers & marketing",
+      "enforcement": "route"
+    },
+    {
+      "key": "auto_whatsapp_order",
+      "label": "Automatic WhatsApp order updates",
+      "group": "Customers & marketing",
+      "enforcement": "service"
+    },
+    {
+      "key": "reports_basic",
+      "label": "Basic reports",
+      "group": "Reports",
+      "enforcement": "client",
+      "clients": [
+        "dashboard"
+      ]
+    },
+    {
+      "key": "registers",
+      "label": "Registers (sales / cash / expense)",
+      "group": "Reports",
+      "enforcement": "client",
+      "clients": [
+        "mobile"
+      ]
+    },
+    {
+      "key": "pnl_statement",
+      "label": "P&L statement",
+      "group": "Reports",
+      "enforcement": "client",
+      "clients": [
+        "mobile"
+      ]
+    },
+    {
+      "key": "heat_map",
+      "label": "Sales heat-map",
+      "group": "Reports",
+      "enforcement": "route"
+    },
+    {
+      "key": "forecast",
+      "label": "Sales forecast & upsell",
+      "group": "Reports",
+      "enforcement": "route"
+    },
+    {
+      "key": "invoice_basic",
+      "label": "Basic invoices",
+      "group": "Billing & accounting",
+      "enforcement": "client",
+      "clients": [
+        "dashboard"
+      ]
+    },
+    {
+      "key": "tax_invoices",
+      "label": "GST tax invoices",
+      "group": "Billing & accounting",
+      "enforcement": "client",
+      "clients": [
+        "mobile"
+      ]
+    },
+    {
+      "key": "b2b_invoice",
+      "label": "B2B invoices",
+      "group": "Billing & accounting",
+      "enforcement": "client",
+      "clients": [
+        "dashboard"
+      ]
+    },
+    {
+      "key": "einvoice_gst",
+      "label": "GST e-invoice (GSP connection required)",
+      "group": "Billing & accounting",
+      "enforcement": "route"
+    },
+    {
+      "key": "recurring_invoices",
+      "label": "Recurring invoices",
+      "group": "Billing & accounting",
+      "enforcement": "route"
+    },
+    {
+      "key": "accounting_pnl_bs",
+      "label": "Accounting (P&L + balance sheet)",
+      "group": "Billing & accounting",
+      "enforcement": "route"
+    },
+    {
+      "key": "bank_reconcile",
+      "label": "Bank reconciliation",
+      "group": "Billing & accounting",
+      "enforcement": "route"
+    },
+    {
+      "key": "tds_tcs",
+      "label": "TDS / TCS",
+      "group": "Billing & accounting",
+      "enforcement": "route"
+    },
+    {
+      "key": "multi_currency_fx",
+      "label": "Multi-currency / FX",
+      "group": "Billing & accounting",
+      "enforcement": "route"
+    },
+    {
+      "key": "multi_outlet",
+      "label": "Multi-outlet",
+      "group": "Advanced",
+      "enforcement": "route"
+    },
+    {
+      "key": "marketplace_addons",
+      "label": "Add-on marketplace",
+      "group": "Advanced",
+      "enforcement": "route"
+    },
+    {
+      "key": "api_access",
+      "label": "API access",
+      "group": "Advanced",
+      "enforcement": "ungated"
+    },
+    {
+      "key": "white_label",
+      "label": "White-label branding",
+      "group": "Advanced",
+      "enforcement": "ungated"
+    }
+  ]
+}

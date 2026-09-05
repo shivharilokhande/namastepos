@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../config/app_config.dart';
+import '../../constants/feature_keys.dart';
 import '../../constants/colors.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/settings_provider.dart';
@@ -115,14 +116,14 @@ class SettingsScreen extends StatelessWidget {
           // when the active plan has the matching feature. Owners on
           // Starter no longer see locked rows; if super-admin adds the
           // feature to their tier the row appears on next plan refresh.
-          if (auth.has('aggregators') || auth.has('auto_whatsapp_order'))
+          if (auth.has(Features.aggregators) || auth.has(Features.autoWhatsappOrder))
             _group('Integrations', [
-              if (auth.has('aggregators'))
+              if (auth.has(Features.aggregators))
                 _tile(context, icon: Icons.delivery_dining_outlined,
                     title: 'Aggregators (Zomato, Swiggy)',
                     onTap: () => Navigator.push(context, MaterialPageRoute(
                         builder: (_) => const AggregatorsScreen()))),
-              if (auth.has('auto_whatsapp_order'))
+              if (auth.has(Features.autoWhatsappOrder))
                 SwitchListTile(
                   title: const Text('Auto WhatsApp on order ready',
                       style: TextStyle(fontWeight: FontWeight.w600)),

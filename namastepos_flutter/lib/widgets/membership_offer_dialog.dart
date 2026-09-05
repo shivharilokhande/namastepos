@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../constants/colors.dart';
+import '../constants/feature_keys.dart';
 import '../providers/auth_provider.dart';
 import '../services/api_service.dart';
 import '../utils/error_humanizer.dart';
@@ -27,8 +28,22 @@ Future<double?> showMembershipOfferDialog(
   String? customerLabel,
   Map<String, dynamic>? expired,
 }) async {
-  final biz = context.read<AuthProvider>().business;
+  final auth = context.read<AuthProvider>();
+  final biz = auth.business;
   if (biz == null) return null;
+
+  // 2026-09-05 entitlement audit. This dialog is the ONE chokepoint for the
+  // billing-time membership offer — POS "Pay & Place" and the captain settle
+  // sheet both come through here — so the gate belongs here rather than at
+  // two call sites that would drift apart.
+  //
+  // /memberships is gated on `memberships` server-side. Without this check
+  // the RENEW branch never asks the server at all: it renders straight from
+  // the lookupCustomer payload, so an unentitled tenant was shown a real
+  // "Add Rs 499 & renew" button whose subscribe call then 402'd — after the
+  // cashier had already told the guest the total. Fails closed via
+  // AuthProvider.has: unknown entitlements make no offer.
+  if (!auth.has(Features.memberships)) return null;
 
   Map<String, dynamic>? chosen; // plan to subscribe to
 

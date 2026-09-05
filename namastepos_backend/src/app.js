@@ -111,6 +111,11 @@ function buildApp() {
       return cb(new Error(`CORS blocked: ${origin}`));
     },
     credentials: true,
+    // Without this a browser client cannot READ the header at all — CORS
+    // hides every response header but the six safelisted ones. The dashboard
+    // needs X-Plan-Version to notice that the founder changed its plan
+    // between /auth/me polls (see featureService.planVersion).
+    exposedHeaders: ['X-Plan-Version'],
   }));
 
   // Raw body capture for webhook signature verification

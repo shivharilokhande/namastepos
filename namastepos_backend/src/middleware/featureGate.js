@@ -10,6 +10,10 @@
 // API route lives under /v1/businesses/:id/<resource>.
 
 const features = require('../services/featureService');
+// Every key used below must exist in THE registry — asserted at module load,
+// see the check under FEATURE_RULES. A gate on a key the admin console cannot
+// grant is the exact failure this codebase has repaired three times.
+const registry = require('../config/featureRegistry');
 
 const FEATURE_RULES = [
   // Pro features
@@ -67,6 +71,26 @@ const FEATURE_RULES = [
   { match: '/fx-rates', key: 'multi_currency_fx' },
 ];
 
+// ── Fail at boot, not on a customer's phone ──────────────────────────────
+// A rule whose key is not in config/featureRegistry.js is a route the founder
+// cannot switch on or off, because the admin picker only offers registry keys.
+// That is not a runtime edge case to log and continue past — it is a broken
+// build, so it throws on require and every test in the suite goes red at once.
+// The blocking drift gate is tests/integration/featureRegistryDrift.test.js;
+// this is the cheap belt-and-braces version that also protects `node -e`
+// one-offs and production boot.
+(function assertRulesRegistered() {
+  const unknown = [...new Set(FEATURE_RULES.map((r) => r.key))].filter((k) => !registry.isKnown(k));
+  if (unknown.length) {
+    throw new Error(
+      `featureGate: FEATURE_RULES gate feature key(s) [${unknown.join(', ')}] that are not in `
+      + 'config/featureRegistry.js. The admin console can only grant registered keys, so these '
+      + 'routes would be permanently locked with no way to unlock them. Add the key(s) to the '
+      + 'registry (see that file\'s "ADDING A FEATURE KEY" header).',
+    );
+  }
+}());
+
 /** Returns the feature key required for `req.path`, or null if open. */
 function requiredFeature(path) {
   // 2026-09-03 (plans/addons audit): the addon-marketplace endpoints
@@ -100,11 +124,33 @@ module.exports = function featureGate() {
     }
     const businessId = req.params?.businessId || req.user.businessId;
 
+    // ── X-Plan-Version (2026-09-05 feature-sync audit) ────────────────────
+    // A running client has no way to learn that its entitlement changed
+    // except by asking /auth/me, and the mobile app only asks on login, on
+    // foreground-resume and after a purchase — so a tablet that never leaves
+    // the app never finds out (see featureService.planVersion's header for the
+    // full trace). Stamping the fingerprint on responses the client is ALREADY
+    // making lets it notice within its own existing poll interval.
+    //
+    // Deliberately non-blocking: `planVersionIfCached` reads the same Map the
+    // gate below reads and returns null rather than issuing a query, so an
+    // ungated path never pays a database round trip just to carry a header.
+    // Best-effort — a failure here must never affect the response.
+    try {
+      const v = features.planVersionIfCached(businessId);
+      if (v) res.setHeader('X-Plan-Version', v);
+    } catch (_) { /* never break a request over a diagnostic header */ }
+
     const key = requiredFeature(req.path);
     if (!key) return next();
 
     try {
       const ok = await features.hasFeature(businessId, key);
+      // hasFeature has now loaded the entry, so the fingerprint is free.
+      try {
+        const v = features.planVersionIfCached(businessId);
+        if (v) res.setHeader('X-Plan-Version', v);
+      } catch (_) { /* as above */ }
       if (ok) return next();
       // resolveTierKind returns { tier, tier_kind }; nextTierUp expects the
       // tier_kind STRING (passing the object made requiredTier always 'pro'

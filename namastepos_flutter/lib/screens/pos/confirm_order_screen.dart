@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../models/customer.dart';
 import '../../models/order.dart';
 import '../../providers/auth_provider.dart';
@@ -339,7 +340,7 @@ class _ConfirmOrderScreenState extends State<ConfirmOrderScreen> {
       // Fix (2026-08-22, founder): NEVER for dine-in — the waiter serves
       // at the table; yanking the cashier into WhatsApp mid-service broke
       // the POS flow. Takeaway/delivery keep the confirmation message.
-      final hasAutoWhatsApp = auth.has('auto_whatsapp_order');
+      final hasAutoWhatsApp = auth.has(Features.autoWhatsappOrder);
       if (_source != OrderSource.dineIn &&
           order.customerPhone != null && order.customerPhone!.isNotEmpty &&
           settings.autoWhatsAppOnReady && hasAutoWhatsApp) {

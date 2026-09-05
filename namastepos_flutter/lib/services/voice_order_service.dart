@@ -43,6 +43,7 @@
 
 import 'dart:async';
 import 'dart:io' show Platform;
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode;
 import 'package:permission_handler/permission_handler.dart';
@@ -101,10 +102,26 @@ class ParsedVoiceLine {
   /// can show "you said X, I think you meant Y".
   final String spoken;
 
-  ParsedVoiceLine(this.name, this.qty,
-      {this.item, this.score = 1.0, this.spoken = ''});
+  /// Every menu row this phrase fits, best first. Length 1 is the ordinary
+  /// case. Length > 1 means the weighting could NOT separate them — "pav
+  /// bhaji" against a menu holding Amul Pav Bhaji and Kolhapuri Pav Bhaji —
+  /// and the confirm sheet must make the owner pick instead of guessing.
+  /// Empty only when the line was constructed by hand.
+  final List<MenuItem> options;
 
-  bool get confident => score >= VoiceOrderService.confidentMatch;
+  ParsedVoiceLine(this.name, this.qty,
+      {this.item,
+      this.score = 1.0,
+      this.spoken = '',
+      List<MenuItem>? options})
+      : options = options ?? const <MenuItem>[];
+
+  /// True when two or more menu rows fit this phrase equally well. Never
+  /// resolved silently — a wrong item on a real customer's bill costs more
+  /// than one extra tap.
+  bool get ambiguous => options.length > 1;
+
+  bool get confident => score >= VoiceOrderService.confidentMatch && !ambiguous;
 }
 
 /// The whole of what one utterance produced. Misses are returned, never
@@ -643,6 +660,10 @@ class VoiceOrderService {
     final lines = <ParsedVoiceLine>[];
     final unmatched = <String>[];
 
+    // Token weights are a property of THIS menu, so they are computed once
+    // per utterance and shared by every candidate comparison below.
+    final idf = _Idf.build(menu);
+
     for (final raw in chunks) {
       final spoken = raw.trim();
       if (spoken.isEmpty) continue;
@@ -689,12 +710,15 @@ class VoiceOrderService {
       if (qty > 99) qty = 99;
 
       final name = words.join(' ');
-      final match = _bestMatch(name, menu);
+      final match = _bestMatch(name, menu, idf);
       if (match == null) {
         unmatched.add(name);
       } else {
         lines.add(ParsedVoiceLine(match.item.name, qty,
-            item: match.item, score: match.score, spoken: name));
+            item: match.item,
+            score: match.score,
+            spoken: name,
+            options: match.options));
       }
     }
     return VoiceParseResult(lines, unmatched);
@@ -706,70 +730,120 @@ class VoiceOrderService {
   /// single spoken word still reach a three-word dish — as a flagged guess.
   static const double _matchFloor = 0.34;
 
-  static _Match? _bestMatch(String spoken, List<MenuItem> menu) {
-    _Match? best;
-    double? runnerUp;
-    for (final m in menu) {
-      final s = _similarity(spoken, m.name.toLowerCase());
-      if (s <= 0) continue;
-      if (best == null || s > best.score) {
-        runnerUp = best?.score;
-        best = _Match(m, s);
-      } else if (runnerUp == null || s > runnerUp) {
-        runnerUp = s;
-      }
+  /// Two candidates closer together than this are NOT separated — the confirm
+  /// sheet is made to ask instead. Deliberately generous: the cost of asking
+  /// is one tap, the cost of guessing is a wrong line on a customer's bill.
+  static const double _ambiguityGap = 0.05;
+
+  static _Match? _bestMatch(String spoken, List<MenuItem> menu, _Idf idf) {
+    final scored = <_Match>[];
+    for (var i = 0; i < menu.length; i++) {
+      final s = _similarity(spoken, menu[i].name.toLowerCase(), idf);
+      if (s < _matchFloor) continue;
+      scored.add(_Match(menu[i], s, order: i));
     }
-    if (best == null || best.score < _matchFloor) return null;
-    // A tie is a coin flip, not a match — "masala" fits Masala Chai and
-    // Masala Dosa equally well. Cap the confidence so the confirm sheet shows
-    // it as a guess and the owner actually looks at it.
-    if (runnerUp != null && (best.score - runnerUp).abs() < 0.01) {
-      final capped = best.score < 0.5 ? best.score : 0.5;
-      return _Match(best.item, capped);
+    if (scored.isEmpty) return null;
+    // Sort is not documented as stable, so break exact ties on menu position:
+    // the same utterance against the same menu must always produce the same
+    // list, or the confirm sheet reshuffles under the owner's finger.
+    scored.sort((x, y) {
+      final c = y.score.compareTo(x.score);
+      return c != 0 ? c : x.order.compareTo(y.order);
+    });
+
+    final best = scored.first;
+    final options = <MenuItem>[best.item];
+    for (var i = 1; i < scored.length && options.length < 4; i++) {
+      if (best.score - scored[i].score >= _ambiguityGap) break;
+      options.add(scored[i].item);
     }
-    return best;
+    if (options.length == 1) return best;
+
+    // Nothing separated them. Cap the confidence as well as returning the
+    // rivals, so a caller that only reads [ParsedVoiceLine.confident] still
+    // treats this as a guess rather than a fact.
+    final capped = best.score < 0.5 ? best.score : 0.5;
+    return _Match(best.item, capped, order: best.order, options: options);
   }
 
-  /// 0..1 similarity between a spoken phrase and a menu item name.
+  /// 0..1 similarity between a spoken phrase and a menu item name, weighted by
+  /// how much each word actually IDENTIFIES a dish on THIS menu.
   ///
   /// Word overlap, NOT substring containment. Containment scores "masala"
   /// against "Masala Chai" as a near-certainty purely because six of eleven
   /// characters line up, which is how a half-heard word becomes a wrong bill.
-  /// Counting whole words instead makes a one-word hit on a two-word dish
-  /// score 0.5 — matched, but under [confidentMatch], so the owner is asked.
-  static double _similarity(String spoken, String itemName) {
+  ///
+  /// Plain overlap is not enough either. On a menu with several pav bhajis,
+  /// `pav` and `bhaji` appear on all of them and so say nothing about WHICH
+  /// one was meant; the single word that does say it — `amul`, `kolhapuri` —
+  /// is exactly the one a recogniser is most likely to fumble. Counting all
+  /// three words the same scored "amol pav bhaji" at 2/3 against every pav
+  /// bhaji on the menu and let the wrong one through on a coin flip.
+  ///
+  /// So every token is weighted by its inverse document frequency over the
+  /// live menu ([_Idf]): a word on many items is nearly free to hit, a word on
+  /// one item is decisive, and a spoken word that is on NO item is the most
+  /// telling miss of all. The score is matched weight over the weight of
+  /// everything in play — the item's own words plus whatever was said and not
+  /// found — so it stays in 0..1 and a full match still scores 1.0.
+  static double _similarity(String spoken, String itemName, _Idf idf) {
     if (spoken == itemName) return 1.0;
-    final a = spoken.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-    final b = itemName
-        .split(RegExp(r'[\s\-_/()]+'))
-        .where((w) => w.isNotEmpty)
-        .toList();
+    final a = _tokens(spoken);
+    final b = _tokens(itemName);
     if (a.isEmpty || b.isEmpty) return 0;
 
+    var matched = 0.0;
     var hits = 0;
     final used = List<bool>.filled(b.length, false);
-    for (final wordA in a) {
+    final spokenHit = List<bool>.filled(a.length, false);
+    for (var ai = 0; ai < a.length; ai++) {
       for (var i = 0; i < b.length; i++) {
         if (used[i]) continue;
-        if (_wordsMatch(wordA, b[i])) {
+        if (_wordsMatch(a[ai], b[i])) {
           used[i] = true;
+          spokenHit[ai] = true;
+          // Weight the ITEM's spelling, not the recogniser's: it is the one
+          // whose document frequency is meaningful on this menu.
+          matched += idf.of(b[i]);
           hits++;
           break;
         }
       }
     }
     if (hits == 0) return 0;
-    final denom = a.length > b.length ? a.length : b.length;
-    return hits / denom;
+
+    var denom = 0.0;
+    for (final t in b) {
+      denom += idf.of(t);
+    }
+    for (var ai = 0; ai < a.length; ai++) {
+      if (!spokenHit[ai]) denom += idf.of(a[ai]);
+    }
+    if (denom <= 0) return 0;
+    final s = matched / denom;
+    return s > 1.0 ? 1.0 : s;
   }
+
+  /// The one tokenizer both halves of the matcher use, so a menu name and an
+  /// utterance can never be split by different rules.
+  static List<String> _tokens(String s) =>
+      s.split(RegExp(r'[\s\-_/()]+')).where((w) => w.isNotEmpty).toList();
 
   static bool _wordsMatch(String a, String b) {
     if (a == b) return true;
     if (a.length >= 4 && b.length >= 4 && (a.startsWith(b) || b.startsWith(a))) {
       return true;
     }
-    // One typo/mishearing on a reasonably long word ("panner" → "paneer").
-    if (a.length >= 5 && b.length >= 5 && (a.length - b.length).abs() <= 1) {
+    // One typo/mishearing on a word long enough for the check to mean
+    // something ("panner" → "paneer", "amol" → "amul", "gobhi" → "gobi").
+    //
+    // The bound is 4, not 5, because Indian dish names carry their
+    // distinguishing word in four letters constantly — amul, aloo, gobi,
+    // corn, jain, dahi, soya — and at 5 none of those could ever survive a
+    // single mis-heard vowel. It is NOT 3: at three letters an edit distance
+    // of one covers a third of the word and stops discriminating at all
+    // ("dal" would match "dam", "das", "del").
+    if (a.length >= 4 && b.length >= 4 && (a.length - b.length).abs() <= 1) {
       return _editDistanceWithin1(a, b);
     }
     return false;
@@ -808,5 +882,50 @@ enum _Perm { granted, notAsked, blocked }
 class _Match {
   final MenuItem item;
   final double score;
-  _Match(this.item, this.score);
+
+  /// Position in the menu, kept only so equal scores sort deterministically.
+  final int order;
+
+  /// [item] plus any rival the weighting could not separate from it.
+  final List<MenuItem> options;
+
+  _Match(this.item, this.score, {this.order = 0, List<MenuItem>? options})
+      : options = options ?? <MenuItem>[item];
+}
+
+/// Inverse document frequency over the LIVE menu — how much each word narrows
+/// down which dish was meant.
+///
+/// `pav` on a menu with eight pav bhajis identifies nothing; `kolhapuri` on
+/// the one row that carries it identifies everything. A word that appears on
+/// no menu row at all gets the highest weight of the lot: it is either the
+/// dish the owner wanted and we do not stock, or the one word the recogniser
+/// got wrong — and both of those are worth failing over.
+class _Idf {
+  final Map<String, double> _weights;
+  final double _unknown;
+
+  const _Idf(this._weights, this._unknown);
+
+  static _Idf build(List<MenuItem> menu) {
+    if (menu.isEmpty) return const _Idf(<String, double>{}, 1.0);
+    final df = <String, int>{};
+    for (final m in menu) {
+      // A name that repeats a word ("Chai Chai Special") is still one
+      // document, so count each distinct token once.
+      for (final t in VoiceOrderService._tokens(m.name.toLowerCase()).toSet()) {
+        df[t] = (df[t] ?? 0) + 1;
+      }
+    }
+    final n = menu.length;
+    final weights = <String, double>{};
+    df.forEach((token, count) {
+      // Smoothed IDF, +1 so even a word on EVERY item still carries some
+      // weight — matching it is evidence, just weak evidence.
+      weights[token] = math.log((n + 1) / (count + 1)) + 1.0;
+    });
+    return _Idf(weights, math.log(n + 1) + 1.0);
+  }
+
+  double of(String token) => _weights[token] ?? _unknown;
 }

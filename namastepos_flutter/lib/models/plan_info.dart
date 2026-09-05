@@ -26,11 +26,24 @@ class PlanInfo {
 
   final Set<String> features; // active feature_keys
 
+  /// Whether [features] came from the SERVER (a live /auth/me, or the copy of
+  /// one cached to secure storage at login) rather than being a placeholder.
+  ///
+  /// 2026-09-05, fail-closed entitlements. This used to be unrepresentable:
+  /// `PlanInfo.starterDefault()` handed out ten real feature keys before any
+  /// server answer, so "we have not asked yet" and "the plan grants these"
+  /// looked identical to every caller. An unknown entitlement must DENY — a
+  /// feature the customer is not paying for appearing while data loads is
+  /// exactly the Voice POS bug. Same fail-closed rule as the role getter in
+  /// AuthProvider (NP-201).
+  final bool loaded;
+
   PlanInfo({
     required this.tierKind,
     required this.features,
     this.tierLabel,
     this.nextTierLabel,
+    this.loaded = false,
   });
 
   factory PlanInfo.fromMap(Map<String, dynamic> m) => PlanInfo(
@@ -40,6 +53,9 @@ class PlanInfo {
         features: ((m['features'] as List?) ?? const [])
             .map((e) => e.toString())
             .toSet(),
+        // A payload the server produced. Even an EMPTY feature list is an
+        // answer — "this plan grants nothing" — and must be honoured as one.
+        loaded: true,
       );
 
   static String? _str(Object? v) {
@@ -49,18 +65,23 @@ class PlanInfo {
   }
 
   /// Convenience — true if the active plan includes [featureKey].
-  bool has(String featureKey) => features.contains(featureKey);
+  ///
+  /// FAIL-CLOSED: false whenever the entitlements are not [loaded], so a
+  /// caller that reaches for a key before /auth/me has answered (or after a
+  /// fetch that failed) gets a denial, never a grant.
+  bool has(String featureKey) => loaded && features.contains(featureKey);
 
-  /// Default "everything locked" plan when the backend hasn't responded yet.
-  /// No labels: nothing is known about the ladder until /auth/me lands, so the
-  /// UI says "a higher plan" instead of naming one.
-  factory PlanInfo.starterDefault() => PlanInfo(
+  /// "We do not know what this business is entitled to." Everything denied.
+  ///
+  /// Used before the first server answer and after sign-out. It used to be
+  /// `PlanInfo.starterDefault()`, which pre-granted the ten starter keys —
+  /// a guess dressed up as an answer. There is no such thing as a safe
+  /// default entitlement; the real plan arrives from /auth/me a moment later
+  /// (and from secure storage instantly on any device that has logged in
+  /// before), so the deny window is a frame, not a session.
+  factory PlanInfo.unknown() => PlanInfo(
         tierKind: 'starter',
-        features: {
-          'pos','orders','token_generation','tables_single_floor',
-          'menu_basic','reports_basic','expenses','invoice_basic',
-          'staff_lite','customers_basic',
-        },
+        features: const <String>{},
       );
 
   Map<String, dynamic> toMap() => {

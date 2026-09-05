@@ -40,7 +40,12 @@ class AuthProvider extends ChangeNotifier {
 
   AuthStatus _status = AuthStatus.unknown;
   Business? _business;
-  PlanInfo _plan = PlanInfo.starterDefault();
+  PlanInfo _plan = PlanInfo.unknown();
+
+  /// When the plan summary in [_plan] was last taken from the SERVER, so a
+  /// long-running session can tell a fresh entitlement from a stale one.
+  /// Null while entitlements are unknown or only restored from cache.
+  DateTime? _planFetchedAt;
   String? _role;          // business_owner | staff_manager | staff_captain | …
   List<String> _permissions = const []; // Push 14c
   bool _loading = false;
@@ -90,10 +95,29 @@ class AuthProvider extends ChangeNotifier {
   bool get loading => _loading;
   String? get error => _error;
 
-  /// Convenience for UI code: `if (auth.has('kds')) { ... }`.
+  /// THE entitlement oracle. Every plan-gated surface in the app goes through
+  /// here (directly, or via PlanGate).
+  ///
+  /// FAIL-CLOSED, 2026-09-05. Delegates to [PlanInfo.has], which denies while
+  /// entitlements are unknown — not yet fetched, fetch failed, signed out.
+  /// The three states that must all deny are "we have not asked", "we asked
+  /// and it went wrong", and "we asked and the key is not there"; before this
+  /// they were two states and a guess.
+  ///
+  /// Pass a `Features.` constant, never a string literal — see
+  /// constants/feature_keys.dart. `test/entitlements_test.dart` enforces it.
   bool has(String featureKey) => _plan.has(featureKey);
 
-  void setPlan(PlanInfo p) { _plan = p; notifyListeners(); }
+  /// Whether a server-resolved entitlement set is in hand. UI that wants to
+  /// show a neutral "loading" state instead of an "upgrade" pitch (which
+  /// would be a lie while we simply do not know) checks this.
+  bool get entitlementsKnown => _plan.loaded;
+
+  void setPlan(PlanInfo p) {
+    _plan = p;
+    if (p.loaded) _planFetchedAt = DateTime.now();
+    notifyListeners();
+  }
 
   /// Hits /auth/me to fetch a fresh plan summary. Called on app foreground
   /// and from explicit "Refresh plan" actions. Silent on network failure —
@@ -108,6 +132,7 @@ class AuthProvider extends ChangeNotifier {
       final p = me?['plan'] as Map<String, dynamic>?;
       if (p != null) {
         _plan = PlanInfo.fromMap(p);
+        _planFetchedAt = DateTime.now();
         changed = true;
       }
       final role = me?['role'] as String?;
@@ -137,11 +162,55 @@ class AuthProvider extends ChangeNotifier {
     } catch (_) { /* swallow — non-fatal */ }
   }
 
+  /// How long a cached entitlement set is allowed to go unquestioned in a
+  /// RUNNING app. The backend's own feature cache is a 60s TTL, so anything
+  /// tighter than that only buys round-trips, not freshness.
+  static const Duration entitlementMaxAge = Duration(minutes: 2);
+
+  /// Re-fetch entitlements only if the last server answer is older than
+  /// [entitlementMaxAge] (or there has never been one).
+  ///
+  /// 2026-09-05. Before this, a plan change made in the admin console reached
+  /// a running app only on app-resume (HomeScreen's lifecycle hook) or a full
+  /// relaunch — a counter phone that stays awake and in-app all shift kept a
+  /// removed feature all shift. Screens that draw a gated surface call this
+  /// when they open, which bounds the staleness to one screen entry rather
+  /// than one app session. Cheap: a no-op when the plan is fresh.
+  Future<void> refreshPlanIfStale() async {
+    if (_status != AuthStatus.authenticated) return;
+    final at = _planFetchedAt;
+    if (at != null && DateTime.now().difference(at) < entitlementMaxAge) {
+      return;
+    }
+    await refreshPlan();
+  }
+
   Future<void> _restoreCached() async {
+    final p = await AuthService.instance.cachedPlan();
+    // A cached plan is a copy of a real server answer (AuthService writes it
+    // from the login / auth-me payload and DELETES it when the payload has
+    // none), so treating it as loaded is honest — and it keeps the deny
+    // window on a warm start down to zero frames. It is not marked as
+    // FETCHED, though: _planFetchedAt stays null so refreshPlanIfStale()
+    // still goes to the server once.
+    if (p != null) _plan = PlanInfo.fromMap(p);
+    _role = await AuthService.instance.cachedRole();
+    _permissions = await AuthService.instance.cachedPermissions() ?? const [];
+  }
+
+  /// Post-login hydration shared by every sign-in path.
+  ///
+  /// NP-201 did this for role/permissions; entitlements need the same
+  /// treatment now that [has] fails closed. If the login response carried no
+  /// plan (AuthService then clears the cache), the app would otherwise render
+  /// every paid surface as locked until something else happened to call
+  /// refreshPlan(). Ask once, before we hand control to HomeScreen.
+  Future<void> _hydrateAfterLogin() async {
     final p = await AuthService.instance.cachedPlan();
     if (p != null) _plan = PlanInfo.fromMap(p);
     _role = await AuthService.instance.cachedRole();
     _permissions = await AuthService.instance.cachedPermissions() ?? const [];
+    if (!_plan.loaded) await refreshPlan();
   }
 
   /// Launch/resume gate. CRITICAL: never declare `authenticated` just because
@@ -190,7 +259,14 @@ class AuthProvider extends ChangeNotifier {
     // here FIRST when we don't know them, so an owner never sees a stripped
     // app on launch and a staff member never sees more than they should.
     // Still fail-closed: if /auth/me can't be reached the role stays unknown.
-    if (outcome != false && _role == null) {
+    //
+    // 2026-09-05: `|| !_plan.loaded` added for the same reason, now that
+    // entitlements fail closed too. An install with a cached role but no
+    // cached plan (a login response that omitted `plan`) would otherwise
+    // render every paid surface as locked until HomeScreen's post-frame
+    // refresh landed — the mirror image of the Voice POS bug, and just as
+    // confusing for an owner who IS paying.
+    if (outcome != false && (_role == null || !_plan.loaded)) {
       await refreshPlan();
     }
     _status = (outcome == false) ? AuthStatus.unauthenticated : AuthStatus.authenticated;
@@ -213,7 +289,7 @@ class AuthProvider extends ChangeNotifier {
     } else {
       // NP-201: same as _bootstrap — hydrate an unknown role before showing
       // the app so the fail-closed getter never strips a legitimate owner.
-      if (_role == null) await refreshPlan();
+      if (_role == null || !_plan.loaded) await refreshPlan();
       _status = AuthStatus.authenticated;
       _postLogin();
     }
@@ -258,7 +334,8 @@ class AuthProvider extends ChangeNotifier {
     // NP-114: reset the plan too — without this the previous account's paid
     // entitlements stayed in RAM (login paths only overwrite _plan when the
     // response carries one, and the cached plan is deleted on logout).
-    _plan = PlanInfo.starterDefault();
+    _plan = PlanInfo.unknown();
+    _planFetchedAt = null;
     // Same reasoning for the cached upgrade labels: the next tenant's
     // position on the plan ladder is not this one's.
     UpsellHints.instance.clear();
@@ -307,10 +384,7 @@ class AuthProvider extends ChangeNotifier {
       // P1 fix (2026-08-22): hydrate plan/role/permissions like the
       // password path — without this the UI ran on starter defaults
       // (paid features locked, wrong staff gating) until next refresh.
-      final p = await AuthService.instance.cachedPlan();
-      if (p != null) _plan = PlanInfo.fromMap(p);
-      _role = await AuthService.instance.cachedRole();
-      _permissions = await AuthService.instance.cachedPermissions() ?? const [];
+      await _hydrateAfterLogin();
       _loading = false;
       notifyListeners();
       _postLogin();
@@ -331,10 +405,7 @@ class AuthProvider extends ChangeNotifier {
       final biz = await AuthService.instance.signInWithEmail(email, name: name);
       _business = biz;
       _status = AuthStatus.authenticated;
-      final p = await AuthService.instance.cachedPlan();
-      if (p != null) _plan = PlanInfo.fromMap(p);
-      _role = await AuthService.instance.cachedRole();
-      _permissions = await AuthService.instance.cachedPermissions() ?? const [];
+      await _hydrateAfterLogin();
       _loading = false;
       notifyListeners();
       _postLogin();
@@ -361,10 +432,7 @@ class AuthProvider extends ChangeNotifier {
         email: email, password: password, name: name, businessName: businessName);
       _business = biz;
       _status = AuthStatus.authenticated;
-      final p = await AuthService.instance.cachedPlan();
-      if (p != null) _plan = PlanInfo.fromMap(p);
-      _role = await AuthService.instance.cachedRole();
-      _permissions = await AuthService.instance.cachedPermissions() ?? const [];
+      await _hydrateAfterLogin();
       _loading = false; notifyListeners();
       _postLogin();
       return true;
@@ -381,10 +449,7 @@ class AuthProvider extends ChangeNotifier {
       final biz = await AuthService.instance.loginWithPassword(email, password);
       _business = biz;
       _status = AuthStatus.authenticated;
-      final p = await AuthService.instance.cachedPlan();
-      if (p != null) _plan = PlanInfo.fromMap(p);
-      _role = await AuthService.instance.cachedRole();
-      _permissions = await AuthService.instance.cachedPermissions() ?? const [];
+      await _hydrateAfterLogin();
       _loading = false; notifyListeners();
       _postLogin();
       return true;
@@ -407,10 +472,7 @@ class AuthProvider extends ChangeNotifier {
           businessId: businessId, userId: userId, pin: pin);
       _business = biz;
       _status = AuthStatus.authenticated;
-      final p = await AuthService.instance.cachedPlan();
-      if (p != null) _plan = PlanInfo.fromMap(p);
-      _role = await AuthService.instance.cachedRole();
-      _permissions = await AuthService.instance.cachedPermissions() ?? const [];
+      await _hydrateAfterLogin();
       // NP-201: staff PIN login is THE path where a wrong role is dangerous
       // (a cook getting the owner UI). Hydrate role + permissions straight
       // from /auth/me before we hand control to HomeScreen, so the first
@@ -531,7 +593,8 @@ class AuthProvider extends ChangeNotifier {
     _role = null;
     _permissions = const [];
     // NP-114: drop the old account's plan from RAM (see signOutFromLock).
-    _plan = PlanInfo.starterDefault();
+    _plan = PlanInfo.unknown();
+    _planFetchedAt = null;
     UpsellHints.instance.clear();
     _status = AuthStatus.unauthenticated;
     notifyListeners();

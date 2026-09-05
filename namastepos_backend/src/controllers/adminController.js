@@ -23,6 +23,7 @@ const features = require('../services/featureService'); // Push 14d feature cata
 const planTiers = require('../services/planTiers');
 const menuService = require('../services/menuService'); // Push 20b bulk import
 const { query } = require('../config/db');
+const { BadRequest } = require('../utils/errors');
 
 const loginBody = Joi.object({
   email: Joi.string().email().required(),
@@ -457,8 +458,18 @@ const deletePlan = asyncHandler(async (req, res) => {
 // Push 14d — feature catalog + tier feature matrix CRUD. The feature
 // matrix is the source of truth for what plan_features each tier_kind
 // grants; the owner dashboard + mobile gate UI by these keys.
+// 2026-09-05 (feature-sync audit): this endpoint is now the ONLY list of
+// grantable feature keys anywhere in the product. `features` (string[]) is
+// unchanged for old console builds; `catalog` adds the label, the display
+// group and the enforcement kind so the admin UI can render sections and warn
+// about an unenforced key WITHOUT keeping a second copy of any of that. The
+// console's own bucket map used to be that second copy.
 const featureCatalog = asyncHandler(async (_req, res) => {
-  res.json({ features: await features.listFeatureCatalog() });
+  res.json({
+    features: await features.listFeatureCatalog(),
+    catalog: await features.listFeatureCatalogDetailed(),
+    groups: require('../config/featureRegistry').GROUPS,
+  });
 });
 const tierFeatures = asyncHandler(async (req, res) => {
   res.json({
@@ -472,6 +483,23 @@ const setTierFeaturesBody = Joi.object({
 const setTierFeatures = [
   validate({ body: setTierFeaturesBody }),
   asyncHandler(async (req, res) => {
+    // Reject keys the product does not know about. Until now a typo'd or
+    // stale key was accepted, written to plan_features and shown as granted
+    // on the plan card — while gating nothing, because no gate and no client
+    // ever asks for it. That is a sold-and-not-delivered feature created by a
+    // slip of the keyboard, and it is precisely the class of bug this audit
+    // exists to end. The catalog is registry ∪ whatever plan_features already
+    // holds, so re-saving a legacy plan unchanged still works.
+    const allowed = new Set(await features.listFeatureCatalog());
+    const unknown = req.body.features.filter((k) => !allowed.has(k));
+    if (unknown.length) {
+      throw new BadRequest(
+        `Unknown feature key(s): ${unknown.join(', ')}. Grantable keys come from `
+        + 'GET /v1/admin/feature-catalog; a new key must be added to '
+        + 'src/config/featureRegistry.js first.',
+        { unknownFeatureKeys: unknown },
+      );
+    }
     const next = await features.setTierFeatures(req.params.tierKind, req.body.features);
     res.json({ tierKind: req.params.tierKind, features: next });
   }),

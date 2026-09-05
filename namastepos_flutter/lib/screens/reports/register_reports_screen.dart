@@ -16,6 +16,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'dart:typed_data';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../utils/error_humanizer.dart';
 import '../../utils/formatters.dart';
 import '../../providers/auth_provider.dart';
@@ -23,6 +24,7 @@ import '../../services/api_service.dart';
 import '../invoices/tax_invoices_screen.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
+import '../../widgets/plan_gate.dart';
 
 enum _Kind { income, expense, invoice }
 
@@ -162,6 +164,15 @@ class _RegisterReportsScreenState extends State<RegisterReportsScreen>
 
   @override
   Widget build(BuildContext context) {
+    // 2026-09-05 entitlement audit — same story as the P&L screen: the drawer
+    // tile checked `registers`, the Reports / Monthly KPI cards pushed
+    // straight past it. Gate the destination so every route in is covered.
+    if (!PlanGate.allows(context, Features.registers)) {
+      return const PlanGate(
+        featureKey: Features.registers,
+        child: SizedBox.shrink(),
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         leading: (ModalRoute.of(context)?.isFirst ?? true) ? const HomeDrawerButton() : null,

@@ -14,12 +14,14 @@ import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../utils/error_humanizer.dart';
 import '../../utils/formatters.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
+import '../../widgets/plan_gate.dart';
 
 class IncomeStatementScreen extends StatefulWidget {
   // 2026-08-26 (founder): when opened from a home KPI card we want the
@@ -118,6 +120,18 @@ class _IncomeStatementScreenState extends State<IncomeStatementScreen> {
   @override
   Widget build(BuildContext context) {
     final fmt = AppFmt.inr2;
+
+    // 2026-09-05 entitlement audit. The drawer tile gates this screen on
+    // `pnl_statement`, but the Reports and Monthly KPI cards pushed it
+    // directly — four routes in, one of them gated. The gate belongs on the
+    // DESTINATION, where every route has to pass it, rather than being
+    // re-derived at each call site and forgotten at three of them.
+    if (!PlanGate.allows(context, Features.pnlStatement)) {
+      return const PlanGate(
+        featureKey: Features.pnlStatement,
+        child: SizedBox.shrink(),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(

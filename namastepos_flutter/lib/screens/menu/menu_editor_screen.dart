@@ -8,9 +8,14 @@
 // display order, plus variants (price-and-stock siblings) and modifier-group
 // attachment (catalog-level groups linked into the item).
 //
-// Variants + modifier groups are Pro-tier features. Like the dashboard, we
-// always show the UI and quietly swallow 402 FEATURE_LOCKED responses on
-// save — the base item still saves, the extras just no-op until upgrade.
+// Variants + modifier groups are gated on `menu_variants_modifiers`.
+//
+// 2026-09-05: this file used to say "always show the UI and quietly swallow
+// 402 FEATURE_LOCKED on save". That was a fail-open gate wearing a comment as
+// a justification: an owner without the feature could type out Half/Full
+// prices, tap Save, be told "Item saved", and lose every variant. The blocks
+// are now hidden unless the plan grants the key. The 402 handling in _save
+// stays as the backstop for an entitlement withdrawn mid-edit.
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -19,6 +24,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../utils/error_humanizer.dart';
 import '../../models/menu_item.dart';
 import '../../providers/auth_provider.dart';
@@ -28,7 +34,7 @@ import '../../utils/formatters.dart';
 import '../../utils/image_url.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/home_drawer_button.dart';
-import '../../widgets/plan_gate.dart' show upgradeTargetPhrase;
+import '../../widgets/plan_gate.dart' show PlanGate, upgradeTargetPhrase;
 import 'menu_paste_screen.dart';
 import 'menu_start_routes.dart';
 import 'menu_template_screen.dart';
@@ -657,7 +663,7 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text(
                 'Item saved. Variants & modifier groups need '
-                '${upgradeTargetPhrase(auth, 'menu_variants_modifiers')}.'),
+                '${upgradeTargetPhrase(auth, Features.menuVariantsModifiers)}.'),
             duration: const Duration(seconds: 3),
           ));
         }
@@ -956,15 +962,22 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
             ),
             const SizedBox(height: 16),
 
-            // ── Variants ──────────────────────────────────────────────────
-            _section('Variants'),
-            _variantsBlock(),
-            const SizedBox(height: 16),
-
-            // ── Modifier groups ───────────────────────────────────────────
-            _section('Modifier groups'),
-            _modifierGroupsBlock(),
-            const SizedBox(height: 24),
+            // ── Variants + modifier groups ────────────────────────────────
+            // 2026-09-05 entitlement audit: both blocks were drawn for every
+            // tenant. /variants and /modifier-groups are gated on
+            // `menu_variants_modifiers`, and the save path swallows the 402
+            // — so an unentitled owner could type out Half/Full prices, save,
+            // see "Item saved", and lose the lot. Hide the editors instead of
+            // taking input we cannot persist. (The 402 handling in _save
+            // stays as the backstop for an entitlement withdrawn mid-edit.)
+            if (PlanGate.allows(context, Features.menuVariantsModifiers)) ...[
+              _section('Variants'),
+              _variantsBlock(),
+              const SizedBox(height: 16),
+              _section('Modifier groups'),
+              _modifierGroupsBlock(),
+              const SizedBox(height: 24),
+            ],
 
             // ── Save ───────────────────────────────────────────────────────
             SizedBox(
@@ -989,7 +1002,7 @@ class _MenuItemEditScreenState extends State<_MenuItemEditScreen> {
             if (_extrasLockedHint)
               Text(
                 'Variants and modifier groups are available on '
-                '${upgradeTargetPhrase(context.watch<AuthProvider>(), 'menu_variants_modifiers')}. '
+                '${upgradeTargetPhrase(context.watch<AuthProvider>(), Features.menuVariantsModifiers)}. '
                 'Tap Plans & billing to upgrade.',
                 style: const TextStyle(color: AppColors.textHint, fontSize: 12),
                 textAlign: TextAlign.center,

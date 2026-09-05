@@ -414,10 +414,17 @@ function TierFeaturePickerDialog({
   // Push 18b — keyed by plan.tier (the plan's unique code) instead of
   // the abstract tier_kind concept. Each plan owns its own feature set.
   const planTier = plan.tier;
-  const { data: catalog = [] } = useQuery({
-    queryKey: ['feature-catalog'],
-    queryFn: adminApi.featureCatalog,
+  // Labels, sections and the "nothing enforces this" warning all come from the
+  // backend registry (src/config/featureRegistry.js) via /admin/feature-catalog.
+  // This dialog used to own a hardcoded `buckets` map instead, which is why a
+  // newly-shipped key silently landed in "Advanced" and rendered as raw
+  // snake_case — and why nothing here could tell the founder that the key he
+  // was about to grant is gated by nothing at all.
+  const { data: cat } = useQuery({
+    queryKey: ['feature-catalog-detailed'],
+    queryFn: adminApi.featureCatalogDetailed,
   });
+  const catalog = cat?.catalog ?? [];
   const { data: current = [], isLoading } = useQuery({
     queryKey: ['tier-features', planTier],
     queryFn: () => adminApi.tierFeatures(planTier),
@@ -434,25 +441,19 @@ function TierFeaturePickerDialog({
     onError: (e) => toast.error(apiError(e)),
   });
 
-  // Group catalog entries by prefix for easier scanning.
+  // Sections, in the order the registry declares them. Anything whose group is
+  // not in that order (an unregistered key still granted by an old plan) is
+  // appended, so it stays visible and removable rather than disappearing.
   const groups = useMemo(() => {
-    const buckets: Record<string, string[]> = {
-      Core: [], Menu: [], Tables: [], Orders: [], Reports: [], 'Customer & marketing': [],
-      'Kitchen & ops': [], 'Billing & accounting': [], Advanced: [],
-    };
-    for (const k of catalog) {
-      if (['pos', 'orders', 'token_generation', 'expenses'].includes(k)) buckets.Core.push(k);
-      else if (k.startsWith('menu_')) buckets.Menu.push(k);
-      else if (k.startsWith('tables_')) buckets.Tables.push(k);
-      else if (k.startsWith('staff_')) buckets.Core.push(k);
-      else if (k.startsWith('reports_') || k === 'forecast' || k === 'dead_stock') buckets.Reports.push(k);
-      else if (['customers_basic', 'customers_crm', 'loyalty', 'memberships', 'reviews', 'whatsapp_marketing', 'qr_ordering'].includes(k)) buckets['Customer & marketing'].push(k);
-      else if (['kds', 'captain_mode', 'driver_mode', 'wastage', 'daily_closing', 'recipe_costing', 'voice_pos', 'aggregators', 'reservations'].includes(k)) buckets['Kitchen & ops'].push(k);
-      else if (['invoice_basic', 'b2b_invoice', 'einvoice_gst', 'recurring_invoices', 'accounting_pnl_bs', 'bank_reconcile', 'tds_tcs', 'multi_currency_fx', 'bill_split', 'surge_pricing'].includes(k)) buckets['Billing & accounting'].push(k);
-      else buckets.Advanced.push(k);
+    const order = cat?.groups ?? [];
+    const buckets = new Map<string, typeof catalog>();
+    for (const g of order) buckets.set(g, []);
+    for (const entry of catalog) {
+      if (!buckets.has(entry.group)) buckets.set(entry.group, []);
+      buckets.get(entry.group)!.push(entry);
     }
-    return Object.entries(buckets).filter(([, v]) => v.length > 0);
-  }, [catalog]);
+    return [...buckets.entries()].filter(([, v]) => v.length > 0);
+  }, [catalog, cat?.groups]);
 
   const toggle = (k: string) => {
     const next = new Set(active);
@@ -484,15 +485,34 @@ function TierFeaturePickerDialog({
                   {groupName}
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
-                  {keys.map((k) => (
-                    <label key={k}
-                        className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer text-sm">
-                      <input type="checkbox"
-                          checked={active.has(k)}
-                          onChange={() => toggle(k)} />
-                      <span className="font-mono text-[12px]">{k}</span>
-                    </label>
-                  ))}
+                  {keys.map((entry) => {
+                    // "Nothing enforces this" is the warning worth surfacing:
+                    // granting such a key charges the customer for a promise no
+                    // gate keeps. That is exactly the 2026-09-05 Voice POS bug.
+                    const toothless = entry.enforcement === 'ungated'
+                      || entry.enforcement === 'unregistered';
+                    return (
+                      <label key={entry.key}
+                          title={entry.why ?? entry.key}
+                          className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted/50 cursor-pointer text-sm">
+                        <input type="checkbox"
+                            checked={active.has(entry.key)}
+                            onChange={() => toggle(entry.key)} />
+                        <span className="flex-1 min-w-0">
+                          <span className="block truncate">{entry.label}</span>
+                          <span className="block font-mono text-[11px] text-muted-foreground truncate">
+                            {entry.key}
+                          </span>
+                        </span>
+                        {toothless && (
+                          <span className="text-[10px] font-semibold uppercase text-amber-600 shrink-0"
+                              title="No gate enforces this key — granting it promises something nothing checks.">
+                            ungated
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             ))}

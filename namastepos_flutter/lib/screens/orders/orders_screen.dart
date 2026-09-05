@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../utils/error_humanizer.dart';
 import '../../models/order.dart';
 import '../../providers/auth_provider.dart';
@@ -17,6 +18,7 @@ import '../../services/receipt_pdf.dart';
 import '../../services/whatsapp_service.dart';
 import '../../widgets/home_drawer_button.dart';
 import '../../widgets/home_bottom_nav.dart';
+import '../../widgets/plan_gate.dart';
 import '../../utils/formatters.dart';
 import 'order_detail_screen.dart';
 
@@ -233,7 +235,7 @@ class _OrderCard extends StatelessWidget {
       // no "ready for pickup" WhatsApp needed (matches backend rule).
       if (order.source != OrderSource.dineIn &&
           settings.autoWhatsAppOnReady &&
-          auth.has('auto_whatsapp_order') &&
+          auth.has(Features.autoWhatsappOrder) &&
           order.customerPhone != null &&
           auth.business != null) {
         await WhatsAppService.instance.notifyOrderReady(order, auth.business!);
@@ -412,7 +414,12 @@ class _OrderCard extends StatelessWidget {
                       await PrinterService.instance.printToken(order, auth.business!);
                     },
                   ),
-                  if (order.status == OrderStatus.collected)
+                  // 2026-09-05 entitlement audit: this action was ungated
+                  // while /einvoice is gated on `einvoice_gst`. Every tenant
+                  // saw "Generate e-invoice (IRN)" on a collected order and
+                  // the ones not paying for it got a 402 in a snackbar.
+                  if (order.status == OrderStatus.collected &&
+                      PlanGate.allows(context, Features.einvoiceGst))
                     IconButton(
                       icon: const Icon(Icons.description_outlined),
                       tooltip: 'Generate e-invoice (IRN)',

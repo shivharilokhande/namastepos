@@ -150,6 +150,103 @@ void main() {
     });
   });
 
+  // ── The 2026-09-05 device report ────────────────────────────────────────
+  //
+  // Founder, on a real phone, said "amul pavbhaji". The recogniser heard
+  // "amol pav bhaji" — a fair hearing. The matcher put KOLHAPURI Pav Bhaji on
+  // the order, because every word counted the same: `pav` and `bhaji` hit on
+  // both dishes and the one word that says WHICH dish it is, `amul`, was the
+  // one that missed. 2 hits out of 3 words = 0.667 for both, a coin flip.
+  //
+  // Two defects, both permanently pinned here:
+  //   1. tokens are now weighted by how much they narrow the menu down, so a
+  //      hit on `pav` is nearly free and a miss on `amul` is decisive;
+  //   2. `_wordsMatch` can fuzzy-match FOUR-letter words, so "amol" reaches
+  //      "amul" at all — Indian dish names carry their distinguishing word in
+  //      four letters constantly (amul, aloo, gobi, corn, jain, dahi, soya).
+  group('pav bhaji — the reported mis-match', () {
+    final bhajiMenu = <MenuItem>[
+      ...menu,
+      _item('Amul Pav Bhaji', price: 140),
+      _item('Kolhapuri Pav Bhaji', price: 160),
+    ];
+
+    test('"amol pav bhaji" resolves to Amul, not Kolhapuri', () {
+      final r = VoiceOrderService.parse('amol pav bhaji', bhajiMenu);
+      expect(r.lines.single.name, 'Amul Pav Bhaji',
+          reason: 'the ONE discriminating word must decide the match');
+      expect(r.lines.single.confident, isTrue);
+      expect(r.lines.single.ambiguous, isFalse);
+    });
+
+    test('"pav bhaji" alone is genuinely ambiguous and must ask', () {
+      final r = VoiceOrderService.parse('do pav bhaji', bhajiMenu);
+      final line = r.lines.single;
+      expect(line.qty, 2);
+      expect(line.confident, isFalse,
+          reason: 'nothing in the words chooses between the two bhajis');
+      expect(line.ambiguous, isTrue);
+      expect(line.options.map((o) => o.name).toList(),
+          containsAll(<String>['Amul Pav Bhaji', 'Kolhapuri Pav Bhaji']));
+    });
+
+    test('Kolhapuri-only menu: "amol pav bhaji" is a flagged guess', () {
+      final only = <MenuItem>[...menu, _item('Kolhapuri Pav Bhaji', price: 160)];
+      final r = VoiceOrderService.parse('amol pav bhaji', only);
+      expect(r.lines.single.name, 'Kolhapuri Pav Bhaji');
+      expect(r.lines.single.confident, isFalse,
+          reason: 'the word that names the dish was NOT heard on the menu');
+    });
+
+    test('a short distinguishing word survives one mis-heard letter', () {
+      final indian = <MenuItem>[
+        _item('Aloo Gobi', price: 180),
+        _item('Aloo Paratha', price: 70),
+        _item('Corn Palak', price: 190),
+      ];
+      // "gobhi" is how the recogniser spells it about half the time.
+      final r = VoiceOrderService.parse('do aloo gobhi', indian);
+      expect(r.lines.single.name, 'Aloo Gobi');
+      expect(r.lines.single.qty, 2);
+      expect(r.lines.single.confident, isTrue);
+      expect(r.lines.single.ambiguous, isFalse,
+          reason: '"gobhi" separates it from Aloo Paratha outright');
+    });
+  });
+
+  // The risk the IDF weighting introduces: rare words now carry most of the
+  // score, so a good full match must not be dragged down by the same maths
+  // that sinks a bad partial one.
+  group('weighting must not punish a genuinely good match', () {
+    final bhajiMenu = <MenuItem>[
+      ...menu,
+      _item('Amul Pav Bhaji', price: 140),
+      _item('Kolhapuri Pav Bhaji', price: 160),
+      _item('Cheese Pav Bhaji', price: 150),
+      _item('Jain Pav Bhaji', price: 140),
+    ];
+
+    test('an exact name stays confident even on a menu full of near-twins', () {
+      final r = VoiceOrderService.parse('two kolhapuri pav bhaji', bhajiMenu);
+      expect(r.lines.single.name, 'Kolhapuri Pav Bhaji');
+      expect(r.lines.single.qty, 2);
+      expect(r.lines.single.confident, isTrue);
+      expect(r.lines.single.ambiguous, isFalse);
+    });
+
+    test('one typo in the discriminating word stays confident', () {
+      // "cheeze" for Cheese, "panner" for Paneer — a single mis-heard letter
+      // on the word that identifies the dish must still land it.
+      final a = VoiceOrderService.parse('cheeze pav bhaji', bhajiMenu);
+      expect(a.lines.single.name, 'Cheese Pav Bhaji');
+      expect(a.lines.single.confident, isTrue);
+
+      final b = VoiceOrderService.parse('panner tikka', bhajiMenu);
+      expect(b.lines.single.name, 'Paneer Tikka');
+      expect(b.lines.single.confident, isTrue);
+    });
+  });
+
   group('degenerate input', () {
     test('empty', () {
       expect(VoiceOrderService.parse('', menu).isEmpty, isTrue);

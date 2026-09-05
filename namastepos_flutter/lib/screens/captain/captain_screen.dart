@@ -17,6 +17,7 @@ import 'package:flutter/services.dart'
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../utils/error_humanizer.dart';
 import '../../providers/auth_provider.dart';
 import '../../models/customer.dart' show LoyaltySettingsLite;
@@ -29,6 +30,7 @@ import '../pos/new_order_screen.dart';
 import '../../widgets/home_bottom_nav.dart';
 import '../../widgets/membership_offer_dialog.dart';
 import '../../widgets/home_drawer_button.dart';
+import '../../widgets/plan_gate.dart';
 
 /// Captain → "Add items" pre-binds the next POS order to this session so
 /// the confirm screen sends `tableSessionId` + `tableId` automatically.
@@ -643,23 +645,30 @@ class _CaptainScreenState extends State<CaptainScreen> {
                     },
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.call_split),
-                    label: const Text('Split'),
-                    onPressed: () {
-                      Navigator.pop(context);
-                      Navigator.push(context, MaterialPageRoute(
-                        builder: (_) => BillSplitScreen(
-                          businessId: widget.businessId,
-                          sessionId: t['currentSessionId'] as String,
-                          totalInr: ((session!['totalInr'] as num?) ?? 0).toDouble(),
-                        ),
-                      )).then((_) => _load());
-                    },
+                // 2026-09-05 entitlement audit: Split was offered to every
+                // tenant while featureGate.js gates /bill-split on
+                // `bill_split`. A captain could divide a table's bill between
+                // four guests and only find out at the last tap that the plan
+                // does not include it — in front of the guests.
+                if (PlanGate.allows(context, Features.billSplit)) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.call_split),
+                      label: const Text('Split'),
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(context, MaterialPageRoute(
+                          builder: (_) => BillSplitScreen(
+                            businessId: widget.businessId,
+                            sessionId: t['currentSessionId'] as String,
+                            totalInr: ((session!['totalInr'] as num?) ?? 0).toDouble(),
+                          ),
+                        )).then((_) => _load());
+                      },
+                    ),
                   ),
-                ),
+                ],
                 const SizedBox(width: 8),
                 Expanded(
                   child: ElevatedButton.icon(

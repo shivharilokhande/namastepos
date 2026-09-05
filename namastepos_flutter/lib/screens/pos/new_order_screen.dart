@@ -10,11 +10,14 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../models/cart_item.dart';
 import '../../models/menu_item.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/menu_provider.dart';
 import '../../providers/orders_provider.dart';
 import '../../services/voice_order_service.dart';
+import '../../widgets/plan_gate.dart';
 import '../../utils/formatters.dart';
 import '../../utils/image_url.dart';
 import '../../widgets/home_drawer_button.dart';
@@ -32,11 +35,44 @@ class NewOrderScreen extends StatefulWidget {
 class _NewOrderScreenState extends State<NewOrderScreen> {
   String _search = '';
 
-  /// Whether to draw the mic at all. Starts false and is turned on only by a
-  /// successful, NON-PROMPTING probe — a phone with no speech recogniser
-  /// never gets a button that would fail on tap, and merely opening this
-  /// screen never raises an OS permission sheet.
-  bool _voiceOffered = false;
+  // ── MAY THE MIC BE DRAWN? ────────────────────────────────────────────────
+  //
+  // build() computes `_voiceDeviceReady && voiceEntitled`. BOTH halves must
+  // be true, and the entitlement half FAILS CLOSED:
+  //
+  //   * `Features.voicePos` in the live plan feed — the key the founder
+  //     toggles in the admin console, resolved per business by /auth/me
+  //     (plan matrix + addon grants + per-business overrides). NEVER a tier
+  //     code: the code `pro` is the ENTERPRISE plan, so gating on tiers here
+  //     would hand voice to the wrong customers entirely. AuthProvider.has()
+  //     returns false while entitlements are unknown, so not-yet-loaded, a
+  //     failed fetch, and an absent key all hide the mic.
+  //   * the device probe — a recogniser exists and permission is not a dead
+  //     end. Never offer a control that cannot work.
+  //
+  // 2026-09-05: the gate used to be the device probe ALONE. Voice POS was
+  // removed from a plan in the admin console and the mic stayed on a paying
+  // customer's phone, because nothing in the voice path had ever asked what
+  // the business was entitled to.
+  //
+  // HONEST LIMIT: recognition runs on the device (Android SpeechRecognizer /
+  // iOS Speech.framework) with no NamastePOS server anywhere in the path, so
+  // there is no request to reject and none of this is enforcement. It is a UI
+  // decision made from server-supplied entitlements — what an owner sees, not
+  // what a modified client could be stopped from doing.
+
+  /// Whether this DEVICE can do speech at all. Starts false and is turned on
+  /// only by a successful, NON-PROMPTING probe — a phone with no speech
+  /// recogniser never gets a button that would fail on tap, and merely
+  /// opening this screen never raises an OS permission sheet.
+  ///
+  /// This is HALF the answer; the other half is the entitlement, read live
+  /// from the plan feed in [build].
+  bool _voiceDeviceReady = false;
+
+  /// Set once a probe has been run, so the entitlement-arrives-late path in
+  /// [build] cannot schedule a fresh probe on every frame.
+  bool _voiceProbed = false;
 
   /// True while a listen session is live, so the mic can show it is hot.
   bool _listening = false;
@@ -45,6 +81,13 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   void initState() {
     super.initState();
     _probeVoice();
+    // Bound how stale an entitlement can be on the ONE screen where a removed
+    // feature is most visible to a paying customer. No-op when the plan was
+    // fetched in the last couple of minutes. See AuthProvider.refreshPlanIfStale.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<AuthProvider>().refreshPlanIfStale();
+    });
   }
 
   @override
@@ -55,14 +98,30 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   }
 
   Future<void> _probeVoice() async {
+    if (!mounted || _voiceProbed) return;
+    // Do not even ASK the OS about speech when the plan does not include it —
+    // no probe, no permission-state read, no recogniser init for a feature
+    // this business is not on. (Entitlements fail closed, so an unresolved
+    // plan lands here too; build() retries once /auth/me answers.)
+    if (!context.read<AuthProvider>().has(Features.voicePos)) return;
+    _voiceProbed = true;
     await VoiceOrderService.instance.probe();
     if (!mounted) return;
-    setState(() => _voiceOffered = VoiceOrderService.instance.offerMicButton);
+    setState(() => _voiceDeviceReady = VoiceOrderService.instance.offerMicButton);
   }
 
   @override
   Widget build(BuildContext context) {
     final menu = context.watch<MenuProvider>();
+    // Watches the plan, so an entitlement that arrives — or is withdrawn —
+    // while this screen is open takes the mic with it on the next frame.
+    final voiceEntitled = PlanGate.allows(context, Features.voicePos);
+    final voiceAllowed = _voiceDeviceReady && voiceEntitled;
+    // The entitlement can land AFTER initState (cold start, or the owner just
+    // upgraded), in which case initState's probe declined to run. Run it now.
+    if (voiceEntitled && !_voiceProbed) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _probeVoice());
+    }
     final orders = context.watch<OrdersProvider>();
 
     final filtered = menu.visibleItems.where((m) {
@@ -94,7 +153,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
             ? 'Add to Table ${pendingCaptainSession!['tableLabel'] ?? ''}'
             : 'New Order'),
         actions: [
-          if (_voiceOffered)
+          if (voiceAllowed)
             // GestureDetector, not just IconButton, so a long-press can open
             // the language picker — an owner whose staff calls out orders in
             // Marathi should not be stuck on the en_IN default.
@@ -207,6 +266,15 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     final messenger = ScaffoldMessenger.of(context);
     final voice = VoiceOrderService.instance;
 
+    // Belt to build()'s braces. The mic is only drawn when entitled, but an
+    // entitlement can be withdrawn between the frame that drew the button and
+    // the tap that hits it (refreshPlanIfStale, an app-resume refresh). Never
+    // open a microphone for a business that is not on this feature.
+    if (!context.read<AuthProvider>().has(Features.voicePos)) {
+      if (mounted) setState(() => _voiceDeviceReady = false);
+      return;
+    }
+
     // Permission permanently refused: not a dead button — hand them Settings.
     if (voice.needsSettings) {
       messenger.showSnackBar(SnackBar(
@@ -235,7 +303,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
     // a phone that turned out to have no recogniser at all). Re-read it so a
     // button that can no longer work stops being drawn.
     if (mounted) {
-      setState(() => _voiceOffered = voice.offerMicButton);
+      setState(() => _voiceDeviceReady = voice.offerMicButton);
     }
 
     if (text == null || text.trim().isEmpty) {
@@ -254,7 +322,11 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
 
     // Guard the BuildContext reads below across the listen() async gap.
     if (!context.mounted) return;
-    final menu = context.read<MenuProvider>().visibleItems;
+    // The WHOLE menu, not `visibleItems` — that getter is narrowed by the
+    // category chip the owner happens to have tapped, and a voice order must
+    // never be silently scoped to one category. Saying "amul pav bhaji" while
+    // the Drinks chip is selected has to reach the pav bhaji.
+    final menu = context.read<MenuProvider>().items;
     final parsed = VoiceOrderService.parse(text, menu);
 
     if (parsed.lines.isEmpty) {
@@ -276,7 +348,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
       // Re-resolve against the live menu: it can be refreshed while the
       // confirm sheet is open, and a stale MenuItem would price wrongly.
       MenuItem? m = p.item;
-      for (final x in context.read<MenuProvider>().visibleItems) {
+      for (final x in context.read<MenuProvider>().items) {
         if (x.id == p.item?.id || x.name == p.name) { m = x; break; }
       }
       if (m == null) continue;
@@ -289,12 +361,21 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
 
   /// The confirm-before-add sheet. Shows the raw transcript (so the owner can
   /// see WHY a line is wrong), every match with an editable quantity, a
-  /// warning marker on low-confidence guesses, and anything we could not
-  /// match at all.
+  /// warning marker on low-confidence guesses, a FORCED choice wherever two
+  /// menu items fit the words equally well, and anything we could not match.
+  ///
+  /// The rule this sheet exists to enforce: the app may guess out loud, but it
+  /// may never guess silently. An ambiguous line starts unticked with nothing
+  /// chosen, so "Add to order" cannot carry it until the owner has pointed at
+  /// the dish they meant.
   Future<List<ParsedVoiceLine>?> _confirmVoiceLines(
       BuildContext context, String transcript, VoiceParseResult parsed) {
     final qty = <int>[for (final l in parsed.lines) l.qty];
-    final keep = <bool>[for (final _ in parsed.lines) true];
+    // Ambiguous lines are OFF until the owner picks one of the candidates.
+    final keep = <bool>[for (final l in parsed.lines) !l.ambiguous];
+    // Index into line.options. Null on an ambiguous line means "not chosen
+    // yet"; 0 everywhere else, where there is only ever one candidate.
+    final chosen = <int?>[for (final l in parsed.lines) l.ambiguous ? null : 0];
 
     return showModalBottomSheet<List<ParsedVoiceLine>>(
       context: context,
@@ -341,15 +422,33 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                 line: parsed.lines[i],
                                 qty: qty[i],
                                 keep: keep[i],
+                                chosen: chosen[i],
                                 onKeep: (v) =>
                                     setSheetState(() => keep[i] = v),
                                 onQty: (v) => setSheetState(
                                     () => qty[i] = v.clamp(1, 99)),
+                                // Picking a candidate IS the confirmation for
+                                // that line — one tap, not two.
+                                onChoose: (v) => setSheetState(() {
+                                  chosen[i] = v;
+                                  keep[i] = true;
+                                }),
                               ),
                           ],
                         ),
                       ),
                     ),
+                    if (parsed.lines.any((l) => l.ambiguous)) ...[
+                      const SizedBox(height: 8),
+                      const Text(
+                        'Some words fit more than one item. Tap the one you '
+                        'meant — nothing is added until you do.',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.warning),
+                      ),
+                    ],
                     if (parsed.unmatched.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Text(
@@ -380,10 +479,20 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
                                         i++) {
                                       if (!keep[i]) continue;
                                       final l = parsed.lines[i];
-                                      out.add(ParsedVoiceLine(l.name, qty[i],
-                                          item: l.item,
+                                      final pick = chosen[i];
+                                      // Belt to the checkbox's braces: an
+                                      // ambiguous line with nothing chosen
+                                      // never reaches the cart.
+                                      if (pick == null) continue;
+                                      final it = pick < l.options.length
+                                          ? l.options[pick]
+                                          : l.item;
+                                      out.add(ParsedVoiceLine(
+                                          it?.name ?? l.name, qty[i],
+                                          item: it,
                                           score: l.score,
-                                          spoken: l.spoken));
+                                          spoken: l.spoken,
+                                          options: l.options));
                                     }
                                     Navigator.pop(sheetContext, out);
                                   }
@@ -408,12 +517,18 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
   Future<void> _pickVoiceLanguage(BuildContext context) async {
     final voice = VoiceOrderService.instance;
     final messenger = ScaffoldMessenger.of(context);
+    // Same guard as _voiceOrder: a long-press must not initialise the
+    // recogniser for a business that no longer has Voice POS.
+    if (!context.read<AuthProvider>().has(Features.voicePos)) {
+      if (mounted) setState(() => _voiceDeviceReady = false);
+      return;
+    }
     if (!await voice.init()) {
       if (!context.mounted) return;
       messenger.showSnackBar(SnackBar(
           content:
               Text(VoiceOrderService.messageForReadiness(voice.readiness))));
-      if (mounted) setState(() => _voiceOffered = voice.offerMicButton);
+      if (mounted) setState(() => _voiceDeviceReady = voice.offerMicButton);
       return;
     }
     final locales = voice.selectableLocales;
@@ -967,81 +1082,164 @@ class _CartLineRow extends StatelessWidget {
 /// One row in the voice confirm sheet: keep/drop, the matched item, an
 /// editable quantity, and — when the match was a guess rather than a hit —
 /// what was actually said, so the owner can judge it instead of trusting it.
+///
+/// Three presentations, in order of how much they demand of the owner:
+///   * a confident match reads like an ordinary cart line;
+///   * a low-confidence guess is boxed and tinted so it cannot be scrolled
+///     past by a thumb moving at POS speed (the previous 14px icon and 11px
+///     caption were, in practice, invisible);
+///   * an AMBIGUOUS line shows the rival dishes as tappable chips, starts
+///     unticked, and cannot be added until one is tapped.
 class _VoiceLineRow extends StatelessWidget {
   final ParsedVoiceLine line;
   final int qty;
   final bool keep;
+
+  /// Index into [ParsedVoiceLine.options], or null when the owner has not yet
+  /// resolved an ambiguous line.
+  final int? chosen;
   final ValueChanged<bool> onKeep;
   final ValueChanged<int> onQty;
+  final ValueChanged<int> onChoose;
 
   const _VoiceLineRow({
     required this.line,
     required this.qty,
     required this.keep,
+    required this.chosen,
     required this.onKeep,
     required this.onQty,
+    required this.onChoose,
   });
 
   @override
   Widget build(BuildContext context) {
-    final price = line.item?.price;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Checkbox(
-            value: keep,
-            onChanged: (v) => onKeep(v ?? false),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    if (!line.confident)
-                      const Padding(
-                        padding: EdgeInsets.only(right: 4),
-                        child: Icon(Icons.help_outline,
-                            size: 14, color: AppColors.error),
-                      ),
-                    Flexible(
-                      child: Text(
-                        line.name,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w600, fontSize: 14),
-                        overflow: TextOverflow.ellipsis,
+    final ambiguous = line.ambiguous;
+    final picked = (chosen != null && chosen! < line.options.length)
+        ? line.options[chosen!]
+        : line.item;
+    final flagged = ambiguous || !line.confident;
+
+    final row = Row(
+      children: [
+        Checkbox(
+          value: keep,
+          // An ambiguous line with nothing chosen has no item to tick.
+          onChanged: (ambiguous && chosen == null)
+              ? null
+              : (v) => onKeep(v ?? false),
+        ),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  if (flagged)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: Icon(
+                        ambiguous
+                            ? Icons.help_rounded
+                            : Icons.warning_amber_rounded,
+                        size: 20,
+                        color: ambiguous ? AppColors.warning : AppColors.error,
                       ),
                     ),
-                  ],
-                ),
+                  Flexible(
+                    child: Text(
+                      ambiguous && chosen == null
+                          ? 'Which one? — you said "${line.spoken}"'
+                          : (picked?.name ?? line.name),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              if (!ambiguous)
                 Text(
                   line.confident
-                      ? (price == null ? '' : AppFmt.money(price))
-                      : 'guess from "${line.spoken}" — check this one',
+                      ? (picked?.price == null
+                          ? ''
+                          : AppFmt.money(picked!.price))
+                      : 'NOT SURE — guessed from "${line.spoken}". '
+                          'Check before adding.',
                   style: TextStyle(
-                    fontSize: 11,
+                    fontSize: line.confident ? 11 : 12,
+                    fontWeight:
+                        line.confident ? FontWeight.w400 : FontWeight.w600,
                     color: line.confident
                         ? AppColors.textSecondary
                         : AppColors.error,
                   ),
                 ),
-              ],
+            ],
+          ),
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.remove_circle_outline, size: 20),
+          onPressed: qty > 1 ? () => onQty(qty - 1) : null,
+        ),
+        Text('$qty',
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(Icons.add_circle_outline, size: 20),
+          onPressed: () => onQty(qty + 1),
+        ),
+      ],
+    );
+
+    if (!flagged) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: row,
+      );
+    }
+
+    final accent = ambiguous ? AppColors.warning : AppColors.error;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.08),
+        border: Border.all(color: accent.withValues(alpha: 0.55)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          row,
+          if (ambiguous)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (var i = 0; i < line.options.length; i++)
+                    ChoiceChip(
+                      selected: chosen == i,
+                      onSelected: (_) => onChoose(i),
+                      label: Text(
+                        '${line.options[i].name} · '
+                        '${AppFmt.money(line.options[i].price)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: chosen == i
+                              ? Colors.white
+                              : AppColors.textPrimary,
+                        ),
+                      ),
+                      selectedColor: AppColors.primary,
+                    ),
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.remove_circle_outline, size: 20),
-            onPressed: qty > 1 ? () => onQty(qty - 1) : null,
-          ),
-          Text('$qty',
-              style: const TextStyle(
-                  fontWeight: FontWeight.w700, fontSize: 15)),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.add_circle_outline, size: 20),
-            onPressed: () => onQty(qty + 1),
-          ),
         ],
       ),
     );

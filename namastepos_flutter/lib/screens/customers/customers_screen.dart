@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../constants/colors.dart';
+import '../../constants/feature_keys.dart';
 import '../../models/customer.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
@@ -36,7 +37,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
     // the loyalty addon. Marketplace browse is no longer required —
     // customer database comes free with every plan that includes
     // customers_basic (which is the Starter tier and up).
-    final hasCustomers = context.read<AuthProvider>().has('customers_basic');
+    final hasCustomers = context.read<AuthProvider>().has(Features.customersBasic);
     if (!hasCustomers) return;
     final biz = context.read<AuthProvider>().business;
     if (biz == null) return;
@@ -62,7 +63,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
   @override
   Widget build(BuildContext context) {
     // Push 17d — gate on plan feature, not addon.
-    final hasCustomers = context.watch<AuthProvider>().has('customers_basic');
+    final hasCustomers = context.watch<AuthProvider>().has(Features.customersBasic);
     if (!hasCustomers) {
       return Scaffold(
         appBar: AppBar(
